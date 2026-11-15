@@ -26,7 +26,7 @@ export function AgendaCalendarView({
 }: {
   dates: Date[];
   eventsByDate: Map<string, CalendarEvent[]>;
-  onSelectEvent: (event: CalendarEvent) => void;
+  onSelectEvent: (event: CalendarEvent, anchor?: HTMLElement) => void;
   onEdit: (event: CalendarEvent) => void;
   onCreate: (date: Date) => void;
 }) {
@@ -121,7 +121,7 @@ function AgendaEventRow({
   onEdit,
 }: {
   event: CalendarEvent;
-  onSelect: (event: CalendarEvent) => void;
+  onSelect: (event: CalendarEvent, anchor?: HTMLElement) => void;
   onEdit: (event: CalendarEvent) => void;
 }) {
   const color = getEventColor(event);
@@ -130,8 +130,9 @@ function AgendaEventRow({
   return (
     <button
       type="button"
-      onClick={() => onSelect(event)}
+      onClick={(e) => onSelect(event, e.currentTarget)}
       onDoubleClick={() => onEdit(event)}
+      data-calendar-event
       title="상세 보기 · 더블클릭하여 수정"
       className={cn(
         "grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40 sm:grid-cols-[18px_112px_minmax(0,1fr)_auto] sm:px-5",

@@ -78,14 +78,14 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
   matchStage: {
     suggested: { label: '내부 후보', tone: 'gray' },
     buyerInterested: { label: '고객 관심', tone: 'info' },
-    viewingConfirmed: { label: '임장 가능 확인', tone: 'orange' },
+    viewingConfirmed: { label: '임장 조율', tone: 'orange' },
     viewing: { label: '임장', tone: 'violet' },
     negotiating: { label: '협상', tone: 'warning' },
     dealCreated: { label: '거래전환', tone: 'success' },
     closed: { label: '종료', tone: 'destructive' },
     // 마이그레이션 전 데이터의 표시 호환
     buyerContacted: { label: '고객 관심', tone: 'info' },
-    ownerContacted: { label: '임장 가능 확인', tone: 'orange' },
+    ownerContacted: { label: '임장 조율', tone: 'orange' },
   },
   /** Deal.stage — 거래 파이프라인 */
   dealStage: {

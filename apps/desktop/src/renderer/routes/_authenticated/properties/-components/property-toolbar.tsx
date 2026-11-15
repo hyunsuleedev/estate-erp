@@ -4,7 +4,16 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Check, ChevronDown, MapPin, Plus, Search, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Hash,
+  MapPin,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Popover,
@@ -33,6 +42,15 @@ import type { MultiSelectOption } from "@/components/ui/multi-select";
 
 /** 1행 공통 바탕: 거래유형 탭 · 검색바 · 보기 전환이 같은 따뜻한 베이지를 쓴다 */
 const toolbarSurfaceClassName = "bg-[#f1f0ec]";
+/**
+ * 1행 모양. "pill"은 기존 둥근 알약, "soft"는 화면 개편 시안(docs/mockups/ui-refresh)의
+ * 모서리 8px 트랙 + 흰 선택 조각이다. 지금은 매물관리만 "soft"를 쓴다.
+ */
+export type ToolbarShape = "pill" | "soft";
+const softTrackClassName =
+  "rounded-[8px] bg-[#f6f5f3] shadow-[inset_0_0_0_1px_#f0efec]";
+const softSelectedClassName =
+  "bg-white font-medium text-foreground shadow-[0_1px_2px_rgba(40,35,25,0.1)]";
 /** 2행 오른쪽 고스트 버튼 (초기화 · 컬럼) */
 export const toolbarGhostButtonClassName =
   "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.08)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20";
@@ -44,17 +62,33 @@ export function ToolbarPillTabs<T extends string>({
   options,
   onChange,
   ariaLabel,
+  shape = "pill",
 }: {
   value: T;
   options: ReadonlyArray<{ value: T; label: string; count?: number }>;
   onChange: (value: T) => void;
   ariaLabel: string;
+  /**
+   * "muted": 기본 알약 탭(광고노트의 매매/전세/월세)과 같은 구조에서 트랙만 낮춘 것.
+   * 트랙은 베이지 대신 옅은 회색(rgba(55,53,47,0.08)), 고른 탭은 그대로 검정으로 채운다.
+   */
+  shape?: ToolbarShape | "muted";
 }) {
+  const soft = shape === "soft";
+  const muted = shape === "muted";
   return (
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className={cn("flex h-[30px] shrink-0 items-center gap-px rounded-full p-0.5", toolbarSurfaceClassName)}
+      className={cn(
+        "flex h-[30px] shrink-0 items-center p-0.5",
+        soft
+          ? cn("gap-0.5", softTrackClassName)
+          : cn(
+              "gap-px rounded-full",
+              muted ? "bg-[rgba(55,53,47,0.08)]" : toolbarSurfaceClassName,
+            ),
+      )}
     >
       {options.map((option) => {
         const selected = option.value === value;
@@ -66,9 +100,12 @@ export function ToolbarPillTabs<T extends string>({
             aria-selected={selected}
             onClick={() => onChange(option.value)}
             className={cn(
-              "inline-flex h-[26px] items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20",
+              "inline-flex h-[26px] items-center gap-1.5 whitespace-nowrap px-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20",
+              soft ? "rounded-[6px]" : "rounded-full",
               selected
-                ? "bg-foreground font-medium text-white"
+                ? soft
+                  ? softSelectedClassName
+                  : "bg-foreground font-medium text-white"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -77,7 +114,7 @@ export function ToolbarPillTabs<T extends string>({
               <span
                 className={cn(
                   "text-[11.5px] font-normal tabular-nums",
-                  selected ? "text-white/60" : "text-[#a5a39f]",
+                  selected && !soft ? "text-white/60" : "text-[#a5a39f]",
                 )}
               >
                 {option.count.toLocaleString()}
@@ -96,17 +133,33 @@ export function ToolbarPillToggle<T extends string>({
   options,
   onChange,
   ariaLabel,
+  shape = "pill",
 }: {
   value: T;
   options: ReadonlyArray<{ value: T; label: string; icon: ReactNode }>;
   onChange: (value: T) => void;
   ariaLabel: string;
+  /**
+   * "muted": 거래 탭과 같은 둥근 회색 트랙(rgba(55,53,47,0.08)). 거래 탭은 검정으로 채우지만
+   * 보기 전환은 덜 중요한 조작이라 고른 쪽을 흰 알약(옅은 그림자)으로 띄운다.
+   */
+  shape?: ToolbarShape | "muted";
 }) {
+  const soft = shape === "soft";
+  const muted = shape === "muted";
   return (
     <div
       role="group"
       aria-label={ariaLabel}
-      className={cn("flex h-[30px] shrink-0 items-center gap-px rounded-full p-0.5", toolbarSurfaceClassName)}
+      className={cn(
+        "flex h-[30px] shrink-0 items-center p-0.5",
+        soft
+          ? cn("gap-0.5", softTrackClassName)
+          : cn(
+              "gap-px rounded-full",
+              muted ? "bg-[rgba(55,53,47,0.08)]" : toolbarSurfaceClassName,
+            ),
+      )}
     >
       {options.map((option) => {
         const selected = option.value === value;
@@ -119,9 +172,15 @@ export function ToolbarPillToggle<T extends string>({
             title={option.label}
             onClick={() => onChange(option.value)}
             className={cn(
-              "inline-flex h-[26px] items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 [&_svg]:size-3.5",
+              "inline-flex h-[26px] items-center gap-1.5 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 [&_svg]:size-3.5",
+              muted ? "px-3 text-[13px]" : "px-2.5 text-xs",
+              soft ? "rounded-[6px]" : "rounded-full",
               selected
-                ? "bg-white font-medium text-foreground"
+                ? soft
+                  ? softSelectedClassName
+                  : muted
+                    ? "bg-white font-medium text-foreground shadow-[0_1px_2px_rgba(40,35,25,0.12)]"
+                    : "bg-white font-medium text-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -217,6 +276,8 @@ export function ToolbarSearchBar({
   searchPlaceholder,
   locationAriaLabel = "지역·단지 필터",
   searchAriaLabel = "매물 검색",
+  shape = "pill",
+  popoverClassName,
 }: {
   /** 위치 칸에 보일 이름: 선택 단지 → 지역 → "지역·단지 전체" */
   label: string;
@@ -238,8 +299,15 @@ export function ToolbarSearchBar({
   searchPlaceholder: string;
   locationAriaLabel?: string;
   searchAriaLabel?: string;
+  /** "soft": 위치 칸(단지 │ 동 │ 호)과 검색칸을 흰 입력칸 둘로 나눈다 */
+  shape?: ToolbarShape;
+  /** 위치 팝오버 너비 등. 기본은 380px */
+  popoverClassName?: string;
 }) {
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // soft 모양의 검색칸은 입력 중이거나 검색어가 있을 때만 펼쳐진다
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchExpanded = searchFocused || search.length > 0;
 
   // "/" 키로 검색 포커스 (입력 중일 때는 무시)
   useEffect(() => {
@@ -259,6 +327,178 @@ export function ToolbarSearchBar({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  if (shape === "soft") {
+    return (
+      <Popover open={open} onOpenChange={onOpenChange}>
+        {/* 지역·단지: 다른 필터 칩과 같은 모양. 고르기 전에는 테두리 없이 "아이콘 이름 ⌄", 고르면 파란 알약 */}
+        <PopoverAnchor asChild>
+          <div
+            className={cn(
+              "inline-flex h-[30px] max-w-[240px] shrink-0 items-center text-[13px] transition-colors",
+              isPlaceholder
+                ? "rounded-full text-[#6f6c66] hover:bg-[rgba(60,52,40,0.06)] hover:text-foreground"
+                : "rounded-full bg-[rgba(35,131,226,0.1)] text-[#2383e2] hover:bg-[rgba(35,131,226,0.15)]",
+              open && isPlaceholder && "bg-[rgba(60,52,40,0.06)] text-foreground",
+            )}
+          >
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label={`${locationAriaLabel}: ${label}`}
+                className={cn(
+                  "inline-flex h-full min-w-0 items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/40",
+                  "rounded-full",
+                  isPlaceholder ? "px-2.5" : "pl-2.5 pr-1",
+                )}
+              >
+                <MapPin
+                  aria-hidden="true"
+                  className={cn(
+                    "size-3.5 shrink-0",
+                    isPlaceholder && "text-[#a3a09a]",
+                  )}
+                />
+                {isPlaceholder ? (
+                  <>
+                    <span className="shrink-0">지역·단지</span>
+                    <ChevronDown className="size-3 shrink-0 text-[#a5a39f]" />
+                  </>
+                ) : (
+                  <span className="min-w-0 truncate font-semibold">{label}</span>
+                )}
+              </button>
+            </PopoverTrigger>
+            {!isPlaceholder && (
+              <button
+                type="button"
+                aria-label="위치 필터 해제"
+                onClick={onClear}
+                className="mr-0.5 inline-flex size-[22px] shrink-0 items-center justify-center rounded-full text-[#2383e2] transition-colors hover:bg-[rgba(35,131,226,0.18)]"
+              >
+                <X className="size-3" />
+              </button>
+            )}
+          </div>
+        </PopoverAnchor>
+        {/*
+          동·호는 고르는 것이 아니라 치는 것이라 입력칸으로 남긴다.
+          두 칸을 버블 하나에 담아 한 덩어리의 "주소 뒷부분"으로 읽히게 한다:
+          비어 있으면 옅은 회색 버블, 하나라도 값이 있으면 설정된 필터처럼 파란 버블 + × (둘 다 지움).
+        */}
+        <div
+          role="group"
+          aria-label="동·호"
+          className={cn(
+            "flex h-[30px] shrink-0 items-center rounded-full pl-2.5 text-[13px] transition-colors focus-within:shadow-[inset_0_0_0_1.5px_#2383e2]",
+            dong || unit
+              ? "bg-[rgba(35,131,226,0.1)] pr-0.5 text-[#2383e2]"
+              : "bg-[rgba(60,52,40,0.045)] text-foreground hover:bg-[rgba(60,52,40,0.08)] focus-within:hover:bg-[rgba(60,52,40,0.045)]",
+          )}
+        >
+          {/* 다른 필터 칩처럼 맨 앞에 아이콘: 번호를 치는 칸이라 # */}
+          <Hash
+            aria-hidden="true"
+            className={cn(
+              "size-3.5 shrink-0",
+              !(dong || unit) && "text-[#a3a09a]",
+            )}
+          />
+          <SoftUnitSegment
+            value={dong}
+            onChange={onDongChange}
+            suffix="동"
+            className="w-[84px] pl-2"
+          />
+          <span
+            aria-hidden="true"
+            className="h-3.5 w-px shrink-0 bg-current opacity-20"
+          />
+          <SoftUnitSegment
+            value={unit}
+            onChange={onUnitChange}
+            suffix="호"
+            className="w-[84px] pl-2"
+          />
+          {(dong || unit) && (
+            <button
+              type="button"
+              aria-label="동·호 지우기"
+              onClick={() => {
+                onDongChange("");
+                onUnitChange("");
+              }}
+              className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-full text-[#2383e2] transition-colors hover:bg-[rgba(35,131,226,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/40"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </div>
+        {/*
+          검색: 평소에는 돋보기 아이콘만 있고, 누르거나 "/"를 치면 그 자리에서 입력칸으로 펼쳐진다.
+          입력칸은 늘 문서에 있어(접혀 있을 땐 너비 0) "/" 단축키와 Tab 이동이 그대로 된다.
+          무엇을 찾는지(주소·연락처·메모)는 펼쳐졌을 때만 자리 표시로 알린다.
+        */}
+        <label
+          title={searchExpanded ? undefined : "검색 ( / )"}
+          className={cn(
+            "flex h-[30px] items-center overflow-hidden rounded-full transition-[width,background-color] duration-150 motion-reduce:transition-none",
+            // 펼쳐졌을 때는 줄 폭이 모자라면 먼저 줄어든다(최소 140px). 오른쪽 버튼이 밀려 잘리지 않게 한다.
+            searchExpanded
+              ? "w-[260px] min-w-[140px] shrink cursor-text gap-1.5 bg-[rgba(60,52,40,0.045)] pl-2.5 pr-1"
+              : "w-[30px] shrink-0 cursor-pointer justify-center text-[#6f6c66] hover:bg-[rgba(60,52,40,0.06)] hover:text-foreground",
+          )}
+        >
+          <Search
+            aria-hidden="true"
+            className={cn(
+              "size-3.5 shrink-0",
+              searchExpanded && "text-[#a3a09a]",
+            )}
+          />
+          <input
+            ref={searchInputRef}
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                if (search) onSearchChange("");
+                else event.currentTarget.blur();
+              }
+            }}
+            placeholder={searchExpanded ? searchPlaceholder : undefined}
+            aria-label={searchAriaLabel}
+            className={cn(
+              "bg-transparent p-0 text-[13px] text-foreground outline-none placeholder:text-[#a3a09a]",
+              searchExpanded ? "min-w-0 flex-1" : "w-0 opacity-0",
+            )}
+          />
+          {search && (
+            <button
+              type="button"
+              aria-label="검색어 지우기"
+              onClick={(event) => {
+                event.preventDefault();
+                onSearchChange("");
+                searchInputRef.current?.focus();
+              }}
+              className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[#a3a09a] hover:bg-[rgba(60,52,40,0.08)] hover:text-foreground"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </label>
+        <PopoverContent
+          align="start"
+          className={cn("w-[380px] p-0", popoverClassName)}
+        >
+          {children}
+        </PopoverContent>
+      </Popover>
+    );
+  }
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -353,7 +593,10 @@ export function ToolbarSearchBar({
           </label>
         </div>
       </PopoverAnchor>
-      <PopoverContent align="start" className="w-[380px] p-0">
+      <PopoverContent
+        align="start"
+        className={cn("w-[380px] p-0", popoverClassName)}
+      >
         {children}
       </PopoverContent>
     </Popover>
@@ -404,6 +647,118 @@ function UnitSegment({
   );
 }
 
+/**
+ * 위치 팝오버의 지역 한 단계(시도 · 시군구 · 법정동).
+ * 고르기 상자를 여는 대신 목록을 펼쳐 두어 한 번 눌러 고른다.
+ * 윗단계를 아직 고르지 않았으면 hint만 보인다.
+ */
+export function ToolbarRegionColumn({
+  ariaLabel,
+  value,
+  onChange,
+  options,
+  hint,
+  hasChildren = false,
+}: {
+  ariaLabel: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  /** 목록 대신 보일 안내 (윗단계 미선택) */
+  hint?: string;
+  /** 고른 항목 오른쪽에 다음 단계가 있음을 알리는 화살표 */
+  hasChildren?: boolean;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      className="min-w-0 overflow-y-auto border-r border-[#f0efec] p-1.5"
+    >
+      <p className="sticky -top-1.5 z-10 bg-white px-2 pb-1 pt-1.5 text-[11px] font-medium text-[#a3a09a]">
+        {ariaLabel}
+      </p>
+      {hint ? (
+        <p className="whitespace-pre-line px-2 py-7 text-center text-[12.5px] leading-relaxed text-[#a3a09a]">
+          {hint}
+        </p>
+      ) : (
+        options.map((option) => {
+          const selected = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={selected}
+              // 다시 열었을 때 고른 항목이 목록 밖에 숨어 있지 않게 한다
+              ref={
+                selected && option.value
+                  ? (node) => node?.scrollIntoView({ block: "nearest" })
+                  : undefined
+              }
+              onClick={() => {
+                if (!selected) onChange(option.value);
+              }}
+              className={cn(
+                "flex h-[30px] w-full items-center gap-1.5 rounded-[6px] px-2 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_#2383e2]",
+                selected
+                  ? "bg-[rgba(35,131,226,0.1)] font-semibold text-[#2383e2]"
+                  : "text-foreground hover:bg-[rgba(60,52,40,0.045)]",
+              )}
+            >
+              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              {selected && hasChildren && option.value && (
+                <ChevronRight className="size-3 shrink-0" />
+              )}
+            </button>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+/**
+ * 동·호 버블 안의 한 칸. 바탕과 모서리는 버블이 맡고, 여기는 숫자 입력과 단위만 둔다.
+ * 두 칸의 너비는 같고 고정이다. 값이 없는 칸의 단위는 옅게 보인다.
+ */
+function SoftUnitSegment({
+  value,
+  onChange,
+  suffix,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  suffix: string;
+  className?: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex h-full shrink-0 cursor-text items-center gap-1 pr-2",
+        className,
+      )}
+    >
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && value) {
+            event.preventDefault();
+            onChange("");
+          }
+        }}
+        inputMode="numeric"
+        autoComplete="off"
+        aria-label={`${suffix} 검색`}
+        className="w-0 min-w-0 flex-1 bg-transparent p-0 text-right font-semibold tabular-nums text-inherit outline-none"
+      />
+      <span className={cn("shrink-0", !value && "opacity-50")}>{suffix}</span>
+    </label>
+  );
+}
+
 // ── 필터 칩 ─────────────────────────────────────────────────────
 
 type ChipChildren = ReactNode | ((close: () => void) => ReactNode);
@@ -421,10 +776,19 @@ export function ToolbarFilterChip({
   onOpenChange,
   contentClassName,
   children,
+  icon,
+  shape = "pill",
 }: {
   label: string;
   /** 설정된 값 요약. null이면 설정 전 */
   summary: string | null;
+  /** 이름 앞 아이콘 (표 머리의 같은 열 아이콘과 맞춘다) */
+  icon?: ReactNode;
+  /**
+   * "soft": Notion 필터 줄처럼 테두리 없이 "아이콘 이름 ⌄"만 놓고,
+   * 값이 걸린 필터만 파란 알약으로 띄운다.
+   */
+  shape?: ToolbarShape;
   onClear?: () => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -438,17 +802,29 @@ export function ToolbarFilterChip({
     onOpenChange?.(next);
   };
   const active = summary !== null;
+  const soft = shape === "soft";
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverAnchor asChild>
         <div
           className={cn(
-            "inline-flex h-7 max-w-[260px] shrink-0 items-center rounded-full border text-[12.5px] transition-colors",
-            active
-              ? "border-transparent bg-[#ebeae6] text-foreground"
-              : "border-[#e3e2de] bg-white text-muted-foreground hover:border-[#d6d5d0] hover:bg-[rgba(55,53,47,0.04)] hover:text-foreground",
-            open && !active && "border-[#d6d5d0] text-foreground",
+            "inline-flex h-7 max-w-[260px] shrink-0 items-center transition-colors",
+            soft
+              ? cn(
+                  "text-[13px]",
+                  active
+                    ? "rounded-full bg-[rgba(35,131,226,0.1)] text-[#2383e2] hover:bg-[rgba(35,131,226,0.15)]"
+                    : "rounded-full text-[#6f6c66] hover:bg-[rgba(60,52,40,0.06)] hover:text-foreground",
+                  open && !active && "bg-[rgba(60,52,40,0.06)] text-foreground",
+                )
+              : cn(
+                  "rounded-full border text-[12.5px]",
+                  active
+                    ? "border-transparent bg-[#ebeae6] text-foreground"
+                    : "border-[#e3e2de] bg-white text-muted-foreground hover:border-[#d6d5d0] hover:bg-[rgba(55,53,47,0.04)] hover:text-foreground",
+                  open && !active && "border-[#d6d5d0] text-foreground",
+                ),
           )}
         >
           <PopoverTrigger asChild>
@@ -456,14 +832,34 @@ export function ToolbarFilterChip({
               type="button"
               aria-label={active ? `${label} 필터: ${summary}` : `${label} 필터`}
               className={cn(
-                "inline-flex h-full min-w-0 items-center gap-1.5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20",
-                active ? "pl-3 pr-1" : "pl-3 pr-2.5",
+                "inline-flex h-full min-w-0 items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2",
+                soft
+                  ? cn(
+                      "focus-visible:ring-[#2383e2]/40",
+                      "rounded-full",
+                      active ? "pl-2.5 pr-1" : "px-2.5",
+                    )
+                  : cn(
+                      "rounded-full focus-visible:ring-foreground/20",
+                      active ? "pl-3 pr-1" : "pl-3 pr-2.5",
+                    ),
               )}
             >
+              {icon && (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "shrink-0 [&>svg]:size-3.5",
+                    !active && "text-[#a3a09a]",
+                  )}
+                >
+                  {icon}
+                </span>
+              )}
               <span
                 className={cn(
                   "shrink-0",
-                  active && "text-muted-foreground",
+                  active && !soft && "text-muted-foreground",
                 )}
               >
                 {label}
@@ -482,7 +878,12 @@ export function ToolbarFilterChip({
               type="button"
               aria-label={`${label} 필터 해제`}
               onClick={onClear}
-              className="mr-0.5 inline-flex size-[22px] shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.1)] hover:text-foreground"
+              className={cn(
+                "mr-0.5 inline-flex size-[22px] shrink-0 items-center justify-center rounded-full transition-colors",
+                soft
+                  ? "text-[#2383e2] hover:bg-[rgba(35,131,226,0.18)]"
+                  : "text-muted-foreground hover:bg-[rgba(55,53,47,0.1)] hover:text-foreground",
+              )}
             >
               <X className="size-3" />
             </button>
@@ -716,9 +1117,11 @@ export interface AddFilterItem {
 export function AddFilterMenu({
   items,
   hint,
+  shape = "pill",
 }: {
   items: ReadonlyArray<AddFilterItem>;
   hint?: string;
+  shape?: ToolbarShape;
 }) {
   const [open, setOpen] = useState(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -736,7 +1139,12 @@ export function AddFilterMenu({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-[12.5px] text-[#a5a39f] transition-colors hover:bg-[rgba(55,53,47,0.08)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 data-[state=open]:bg-[rgba(55,53,47,0.08)] data-[state=open]:text-foreground"
+          className={cn(
+            "inline-flex h-7 shrink-0 items-center gap-1 text-[#a5a39f] transition-colors hover:bg-[rgba(55,53,47,0.08)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 data-[state=open]:bg-[rgba(55,53,47,0.08)] data-[state=open]:text-foreground",
+            shape === "soft"
+              ? "rounded-full px-2.5 text-[13px]"
+              : "rounded-full px-2.5 text-[12.5px]",
+          )}
         >
           <Plus className="size-3.5" />
           필터

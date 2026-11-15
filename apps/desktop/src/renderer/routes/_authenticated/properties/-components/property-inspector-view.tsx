@@ -8,10 +8,10 @@ import {
   MessageSquarePlus,
   Ruler,
   ArrowUp,
-  ArrowUpRight,
   CalendarCheck,
   Check,
   ChevronRight,
+  ChevronsRight,
   CircleDollarSign,
   ExternalLink,
   Footprints,
@@ -19,14 +19,15 @@ import {
   Inbox,
   Loader2,
   Megaphone,
+  Maximize2,
   Pencil,
   Phone,
   Plus,
   UserPlus,
   Users,
-  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /*
  * 매물 상세 패널 (빠른 확인·처리).
@@ -180,11 +181,68 @@ const barButtonClassName =
 const barSecondaryClassName =
   "bg-white text-foreground shadow-[inset_0_0_0_1px_#e3e2de,0_1px_2px_rgba(15,15,15,0.04)] hover:bg-[#fbfaf8]";
 
+export function PropertyInspectorToolbar({
+  onClose,
+  onOpenNewTab,
+  headerActions,
+  closeLabel = "상세 패널 닫기",
+  closeDisabled = false,
+  showExpand = true,
+}: {
+  onClose: (animate?: boolean) => void;
+  onOpenNewTab?: () => void;
+  headerActions?: ReactNode;
+  closeLabel?: string;
+  closeDisabled?: boolean;
+  showExpand?: boolean;
+}) {
+  const iconButton =
+    "inline-grid size-6 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40";
+  return (
+    <div
+      data-property-inspector-toolbar
+      className="flex h-11 shrink-0 items-center gap-0.5 px-3"
+    >
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={closeLabel}
+            disabled={closeDisabled}
+            onClick={(event) => onClose(event.detail !== 0)}
+            className={iconButton}
+          >
+            <ChevronsRight className="size-5" strokeWidth={1.5} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          닫기 <span className="ml-2 opacity-60">Esc</span>
+        </TooltipContent>
+      </Tooltip>
+      {showExpand && <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label="전체 페이지를 새 탭으로 열기"
+            disabled={!onOpenNewTab}
+            onClick={onOpenNewTab}
+            className={iconButton}
+          >
+            <Maximize2 className="size-4 rotate-90" strokeWidth={1.5} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">새 탭으로 확장</TooltipContent>
+      </Tooltip>}
+      <div className="flex-1" />
+      {headerActions}
+    </div>
+  );
+}
+
 export function PropertyInspectorView({
   model,
   onClose,
-  onOpenFullPage,
-  isOpeningFullPage,
+  onOpenNewTab,
   onConfirm,
   isConfirming,
   onConsult,
@@ -195,11 +253,11 @@ export function PropertyInspectorView({
   onSaveIntakeMemo,
   progressTab,
   dialogs,
+  headerActions,
 }: {
   model: InspectorModel;
-  onClose: () => void;
-  onOpenFullPage: () => void;
-  isOpeningFullPage: boolean;
+  onClose: (animate?: boolean) => void;
+  onOpenNewTab?: () => void;
   onConfirm: () => void;
   isConfirming: boolean;
   onConsult: () => void;
@@ -214,6 +272,8 @@ export function PropertyInspectorView({
   progressTab: ReactNode;
   /** 패널이 여는 대화상자들 (index.tsx 소유) */
   dialogs: ReactNode;
+  /** 위 막대의 작업 메뉴 (확인 기록·거래별 매물 삭제, index.tsx 소유) */
+  headerActions?: ReactNode;
 }) {
   const [tab, setTab] = useState<InspectorTab>("summary");
   const primaryOffer = model.offers[0];
@@ -255,33 +315,11 @@ export function PropertyInspectorView({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
-      {/* 상단 막대 */}
-      <div className="flex h-11 shrink-0 items-center gap-1 pl-6 pr-2.5">
-        <span className="text-[12px] font-medium text-[#a9a7a1]">매물 상세</span>
-        <div className="flex-1" />
-        <button
-          type="button"
-          aria-label="전체 페이지를 새 창으로 열기"
-          disabled={isOpeningFullPage}
-          onClick={onOpenFullPage}
-          className="inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground disabled:opacity-60"
-        >
-          {isOpeningFullPage ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <ArrowUpRight className="size-3.5" />
-          )}
-          {isOpeningFullPage ? "여는 중..." : "전체 페이지"}
-        </button>
-        <button
-          type="button"
-          aria-label="상세 패널 닫기"
-          onClick={onClose}
-          className="inline-grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
-        >
-          <X className="size-4" />
-        </button>
-      </div>
+      <PropertyInspectorToolbar
+        onClose={onClose}
+        onOpenNewTab={onOpenNewTab}
+        headerActions={headerActions}
+      />
 
       {/* 머리 영역: 매물 정보 (단지·호실 → 가격 → 핵심 수치 → 상태) */}
       <div className="shrink-0 px-6 pb-4">

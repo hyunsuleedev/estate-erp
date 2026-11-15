@@ -388,6 +388,26 @@ describe('Auth0DesktopSession tokens', () => {
     assert.equal(await session.hasSession(), false);
   });
 
+  it('ends the session when Auth0 refuses to renew a login made before a password change', async () => {
+    // 실제 테넌트의 답: post-login Action이 거절하면 access_denied와 그 문구가 온다.
+    const store = new MemoryStore(storedSession('rt-before-password-change'));
+    const { fetchImpl } = fakeAuth0([
+      { status: 403, body: { error: 'access_denied', error_description: '비밀번호가 변경되었습니다. 다시 로그인해 주세요.' } },
+    ]);
+    const events: string[] = [];
+    const session = new Auth0DesktopSession({
+      config,
+      store,
+      fetch: fetchImpl,
+      onSessionEnded: (reason) => events.push(`ended:${reason}`),
+      onSessionChanged: () => events.push(`changed:${session.isSignedInNow() ? 'in' : 'out'}`),
+    });
+
+    assert.equal(await session.getAccessToken(), null);
+    assert.deepEqual(events, ['ended:expired', 'changed:out']);
+    assert.equal(store.saved, null);
+  });
+
   it('ends the session as blocked when Auth0 says the user is blocked', async () => {
     // 실제 테넌트의 답: 차단된 계정의 refresh는 403 invalid_grant "user is blocked".
     const store = new MemoryStore(storedSession('rt-1'));
@@ -797,6 +817,10 @@ describe('signup rules and Auth0 signup errors', () => {
       [400, { name: 'PasswordStrengthError', code: 'invalid_password', statusCode: 400 }, 'weak-password', /8자 이상/],
       [400, { name: 'BadRequestError', code: 'invalid_username_characters', statusCode: 400 }, 'invalid-username', /영문 소문자, 숫자/],
       [400, { error: '"username" does not meet length criteria.' }, 'username-length', /1~30자/],
+      // 이메일 항목을 켠 연결에서 실제로 받은 응답들
+      [400, { name: 'BadRequestError', code: 'invalid_signup', description: 'Invalid sign up', statusCode: 400, data: { identifierType: 'email' } }, 'email-taken', /이미 가입에 사용된 이메일/],
+      [400, { error: 'Missing required property: email' }, 'invalid-email', /이메일 주소/],
+      [400, { error: 'error in email - email format validation failed: notanemail' }, 'invalid-email', /이메일 주소/],
       [429, { error: 'too_many_requests' }, 'too-many-attempts', /잠시 후/],
       [500, null, 'unknown', /가입하지 못했습니다/],
     ];
@@ -834,7 +858,7 @@ describe('signup rules and Auth0 signup errors', () => {
       endpointBaseUrl: '/__auth0/',
     });
 
-    await session.signUpWithPassword('new-owner', 'Passw0rd!x', '새 사장');
+    await session.signUpWithPassword('new-owner', 'Passw0rd!x', '새 사장', 'owner@example.com');
     await session.logout();
     await new Promise((resolve) => setImmediate(resolve));
 
@@ -845,13 +869,36 @@ describe('signup rules and Auth0 signup errors', () => {
     ]);
   });
 
+  it('asks Auth0 to mail a reset link and treats an unknown email like a sent one', async () => {
+    const bodies: Array<Record<string, string>> = [];
+    let status = 200;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.ok(String(input).endsWith('/dbconnections/change_password'));
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, string>);
+      return new Response('sent', { status });
+    }) as typeof fetch;
+    const session = new Auth0DesktopSession({ config, store: new MemoryStore(), fetch: fetchImpl });
+
+    await session.requestPasswordReset('owner@example.com');
+    status = 404;
+    await session.requestPasswordReset('nobody@example.com');
+    status = 429;
+    await assert.rejects(session.requestPasswordReset('owner@example.com'), /너무 많습니다/);
+
+    assert.deepEqual(bodies[0], {
+      client_id: config.clientId,
+      connection: config.realm,
+      email: 'owner@example.com',
+    });
+  });
+
   it('does not create an account while signed in', async () => {
     const { fetchImpl, requests } = fakeAuth0([tokens('at-1', 'rt-1')]);
     const session = new Auth0DesktopSession({ config, store: new MemoryStore(), fetch: fetchImpl });
     await session.loginWithPassword('hyunsu', 'secret');
 
     await assert.rejects(
-      session.signUpWithPassword('new-owner', 'Passw0rd!x', '이름'),
+      session.signUpWithPassword('new-owner', 'Passw0rd!x', '이름', 'owner@example.com'),
       (error: unknown) => error instanceof Auth0LoginError && error.reason === 'already-signed-in',
     );
     assert.ok(!requests.some((request) => request.url.endsWith('/dbconnections/signup')));

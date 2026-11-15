@@ -17,6 +17,25 @@ export const SIGNUP_PASSWORD_RULE =
 
 export const SIGNUP_NAME_MAX_LENGTH = 50;
 
+/**
+ * 사장님 가입에서만 받는 이메일. 비밀번호를 잊었을 때 재설정 링크를 받는 주소다.
+ * Auth0가 이메일로 계정을 찾아야 재설정 메일을 보낼 수 있어서 연결에서 이메일을
+ * 식별자로 켜 두었다(그래서 Auth0는 이메일 로그인도 받는다). 화면은 아이디 로그인만
+ * 안내한다. 형식의 최종 판단은 Auth0가 한다.
+ */
+export const SIGNUP_EMAIL_MAX_LENGTH = 254;
+export const SIGNUP_EMAIL_RULE = '이메일 주소를 정확히 입력해 주세요.';
+const SIGNUP_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Auth0가 소문자로 저장하므로 미리 소문자로 맞춘다. */
+export function normalizeSignupEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export function isValidSignupEmail(email: string): boolean {
+  return email.length <= SIGNUP_EMAIL_MAX_LENGTH && SIGNUP_EMAIL_PATTERN.test(email);
+}
+
 /** Auth0가 소문자로 저장하므로 미리 소문자로 맞춘다. */
 export function normalizeSignupUsername(value: string): string {
   return value.trim().toLowerCase();

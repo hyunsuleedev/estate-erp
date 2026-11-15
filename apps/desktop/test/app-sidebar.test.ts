@@ -125,7 +125,7 @@ describe("desktop app sidebar", () => {
     const spacerIndex = layoutSource.indexOf(
       'data-slot="titlebar-brand-spacer"',
     );
-    const triggerIndex = layoutSource.indexOf('data-slot="sidebar-trigger"');
+    const triggerIndex = layoutSource.indexOf('{sidebarButton}', spacerIndex);
 
     assert.ok(brandIndex !== -1, "titlebar brand should exist");
     assert.ok(spacerIndex !== -1, "titlebar brand spacer should exist");
@@ -217,7 +217,7 @@ describe("desktop app sidebar", () => {
     const detachedSource = shellSource.slice(detachedStart, detachedEnd);
     assert.ok(detachedStart !== -1 && detachedEnd > detachedStart);
     assert.match(detachedSource, /data-slot="detached-titlebar-spacer"/);
-    assert.doesNotMatch(detachedSource, /data-slot="sidebar-trigger"/);
+    assert.match(detachedSource, /\{sidebarButton\}/, "detached windows keep a way to reopen hidden navigation");
     assert.doesNotMatch(detachedSource, /data-slot="desktop-brand"/);
 
     assert.match(

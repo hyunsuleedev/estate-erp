@@ -73,7 +73,7 @@ function BrowserPreviewShell() {
     <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
       <TabWorkspaceController />
       <div data-window-shell="main" className="flex h-screen w-full flex-col">
-        <header className="app-titlebar flex h-10 shrink-0 items-center gap-0 border-b border-border bg-sidebar pr-2">
+        <header className="app-titlebar flex h-9 shrink-0 items-center gap-0 border-b border-border bg-sidebar pr-2">
           <div className="app-titlebar-drag-region flex h-full w-(--sidebar-width) shrink-0 items-center gap-1 pl-4">
             <span
               data-slot="desktop-brand"

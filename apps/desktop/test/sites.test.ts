@@ -180,7 +180,7 @@ describe('desktop managed sites page', () => {
     for (const path of [
       '../src/renderer/routes/_authenticated/sites/-unit-detail-dialog.tsx',
       '../src/renderer/routes/_authenticated/sites/-unit-dialogs.tsx',
-      '../src/renderer/routes/_authenticated/properties/new.tsx',
+      '../src/renderer/routes/_authenticated/properties/-property-registration-form.tsx',
     ]) {
       assert.match(read(path), /invalidateQueries\(\{ queryKey: \['office-sites'\] \}\)/, path);
     }
@@ -291,5 +291,35 @@ describe('desktop managed sites page', () => {
       source,
       /areUnitRelationshipColumnsCollapsed &&\s*UNIT_RELATIONSHIP_COLUMN_ID_SET\.has\(columnId\)/,
     );
+  });
+});
+
+describe('managed sites toolbar and table header refresh', () => {
+  const read = (path: string) =>
+    readFileSync(new URL(path, import.meta.url), 'utf8');
+
+  it('uses the property page toolbar language and the refreshed table header', () => {
+    const page = read('../src/renderer/routes/_authenticated/sites/index.tsx');
+    const toolbar = read('../src/renderer/routes/_authenticated/sites/-unit-toolbar.tsx');
+    const table = read('../src/renderer/components/data-table/data-table.tsx');
+
+    assert.match(page, /<ToolbarPillToggle\s+shape="muted"\s+ariaLabel="단지 보기 방식"/);
+    assert.match(page, /<ToolbarPillTabs\s+shape="muted"\s+ariaLabel="호수 목록 범위"/);
+    assert.match(page, /<ToolbarFilterChip\s+shape="soft"\s+icon=\{<Type \/>\}\s+label="타입"/);
+    assert.match(page, /<AddFilterMenu\s+items=\{moreUnitFilterItems\}\s+shape="soft"/);
+    assert.match(page, /variant="notion"\s+headerTone="refresh"/);
+    // 동 범위는 필터 칩, 검색은 아이콘에서 펼쳐진다
+    assert.match(toolbar, /aria-label="동 범위 해제"/);
+    assert.match(toolbar, /const searchExpanded = searchFocused \|\| query\.length > 0;/);
+    assert.match(toolbar, /<ToolbarFilterChip\s+shape="soft"\s+icon=\{icon\}/);
+    // 공용 표는 headerTone이 refresh일 때만 매물관리 머리 모양을 쓴다
+    assert.match(table, /headerTone = 'default'/);
+    assert.match(table, /'h-\[34px\] border-b border-\[#e6e4e0\] bg-white px-2\.5 text-\[12px\]/);
+    assert.match(table, /hasColumnGroupGuide \? 'top-9' : 'top-0'/);
+    // 본문: 옅은 선, 줄 hover, 접히는 묶음 열(세입자·등록 매물)의 옅은 바탕
+    assert.match(table, /if \(isRefreshHeader\) \{[\s\S]*?border-b border-\[#f0efec\][\s\S]*?isGroupDetailCell\s*\? 'bg-\[#faf9f8\] group-hover:bg-\[#f6f5f3\]'\s*: 'bg-white group-hover:bg-\[#fafaf8\]'/);
+    // 관리단지 셀 글자는 slate 대신 앱 디자인의 따뜻한 회색
+    const columnsSource = page.slice(page.indexOf('const unitColumns'), page.indexOf('const unitPinnedColumns'));
+    assert.doesNotMatch(columnsSource, /text-slate-/);
   });
 });

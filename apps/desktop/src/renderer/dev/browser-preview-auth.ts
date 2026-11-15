@@ -88,8 +88,9 @@ export function createBrowserPreviewAuthBridge(): DesktopAuthBridge {
       return { ok: true };
     },
     login: ({ username, password }) => controller.login(username, password),
-    signup: ({ username, password, name }) =>
-      controller.signup(username, password, name),
+    signup: ({ username, password, name, email }) =>
+      controller.signup(username, password, name, email),
+    requestPasswordReset: (email) => controller.requestPasswordReset(email),
     retry: async () => {
       await controller.retry();
       return { ok: true };

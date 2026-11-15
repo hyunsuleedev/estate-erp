@@ -1,5 +1,7 @@
 export const RENDERER_SURFACE_ARGUMENT = '--estate-renderer-surface=';
 export const RENDERER_TAB_ID_ARGUMENT = '--estate-tab-id=';
+/** 앱을 켠 뒤 처음 연 창에만 main이 붙인다. 시작 장면을 이 창에서 한 번만 보여 주는 데 쓴다. */
+export const RENDERER_LAUNCH_WINDOW_ARGUMENT = '--estate-launch-window';
 
 export type RendererSurfaceInfo =
   | { kind: 'window-shell'; tabId: null }

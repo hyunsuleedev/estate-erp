@@ -148,7 +148,7 @@ export function SitesPanelToggle({
       className={cn(
         // 버튼은 줄어들지 않고(공간이 모자라면 검색창이 먼저 줄어든다), 최대 폭만 본문 폭의 22%로 제한한다.
         // 그보다 긴 단지 이름만 말줄임되어 오른쪽 도구를 밀어내지 않는다.
-        'flex h-[30px] max-w-[min(280px,22cqi)] shrink-0 items-center gap-2 rounded-full bg-[#f1f0ec] pl-1 pr-3 outline-none transition-colors hover:bg-[#e9e8e3] focus-visible:ring-2 focus-visible:ring-foreground/20',
+        'flex h-[30px] max-w-[min(280px,22cqi)] shrink-0 items-center gap-2 rounded-full bg-[rgba(55,53,47,0.08)] pl-1 pr-3 outline-none transition-colors hover:bg-[rgba(55,53,47,0.12)] focus-visible:ring-2 focus-visible:ring-foreground/20',
         // 열려 있으면 흰 알약(매물관리 보기 전환의 선택 상태와 같은 표현)
         open && 'bg-white ring-1 ring-[#d6d5d0] hover:bg-white',
       )}
@@ -483,9 +483,9 @@ export function SitesPanel({
         {/* 검색줄 — 본문 첫 도구줄과 높이를 맞춰 가로선이 이어진다 */}
         {showSearch && (
           <div className="flex h-[51px] shrink-0 items-center border-b border-border px-2.5">
-            {/* 매물관리 검색바와 같은 베이지 알약 */}
-            <div className="flex h-[30px] w-full items-center gap-2 rounded-full bg-[#f1f0ec] pl-3 pr-1.5 text-muted-foreground transition-colors hover:bg-[#ecebe6] focus-within:bg-white focus-within:shadow-[inset_0_0_0_1px_rgba(55,53,47,0.3)]">
-              <Search className="size-3.5 shrink-0" />
+            {/* 매물관리에서 펼친 검색칸과 같은 옅은 회색 알약. 입력 중엔 흰 바탕 + 파란 테 */}
+            <div className="flex h-[30px] w-full items-center gap-1.5 rounded-full bg-[rgba(60,52,40,0.045)] pl-2.5 pr-1 text-[#a3a09a] transition-colors hover:bg-[rgba(60,52,40,0.07)] focus-within:bg-white focus-within:shadow-[inset_0_0_0_1.5px_#2383e2] focus-within:hover:bg-white">
+              <Search className="size-3.5 shrink-0" aria-hidden="true" />
               <input
                 ref={searchRef}
                 value={siteQuery}
@@ -506,12 +506,13 @@ export function SitesPanel({
                 placeholder="단지명 · 동네 검색"
                 aria-label="관리단지 검색"
                 autoComplete="off"
-                className="w-full min-w-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+                // 안내 문구는 hover로 바탕이 진해져도 4.5:1 이상 (#65625c: 쉴 때 5.3, hover 5.1)
+                className="w-full min-w-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-[#65625c]"
               />
               {siteQuery && (
                 <button
                   type="button"
-                  className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[#a5a39f] outline-none hover:bg-[rgba(55,53,47,0.1)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/70"
+                  className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[#a3a09a] outline-none hover:bg-[rgba(60,52,40,0.08)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#2383e2]/40"
                   onClick={() => {
                     setSiteQuery('');
                     searchRef.current?.focus();
@@ -533,7 +534,8 @@ export function SitesPanel({
           )}
         >
           <div
-            className="flex h-[30px] min-w-0 flex-1 items-center gap-px rounded-full bg-[#f1f0ec] p-0.5"
+            // 매물관리 목록/지도와 같은 회색 트랙 · 흰 알약
+            className="flex h-[30px] min-w-0 flex-1 items-center gap-px rounded-full bg-[rgba(55,53,47,0.08)] p-0.5"
             role="group"
             aria-label="단지 묶음 방식"
           >
@@ -547,10 +549,10 @@ export function SitesPanel({
                   setCollapsedGroups(new Set());
                 }}
                 className={cn(
-                  'h-[26px] flex-1 rounded-full text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-foreground/20',
+                  'h-[26px] flex-1 rounded-full text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-foreground/20',
                   groupBy === value
-                    ? 'bg-white font-medium text-foreground shadow-[0_1px_2px_rgba(15,15,15,0.08)]'
-                    : 'text-muted-foreground hover:text-foreground',
+                    ? 'bg-white font-medium text-foreground shadow-[0_1px_2px_rgba(40,35,25,0.12)]'
+                    : 'text-[#6f6c66] hover:text-foreground',
                 )}
               >
                 {label}
@@ -573,23 +575,23 @@ export function SitesPanel({
         </ScrollArea>
 
         <div className="flex shrink-0 items-center gap-2 border-t border-border px-2.5 py-2">
-          <span className="min-w-0 truncate text-[11.5px] text-muted-foreground">
-            관리호수 <span className="font-medium tabular-nums text-foreground/75">{totalManaged.toLocaleString()}</span>
+          <span className="min-w-0 truncate text-[11.5px] text-[#6f6c66]">
+            관리호수 <span className="font-medium tabular-nums text-foreground/80">{totalManaged.toLocaleString()}</span>
             {idleSiteCount > 0 && (
               <>
                 {' · '}기록 없음 <span className="tabular-nums">{idleSiteCount.toLocaleString()}</span>
               </>
             )}
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto h-7 shrink-0 gap-1 px-2.5 text-xs font-medium"
+          {/* 필터 줄의 "+ 필터"와 같은 테두리 없는 알약 */}
+          <button
+            type="button"
+            className="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-[12.5px] text-[#6f6c66] outline-none transition-colors hover:bg-[rgba(60,52,40,0.06)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#2383e2]/40"
             onClick={onAdd}
           >
-            <Plus className="size-3" />
+            <Plus className="size-3.5" />
             단지 추가
-          </Button>
+          </button>
         </div>
 
         {/* 너비 조절 손잡이 */}
@@ -639,7 +641,7 @@ function SectionLabel({
   onToggle?: () => void;
 }) {
   const className =
-    'mt-2 flex h-7 w-full items-center gap-1 px-2 text-xs text-muted-foreground first:mt-0';
+    'mt-2 flex h-7 w-full items-center gap-1 px-2 text-[11.5px] font-medium text-[#6f6c66] first:mt-0';
   if (!onToggle) return <div className={className}>{label}</div>;
   return (
     <button
@@ -648,16 +650,16 @@ function SectionLabel({
       onClick={onToggle}
       className={cn(
         className,
-        'group/section rounded-md outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/70',
+        'group/section rounded-md outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#2383e2]/40',
       )}
     >
       <span className="truncate">{label}</span>
       {count !== undefined && (
-        <span className="tabular-nums text-muted-foreground/60">{count}</span>
+        <span className="tabular-nums font-normal">{count}</span>
       )}
       <ChevronDown
         className={cn(
-          'size-3 shrink-0 text-muted-foreground/60 motion-safe:transition-transform group-hover/section:text-foreground',
+          'size-3 shrink-0 motion-safe:transition-transform',
           !open && '-rotate-90',
         )}
         aria-hidden="true"
@@ -719,14 +721,14 @@ function SiteRow({
           className={cn(
             // 앱 메뉴 항목과 같은 한 줄·같은 높이·같은 평평한 선택 바탕 — 목록 안에 카드가 떠 보이지 않게
             'group relative flex h-8 cursor-pointer items-center gap-2 rounded-md pl-2 pr-1 outline-none transition-colors',
-            'hover:bg-[rgba(55,53,47,0.05)] focus-visible:ring-2 focus-visible:ring-ring/60',
+            'hover:bg-[rgba(60,52,40,0.045)] focus-visible:ring-2 focus-visible:ring-[#2383e2]/40',
             isSelected && 'bg-[rgba(55,53,47,0.08)] hover:bg-[rgba(55,53,47,0.08)]',
           )}
         >
           <TypeIcon
             className={cn(
               'size-4 shrink-0',
-              isSelected ? 'text-foreground/80' : 'text-muted-foreground/70',
+              isSelected ? 'text-foreground/80' : 'text-[#8a8780]',
             )}
             aria-hidden="true"
           />
@@ -748,7 +750,12 @@ function SiteRow({
             )}
             {/* 동네는 이름보다 먼저 줄어들고, 목록이 좁으면 숨긴다 */}
             {showWard && (
-              <span className="min-w-0 shrink-[4] truncate text-[11.5px] text-muted-foreground/75 @max-[250px]/panel:hidden">
+              <span
+                className={cn(
+                  'min-w-0 shrink-[4] truncate text-[11.5px] @max-[250px]/panel:hidden',
+                  isSelected ? 'text-[#5f5c57]' : 'text-[#6f6c66]',
+                )}
+              >
                 {wardName}
               </span>
             )}
@@ -756,7 +763,12 @@ function SiteRow({
 
           {/* 관리호수 — 줄에 올리면 동작 버튼에 자리를 내준다 */}
           {!isIdle && (
-            <span className="shrink-0 pr-1.5 text-xs tabular-nums text-muted-foreground group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden">
+            <span
+              className={cn(
+                'shrink-0 pr-1.5 text-xs tabular-nums group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden',
+                isSelected ? 'text-[#5f5c57]' : 'text-[#6f6c66]',
+              )}
+            >
               {managed.toLocaleString()}
             </span>
           )}

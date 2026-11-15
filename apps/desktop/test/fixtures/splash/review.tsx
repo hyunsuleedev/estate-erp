@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   SplashBoundary,
   SplashScreen,
+  resetSplashIntro,
 } from "../../../src/renderer/components/layout/splash-screen";
 
 function Pending() {
@@ -31,7 +32,16 @@ function Review() {
           gap: 10,
         }}
       >
-        <button onClick={() => setStage("auth")}>다시 시작</button>
+        {/* 앱에서는 장면을 처음 한 번만 보여 준다. 검토할 때는 다시 볼 수 있게 되돌린다. */}
+        <button
+          onClick={() => {
+            resetSplashIntro();
+            setStage("auth");
+          }}
+        >
+          다시 시작
+        </button>
+        <button onClick={() => setStage("auth")}>로고만 다시</button>
         <button onClick={() => setStage("workspace")}>
           사무소 준비로 전환
         </button>

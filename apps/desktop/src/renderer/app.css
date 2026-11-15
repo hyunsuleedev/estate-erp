@@ -115,10 +115,10 @@ html[data-renderer-surface="call-overlay"] #root {
   -webkit-app-region: no-drag;
 }
 
-/* Push sidebar below the fixed titlebar (40px = h-10) */
+/* Push sidebar below the fixed titlebar (36px = h-9). */
 [data-slot="sidebar-container"] {
-  top: 40px !important;
-  height: calc(100svh - 40px) !important;
+  top: 36px !important;
+  height: calc(100svh - 36px) !important;
 }
 
 /* 탭 화면(native 탭)은 이미 탭바 아래에 붙어 있으므로 사이드바가 맨 위에서 시작한다. */
@@ -166,6 +166,16 @@ html[data-renderer-surface="native-tab"] [data-slot="sidebar-container"] {
   );
 }
 
+/* Cell editors portal into this scroller: keep display and input typography
+   aligned while leaving the shared editor's defaults intact elsewhere. */
+[data-property-table-scroller] {
+  --cell-editor-font-size: 14px;
+  --cell-editor-line-height: 21px;
+  --cell-editor-font-weight: 450;
+  --cell-chip-padding-y: 0px;
+  --cell-chip-radius: 4px;
+}
+
 :is([data-properties-page], [data-property-inspector]) :where(button, [data-slot="button"]) {
   transition:
     color 120ms ease,
@@ -183,50 +193,6 @@ html[data-renderer-surface="native-tab"] [data-slot="sidebar-container"] {
   }
 }
 
-/* Clip the scrolling detail-column guide at its sticky toggle boundary. */
-[data-column-group-toggle="property-details"][aria-expanded="true"]::before {
-  position: absolute;
-  right: calc(100% + 1px);
-  top: 7px;
-  width: 100vw;
-  height: 11px;
-  /* 컬럼 안내 띠(data-property-column-guide)와 같은 색이어야 가림막이 안 보인다 */
-  background: #f7f7f5;
-  content: "";
-  pointer-events: none;
-}
-
-[data-property-inspector] {
-  animation: property-inspector-enter 180ms cubic-bezier(0.23, 1, 0.32, 1);
-  transform-origin: right center;
-}
-
-[data-property-inspector-backdrop] {
-  animation: property-inspector-backdrop-enter 160ms ease-out;
-}
-
-@keyframes property-inspector-enter {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes property-inspector-backdrop-enter {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   :is([data-properties-page], [data-property-inspector]) :where(button, [data-slot="button"]) {
     scale: 1;
@@ -236,11 +202,6 @@ html[data-renderer-surface="native-tab"] [data-slot="sidebar-container"] {
       border-color 120ms ease,
       box-shadow 120ms ease,
       opacity 120ms ease;
-  }
-
-  [data-property-inspector],
-  [data-property-inspector-backdrop] {
-    animation-duration: 1ms;
   }
 }
 
@@ -301,5 +262,69 @@ html[data-renderer-surface="native-tab"] [data-slot="sidebar-container"] {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* A temporary navigation panel overlays the workspace; only pinning reserves space. */
+[data-slot="sidebar"][data-preview="true"] [data-slot="sidebar-container"] {
+  left: 8px !important;
+  top: 44px !important;
+  height: calc(100svh - 52px) !important;
+  z-index: 50;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px #00000014, 0 2px 8px #0000000a;
+  overflow: hidden;
+}
+html[data-renderer-surface="native-tab"] [data-slot="sidebar"][data-preview="true"] [data-slot="sidebar-container"] {
+  top: 8px !important;
+  height: calc(100svh - 16px) !important;
+}
+[data-app-sidebar] {
+  transition-timing-function: cubic-bezier(.2, .8, .2, 1);
+  transition-duration: 180ms;
+}
+
+/* Side peek stays alongside an interactive list. Keep content mounted until exit ends. */
+[data-property-registration] [data-registration-section] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+[data-property-registration] [data-registration-step] {
+  display: none;
+}
+[data-property-registration] [data-registration-section] > header {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+[data-properties-page] {
+  overflow: hidden;
+}
+[data-property-inspector] {
+  transform: translateX(0);
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+[data-property-inspector][data-state="closed"] {
+  transform: translateX(100%);
+  pointer-events: none;
+}
+@starting-style {
+  [data-property-inspector][data-motion="slide"] {
+    transform: translateX(100%);
+  }
+}
+[data-property-inspector][data-motion="none"] {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-property-inspector] {
+    transition: none;
+  }
+  @starting-style {
+    [data-property-inspector][data-motion="slide"] {
+      transform: none;
+    }
   }
 }

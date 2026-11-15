@@ -29,6 +29,9 @@ const DEFAULT_ROW_HEIGHT = 32;
 // overhead of padding rows + absolute positioning outweighs the savings.
 const VIRTUALIZE_THRESHOLD = 50;
 
+/** headerTone="refresh"의 접기 띠 높이(px). 매물관리 표와 같다. */
+const REFRESH_GUIDE_HEIGHT = 11;
+
 export function DataTable<TData extends { id: string }>({
   columns,
   data,
@@ -54,6 +57,7 @@ export function DataTable<TData extends { id: string }>({
   emptyMessage = '데이터가 없습니다.',
   layout = 'paginated',
   variant = 'default',
+  headerTone = 'default',
   rowHeight = DEFAULT_ROW_HEIGHT,
   pinnedColumns,
   columnGroupControls = [],
@@ -270,6 +274,7 @@ export function DataTable<TData extends { id: string }>({
 
   const isFullHeight = layout === 'full-height';
   const isNotion = variant === 'notion';
+  const isRefreshHeader = headerTone === 'refresh';
 
   // Virtualize only for full-height mode with a meaningful row count.
   // Paginated views are small (pageSize ~20) and auto-height rows can't be
@@ -392,11 +397,20 @@ export function DataTable<TData extends { id: string }>({
         {hasColumnGroupGuide && (
           <div
             data-data-table-column-guide
-            className="sticky top-0 z-40 h-9 border-b border-[#e7e5df] bg-[#f8f7f4]"
-            style={{ width: '100%', minWidth: tableTotalSize }}
+            className={cn(
+              'sticky top-0 z-40',
+              isRefreshHeader
+                ? 'bg-white'
+                : 'h-9 border-b border-[#e7e5df] bg-[#f8f7f4]',
+            )}
+            style={{
+              width: '100%',
+              minWidth: tableTotalSize,
+              ...(isRefreshHeader ? { height: REFRESH_GUIDE_HEIGHT } : {}),
+            }}
           >
             <div
-              className="relative h-full pt-2"
+              className={cn('relative h-full', !isRefreshHeader && 'pt-2')}
               style={{ width: tableTotalSize, minWidth: tableTotalSize }}
             >
               {columnGroupLayouts.map(
@@ -405,7 +419,19 @@ export function DataTable<TData extends { id: string }>({
                     key={`${control.anchorColumnId}-${control.label}`}
                     className="pointer-events-none absolute inset-0"
                   >
-                    {!control.collapsed && expandedWidth > 0 && (
+                    {!control.collapsed && expandedWidth > 0 && isRefreshHeader && (
+                      // 매물관리 표처럼 띠 아래쪽에 굵은 선 하나만 긋고 끝 표시는 두지 않는다
+                      <span
+                        aria-hidden="true"
+                        data-data-table-column-group-line={control.label}
+                        className="absolute top-[9px] z-40 h-[2px] bg-[#a3a09a]"
+                        style={{
+                          left: anchorEnd + 10,
+                          width: Math.max(0, expandedWidth - 10),
+                        }}
+                      />
+                    )}
+                    {!control.collapsed && expandedWidth > 0 && !isRefreshHeader && (
                       <>
                         <span
                           aria-hidden="true"
@@ -438,12 +464,23 @@ export function DataTable<TData extends { id: string }>({
                           : `${control.label} 컬럼 접기`
                       }
                       data-data-table-column-group-toggle={control.label}
-                      className="pointer-events-auto absolute z-50 mt-2 inline-flex size-5 items-center justify-center rounded-[3px] border border-border bg-white p-0 text-muted-foreground shadow-xs outline-none transition-colors hover:border-muted-foreground/40 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35 active:translate-y-px"
+                      className={cn(
+                        'pointer-events-auto absolute z-50 inline-flex items-center justify-center bg-white p-0 outline-none',
+                        isRefreshHeader
+                          ? 'mt-[2px] size-[17px] rounded-[4px] border border-[#a3a09a] text-[#6f6c66] shadow-[0_1px_2px_rgba(16,24,40,0.08)] transition-[border-color,color,box-shadow] hover:border-[#2383e2] hover:text-[#1d6dbf] hover:shadow-[0_0_0_3px_rgba(35,131,226,0.16)] focus-visible:ring-2 focus-visible:ring-[#2383e2]/35'
+                          : 'mt-2 size-5 rounded-[3px] border border-border text-muted-foreground shadow-xs transition-colors hover:border-muted-foreground/40 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35 active:translate-y-px',
+                      )}
                       style={{ left: toggleOffset }}
                       onClick={control.onToggle}
                     >
                       {control.collapsed ? (
-                        <Plus className="size-3" />
+                        isRefreshHeader ? (
+                          <Plus className="size-[11px]" strokeWidth={2.4} />
+                        ) : (
+                          <Plus className="size-3" />
+                        )
+                      ) : isRefreshHeader ? (
+                        <Minus className="size-[11px]" strokeWidth={2.4} />
                       ) : (
                         <Minus className="size-3" />
                       )}
@@ -454,8 +491,13 @@ export function DataTable<TData extends { id: string }>({
                         tabIndex={-1}
                         aria-hidden="true"
                         data-data-table-column-group-label={control.label}
-                        className="pointer-events-auto absolute z-50 mt-2 flex h-5 items-center whitespace-nowrap text-[12px] text-muted-foreground transition-colors hover:text-foreground"
-                        style={{ left: toggleOffset + 26 }}
+                        className={cn(
+                          'pointer-events-auto absolute z-50 flex items-center whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground',
+                          isRefreshHeader
+                            ? 'mt-0 h-[11px] text-[11px]'
+                            : 'mt-2 h-5 text-[12px]',
+                        )}
+                        style={{ left: toggleOffset + (isRefreshHeader ? 22 : 26) }}
                         onClick={control.onToggle}
                       >
                         {control.label} 열 보기
@@ -484,9 +526,18 @@ export function DataTable<TData extends { id: string }>({
           <thead
             className={cn(
               'sticky z-20 bg-background',
-              hasColumnGroupGuide ? 'top-9' : 'top-0',
-              isNotion && 'bg-[#f7f7f5]',
+              isRefreshHeader
+                ? 'bg-white'
+                : cn(
+                    hasColumnGroupGuide ? 'top-9' : 'top-0',
+                    isNotion && 'bg-[#f7f7f5]',
+                  ),
             )}
+            style={
+              isRefreshHeader
+                ? { top: hasColumnGroupGuide ? REFRESH_GUIDE_HEIGHT : 0 }
+                : undefined
+            }
           >
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
@@ -532,22 +583,46 @@ export function DataTable<TData extends { id: string }>({
                   return (
                     <th
                       key={header.id}
+                      aria-sort={
+                        isRefreshHeader
+                          ? sorted === 'asc'
+                            ? 'ascending'
+                            : sorted === 'desc'
+                              ? 'descending'
+                              : canSort
+                                ? 'none'
+                                : undefined
+                          : undefined
+                      }
                       className={cn(
                         'relative text-left align-middle font-medium text-muted-foreground',
-                        isNotion
-                          ? 'h-9 border-b border-[#d8d6d0] bg-[#f7f7f5] px-2.5 text-[13px] normal-case tracking-normal'
-                          : 'h-8 border-b border-border/60 px-3 text-[11px] uppercase tracking-wider',
-                        !isLast &&
-                          (isNotion
-                            ? 'border-r border-r-[#eeeeec]'
-                            : 'border-r border-r-border/40'),
-                        canSort &&
-                          'cursor-pointer select-none hover:text-foreground',
-                        isColumnGroupDetail &&
-                          isNotion &&
-                          'bg-[#f2f6f4] text-[#52645e]',
-                        isPinned &&
-                          (isNotion ? 'bg-[#f5f4f1]' : 'bg-background'),
+                        isRefreshHeader
+                          ? cn(
+                              // 매물관리 표 머리와 같은 모양
+                              'h-[34px] border-b border-[#e6e4e0] bg-white px-2.5 text-[12px] normal-case tracking-normal text-[#6f6c66] transition-colors',
+                              hasColumnGroupGuide && 'border-t border-t-[#e6e4e0]',
+                              !isLast && 'border-r border-r-[#f0efec]',
+                              canSort &&
+                                'cursor-pointer select-none hover:bg-[#f6f5f3] hover:text-[#2c2c2b]',
+                              sorted && 'text-[#2c2c2b]',
+                              isColumnGroupDetail && 'bg-[#f6f5f3]',
+                            )
+                          : cn(
+                              isNotion
+                                ? 'h-9 border-b border-[#d8d6d0] bg-[#f7f7f5] px-2.5 text-[13px] normal-case tracking-normal'
+                                : 'h-8 border-b border-border/60 px-3 text-[11px] uppercase tracking-wider',
+                              !isLast &&
+                                (isNotion
+                                  ? 'border-r border-r-[#eeeeec]'
+                                  : 'border-r border-r-border/40'),
+                              canSort &&
+                                'cursor-pointer select-none hover:text-foreground',
+                              isColumnGroupDetail &&
+                                isNotion &&
+                                'bg-[#f2f6f4] text-[#52645e]',
+                              isPinned &&
+                                (isNotion ? 'bg-[#f5f4f1]' : 'bg-background'),
+                            ),
                         isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
                       )}
                       style={{
@@ -567,7 +642,8 @@ export function DataTable<TData extends { id: string }>({
                       <div
                         className={cn(
                           'flex items-center gap-1',
-                          isNotion && 'min-w-0 text-slate-500',
+                          isNotion && 'min-w-0',
+                          isNotion && !isRefreshHeader && 'text-slate-500',
                         )}
                       >
                         {header.isPlaceholder
@@ -576,8 +652,18 @@ export function DataTable<TData extends { id: string }>({
                               header.column.columnDef.header,
                               header.getContext(),
                             )}
-                        {sorted === 'asc' && <ArrowUp className="size-3" />}
-                        {sorted === 'desc' && <ArrowDown className="size-3" />}
+                        {sorted === 'asc' && (
+                          <ArrowUp
+                            aria-hidden={isRefreshHeader || undefined}
+                            className={cn('size-3', isRefreshHeader && 'shrink-0 text-[#2383e2]')}
+                          />
+                        )}
+                        {sorted === 'desc' && (
+                          <ArrowDown
+                            aria-hidden={isRefreshHeader || undefined}
+                            className={cn('size-3', isRefreshHeader && 'shrink-0 text-[#2383e2]')}
+                          />
+                        )}
                       </div>
                       {/* Column resize handle */}
                       {header.column.getCanResize() &&
@@ -657,6 +743,61 @@ export function DataTable<TData extends { id: string }>({
                       const isPinned = cell.column.getIsPinned() === 'left';
                       const isLastPinned =
                         isPinned && cell.column.getIsLastColumn('left');
+                      const isGroupDetailCell = columnGroupControls.some(
+                        (control) => control.columnIds.includes(cell.column.id),
+                      );
+                      if (isRefreshHeader) {
+                        // 매물관리 표와 같은 본문: 옅은 선, 줄에 올리면 #fafaf8, 접히는 묶음 열은 옅은 바탕,
+                        // 키보드로 고른 줄은 옅은 파랑
+                        return (
+                          <td
+                            key={cell.id}
+                            data-table-col={colIndex}
+                            data-table-row={rowIndex}
+                            className={cn(
+                              'relative select-none border-b border-[#f0efec] px-2.5 align-middle text-[13px] text-[#2c2c2b]',
+                              !isLastCol && 'border-r border-r-[#f0efec]',
+                              isGroupDetailCell
+                                ? 'bg-[#faf9f8] group-hover:bg-[#f6f5f3]'
+                                : 'bg-white group-hover:bg-[#fafaf8]',
+                              'group-data-[state=selected]:bg-[#f3f8fd]',
+                              isRowFocused && !isFocused && 'bg-[#f3f8fd] group-hover:bg-[#eef4fc]',
+                              isFocused &&
+                                'bg-[#eef4fc] outline outline-1 -outline-offset-1 outline-[#2383e2]/40',
+                              onRowClick &&
+                                (activateOnDoubleClick ? 'cursor-default' : 'cursor-pointer'),
+                              isLastPinned && 'shadow-[1px_0_0_0_#e6e4e0]',
+                              cell.column.columnDef.meta?.cellClassName,
+                            )}
+                            style={{
+                              width: cell.column.columnDef.meta?.fill
+                                ? undefined
+                                : cell.column.getSize(),
+                              height: rowCellHeight,
+                              ...getPinStyle(cell.column),
+                            }}
+                            onClick={() => {
+                              setFocusedCell({ row: rowIndex, col: colIndex });
+                              if (!activateOnDoubleClick) {
+                                onRowClick?.(row.original);
+                              }
+                            }}
+                            onDoubleClick={(event) => {
+                              setFocusedCell({ row: rowIndex, col: colIndex });
+                              const columnMeta = cell.column.columnDef.meta;
+                              if (columnMeta?.onCellDoubleClick) {
+                                columnMeta.onCellDoubleClick(row.original, event);
+                                return;
+                              }
+                              if (activateOnDoubleClick) {
+                                onRowClick?.(row.original);
+                              }
+                            }}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        );
+                      }
                       return (
                         <td
                           key={cell.id}

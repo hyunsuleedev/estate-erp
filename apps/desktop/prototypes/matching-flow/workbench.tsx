@@ -1,0 +1,10 @@
+import { Check, ChevronRight, X } from 'lucide-react';
+import { stages, type VariantProps } from './model';
+import { Person, StageEditor } from './shared';
+
+export function Workbench(props: VariantProps) {
+  const { customers, selectedId, inspectedStage, select } = props;
+  const selected = customers.find(c => c.id === selectedId) ?? customers[0];
+  if (!selected) return null;
+  return <div className="workbench"><aside className="customer-rail" aria-label="매칭 고객 선택"><div className="rail-label">구매 고객 <span>{customers.length}</span></div>{customers.map(c => <button key={c.id} className={`customer-option ${c.id === selected.id ? 'selected' : ''}`} onClick={() => select(c.id, c.stage)}><Person customer={c} compact /><div className="customer-option-status"><span className={`tiny-dot ${c.closed ? 'gray' : 'blue'}`} />{c.closed ? '종료' : stages[c.stage]}<span>{c.age}</span></div></button>)}</aside><div className="workbench-body"><div className="workbench-person"><Person customer={selected} /><span className="tag neutral">매매</span></div><div className="guided-layout"><nav className="stage-rail" aria-label={`${selected.name} 단계`}><span className="rail-label">진행 과정</span>{stages.map((label, i) => <button key={label} onClick={() => select(selected.id, i)} aria-current={i === selected.stage ? 'step' : undefined} className={`rail-step ${i < selected.stage ? 'done' : i === selected.stage ? selected.closed ? 'stopped' : 'current' : ''} ${(inspectedStage ?? selected.stage) === i ? 'inspected' : ''}`}><span>{i < selected.stage ? <Check size={14} /> : selected.closed && i === selected.stage ? <X size={14} /> : i + 1}</span><div>{label}<small>{i < selected.stage ? '완료' : i === selected.stage ? selected.closed ? '종료 시점' : '진행 중' : '예정'}</small></div>{i === (inspectedStage ?? selected.stage) && <ChevronRight size={13} />}</button>)}</nav><StageEditor key={selected.id} {...props} customer={selected} inspectedStage={selected.id === selectedId ? inspectedStage : selected.stage} spacious /></div></div></div>;
+}

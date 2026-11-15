@@ -65,6 +65,8 @@ type TypeMeta = (transactionType: string) => { label: string; className: string 
 
 export function PropertyInspectorProgressTab({
   listingIds,
+  creatableListingIds = listingIds,
+  propertyId,
   matches,
   matchesStatus,
   onRetryMatches,
@@ -74,6 +76,14 @@ export function PropertyInspectorProgressTab({
 }: {
   /** 이 의뢰의 거래 조건(Listing) id */
   listingIds: string[];
+  /**
+   * 새 매칭을 걸 수 있는 거래 조건 id. 기본은 listingIds.
+   * 매물 상세 페이지는 이력을 보이려고 종료된 의뢰의 조건까지 listingIds로 넘기므로,
+   * 새 매칭은 진행 중 의뢰의 조건으로만 제한한다.
+   */
+  creatableListingIds?: string[];
+  /** 주면 거래 조건 없이 이 호실에 직접 걸린 거래도 보여준다 (매물 상세 페이지). */
+  propertyId?: string;
   /** 이 의뢰의 거래 조건에 연결된 매칭 */
   matches: Match[];
   matchesStatus: "loading" | "error" | "ready";
@@ -89,7 +99,11 @@ export function PropertyInspectorProgressTab({
   });
   const listingIdSet = new Set(listingIds);
   const deals = (dealsQuery.data ?? [])
-    .filter((deal) => deal.listingId && listingIdSet.has(deal.listingId))
+    .filter(
+      (deal) =>
+        (deal.listingId && listingIdSet.has(deal.listingId)) ||
+        (propertyId !== undefined && deal.propertyId === propertyId),
+    )
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   // 본계약 전(계약 준비·가계약) 거래: 그 거래 조건의 다른 손님 매칭에 "거래 진행 중"을 알린다.
   const preContractDealByListing = new Map<string, Deal>();
@@ -107,7 +121,7 @@ export function PropertyInspectorProgressTab({
   return (
     <div className="space-y-8">
       <MatchSection
-        listingIds={listingIds}
+        listingIds={creatableListingIds}
         matches={matches}
         status={matchesStatus}
         onRetry={onRetryMatches}
@@ -305,7 +319,11 @@ function MatchSection({
   return (
     <section>
       <SectionTitle
-        action={<TextAction icon={<Plus />} label="매칭 추가" onClick={() => setCreateOpen(true)} />}
+        action={
+          listingIds.length > 0 ? (
+            <TextAction icon={<Plus />} label="매칭 추가" onClick={() => setCreateOpen(true)} />
+          ) : undefined
+        }
       >
         매칭
         {matches.length > 0 && <span className="font-medium text-[#a9a7a1]">{matches.length}</span>}
@@ -342,7 +360,7 @@ function MatchSection({
       )}
 
       <MatchCreateDialog
-        open={createOpen}
+        open={createOpen && listingIds.length > 0}
         onOpenChange={setCreateOpen}
         matches={matches}
         scope={{ kind: "listing", listingIds }}

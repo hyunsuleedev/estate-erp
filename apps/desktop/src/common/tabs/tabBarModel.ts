@@ -213,13 +213,15 @@ export function tabBarChrome(state: Pick<TabBarState, 'platform' | 'fullscreen'>
 
 /** 탭바의 치수(문서 좌표). src/tabbar/TabBarWindow.tsx와 탭 부품이 이 값으로 그린다. */
 export const TAB_BAR_METRICS = {
-  /** 탭 줄(타이틀바)의 높이. */
-  height: 40,
+  /** Notion 데스크톱에서 실측한 탭 줄(타이틀바)의 높이. */
+  height: 36,
   /** 탭의 높이. 탭은 탭 줄의 바닥에 붙어 타이틀바의 아래 선(맨 아래 1px)을 덮는다. */
   tabHeight: 36,
   /** 분리된 창의 왼쪽 여백: macOS 신호등 자리 / 그 밖. */
   trafficLightInset: 92,
   edgeInset: 16,
+  /** 분리된 창의 사이드바 버튼(28 - 왼쪽 여백 4 + 오른쪽 여백 8). */
+  detachedSidebarWidth: 32,
   /** 분리된 창의 뒤로/앞으로 버튼 칸(버튼 24 + 간격 4 + 버튼 24 + 오른쪽 여백 8). */
   detachedNavigationWidth: 60,
 } as const;
@@ -232,7 +234,7 @@ export function detachedTabOrigin(platform: string): { x: number; y: number } {
   const inset =
     platform === 'darwin' ? TAB_BAR_METRICS.trafficLightInset : TAB_BAR_METRICS.edgeInset;
   return {
-    x: inset + TAB_BAR_METRICS.detachedNavigationWidth,
+    x: inset + TAB_BAR_METRICS.detachedSidebarWidth + TAB_BAR_METRICS.detachedNavigationWidth,
     y: TAB_BAR_METRICS.height - TAB_BAR_METRICS.tabHeight,
   };
 }

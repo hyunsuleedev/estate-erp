@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import {
   keepPreviousData,
   useInfiniteQuery,
@@ -16,40 +16,39 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type SVGProps,
 } from "react";
 import { toast } from "sonner";
 import {
+  BedDouble,
   Building2,
+  Calendar,
   CalendarDays,
   Check,
   ChevronDown,
-  CircleDollarSign,
-  Columns3,
-  DoorOpen,
+  Clock,
   ExternalLink,
-  FileText,
   GitBranch,
   Handshake,
-  Hash,
+  Info,
   List,
+  ListFilter,
   Loader2,
   Map as MapIcon,
   Megaphone,
-  Pencil,
-  Phone,
+  PencilLine,
   Plus,
   RefreshCw,
   RotateCcw,
   Ruler,
   Tag,
   Type,
-  X,
+  UserSearch,
 } from "lucide-react";
-import type { ColumnDef, SortingState } from "@tanstack/react-table";
+import type { ColumnDef, SortingState, VisibilityState } from "@tanstack/react-table";
 import { api } from "@/lib/api";
 import { ApiError } from "@estate-erp/api-client";
 import type {
-  BuyerRequirement,
   Consultation,
   ListingIntake,
   ListingIntakeListing,
@@ -81,11 +80,11 @@ import {
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  PropertyColumnSettings,
+  PropertySortControl,
+  propertyTableColumns,
+  propertyDetailColumnIds,
+} from "./-components/property-table-controls";
 import {
   Select,
   SelectContent,
@@ -94,18 +93,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { type MultiSelectOption } from "@/components/ui/multi-select";
-import { StatusBadge } from "@/components/domain";
 import { cn } from "@/lib/utils";
 import { formatPhoneNumber } from "@/lib/contacts";
-import { formatMoney } from "@/lib/format";
 import {
   CellEditProvider,
   EditableCell,
   type SortDefinition,
   type ChipOption,
+  type CellSaveResult,
 } from "@/components/data-table";
 import { useTabStore } from "@/features/tabs/store/useTabStore";
 import { getRouteMeta } from "@/features/tabs/lib/routeMeta";
+import { tabResourceKeys } from "@/features/tabs/lib/tabResource";
 import {
   getActiveDealListingIndex,
   getIntakeConfirmationState,
@@ -127,11 +126,11 @@ import {
   type PropertyListingGroup,
 } from "./-components/property-listings-table";
 import {
-  AddFilterMenu,
   ChecklistFilterPanel,
   ToolbarFilterChip,
   ToolbarPillTabs,
   ToolbarPillToggle,
+  ToolbarRegionColumn,
   ToolbarSearchBar,
   summarizeSelection,
   toolbarGhostButtonClassName,
@@ -157,6 +156,7 @@ import {
 } from "./-components/numeric-range-filter";
 import {
   PropertyInspectorView,
+  PropertyInspectorToolbar,
   type InspectorActivity,
   type InspectorAdRow,
   type InspectorChip,
@@ -170,7 +170,11 @@ import {
   type InspectorTodo,
 } from "./-components/property-inspector-view";
 import { PropertyInspectorProgressTab } from "./-components/property-inspector-progress-tab";
+import { PropertyRegistrationDrawer } from "./-components/property-registration-drawer";
+import type { PropertyRegistrationResult } from "./-property-registration-form";
 import { getStatusMeta } from "@/lib/status-config";
+import { PropertyListingCell } from "./-components/property-listing-cell";
+import { PROPERTY_LISTING_ITEM_HEIGHT } from "./-property-table-metrics";
 import {
   buildPropertyMapClustersFromOffsets,
   getNaverMapsPreconnectOrigins,
@@ -181,22 +185,12 @@ import {
   PropertyBulkActions,
   PropertyRowActions,
 } from "./-property-intake-actions";
-import { MatchCreateDialog } from "../wanted-properties/-match-create-dialog";
-import { MatchConvertDialog } from "../wanted-properties/-match-convert-dialog";
 import {
-  MatchProgressTrack,
-  type MatchProgressActions,
-} from "../wanted-properties/-match-board";
-import {
-  buildViewingCalendarEventPayload,
-  formatViewingEventTime,
-  getMatchStageBlockReason,
-  getMatchStageLabel,
-  getUpcomingViewingEvent,
-  matchStageOrder,
-  shouldMoveToViewingOnSchedule,
-  toCalendarEventUpdatePayload,
-} from "../wanted-properties/-match-view-utils";
+  PropertyMatchPanel,
+  estimatePropertyMatchPanelHeight,
+  getPropertyMatchCount,
+} from "./-components/property-match-panel";
+import { matchStageOrder } from "../wanted-properties/-match-view-utils";
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
@@ -241,7 +235,8 @@ const listingAvailabilityChipOptions: ChipOption[] = Object.entries(
 ).map(([value, meta]) => ({
   value,
   label: meta.label,
-  className: meta.pillClassName,
+  className: `${meta.pillClassName} rounded-full pl-[7px] pr-[9px]`,
+  dotClassName: meta.dotClassName,
 }));
 
 const adStatusMeta: Record<string, { label: string; className: string }> = {
@@ -262,24 +257,7 @@ const contactRoleLabels: Record<string, string> = {
   tax_agent: "세무사",
 };
 
-// 정렬은 표 헤더 클릭으로 처리. 헤더 라벨 매핑만 유지.
-const sortDefinitions = [
-  { field: "info", label: "거래" },
-  { field: "site", label: "단지" },
-  { field: "dong", label: "동" },
-  { field: "unit", label: "호" },
-  { field: "supplyArea", label: "공급" },
-  { field: "unitType", label: "타입" },
-  { field: "matching", label: "매칭" },
-  { field: "advertisement", label: "광고" },
-  { field: "confirmationAt", label: "확인" },
-  { field: "listingAvailability", label: "매물상태" },
-  { field: "price", label: "가격" },
-  { field: "monthlyRent", label: "월세" },
-  { field: "loanAmount", label: "융자금" },
-  { field: "moveInAvailable", label: "입주가능일" },
-  { field: "memo", label: "의뢰 메모" },
-];
+const sortDefinitions = propertyTableColumns;
 
 const LISTINGS_PAGE_SIZE = 50;
 function getMatchStageIndex(stage: string) {
@@ -388,7 +366,7 @@ function getClosedStatusLabel(closedReason?: string | null) {
   };
   return (closedReason && labels[closedReason]) || "종료";
 }
-const PROPERTY_LISTING_STACK_ITEM_HEIGHT = 33;
+const PROPERTY_LISTING_STACK_ITEM_HEIGHT = PROPERTY_LISTING_ITEM_HEIGHT;
 const PROPERTY_MAP_CLUSTER_GRID_SIZE = 84;
 const PROPERTY_MAP_CLUSTER_MAX_ZOOM = 17;
 
@@ -550,6 +528,34 @@ function PropertiesPage() {
     initialPropertyFilters,
   );
   const [selectedIntakeId, setSelectedIntakeId] = useState<string | null>(null);
+  const [isInspectorClosing, setIsInspectorClosing] = useState(false);
+  const [inspectorMotion, setInspectorMotion] = useState(true);
+  const [registrationState, setRegistrationState] = useState<"closed" | "open" | "closing">("closed");
+  const [registrationMotion, setRegistrationMotion] = useState(true);
+  const [registrationPending, setRegistrationPending] = useState(false);
+  const registrationPendingRef = useRef(false);
+  const createPropertyButtonRef = useRef<HTMLButtonElement>(null);
+  const handleRegistrationPendingChange = useCallback((pending: boolean) => {
+    registrationPendingRef.current = pending;
+    setRegistrationPending(pending);
+  }, []);
+  const closeRegistration = useCallback((animate = true) => {
+    if (registrationPendingRef.current) return;
+    setRegistrationMotion(animate);
+    setRegistrationState("closing");
+  }, []);
+  const finishClosingRegistration = useCallback(() => {
+    setRegistrationState("closed");
+    createPropertyButtonRef.current?.focus({ preventScroll: true });
+  }, []);
+  const handlePropertyRegistered = useCallback(({ intakeId }: PropertyRegistrationResult) => {
+    registrationPendingRef.current = false;
+    setRegistrationPending(false);
+    setRegistrationState("closed");
+    setInspectorMotion(false);
+    setIsInspectorClosing(false);
+    setSelectedIntakeId(intakeId);
+  }, []);
   const shouldRestorePropertyTableFocusRef = useRef(false);
   const [startDealPrompt, setStartDealPrompt] =
     useState<StartDealPrompt | null>(null);
@@ -560,12 +566,11 @@ function PropertiesPage() {
   const [reactivateListingPrompt, setReactivateListingPrompt] =
     useState<ReactivateListingPrompt | null>(null);
   const [viewMode, setViewMode] = useState<PropertyViewMode>("list");
-  const [expandedAdRows, setExpandedAdRows] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const [expandedMatchRows, setExpandedMatchRows] = useState<
-    ReadonlySet<string>
-  >(() => new Set());
+  // 펼친 의뢰 → 활성 탭. 매칭 열·광고 열 어느 쪽을 눌러도 같은 패널이 열리고
+  // 패널 머리글 탭으로 연결 구매고객 ↔ 광고를 전환한다.
+  const [expandedPanels, setExpandedPanels] = useState<
+    ReadonlyMap<string, "match" | "ad">
+  >(() => new Map());
   const [
     arePropertyDetailColumnsCollapsed,
     setArePropertyDetailColumnsCollapsed,
@@ -574,8 +579,12 @@ function PropertiesPage() {
   const [isMonthlyRentFilterOpen, setIsMonthlyRentFilterOpen] = useState(false);
   const [isAreaFilterOpen, setIsAreaFilterOpen] = useState(false);
   const [isLocationFilterOpen, setIsLocationFilterOpen] = useState(false);
+  const [isAvailabilityFilterOpen, setIsAvailabilityFilterOpen] = useState(false);
+  // 필터 줄(둘째 줄) 접기. Notion의 필터 아이콘과 같은 동작이며 기본은 펼침.
+  const [isFilterRowOpen, setIsFilterRowOpen] = useState(true);
   const [activeSorts, setActiveSorts] = useState<SortDefinition[]>([]);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   // 선택 표시 컬럼 — 융자금
   const [optionalColumns, setOptionalColumns] = useState({
     loanAmount: false,
@@ -841,7 +850,7 @@ function PropertiesPage() {
       await queryClient.cancelQueries({ queryKey: ["listing-intakes"] });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
+      return queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
     },
     onError: (error) => {
       handleMutationError(error);
@@ -973,10 +982,10 @@ function PropertiesPage() {
         memo,
         expectedUpdatedAt,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
       if (selectedIntakeId) {
-        queryClient.invalidateQueries({
+        await queryClient.invalidateQueries({
           queryKey: ["listing-intakes", "inspector", selectedIntakeId],
         });
       }
@@ -987,8 +996,8 @@ function PropertiesPage() {
     },
   });
   const handleCellSave = useCallback(
-    (recordId: string, field: string, value: unknown) => {
-      updateMutation.mutate({
+    async (recordId: string, field: string, value: unknown) => {
+      await updateMutation.mutateAsync({
         id: recordId,
         patch: {
           [field]: value,
@@ -999,8 +1008,8 @@ function PropertiesPage() {
     [listingUpdatedAtById, updateMutation],
   );
   const handleListingPatch = useCallback(
-    (recordId: string, patch: UpdateListingDto) => {
-      updateMutation.mutate({
+    async (recordId: string, patch: UpdateListingDto) => {
+      await updateMutation.mutateAsync({
         id: recordId,
         patch: {
           ...patch,
@@ -1163,9 +1172,21 @@ function PropertiesPage() {
     },
     [handleRowStatusSave],
   );
-  const closePropertyInspector = useCallback(() => {
+  const openPropertyInspector = useCallback((intakeId: string) => {
+    if (registrationPendingRef.current) return;
+    setRegistrationState("closed");
+    setInspectorMotion(!document.activeElement?.matches(":focus-visible"));
+    setIsInspectorClosing(false);
+    setSelectedIntakeId(intakeId);
+  }, []);
+  const closePropertyInspector = useCallback((animate = true) => {
     shouldRestorePropertyTableFocusRef.current = true;
+    setInspectorMotion(animate);
+    setIsInspectorClosing(true);
+  }, []);
+  const finishClosingPropertyInspector = useCallback(() => {
     setSelectedIntakeId(null);
+    setIsInspectorClosing(false);
   }, []);
   useEffect(() => {
     if (selectedIntakeId || !shouldRestorePropertyTableFocusRef.current) return;
@@ -1178,9 +1199,9 @@ function PropertiesPage() {
     return () => window.clearTimeout(timer);
   }, [selectedIntakeId]);
   const handleIntakeMemoSave = useCallback(
-    (intakeId: string, value: unknown) => {
+    async (intakeId: string, value: unknown) => {
       const memo = parseEditorTextValue(value);
-      intakeMemoMutation.mutate({
+      await intakeMemoMutation.mutateAsync({
         intakeId,
         memo,
         expectedUpdatedAt: intakeUpdatedAtById.get(intakeId),
@@ -1313,60 +1334,121 @@ function PropertiesPage() {
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
   const handleCreateProperty = useCallback(() => {
-    const route = "/properties/new";
-    const meta = getRouteMeta(route);
-    createTab({ route, kind: meta.kind, title: meta.title });
-  }, [createTab]);
-
-  const toggleAdRow = useCallback((groupId: string) => {
-    setExpandedAdRows((previous) => {
-      const next = new Set(previous);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      return next;
-    });
+    setSelectedIntakeId(null);
+    setIsInspectorClosing(false);
+    shouldRestorePropertyTableFocusRef.current = false;
+    setRegistrationMotion(!document.activeElement?.matches(":focus-visible"));
+    setRegistrationState("open");
   }, []);
 
-  const toggleMatchRow = useCallback((groupId: string) => {
-    setExpandedMatchRows((previous) => {
-      const next = new Set(previous);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
+  // 열 아이콘을 누르면 그 탭으로 연다. 같은 탭이 이미 열려 있으면 닫고,
+  // 다른 탭이 열려 있으면 탭만 바꾼다.
+  const togglePanelTab = useCallback(
+    (groupId: string, tab: "match" | "ad") => {
+      setExpandedPanels((previous) => {
+        const next = new Map(previous);
+        if (next.get(groupId) === tab) {
+          next.delete(groupId);
+        } else {
+          next.set(groupId, tab);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+  const toggleMatchRow = useCallback(
+    (groupId: string) => togglePanelTab(groupId, "match"),
+    [togglePanelTab],
+  );
+  const toggleAdRow = useCallback(
+    (groupId: string) => togglePanelTab(groupId, "ad"),
+    [togglePanelTab],
+  );
+  // 패널 머리글의 탭에서 호출 — 항상 그 탭을 연다 (닫지 않는다).
+  const setPanelTab = useCallback((groupId: string, tab: "match" | "ad") => {
+    setExpandedPanels((previous) => {
+      if (previous.get(groupId) === tab) return previous;
+      const next = new Map(previous);
+      next.set(groupId, tab);
       return next;
     });
   }, []);
 
   const expandedRowIds = useMemo(
-    () => new Set([...expandedMatchRows, ...expandedAdRows]),
-    [expandedAdRows, expandedMatchRows],
+    () => new Set(expandedPanels.keys()),
+    [expandedPanels],
+  );
+
+  // 매칭 패널은 고객 줄을 펼치면 높이가 달라져, 패널이 잰 실제 높이를 받아 쓴다.
+  const [matchPanelHeights, setMatchPanelHeights] = useState<
+    ReadonlyMap<string, number>
+  >(() => new Map());
+  const handleMatchPanelHeightChange = useCallback(
+    (groupId: string, height: number) => {
+      setMatchPanelHeights((previous) => {
+        if (previous.get(groupId) === height) return previous;
+        const next = new Map(previous);
+        next.set(groupId, height);
+        return next;
+      });
+    },
+    [],
   );
 
   const renderExpandedPropertyRow = useCallback(
-    (group: PropertyListingGroup) => (
-      <>
-        {expandedMatchRows.has(group.id) && (
-          <PropertyMatchPanel group={group} />
-        )}
-        {expandedAdRows.has(group.id) && <PropertyAdPanel group={group} />}
-      </>
-    ),
-    [expandedAdRows, expandedMatchRows],
+    (group: PropertyListingGroup) => {
+      const tab = expandedPanels.get(group.id);
+      if (!tab) return null;
+      return (
+        <PropertyMatchPanel
+          group={group}
+          activeTab={tab}
+          onTabChange={setPanelTab}
+          onHeightChange={handleMatchPanelHeightChange}
+          adPanel={<PropertyAdPanel group={group} />}
+        />
+      );
+    },
+    [expandedPanels, setPanelTab, handleMatchPanelHeightChange],
   );
 
   const getExpandedPropertyRowHeight = useCallback(
-    (group: PropertyListingGroup) =>
-      (expandedMatchRows.has(group.id)
-        ? estimatePropertyMatchPanelHeight(group)
-        : 0) +
-      (expandedAdRows.has(group.id) ? estimatePropertyAdPanelHeight(group) : 0),
-    [expandedAdRows, expandedMatchRows],
+    (group: PropertyListingGroup) => {
+      const tab = expandedPanels.get(group.id);
+      if (tab === "ad") return estimatePropertyAdPanelHeight(group);
+      if (tab === "match")
+        return (
+          matchPanelHeights.get(group.id) ??
+          estimatePropertyMatchPanelHeight(group)
+        );
+      return 0;
+    },
+    [expandedPanels, matchPanelHeights],
   );
+
+  const handleColumnVisibilityChange = useCallback((id: string, visible: boolean) => {
+    if (id === "site") return;
+    setColumnVisibility((previous) => ({
+      ...previous,
+      ...(visible && arePropertyDetailColumnsCollapsed && propertyDetailColumnIds.includes(id)
+        ? Object.fromEntries(propertyDetailColumnIds.map((field) => [field, false]))
+        : {}),
+      [id]: visible,
+    }));
+    if (id === "loanAmount") setOptionalColumns({ loanAmount: visible });
+    if (visible && propertyDetailColumnIds.includes(id)) setArePropertyDetailColumnsCollapsed(false);
+  }, [arePropertyDetailColumnsCollapsed]);
+
+  const togglePropertyDetailColumns = useCallback(() => {
+    if (arePropertyDetailColumnsCollapsed && propertyDetailColumnIds.every((id) => columnVisibility[id] === false)) {
+      setColumnVisibility((previous) => ({
+        ...previous,
+        ...Object.fromEntries(propertyDetailColumnIds.map((id) => [id, true])),
+      }));
+    }
+    setArePropertyDetailColumnsCollapsed((previous) => !previous);
+  }, [arePropertyDetailColumnsCollapsed, columnVisibility]);
 
   // ── Column definitions (property-grouped operational grid) ────
   const columns = useMemo<ColumnDef<PropertyListingGroup, unknown>[]>(
@@ -1376,7 +1458,7 @@ function PropertiesPage() {
         header: () => (
           <TableHeaderLabel icon={<Tag className="size-4" />} label="거래" />
         ),
-        size: 60,
+        size: 74, // 좌우 여백20 + 아이콘16 + 간격6 + 14px 두 글자
         enableSorting: true,
         cell: ({ row }) => (
           <TransactionStack listings={row.original.listings} />
@@ -1391,10 +1473,39 @@ function PropertiesPage() {
         enableSorting: true,
         cell: ({ row }) => {
           const group = row.original;
+          const isCurrentInspector =
+            selectedIntakeId === group.intakeId && !isInspectorClosing;
+          const inspectorAction = isCurrentInspector ? "닫기" : "열기";
           return (
-            <div className="flex min-w-0 items-center">
-              <span className="truncate text-[14px] font-semibold text-slate-900">
+            <div className="min-w-0">
+              <span className="block truncate text-[14px] font-medium leading-[21px] text-foreground">
                 {group.property?.site?.name ?? "매물 정보 없음"}
+              </span>
+              <span
+                data-property-row-open
+                className="pointer-events-none absolute right-1 top-1/2 z-[2] -translate-y-1/2 rounded-[6px] bg-white p-0.5 opacity-0 shadow-[0_8px_12px_rgba(25,25,25,0.027),0_2px_6px_rgba(25,25,25,0.027),0_0_0_1px_rgba(42,28,0,0.07)] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
+              >
+                <button
+                  type="button"
+                  aria-label={`${group.property?.site?.name ?? "매물"} ${getDongName(group.property)}동 ${group.property?.unit?.name ?? ""}호 상세 ${inspectorAction}`}
+                  aria-expanded={isCurrentInspector}
+                  aria-controls={isCurrentInspector ? "property-inspector" : undefined}
+                  title={isCurrentInspector ? "사이드 보기 닫기" : "사이드 보기에서 열기"}
+                  className="flex h-5 items-center gap-1.5 whitespace-nowrap rounded-[4px] px-1 text-[12px] font-medium leading-[18px] tracking-[0.5px] text-[#7d7a75] transition-[background-color] duration-[20ms] ease-in hover:bg-[rgba(33,27,23,0.051)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/35"
+                  style={{ fontFamily: 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (isCurrentInspector) closePropertyInspector();
+                    else openPropertyInspector(group.intakeId);
+                  }}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                >
+                  <svg aria-hidden="true" viewBox="0 0 16 20" className="h-5 w-[15.25px] shrink-0 text-[#8e8b86]" fill="none">
+                    <rect x="1" y="4.75" width="14" height="10.5" rx="1.5" stroke="currentColor" strokeWidth="1.25" />
+                    <rect x="7.75" y="6.125" width="5.5" height="7.75" rx="0.5" fill="currentColor" />
+                  </svg>
+                  {inspectorAction}
+                </button>
               </span>
             </div>
           );
@@ -1403,12 +1514,12 @@ function PropertiesPage() {
       {
         id: "dong",
         header: () => (
-          <TableHeaderLabel icon={<Hash className="size-4" />} label="동" />
+          <TableHeaderLabel icon={<List className="size-4" />} label="동" />
         ),
         size: 58,
         enableSorting: true,
         cell: ({ row }) => (
-          <span className="truncate text-[13px] font-medium text-slate-900">
+          <span className="truncate text-[14px] font-medium leading-[21px] text-foreground">
             {getDongName(row.original.property)}
           </span>
         ),
@@ -1416,12 +1527,12 @@ function PropertiesPage() {
       {
         id: "unit",
         header: () => (
-          <TableHeaderLabel icon={<Hash className="size-4" />} label="호" />
+          <TableHeaderLabel icon={<List className="size-4" />} label="호" />
         ),
         size: 58,
         enableSorting: true,
         cell: ({ row }) => (
-          <span className="truncate text-[13px] font-medium text-slate-900">
+          <span className="truncate text-[14px] font-medium leading-[21px] text-foreground">
             {row.original.property?.unit?.name ?? ""}
           </span>
         ),
@@ -1431,7 +1542,7 @@ function PropertiesPage() {
         header: () => (
           <TableHeaderLabel icon={<Ruler className="size-4" />} label="공급" />
         ),
-        size: 72,
+        size: 74,
         enableSorting: true,
         cell: ({ row }) => {
           const value = formatAreaPyeong(
@@ -1439,29 +1550,11 @@ function PropertiesPage() {
             0,
           );
           return (
-            <span className="truncate text-[13px] text-slate-700 tabular-nums">
+            <span className="truncate text-[14px] leading-[21px] text-foreground tabular-nums">
               {value === "-" ? "" : value}
             </span>
           );
         },
-      },
-      {
-        id: "actions",
-        header: () => <span className="sr-only">작업</span>,
-        size: 40,
-        minSize: 40,
-        maxSize: 40,
-        enableResizing: false,
-        enableSorting: false,
-        meta: {
-          cellClassName: "px-0",
-        },
-        cell: ({ row }) => (
-          <PropertyRowActions
-            listings={row.original.listings}
-            intake={row.original.representative}
-          />
-        ),
       },
       ...(!arePropertyDetailColumnsCollapsed
         ? [
@@ -1469,16 +1562,16 @@ function PropertiesPage() {
               id: "unitType",
               header: () => (
                 <TableHeaderLabel
-                  icon={<Type className="size-4" />}
+                  icon={<Tag className="size-4" />}
                   label="타입"
                 />
               ),
-              size: 58,
+              size: 74,
               enableSorting: true,
               cell: ({ row }) => {
                 const value = getUnitTypeName(row.original.property);
                 return (
-                  <span className="truncate text-[13px] text-slate-700">
+                  <span className="truncate text-[14px] leading-[21px] text-foreground">
                     {value === "-" ? "" : value}
                   </span>
                 );
@@ -1488,16 +1581,16 @@ function PropertiesPage() {
               id: "matching",
               header: () => (
                 <TableHeaderLabel
-                  icon={<GitBranch className="size-4" />}
+                  icon={<UserSearch className="size-4" />}
                   label="매칭"
                 />
               ),
-              size: 64,
+              size: 74,
               enableSorting: true,
               cell: ({ row }) => (
                 <ListingMatchToggle
                   group={row.original}
-                  isOpen={expandedMatchRows.has(row.original.id)}
+                  isOpen={expandedPanels.get(row.original.id) === "match"}
                   onToggle={toggleMatchRow}
                 />
               ),
@@ -1510,12 +1603,12 @@ function PropertiesPage() {
                   label="광고"
                 />
               ),
-              size: 64,
+              size: 74,
               enableSorting: true,
               cell: ({ row }) => (
                 <ListingAdToggle
                   group={row.original}
-                  isOpen={expandedAdRows.has(row.original.id)}
+                  isOpen={expandedPanels.get(row.original.id) === "ad"}
                   onToggle={toggleAdRow}
                 />
               ),
@@ -1524,7 +1617,7 @@ function PropertiesPage() {
               id: "confirmationAt",
               header: () => (
                 <TableHeaderLabel
-                  icon={<CalendarDays className="size-4" />}
+                  icon={<Clock className="size-4" />}
                   label="확인"
                 />
               ),
@@ -1548,11 +1641,11 @@ function PropertiesPage() {
         id: "listingAvailability",
         header: () => (
           <TableHeaderLabel
-            icon={<Tag className="size-4" />}
+            icon={<Info className="size-4" />}
             label="매물상태"
           />
         ),
-        size: 120,
+        size: 148,
         minSize: 96,
         enableSorting: true,
         meta: {
@@ -1570,15 +1663,16 @@ function PropertiesPage() {
         id: "price",
         header: () => (
           <TableHeaderLabel
-            icon={<CircleDollarSign className="size-4" />}
+            icon={<WonCircleIcon className="size-4" />}
             label="가격/보증금"
           />
         ),
         size: 155,
         enableSorting: true,
         meta: {
+          listingCell: true,
           cellClassName: "hover:bg-muted/50",
-          onCellDoubleClick: (
+          onCellClick: (
             _group: PropertyListingGroup,
             event: ReactMouseEvent<HTMLTableCellElement>,
           ) => {
@@ -1604,15 +1698,16 @@ function PropertiesPage() {
         id: "monthlyRent",
         header: () => (
           <TableHeaderLabel
-            icon={<CircleDollarSign className="size-4" />}
+            icon={<WonCircleIcon className="size-4" />}
             label="월세"
           />
         ),
         size: 82,
         enableSorting: true,
         meta: {
+          listingCell: true,
           cellClassName: "hover:bg-muted/50",
-          onCellDoubleClick: (
+          onCellClick: (
             _group: PropertyListingGroup,
             event: ReactMouseEvent<HTMLTableCellElement>,
           ) => {
@@ -1632,15 +1727,16 @@ function PropertiesPage() {
               id: "loanAmount",
               header: () => (
                 <TableHeaderLabel
-                  icon={<CircleDollarSign className="size-4" />}
+                  icon={<WonCircleIcon className="size-4" />}
                   label="융자금"
                 />
               ),
               size: 96,
               enableSorting: true,
               meta: {
+                listingCell: true,
                 cellClassName: "hover:bg-muted/50",
-                onCellDoubleClick: (
+                onCellClick: (
                   _group: PropertyListingGroup,
                   event: ReactMouseEvent<HTMLTableCellElement>,
                 ) => {
@@ -1661,12 +1757,13 @@ function PropertiesPage() {
         id: "moveInAvailable",
         header: () => (
           <TableHeaderLabel
-            icon={<DoorOpen className="size-4" />}
+            icon={<Calendar className="size-4" />}
             label="입주가능일"
           />
         ),
         size: 120,
         enableSorting: true,
+        meta: { listingCell: true },
         cell: ({ row }) => (
           <MoveInAvailableStack
             listings={row.original.listings}
@@ -1678,7 +1775,7 @@ function PropertiesPage() {
         id: "memo",
         header: () => (
           <TableHeaderLabel
-            icon={<FileText className="size-4" />}
+            icon={<PencilLine className="size-4" />}
             label="의뢰 메모"
           />
         ),
@@ -1689,7 +1786,7 @@ function PropertiesPage() {
         meta: {
           cellClassName: "hover:bg-muted/50",
           grow: true,
-          onCellDoubleClick: (
+          onCellClick: (
             _group: PropertyListingGroup,
             event: ReactMouseEvent<HTMLTableCellElement>,
           ) => {
@@ -1712,17 +1809,20 @@ function PropertiesPage() {
       handleIntakeMemoSave,
       handleListingPatch,
       handleRowStatusSave,
+      openPropertyInspector,
+      closePropertyInspector,
+      selectedIntakeId,
+      isInspectorClosing,
       confirmMutation.isPending,
       confirmMutation.variables?.intakeId,
-      expandedAdRows,
-      expandedMatchRows,
+      expandedPanels,
       optionalColumns.loanAmount,
       toggleAdRow,
       toggleMatchRow,
     ],
   );
 
-  // ── 툴바: 위치 · 가격 라벨 · "+ 필터" 항목 ─────────────────────
+  // ── 툴바: 위치 · 가격 라벨 · 추가 필터 칩 ─────────────────────
   const selectedSiteSummary = summarizeSelection(
     siteFilterOptions,
     propertyFilters.siteIds,
@@ -1779,8 +1879,8 @@ function PropertiesPage() {
     />
   );
 
-  // 자주 쓰지 않는 필터. 값이 있으면 2행에 칩으로, 없으면 "+ 필터" 메뉴 안에만 있다.
-  const moreFilterItems: (AddFilterItem & { onClear: () => void })[] = [
+  // 유형 · 입주일 · 광고. 다른 필터처럼 2행에 늘 칩으로 보인다 ("+ 필터" 메뉴는 두지 않는다).
+  const extraFilterItems: (AddFilterItem & { onClear: () => void })[] = [
     {
       key: "siteTypes",
       label: "유형",
@@ -1858,25 +1958,25 @@ function PropertiesPage() {
         </div>
       ),
     },
-    // 월세: 월세 탭에서는 2행 고정 칩, 전체 탭에서는 메뉴 안,
-    // 매매·전세 탭에서는 값이 남아 있을 때만 보인다.
-    ...(selectedTransactionType === "all" ||
-    (selectedTransactionType !== "monthly" && monthlyRentFilterSummary)
-      ? [
-          {
-            key: "monthlyRent",
-            label: "월세",
-            icon: <CircleDollarSign />,
-            summary: monthlyRentFilterSummary,
-            onClear: () =>
-              clearFilterFields(["monthlyRentMin", "monthlyRentMax"]),
-            contentClassName:
-              "w-[430px] max-w-[calc(100vw-24px)] overflow-hidden p-0",
-            render: renderMonthlyRentPanel,
-          },
-        ]
-      : []),
   ];
+
+  // 초기화. 필터 줄이 접혀 있을 때는 찾기 줄 오른쪽으로 옮겨 계속 쓸 수 있게 한다.
+  const filterRowActions = (
+    <div className="flex shrink-0 items-center gap-0.5">
+      {hasActiveFilters && (
+        <>
+          <button
+            type="button"
+            className={cn(toolbarGhostButtonClassName, "rounded-full")}
+            onClick={handleFiltersReset}
+          >
+            <RotateCcw className="size-3.5" />
+            초기화
+          </button>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <CellEditProvider>
@@ -1887,6 +1987,7 @@ function PropertiesPage() {
         <section className="shrink-0 border-b border-border bg-white px-3 py-2.5">
           <div className="@container flex min-w-0 items-center gap-2">
             <ToolbarPillTabs
+              shape="muted"
               ariaLabel="거래유형"
               value={selectedTransactionType}
               options={transactionTypeOptions}
@@ -1894,6 +1995,8 @@ function PropertiesPage() {
             />
 
             <ToolbarSearchBar
+              shape="soft"
+              popoverClassName="w-[736px] max-w-[calc(100vw-24px)]"
               label={locationFilterLabel}
               isPlaceholder={!isLocationFilterNamed}
               active={isLocationFilterActive}
@@ -1917,62 +2020,70 @@ function PropertiesPage() {
               onSearchChange={handleSearchChange}
               searchPlaceholder="주소, 연락처, 메모"
             >
-              <div className="space-y-1.5 border-b border-border p-3">
-                <div className="flex h-5 items-center justify-between">
-                  <p className="text-[11px] font-semibold text-muted-foreground">
-                    지역
-                  </p>
-                  {propertyFilters.provinceCode && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        clearFilterFields([
-                          "provinceCode",
-                          "districtCode",
-                          "wardCode",
-                        ])
-                      }
-                      className="inline-flex h-5 items-center gap-1 rounded px-1.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.08)] hover:text-foreground"
-                    >
-                      <RotateCcw className="size-3" />
-                      지역 초기화
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <SelectFilter
-                    ariaLabel="시도"
-                    value={propertyFilters.provinceCode}
-                    onChange={handleProvinceFilterChange}
-                    options={provinceOptions}
-                  />
-                  <SelectFilter
-                    ariaLabel="시군구"
-                    value={propertyFilters.districtCode}
-                    onChange={handleDistrictFilterChange}
-                    options={districtOptions}
-                  />
-                  <SelectFilter
-                    ariaLabel="법정동"
-                    value={propertyFilters.wardCode}
-                    onChange={(value) => updatePropertyFilter("wardCode", value)}
-                    options={wardOptions}
+              {/* 지역 세 단계와 단지 목록을 한 면에 펼친다 (시안: docs/mockups/ui-refresh/properties.html) */}
+              <div className="grid h-[320px] grid-cols-[148px_128px_132px_minmax(0,1fr)]">
+                <ToolbarRegionColumn
+                  ariaLabel="시도"
+                  value={propertyFilters.provinceCode}
+                  onChange={handleProvinceFilterChange}
+                  options={provinceOptions}
+                  hasChildren
+                />
+                <ToolbarRegionColumn
+                  ariaLabel="시군구"
+                  value={propertyFilters.districtCode}
+                  onChange={handleDistrictFilterChange}
+                  options={districtOptions}
+                  hint={
+                    propertyFilters.provinceCode
+                      ? undefined
+                      : "시도를\n먼저 고르세요"
+                  }
+                  hasChildren
+                />
+                <ToolbarRegionColumn
+                  ariaLabel="법정동"
+                  value={propertyFilters.wardCode}
+                  onChange={(value) => updatePropertyFilter("wardCode", value)}
+                  options={wardOptions}
+                  hint={
+                    propertyFilters.districtCode
+                      ? undefined
+                      : "시군구를\n먼저 고르세요"
+                  }
+                />
+                <div className="flex min-h-0 min-w-0 flex-col">
+                  <ChecklistFilterPanel
+                    options={siteFilterOptions}
+                    selected={propertyFilters.siteIds}
+                    onChange={(values) => updatePropertyFilter("siteIds", values)}
+                    searchPlaceholder="단지명 또는 주소 검색"
+                    emptyText="일치하는 단지가 없습니다."
+                    isLoading={isFilterSitesLoading}
+                    listClassName="max-h-none min-h-0 flex-1"
                   />
                 </div>
               </div>
-              <ChecklistFilterPanel
-                options={siteFilterOptions}
-                selected={propertyFilters.siteIds}
-                onChange={(values) => updatePropertyFilter("siteIds", values)}
-                searchPlaceholder="단지명 또는 주소 검색"
-                emptyText="일치하는 단지가 없습니다."
-                isLoading={isFilterSitesLoading}
-                listClassName="max-h-[280px]"
-              />
-              <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-2">
-                <span className="text-xs text-muted-foreground">
+              <div className="flex items-center gap-2 border-t border-border py-2 pl-3.5 pr-2.5">
+                <span className="min-w-0 flex-1 text-xs text-muted-foreground">
                   단지를 고르지 않으면 지역 전체에서 찾습니다.
                 </span>
+                {propertyFilters.provinceCode && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      clearFilterFields([
+                        "provinceCode",
+                        "districtCode",
+                        "wardCode",
+                      ])
+                    }
+                    className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.08)] hover:text-foreground"
+                  >
+                    <RotateCcw className="size-3" />
+                    지역 초기화
+                  </button>
+                )}
                 <Button
                   size="sm"
                   className="h-7 px-3 text-xs"
@@ -1983,8 +2094,38 @@ function PropertiesPage() {
               </div>
             </ToolbarSearchBar>
 
+            <button
+              type="button"
+              aria-label={isFilterRowOpen ? "필터 줄 접기" : "필터 줄 펼치기"}
+              aria-pressed={isFilterRowOpen}
+              title="필터"
+              onClick={() => setIsFilterRowOpen((open) => !open)}
+              className={cn(
+                // 검색 아이콘과 한 쌍으로 보이게 줄 간격(8px)을 없앤다
+                "-ml-2 inline-flex size-[30px] shrink-0 items-center justify-center rounded-full transition-colors hover:bg-[rgba(60,52,40,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20",
+                // 접힌 채로 조건이 걸려 있으면 파랗게 알린다
+                !isFilterRowOpen && hasActiveFilters
+                  ? "text-[#2383e2]"
+                  : "text-[#6f6c66] hover:text-foreground",
+              )}
+            >
+              <ListFilter className="size-3.5" />
+            </button>
+            <PropertyColumnSettings
+              isVisible={(id) => columns.some((column) => column.id === id) && columnVisibility[id] !== false}
+              onVisibilityChange={handleColumnVisibilityChange}
+              onReset={() => {
+                setColumnVisibility({});
+                setOptionalColumns({ loanAmount: false });
+                setArePropertyDetailColumnsCollapsed(true);
+              }}
+            />
+            <PropertySortControl sorting={sorting} onChange={handleSortingChange} />
+
             <div className="ml-auto flex shrink-0 items-center gap-2">
+              {!isFilterRowOpen && filterRowActions}
               <ToolbarPillToggle
+                shape="muted"
                 ariaLabel="매물 보기 방식"
                 value={viewMode}
                 onChange={setViewMode}
@@ -1994,9 +2135,12 @@ function PropertiesPage() {
                 ]}
               />
               <Button
+                ref={createPropertyButtonRef}
                 size="sm"
                 aria-label="새 매물 등록"
-                className="h-[30px] shrink-0 rounded-full px-3.5"
+                aria-expanded={registrationState === "open"}
+                aria-controls={registrationState !== "closed" ? "property-registration" : undefined}
+                className="h-[30px] shrink-0 rounded-[8px] px-3"
                 onClick={handleCreateProperty}
               >
                 <Plus className="size-3.5" />
@@ -2007,10 +2151,25 @@ function PropertiesPage() {
           </div>
         </section>
 
-        <section className="flex shrink-0 items-center gap-2 border-b border-border bg-white px-3 py-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* 필터 줄과 표 머리는 구분선 없이 이어진다. 필터 아이콘으로 줄을 접을 수 있다. */}
+        {isFilterRowOpen && (
+        <section
+          className={cn(
+            // 칩이 두 줄로 넘어가도 초기화는 첫 줄 오른쪽에 남도록 위로 맞춘다
+            "flex shrink-0 items-start gap-2 bg-white px-3 pt-2",
+            // 목록 보기에서는 표가 위에 8px(접기 버튼이 걸치는 자리)을 따로 비우므로
+            // 여기 아래 여백을 빼서 필터 줄과 표 사이가 벌어지지 않게 한다.
+            viewMode === "list" ? "pb-0" : "pb-1.5",
+          )}
+        >
+          {/* 필터가 모두 이 줄에 있으므로, 창이 좁으면 옆으로 숨기지 않고 다음 줄로 내린다 */}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
             <ToolbarFilterChip
               label="매물상태"
+              shape="soft"
+              icon={<Info />}
+              open={isAvailabilityFilterOpen}
+              onOpenChange={setIsAvailabilityFilterOpen}
               summary={summarizeSelection(
                 listingAvailabilityFilterOptions,
                 propertyFilters.availabilities,
@@ -2030,6 +2189,8 @@ function PropertiesPage() {
 
             <ToolbarFilterChip
               label={priceFilterLabel}
+              shape="soft"
+              icon={<WonCircleIcon />}
               summary={priceDepositFilterSummary}
               open={isPriceFilterOpen}
               onOpenChange={setIsPriceFilterOpen}
@@ -2062,9 +2223,15 @@ function PropertiesPage() {
               />
             </ToolbarFilterChip>
 
-            {selectedTransactionType === "monthly" && (
+            {/* 월세: 전체·월세 탭에서는 가격/보증금 바로 옆에 늘 보인다.
+                매매·전세 탭에서는 값이 남아 있을 때만 같은 자리에 보여 지울 수 있게 한다. */}
+            {(selectedTransactionType === "all" ||
+              selectedTransactionType === "monthly" ||
+              monthlyRentFilterSummary) && (
               <ToolbarFilterChip
                 label="월세"
+                shape="soft"
+                icon={<WonCircleIcon />}
                 summary={monthlyRentFilterSummary}
                 open={isMonthlyRentFilterOpen}
                 onOpenChange={setIsMonthlyRentFilterOpen}
@@ -2079,6 +2246,8 @@ function PropertiesPage() {
 
             <ToolbarFilterChip
               label="공급평형"
+              shape="soft"
+              icon={<Ruler />}
               summary={areaFilterSummary}
               open={isAreaFilterOpen}
               onOpenChange={setIsAreaFilterOpen}
@@ -2117,6 +2286,8 @@ function PropertiesPage() {
 
             <ToolbarFilterChip
               label="방/욕실"
+              shape="soft"
+              icon={<BedDouble />}
               summary={roomBathFilterSummary}
               onClear={() => clearFilterFields(["roomCount", "bathRoomCount"])}
               contentClassName="w-[280px]"
@@ -2151,65 +2322,25 @@ function PropertiesPage() {
               </div>
             </ToolbarFilterChip>
 
-            {/* "+ 필터"에서 고른 필터는 값이 생긴 뒤에만 칩으로 나타난다 */}
-            {moreFilterItems
-              .filter((item) => item.summary !== null)
-              .map((item) => (
-                <ToolbarFilterChip
-                  key={item.key}
-                  label={item.label}
-                  summary={item.summary}
-                  onClear={item.onClear}
-                  contentClassName={item.contentClassName}
-                >
-                  {(close) => item.render(close)}
-                </ToolbarFilterChip>
-              ))}
-
-            <AddFilterMenu
-              items={moreFilterItems}
-              hint="매물상태 · 가격 · 공급평형 · 방/욕실은 이 줄에 늘 보입니다."
-            />
+            {extraFilterItems.map((item) => (
+              <ToolbarFilterChip
+                key={item.key}
+                label={item.label}
+                shape="soft"
+                icon={item.icon}
+                summary={item.summary}
+                onClear={item.onClear}
+                contentClassName={item.contentClassName}
+              >
+                {(close) => item.render(close)}
+              </ToolbarFilterChip>
+            ))}
           </div>
 
-          {/* 초기화 · 컬럼 — 필터 줄이 넘쳐도 가려지지 않게 오른쪽에 고정 */}
-          <div className="flex shrink-0 items-center gap-0.5">
-            {hasActiveFilters && (
-              <>
-                <button
-                  type="button"
-                  className={toolbarGhostButtonClassName}
-                  onClick={handleFiltersReset}
-                >
-                  <RotateCcw className="size-3.5" />
-                  초기화
-                </button>
-                <div className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
-              </>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button type="button" className={toolbarGhostButtonClassName}>
-                  <Columns3 className="size-3.5" />
-                  컬럼
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuCheckboxItem
-                  checked={optionalColumns.loanAmount}
-                  onCheckedChange={(checked) =>
-                    setOptionalColumns((prev) => ({
-                      ...prev,
-                      loanAmount: Boolean(checked),
-                    }))
-                  }
-                >
-                  융자금
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          {/* 초기화 — 필터 줄이 넘쳐도 가려지지 않게 오른쪽에 고정 */}
+          {filterRowActions}
         </section>
+        )}
 
         <section
           data-property-workspace
@@ -2237,19 +2368,27 @@ function PropertiesPage() {
                 pageSize={LISTINGS_PAGE_SIZE}
                 sorting={sorting}
                 onSortingChange={handleSortingChange}
-                onRowClick={(row) => setSelectedIntakeId(row.intakeId)}
+                columnVisibility={columnVisibility}
+                onColumnVisibilityChange={handleColumnVisibilityChange}
+                columnFilterActions={{
+                  site: () => setIsLocationFilterOpen(true),
+                  supplyArea: () => { setIsFilterRowOpen(true); setIsAreaFilterOpen(true); },
+                  listingAvailability: () => { setIsFilterRowOpen(true); setIsAvailabilityFilterOpen(true); },
+                  price: () => { setIsFilterRowOpen(true); setIsPriceFilterOpen(true); },
+                  ...((selectedTransactionType === "all" || selectedTransactionType === "monthly" || monthlyRentFilterSummary)
+                    ? { monthlyRent: () => { setIsFilterRowOpen(true); setIsMonthlyRentFilterOpen(true); } }
+                    : {}),
+                }}
+                onRowClick={(row) => openPropertyInspector(row.intakeId)}
                 onRequestClose={
-                  selectedIntakeId ? closePropertyInspector : undefined
+                  selectedIntakeId ? () => closePropertyInspector(false) : undefined
                 }
                 expandedRowIds={expandedRowIds}
                 renderExpandedRow={renderExpandedPropertyRow}
                 getExpandedRowHeight={getExpandedPropertyRowHeight}
                 columnGroupControl={{
                   collapsed: arePropertyDetailColumnsCollapsed,
-                  onToggle: () =>
-                    setArePropertyDetailColumnsCollapsed(
-                      (previous) => !previous,
-                    ),
+                  onToggle: togglePropertyDetailColumns,
                 }}
                 isLoading={isLoading}
                 isLoadingMore={isFetchingNextPage}
@@ -2289,21 +2428,17 @@ function PropertiesPage() {
                 truncated={Boolean(mapData?.truncated)}
                 limit={mapData?.limit}
                 hasActiveFilters={hasActiveFilters}
-                onSelectIntake={setSelectedIntakeId}
+                onSelectIntake={openPropertyInspector}
               />
             )}
           </div>
         </section>
         {selectedIntakeId && (
-          <>
-            <div
-              data-property-inspector-backdrop
-              aria-hidden="true"
-              className="absolute inset-0 z-40 cursor-default bg-slate-950/10"
-              onClick={closePropertyInspector}
-            />
             <PropertyInspector
               intakeId={selectedIntakeId}
+              closing={isInspectorClosing}
+              animate={inspectorMotion}
+              onExited={finishClosingPropertyInspector}
               onClose={closePropertyInspector}
               onConfirm={(intakeId) => handleIntakeConfirm(intakeId, "alive")}
               isConfirming={
@@ -2313,7 +2448,18 @@ function PropertiesPage() {
               onSaveListing={handleInspectorListingUpdate}
               onAvailabilityChange={handleInspectorAvailabilityChange}
             />
-          </>
+        )}
+        {registrationState !== "closed" && (
+          <PropertyRegistrationDrawer
+            closing={registrationState === "closing"}
+            animate={registrationMotion}
+            pending={registrationPending}
+            onClose={closeRegistration}
+            onExited={finishClosingRegistration}
+            onCreated={handlePropertyRegistered}
+            onPendingChange={handleRegistrationPendingChange}
+              onExpanded={() => setRegistrationState("closed")}
+          />
         )}
         {startDealPrompt && (
           <StartDealFromStatusDialog
@@ -2414,10 +2560,29 @@ function PropertiesPage() {
   );
 }
 
+// 가격 열 머리 아이콘. lucide에는 원화 기호가 없어 데모(docs/mockups/ui-refresh)와 같은 모양을 직접 그린다.
+function WonCircleIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8 9l1.5 6L12 10l2.5 5L16 9" />
+    </svg>
+  );
+}
+
 function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-1 text-[12px] font-normal text-muted-foreground">
-      <span className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70">
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-normal leading-[21px] text-inherit">
+      <span className="shrink-0 [&>svg]:size-4 [&>svg]:text-[#8e8b86]">
         {icon}
       </span>
       <span className="truncate">{label}</span>
@@ -3023,6 +3188,9 @@ const PROPERTY_INSPECTOR_DEFAULT_WIDTH = 584;
 
 function PropertyInspector({
   intakeId,
+  closing,
+  animate,
+  onExited,
   onClose,
   onConfirm,
   isConfirming,
@@ -3030,7 +3198,10 @@ function PropertyInspector({
   onAvailabilityChange,
 }: {
   intakeId: string;
-  onClose: () => void;
+  closing: boolean;
+  animate: boolean;
+  onExited: () => void;
+  onClose: (animate?: boolean) => void;
   onConfirm: (intakeId: string) => void;
   isConfirming: boolean;
   onSaveListing: (id: string, patch: UpdateListingDto) => Promise<void>;
@@ -3041,6 +3212,17 @@ function PropertyInspector({
   ) => void;
 }) {
   const [width, setWidth] = useState(PROPERTY_INSPECTOR_DEFAULT_WIDTH);
+  useEffect(() => {
+    if (!closing) return;
+    // Hidden tabs and reduced motion may not dispatch transitionend.
+    const timer = window.setTimeout(
+      onExited,
+      !animate || window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? 0
+        : 240,
+    );
+    return () => window.clearTimeout(timer);
+  }, [closing, animate, onExited]);
   const {
     data: intake,
     isLoading,
@@ -3063,13 +3245,14 @@ function PropertyInspector({
       }
       if (
         document.querySelector(
-          '[role="dialog"], [role="listbox"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"]',
+          // 확인창(AlertDialog)은 role이 alertdialog다. 이것도 떠 있으면 Esc는 확인창만 닫는다.
+          '[role="dialog"], [role="alertdialog"], [role="listbox"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"]',
         )
       ) {
         return;
       }
       event.preventDefault();
-      onClose();
+      onClose(false);
     };
 
     window.addEventListener("keydown", handleWindowKeyDown, true);
@@ -3082,25 +3265,42 @@ function PropertyInspector({
     const target = event.target instanceof Element ? event.target : null;
     if (
       target?.closest(
-        '[role="dialog"], [role="listbox"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-inspector-inline-editor]',
+        '[role="dialog"], [role="alertdialog"], [role="listbox"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"], [data-inspector-inline-editor]',
       )
     ) {
       return;
     }
     event.preventDefault();
     event.stopPropagation();
-    onClose();
+    onClose(false);
   };
 
   return (
     <aside
+      id="property-inspector"
       data-property-inspector
+      data-state={closing ? "closed" : "open"}
+      data-motion={animate ? "slide" : "none"}
+      inert={closing}
+      aria-hidden={closing || undefined}
       aria-label="매물 상세 패널"
-      className="absolute inset-y-0 right-0 z-50 flex min-h-0 flex-col border-l border-[#dddcd8] bg-white shadow-[-12px_0_32px_rgba(15,23,42,0.1)]"
-      style={{ width }}
+      className="absolute inset-y-0 right-0 z-50 flex min-h-0 flex-col border-l border-border bg-white shadow-[-2px_0_8px_rgba(0,0,0,0.03)]"
+      style={{ width, maxWidth: "100%" }}
+      onTransitionEnd={(event) => {
+        if (
+          closing &&
+          event.target === event.currentTarget &&
+          event.propertyName === "transform"
+        ) {
+          onExited();
+        }
+      }}
       onKeyDownCapture={handleKeyDown}
     >
       <PropertyInspectorResizeHandle width={width} onResize={setWidth} />
+      {(isLoading || isError || !intake?.property) && (
+        <PropertyInspectorToolbar onClose={onClose} />
+      )}
       {isLoading && <PropertyInspectorSkeleton />}
       {!isLoading && isError && (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
@@ -3111,7 +3311,11 @@ function PropertyInspector({
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               다시 시도
             </Button>
-            <Button variant="ghost" size="sm" onClick={onClose}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(event) => onClose(event.detail !== 0)}
+            >
               닫기
             </Button>
           </div>
@@ -3245,7 +3449,7 @@ function PropertyInspectorContent({
 }: {
   intake: ListingIntake;
   property: Property;
-  onClose: () => void;
+  onClose: (animate?: boolean) => void;
   onConfirm: (intakeId: string) => void;
   isConfirming: boolean;
   onSaveListing: (id: string, patch: UpdateListingDto) => Promise<void>;
@@ -3257,7 +3461,8 @@ function PropertyInspectorContent({
 }) {
   const queryClient = useQueryClient();
   const createTab = useTabStore((s) => s.createTab);
-  const [isOpeningFullPage, setIsOpeningFullPage] = useState(false);
+  const openOrRevealResource = useTabStore((s) => s.openOrRevealResource);
+  const [isOpeningNewWindow, setIsOpeningNewWindow] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isConsultationOpen, setIsConsultationOpen] = useState(false);
@@ -3375,8 +3580,20 @@ function PropertyInspectorContent({
     void queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
   };
 
-  const openFullPage = async () => {
-    if (isOpeningFullPage) return;
+  const openInNewTab = () => {
+    const route = `/properties/${property.id}`;
+    const meta = getRouteMeta(route);
+    openOrRevealResource({
+      route,
+      kind: meta.kind,
+      title: [title, unitLabel].filter(Boolean).join(" ") || meta.title,
+      resourceKey: tabResourceKeys.entity("property", property.id),
+    });
+    onClose(false);
+  };
+
+  const openInNewWindow = async () => {
+    if (isOpeningNewWindow) return;
     const route = `/properties/${property.id}`;
     const meta = getRouteMeta(route);
     const tabTitle = [title, unitLabel].filter(Boolean).join(" ") || meta.title;
@@ -3386,7 +3603,7 @@ function PropertyInspectorContent({
       return;
     }
 
-    setIsOpeningFullPage(true);
+    setIsOpeningNewWindow(true);
     try {
       const result = await tabsBridge.openPropertyWindow({
         propertyId: property.id,
@@ -3404,7 +3621,7 @@ function PropertyInspectorContent({
           : "매물 상세 창을 열지 못했습니다.",
       );
     } finally {
-      setIsOpeningFullPage(false);
+      setIsOpeningNewWindow(false);
     }
   };
 
@@ -3479,13 +3696,23 @@ function PropertyInspectorContent({
     <PropertyInspectorView
       model={model}
       onClose={onClose}
-      onOpenFullPage={() => void openFullPage()}
-      isOpeningFullPage={isOpeningFullPage}
+      onOpenNewTab={openInNewTab}
       onConfirm={() => onConfirm(intake.id)}
       isConfirming={isConfirming}
       onConsult={() => setIsConsultationOpen(true)}
       onEdit={() => setIsEditOpen(true)}
       onAddContact={() => setIsContactOpen(true)}
+      headerActions={
+        <PropertyRowActions
+          listings={listings}
+          intake={intake}
+          triggerLabel="매물 작업 메뉴"
+          onOpenInNewWindow={
+            window.electronBridge?.tabs ? () => void openInNewWindow() : undefined
+          }
+          isOpeningNewWindow={isOpeningNewWindow}
+        />
+      }
       progressTab={
         <PropertyInspectorProgressTab
           listingIds={inspectorListingIds}
@@ -4553,11 +4780,11 @@ function StatusIndicator({ value, label }: { value: string; label?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5",
+        "inline-flex h-5 max-w-full items-center gap-[5px] rounded-full pl-[7px] pr-[9px] text-[14px] font-[450] leading-5",
         meta.pillClassName,
       )}
     >
-      <span className={cn("size-1.5 rounded-full", meta.dotClassName)} />
+      <span className={cn("size-2 shrink-0 rounded-full", meta.dotClassName)} />
       <span className="truncate">{label ?? meta.label}</span>
     </span>
   );
@@ -5050,9 +5277,9 @@ function getConfirmStatusMeta(value?: string | null) {
 }
 
 function getListingStackStyle(listings: ListingSummary[]) {
-  return listings.length > 1
-    ? { minHeight: listings.length * PROPERTY_LISTING_STACK_ITEM_HEIGHT }
-    : undefined;
+  return {
+    minHeight: Math.max(1, listings.length) * PROPERTY_LISTING_STACK_ITEM_HEIGHT,
+  };
 }
 
 function getListingStackItemStyle(listings: ListingSummary[]) {
@@ -5063,29 +5290,17 @@ function getListingStackItemStyle(listings: ListingSummary[]) {
 
 function triggerStackCellEditor(event: ReactMouseEvent<HTMLTableCellElement>) {
   const target = event.target instanceof Element ? event.target : null;
-  const directEditor = target?.closest(".cursor-text");
-  const editors = Array.from(
-    event.currentTarget.querySelectorAll<HTMLElement>(".cursor-text"),
+  const listingCells = Array.from(
+    event.currentTarget.querySelectorAll<HTMLElement>("[data-listing-cell-id]"),
   );
-  const editor =
-    directEditor instanceof HTMLElement &&
-    event.currentTarget.contains(directEditor)
-      ? directEditor
-      : getNearestEditorByY(editors, event.clientY);
-
+  const surface = target?.closest<HTMLElement>("[data-listing-cell-id]")
+    ?? getNearestEditorByY(listingCells, event.clientY)
+    ?? event.currentTarget;
+  const editor = surface.querySelector<HTMLElement>("[data-editable-cell-trigger]:not(:disabled)");
   if (!editor) return;
-
   event.preventDefault();
   event.stopPropagation();
-  editor.dispatchEvent(
-    new MouseEvent("dblclick", {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      clientX: event.clientX,
-      clientY: event.clientY,
-    }),
-  );
+  editor.dispatchEvent(new KeyboardEvent("keydown", { key: "F2", bubbles: true }));
 }
 
 function getNearestEditorByY(editors: HTMLElement[], y: number) {
@@ -5110,7 +5325,10 @@ function TransactionStack({ listings }: { listings: ListingSummary[] }) {
     <div className="flex flex-wrap items-center gap-1.5 py-1">
       {listings.map((listing) => (
         <div key={listing.id} className="flex items-center gap-1">
-          <TransactionBadge transactionType={listing.transactionType} />
+          <TransactionBadge
+            transactionType={listing.transactionType}
+            className="h-5 py-0 text-[14px] font-[450] leading-5"
+          />
         </div>
       ))}
     </div>
@@ -5156,6 +5374,8 @@ function ListingAvailabilityCell({
           recordId={intake.id}
           field="listingAvailability"
           value={availability}
+          chipValueOf={(value) => String(value ?? "")}
+          ariaLabel="매물상태"
           onSave={(_id, _field, value) =>
             onChange(String(value) as ListingAvailability)
           }
@@ -5298,20 +5518,20 @@ function IntakeConfirmationCell({
 
   return (
     <div
-      className="flex h-8 min-w-0 items-center gap-1.5"
+      className="flex h-9 min-w-0 items-center gap-1.5"
       onClick={(event) => event.stopPropagation()}
     >
       <span className={cn("size-[7px] shrink-0 rounded-full", freshness.dot)} />
       <div className="flex min-w-0 flex-col leading-tight">
         <span
           className={cn(
-            "truncate text-[12px] font-medium tabular-nums",
+            "truncate text-[13px] font-[450] leading-4 tabular-nums",
             freshness.date,
           )}
         >
           {checkedAt ? formatDateShort(checkedAt) : "-"}
         </span>
-        <span className={cn("truncate text-[10.5px]", freshness.relative)}>
+        <span className={cn("truncate text-[11px] leading-[14px]", freshness.relative)}>
           {checkedAt ? formatDaysAgo(checkedAt) : ""}
         </span>
       </div>
@@ -5337,8 +5557,8 @@ function ListingPriceDepositStack({
 }: {
   listings: ListingSummary[];
   activeDealListingId: string | null;
-  onSave: (recordId: string, field: string, value: unknown) => void;
-  onPatch: (recordId: string, patch: UpdateListingDto) => void;
+  onSave: (recordId: string, field: string, value: unknown) => CellSaveResult;
+  onPatch: (recordId: string, patch: UpdateListingDto) => CellSaveResult;
 }) {
   const hasMultiple = listings.length > 1;
   return (
@@ -5353,8 +5573,9 @@ function ListingPriceDepositStack({
       {listings.map((listing) => {
         const isActiveDealListing = listing.id === activeDealListingId;
         return (
-          <div
+          <PropertyListingCell
             key={listing.id}
+            listingId={listing.id}
             data-active-deal-listing={isActiveDealListing ? "true" : undefined}
             className={cn(
               "flex min-w-0 items-center transition-colors duration-150",
@@ -5369,12 +5590,15 @@ function ListingPriceDepositStack({
                 field="deposit"
                 value={listing.deposit}
                 onSave={(recordId, field, value) => {
-                  onPatch(recordId, {
+                  return onPatch(recordId, {
                     [field]: parseEditorCellValue(value),
                   } as UpdateListingDto);
                 }}
                 editType="number"
-                activation="doubleClick"
+                numberMinimum={0}
+                numberUnit="만원"
+                commitOnBlur
+                activation="click"
                 portalAnchor={hasMultiple ? "self" : "tableCell"}
                 editorChrome="floating"
                 hoverHighlight={false}
@@ -5383,6 +5607,7 @@ function ListingPriceDepositStack({
                   {hasMultiple && (
                     <TransactionMiniLabel
                       transactionType={listing.transactionType}
+                      className="h-5 py-0 text-[14px] font-[450] leading-5"
                     />
                   )}
                   <PriceDepositValue listing={listing} />
@@ -5398,7 +5623,10 @@ function ListingPriceDepositStack({
                 value={listing.price}
                 onSave={onSave}
                 editType="number"
-                activation="doubleClick"
+                numberMinimum={0}
+                numberUnit="만원"
+                commitOnBlur
+                activation="click"
                 portalAnchor={hasMultiple ? "self" : "tableCell"}
                 editorChrome="floating"
                 hoverHighlight={false}
@@ -5407,6 +5635,7 @@ function ListingPriceDepositStack({
                   {hasMultiple && (
                     <TransactionMiniLabel
                       transactionType={listing.transactionType}
+                      className="h-5 py-0 text-[14px] font-[450] leading-5"
                     />
                   )}
                   <PriceDepositValue listing={listing} />
@@ -5416,7 +5645,7 @@ function ListingPriceDepositStack({
                 </span>
               </EditableCell>
             )}
-          </div>
+          </PropertyListingCell>
         );
       })}
     </div>
@@ -5428,7 +5657,7 @@ function ListingMonthlyRentStack({
   onPatch,
 }: {
   listings: ListingSummary[];
-  onPatch: (recordId: string, patch: UpdateListingDto) => void;
+  onPatch: (recordId: string, patch: UpdateListingDto) => CellSaveResult;
 }) {
   const hasMultiple = listings.length > 1;
   return (
@@ -5441,8 +5670,9 @@ function ListingMonthlyRentStack({
       onClick={(event) => event.stopPropagation()}
     >
       {listings.map((listing) => (
-        <div
+        <PropertyListingCell
           key={listing.id}
+          listingId={listing.id}
           className={cn(
             "flex min-w-0 items-center",
             hasMultiple ? "flex-none" : "flex-1",
@@ -5455,12 +5685,15 @@ function ListingMonthlyRentStack({
               field="monthlyRent"
               value={listing.monthlyRent}
               onSave={(recordId, field, value) => {
-                onPatch(recordId, {
+                return onPatch(recordId, {
                   [field]: parseEditorCellValue(value),
                 } as UpdateListingDto);
               }}
               editType="number"
-              activation="doubleClick"
+              numberMinimum={0}
+              numberUnit="만원"
+              commitOnBlur
+              activation="click"
               portalAnchor={hasMultiple ? "self" : "tableCell"}
               editorChrome="floating"
               hoverHighlight={false}
@@ -5470,11 +5703,11 @@ function ListingMonthlyRentStack({
               </span>
             </EditableCell>
           ) : (
-            <span className="flex h-full w-full items-center px-2.5 text-[13px] text-muted-foreground">
+            <span className="flex h-full w-full items-center px-2.5 text-[14px] leading-[21px] text-muted-foreground">
               -
             </span>
           )}
-        </div>
+        </PropertyListingCell>
       ))}
     </div>
   );
@@ -5488,7 +5721,7 @@ function ListingNumberFieldStack({
 }: {
   listings: ListingSummary[];
   field: "loanAmount";
-  onSave: (recordId: string, field: string, value: unknown) => void;
+  onSave: (recordId: string, field: string, value: unknown) => CellSaveResult;
 }) {
   const hasMultiple = listings.length > 1;
   return (
@@ -5501,8 +5734,9 @@ function ListingNumberFieldStack({
       onClick={(event) => event.stopPropagation()}
     >
       {listings.map((listing) => (
-        <div
+        <PropertyListingCell
           key={listing.id}
+          listingId={listing.id}
           className={cn(
             "flex min-w-0 items-center",
             hasMultiple ? "flex-none" : "flex-1",
@@ -5514,19 +5748,22 @@ function ListingNumberFieldStack({
             field={field}
             value={listing[field]}
             onSave={(recordId, savedField, value) => {
-              onSave(recordId, savedField, parseEditorCellValue(value));
+              return onSave(recordId, savedField, parseEditorCellValue(value));
             }}
             editType="number"
-            activation="doubleClick"
+            numberMinimum={0}
+            numberUnit="만원"
+            commitOnBlur
+            activation="click"
             portalAnchor={hasMultiple ? "self" : "tableCell"}
             editorChrome="floating"
             hoverHighlight={false}
           >
-            <span className="flex h-full w-full items-center px-2.5 text-sm font-medium tabular-nums">
+            <span className="flex h-full w-full items-center px-2.5 text-[14px] font-[450] leading-[21px] tabular-nums">
               {listing[field] ? formatPrice(listing[field] as number) : "-"}
             </span>
           </EditableCell>
-        </div>
+        </PropertyListingCell>
       ))}
     </div>
   );
@@ -5536,7 +5773,7 @@ function PriceDepositValue({ listing }: { listing: ListingSummary }) {
   const value = getListingPrimaryPrice(listing);
 
   return (
-    <span className="tabular-nums text-sm font-medium">
+    <span className="tabular-nums text-[14px] font-[450] leading-[21px]">
       {value ? formatPrice(value) : "-"}
     </span>
   );
@@ -5544,7 +5781,7 @@ function PriceDepositValue({ listing }: { listing: ListingSummary }) {
 
 function MonthlyRentValue({ listing }: { listing: ListingSummary }) {
   return (
-    <span className="tabular-nums text-sm font-medium">
+    <span className="tabular-nums text-[14px] font-[450] leading-[21px]">
       {listing.monthlyRent ? formatPrice(listing.monthlyRent) : "-"}
     </span>
   );
@@ -5554,7 +5791,8 @@ function parseEditorCellValue(value: unknown) {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return null;
   const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error("유효한 금액을 입력해 주세요.");
+  return parsed;
 }
 
 function parseEditorTextValue(value: unknown) {
@@ -5562,6 +5800,8 @@ function parseEditorTextValue(value: unknown) {
   return trimmed || null;
 }
 
+// 노션식 셀 버튼: 테두리·배경 없이 아이콘 + 숫자 + 화살표를 글자처럼 둔다.
+// 호버·열림에만 옅은 배경이 생긴다.
 function ListingPanelToggle({
   count,
   icon,
@@ -5578,27 +5818,30 @@ function ListingPanelToggle({
   onToggle: () => void;
 }) {
   return (
-    <Button
+    <button
       type="button"
-      variant={isOpen ? "secondary" : "outline"}
-      size="xs"
       aria-expanded={isOpen}
       aria-controls={panelId}
       aria-label={`${count}건의 ${label} ${isOpen ? "접기" : "펼치기"}`}
       title={isOpen ? `${label} 접기` : `${label} 펼치기`}
       onClick={onToggle}
-      className="min-w-11 px-1.5 text-[11px] tabular-nums shadow-none"
+      className={cn(
+        "inline-flex h-6 items-center gap-1 rounded px-1 text-[14px] font-[450] leading-[21px] tabular-nums transition-colors",
+        isOpen
+          ? "text-foreground"
+          : "text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground",
+      )}
     >
-      {icon}
+      <span className="text-muted-foreground/70 [&_svg]:size-3">{icon}</span>
       {count}
       <ChevronDown
         aria-hidden="true"
         className={cn(
-          "size-3 transition-transform duration-150",
+          "size-3 text-muted-foreground/70 transition-transform duration-150",
           isOpen && "rotate-180",
         )}
       />
-    </Button>
+    </button>
   );
 }
 
@@ -5613,8 +5856,6 @@ function ListingMatchToggle({
 }) {
   const matchCount = getPropertyMatchCount(group);
 
-  if (matchCount === 0) return null;
-
   return (
     <div
       className="-mx-2.5 flex h-full items-center justify-center"
@@ -5625,607 +5866,12 @@ function ListingMatchToggle({
         count={matchCount}
         icon={<GitBranch className="size-3" />}
         isOpen={isOpen}
-        panelId={`property-match-panel-${group.id}`}
+        panelId={`property-expand-panel-${group.id}`}
         label="연결 구매고객"
         onToggle={() => onToggle(group.id)}
       />
     </div>
   );
-}
-
-function getPropertyMatchCount(group: PropertyListingGroup) {
-  return group.listings.reduce(
-    (total, listing) => total + (listing._count?.matches ?? 0),
-    0,
-  );
-}
-
-function estimatePropertyMatchPanelHeight(group: PropertyListingGroup) {
-  return 76 + Math.max(1, getPropertyMatchCount(group)) * 116;
-}
-
-function PropertyMatchPanel({ group }: { group: PropertyListingGroup }) {
-  const queryClient = useQueryClient();
-  const [createOpen, setCreateOpen] = useState(false);
-  const [convertMatchId, setConvertMatchId] = useState<string | null>(null);
-  const listingIds = useMemo(
-    () => group.listings.map((listing) => listing.id),
-    [group.listings],
-  );
-  const {
-    data: matches = [],
-    isLoading,
-    isError,
-    refetch,
-  } = useQuery({
-    queryKey: [
-      "matches",
-      "property-list-panel",
-      group.id,
-      listingIds.join(","),
-    ],
-    queryFn: async () => {
-      const results = await Promise.all(
-        listingIds.map((listingId) => api.matches.findAll({ listingId })),
-      );
-      return results.flat();
-    },
-  });
-
-  const stageMutation = useMutation({
-    mutationFn: ({ matchId, stage }: { matchId: string; stage: string }) =>
-      api.matches.updateStage(matchId, { stage }),
-    onSuccess: (_updatedMatch, variables) => {
-      toast.success(
-        variables.stage === MatchStage.CLOSED
-          ? "매칭을 종료했습니다."
-          : `${getMatchStageLabel(variables.stage)} 단계로 변경했습니다.`,
-      );
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
-      queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "매칭 단계 변경에 실패했습니다.");
-    },
-  });
-
-  const memoMutation = useMutation({
-    mutationFn: ({ match, memo }: { match: Match; memo: string | null }) =>
-      api.matches.updateMemo(match.id, {
-        memo,
-        expectedUpdatedAt: match.updatedAt,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
-      toast.success("매칭 메모를 저장했습니다.");
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || "매칭 메모 저장에 실패했습니다.");
-    },
-  });
-
-  const viewingScheduleMutation = useMutation({
-    mutationFn: async ({
-      match,
-      startLocalValue,
-    }: {
-      match: Match;
-      startLocalValue: string;
-    }) => {
-      const blockReason = getMatchStageBlockReason(match, MatchStage.VIEWING);
-      if (blockReason) throw new Error(blockReason);
-
-      const payload = buildViewingCalendarEventPayload(match, startLocalValue);
-      const upcomingViewingEvent = getUpcomingViewingEvent(match);
-
-      if (upcomingViewingEvent) {
-        await api.calendarEvents.update(
-          upcomingViewingEvent.id,
-          toCalendarEventUpdatePayload(payload),
-        );
-      } else {
-        await api.calendarEvents.create(payload);
-      }
-
-      if (shouldMoveToViewingOnSchedule(match.stage)) {
-        await api.matches.updateStage(match.id, { stage: MatchStage.VIEWING });
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
-      toast.success("방문 일정을 저장했습니다.");
-    },
-    onError: (error: Error) => {
-      toast.error(`방문 일정 저장에 실패했습니다: ${error.message}`);
-    },
-  });
-
-  const sortedMatches = useMemo(
-    () =>
-      matches
-        .slice()
-        .sort(
-          (a, b) => getMatchStageIndex(b.stage) - getMatchStageIndex(a.stage),
-        ),
-    [matches],
-  );
-
-  const summary = useMemo(
-    () =>
-      sortedMatches.reduce(
-        (counts, match) => {
-          const stage = normalizeMatchStage(match.stage);
-          if (stage === MatchStage.DEAL_CREATED) counts.converted += 1;
-          else if (stage === MatchStage.CLOSED) counts.closed += 1;
-          else counts.active += 1;
-          return counts;
-        },
-        { active: 0, converted: 0, closed: 0 },
-      ),
-    [sortedMatches],
-  );
-
-  const handleStageChange = (matchId: string, stage: string) => {
-    const match = matches.find((candidate) => candidate.id === matchId);
-    if (match) {
-      const blockReason = getMatchStageBlockReason(match, stage);
-      if (blockReason) {
-        toast.error("단계 이동 전 확인이 필요합니다.", {
-          description: blockReason,
-        });
-        return;
-      }
-    }
-
-    if (stage === MatchStage.DEAL_CREATED) {
-      setConvertMatchId(matchId);
-      return;
-    }
-
-    stageMutation.mutate({ matchId, stage });
-  };
-
-  const progressActions: MatchProgressActions = {
-    isUpdating: stageMutation.isPending,
-    isScheduling: viewingScheduleMutation.isPending,
-    onStageChange: handleStageChange,
-    onScheduleViewing: (match, startLocalValue) =>
-      viewingScheduleMutation.mutate({ match, startLocalValue }),
-  };
-
-  const convertMatch =
-    matches.find((match) => match.id === convertMatchId) ?? null;
-
-  return (
-    <div
-      id={`property-match-panel-${group.id}`}
-      role="region"
-      aria-label={`${group.property?.site?.name ?? "매물"} 연결 구매고객`}
-      className="border-b border-border bg-[#fbfbfa] py-3 pl-[60px] pr-4"
-    >
-      <div className="max-w-[1320px]">
-        <div className="mb-2.5 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="flex size-7 shrink-0 items-center justify-center text-muted-foreground">
-              <GitBranch className="size-3.5" />
-            </span>
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs tabular-nums">
-              <span className="text-[12.5px] font-semibold text-foreground">
-                연결 구매고객
-              </span>
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10.5px] font-semibold text-muted-foreground">
-                {isLoading ? getPropertyMatchCount(group) : matches.length}
-              </span>
-              {!isLoading && summary.active > 0 && (
-                <span className="rounded-md border border-info/25 bg-info-soft px-1.5 py-0.5 font-medium text-info-strong">
-                  진행 {summary.active}
-                </span>
-              )}
-              {!isLoading && summary.converted > 0 && (
-                <span className="rounded-md border border-success/25 bg-success-soft px-1.5 py-0.5 font-medium text-success">
-                  거래 {summary.converted}
-                </span>
-              )}
-              {!isLoading && summary.closed > 0 && (
-                <span className="rounded-md border border-destructive/25 bg-destructive-soft px-1.5 py-0.5 font-medium text-destructive-strong">
-                  종료 {summary.closed}
-                </span>
-              )}
-            </div>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 shrink-0 gap-1 border-border bg-white px-2.5 text-[11.5px] font-semibold text-foreground shadow-none hover:bg-muted"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus className="size-3" />
-            매칭 생성
-          </Button>
-        </div>
-
-        {isLoading ? (
-          <div className="ml-8 flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
-            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-            구매고객을 불러오는 중...
-          </div>
-        ) : isError ? (
-          <div className="ml-8 flex h-20 items-center justify-between rounded-lg border border-destructive/20 bg-white px-3.5">
-            <span className="text-xs text-destructive">
-              연결된 구매고객을 불러오지 못했습니다.
-            </span>
-            <Button variant="outline" size="xs" onClick={() => void refetch()}>
-              다시 시도
-            </Button>
-          </div>
-        ) : sortedMatches.length === 0 ? (
-          <div className="ml-8 flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
-            연결된 구매고객이 없습니다.
-          </div>
-        ) : (
-          <div
-            data-property-match-branch-list
-            className="relative ml-8 space-y-1 pl-12"
-          >
-            <span
-              data-property-match-branch-trunk
-              aria-hidden="true"
-              className="pointer-events-none absolute -top-2 bottom-0 left-0 w-px bg-border"
-            />
-            {sortedMatches.map((match, index) => (
-              <PropertyBuyerMatchLane
-                key={match.id}
-                match={match}
-                isLast={index === sortedMatches.length - 1}
-                actions={progressActions}
-                isSavingMemo={
-                  memoMutation.isPending &&
-                  memoMutation.variables?.match.id === match.id
-                }
-                onSaveMemo={(memo) =>
-                  memoMutation
-                    .mutateAsync({ match, memo })
-                    .then(() => undefined)
-                }
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      <MatchCreateDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        matches={matches}
-      />
-
-      <MatchConvertDialog
-        match={convertMatch}
-        open={convertMatchId !== null}
-        onOpenChange={(open) => {
-          if (!open) setConvertMatchId(null);
-        }}
-      />
-    </div>
-  );
-}
-
-function PropertyBuyerMatchLane({
-  match,
-  isLast,
-  actions,
-  isSavingMemo,
-  onSaveMemo,
-}: {
-  match: Match;
-  isLast: boolean;
-  actions: MatchProgressActions;
-  isSavingMemo: boolean;
-  onSaveMemo: (memo: string | null) => Promise<void>;
-}) {
-  const buyer = match.buyerRequirement;
-  const buyerName = buyer?.contact?.name ?? "구매자 미상";
-  const buyerPhone = buyer?.contact?.phone;
-  const areaLabel = formatBuyerArea(buyer);
-  const requirementNote = formatBuyerRequirementNote(buyer, null);
-  const upcomingViewingEvent = getUpcomingViewingEvent(match);
-  const [isEditingMemo, setIsEditingMemo] = useState(false);
-  const [memoDraft, setMemoDraft] = useState(match.memo ?? "");
-  const saveInFlightRef = useRef(false);
-  const skipBlurSaveRef = useRef(false);
-
-  const startMemoEdit = () => {
-    skipBlurSaveRef.current = false;
-    setMemoDraft(match.memo ?? "");
-    setIsEditingMemo(true);
-  };
-
-  const cancelMemoEdit = () => {
-    if (saveInFlightRef.current) return;
-    skipBlurSaveRef.current = true;
-    setMemoDraft(match.memo ?? "");
-    setIsEditingMemo(false);
-  };
-
-  const saveMemo = async () => {
-    if (saveInFlightRef.current) return;
-
-    const nextMemo = memoDraft.trim();
-    if (nextMemo === (match.memo?.trim() ?? "")) {
-      skipBlurSaveRef.current = true;
-      setIsEditingMemo(false);
-      return;
-    }
-
-    saveInFlightRef.current = true;
-    try {
-      await onSaveMemo(nextMemo || null);
-      skipBlurSaveRef.current = true;
-      setIsEditingMemo(false);
-    } catch {
-      // mutation이 오류를 안내하며 입력 상태는 재시도를 위해 유지한다.
-    } finally {
-      saveInFlightRef.current = false;
-    }
-  };
-
-  return (
-    <article
-      data-property-match-branch
-      className="relative grid gap-3 rounded-md px-2 py-2.5 hover:bg-muted/30 xl:grid-cols-[minmax(260px,320px)_minmax(620px,1fr)_auto] xl:items-center"
-    >
-      {isLast && (
-        <span
-          data-property-match-branch-end
-          aria-hidden="true"
-          className="pointer-events-none absolute -left-12 bottom-0 top-[calc(50%_-_32px)] z-[1] w-0.5 bg-[#fbfbfa]"
-        />
-      )}
-      <svg
-        data-property-match-branch-connector
-        aria-hidden="true"
-        viewBox="0 0 48 64"
-        preserveAspectRatio="none"
-        className="pointer-events-none absolute -left-12 top-1/2 z-[2] h-16 w-12 -translate-y-1/2 overflow-visible text-border"
-      >
-        <path
-          d="M0 0C0 18 14 32 32 32"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-
-      <div className="min-w-0">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {buyer ? (
-            <Link
-              to="/buyer-requirements/$id"
-              params={{ id: buyer.id }}
-              className="min-w-0 truncate text-[13px] font-semibold text-foreground hover:underline"
-            >
-              {buyerName}
-            </Link>
-          ) : (
-            <span className="min-w-0 truncate text-[13px] font-semibold text-foreground">
-              {buyerName}
-            </span>
-          )}
-          {buyer?.transactionType && (
-            <StatusBadge
-              kind="transactionType"
-              status={buyer.transactionType}
-              size="sm"
-            />
-          )}
-          {buyer?.urgency && (
-            <StatusBadge kind="buyerUrgency" status={buyer.urgency} size="sm" />
-          )}
-          {normalizeMatchStage(match.stage) === MatchStage.CLOSED && (
-            <span className="rounded-md border border-destructive/25 bg-destructive-soft px-1.5 py-0.5 text-xs font-medium text-destructive-strong">
-              종료
-            </span>
-          )}
-          {normalizeMatchStage(match.stage) === MatchStage.DEAL_CREATED && (
-            <span className="rounded-md border border-success/25 bg-success-soft px-1.5 py-0.5 text-xs font-medium text-success">
-              거래 전환
-            </span>
-          )}
-        </div>
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-          <span className="truncate">
-            {buyerPhone ? formatPhoneNumber(buyerPhone) : "연락처 없음"}
-            {buyer?.assignedTo?.name ? ` · 담당 ${buyer.assignedTo.name}` : ""}
-          </span>
-        </div>
-        <dl className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
-          <div className="flex min-w-0 items-baseline gap-1">
-            <dt className="shrink-0 text-muted-foreground">예산</dt>
-            <dd className="truncate font-semibold tabular-nums text-foreground">
-              {formatBuyerBudget(buyer)}
-            </dd>
-          </div>
-          {areaLabel && (
-            <div className="flex min-w-0 items-baseline gap-1">
-              <dt className="shrink-0 text-muted-foreground">면적</dt>
-              <dd className="truncate font-medium tabular-nums text-foreground">
-                {areaLabel}
-              </dd>
-            </div>
-          )}
-          {buyer?.moveInDate && (
-            <div className="flex min-w-0 items-baseline gap-1">
-              <dt className="shrink-0 text-muted-foreground">입주</dt>
-              <dd className="truncate font-medium text-foreground">
-                {formatDateShort(buyer.moveInDate)}
-              </dd>
-            </div>
-          )}
-        </dl>
-        {requirementNote && (
-          <p className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
-            조건 · {requirementNote}
-          </p>
-        )}
-      </div>
-
-      <div className="min-w-0 overflow-x-auto">
-        {/* 메모 줄은 진행 트랙(마지막 '거래 전환' 노드)까지만 차지한다.
-            w-0 + min-w-full 은 메모 길이가 트랙 폭을 늘리지 않게 한다. */}
-        <div data-property-match-progress className="w-max">
-          <MatchProgressTrack match={match} actions={actions} />
-          <div className="mt-1.5 flex w-0 min-w-full items-center justify-between gap-3 text-xs text-muted-foreground">
-            {isEditingMemo ? (
-              <div
-                data-property-match-memo-editor
-                className="flex h-6 min-w-0 flex-1 items-center gap-0.5 rounded-md bg-white pl-2 pr-0.5 ring-1 ring-inset ring-foreground/25"
-                onBlur={(event) => {
-                  if (event.currentTarget.contains(event.relatedTarget)) return;
-                  if (skipBlurSaveRef.current) {
-                    skipBlurSaveRef.current = false;
-                    return;
-                  }
-                  void saveMemo();
-                }}
-              >
-                <input
-                  autoFocus
-                  aria-label={`${buyerName} 매칭 메모`}
-                  aria-busy={isSavingMemo}
-                  value={memoDraft}
-                  placeholder="매칭 메모"
-                  readOnly={isSavingMemo}
-                  className="h-full min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
-                  onChange={(event) => setMemoDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      cancelMemoEdit();
-                      return;
-                    }
-                    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
-                      event.preventDefault();
-                      void saveMemo();
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  aria-label="메모 저장"
-                  title="저장 (Enter)"
-                  disabled={isSavingMemo}
-                  className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => void saveMemo()}
-                >
-                  <Check className="size-3" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="메모 편집 취소"
-                  title="취소 (Esc)"
-                  disabled={isSavingMemo}
-                  className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={cancelMemoEdit}
-                >
-                  <X className="size-3" />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                data-property-match-memo-trigger
-                aria-label={`${buyerName} 매칭 메모 편집`}
-                title="클릭하여 메모 편집"
-                className="group/memo flex h-6 min-w-0 flex-1 items-center gap-1 rounded-md pl-2 pr-1.5 text-left hover:bg-white hover:text-foreground hover:ring-1 hover:ring-inset hover:ring-border focus-visible:bg-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-foreground/25"
-                onClick={startMemoEdit}
-              >
-                <span
-                  className={cn(
-                    "min-w-0 truncate",
-                    !match.memo?.trim() && "text-muted-foreground/60",
-                  )}
-                >
-                  {match.memo?.trim() || "메모 추가"}
-                </span>
-                <Pencil
-                  aria-hidden="true"
-                  className="ml-auto size-3 shrink-0 opacity-0 group-hover/memo:opacity-100 group-focus-visible/memo:opacity-100"
-                />
-              </button>
-            )}
-            <span
-              role="status"
-              aria-live="polite"
-              className="shrink-0 tabular-nums"
-            >
-              {isSavingMemo
-                ? "저장 중…"
-                : upcomingViewingEvent
-                  ? `방문 ${formatViewingEventTime(upcomingViewingEvent)}`
-                  : `${formatDateShort(match.updatedAt)} 수정`}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex justify-end">
-        {buyerPhone && (
-          <Button
-            variant="outline"
-            size="icon-sm"
-            className="size-7 shrink-0 shadow-none"
-            asChild
-          >
-            <a
-              href={`tel:${buyerPhone}`}
-              aria-label={`${buyerName} ${formatPhoneNumber(buyerPhone)} 전화`}
-            >
-              <Phone className="size-3.5" />
-            </a>
-          </Button>
-        )}
-      </div>
-    </article>
-  );
-}
-
-function formatBuyerBudget(buyer?: BuyerRequirement) {
-  if (!buyer) return "-";
-  if (buyer.transactionType === "monthly") {
-    const deposit = buyer.depositMax ?? buyer.depositMin;
-    const parts = [
-      deposit ? formatMoney(deposit) : null,
-      buyer.monthlyRentMax ? `월 ${formatMoney(buyer.monthlyRentMax)}` : null,
-    ].filter(Boolean);
-    return parts.length > 0 ? parts.join(" / ") : "-";
-  }
-
-  const min = buyer.priceMin ?? buyer.depositMin;
-  const max = buyer.priceMax ?? buyer.depositMax;
-  if (min && max && min !== max)
-    return `${formatMoney(min)} ~ ${formatMoney(max)}`;
-  return formatMoney(max ?? min).replace("—", "-");
-}
-
-function formatBuyerArea(buyer?: BuyerRequirement) {
-  if (!buyer) return null;
-  const min = buyer.areaMin ? formatAreaPyeong(buyer.areaMin) : null;
-  const max = buyer.areaMax ? formatAreaPyeong(buyer.areaMax) : null;
-  if (min && max && min !== max) return `${min} ~ ${max}`;
-  return max ?? min;
-}
-
-function formatBuyerRequirementNote(
-  buyer: BuyerRequirement | undefined,
-  matchMemo: string | null,
-) {
-  return matchMemo?.trim() || buyer?.memo?.trim() || null;
 }
 
 function ListingAdToggle({
@@ -6239,8 +5885,6 @@ function ListingAdToggle({
 }) {
   const adCount = getPropertyActiveAdvertisementCount(group);
 
-  if (adCount === 0) return null;
-
   return (
     <div
       className="-mx-2.5 flex h-full items-center justify-center"
@@ -6251,7 +5895,7 @@ function ListingAdToggle({
         count={adCount}
         icon={<Megaphone className="size-3" />}
         isOpen={isOpen}
-        panelId={`property-ad-panel-${group.id}`}
+        panelId={`property-expand-panel-${group.id}`}
         label="광고 현황"
         onToggle={() => onToggle(group.id)}
       />
@@ -6260,7 +5904,8 @@ function ListingAdToggle({
 }
 
 function estimatePropertyAdPanelHeight(group: PropertyListingGroup) {
-  return 72 + Math.max(1, getPropertyAdRows(group).length) * 44;
+  // Panel padding/border 25 + tabs 32 + header 36 + 37px data rows.
+  return 93 + Math.max(1, getPropertyAdRows(group).length) * 37;
 }
 
 function getPropertyAdRows(group: PropertyListingGroup) {
@@ -6283,114 +5928,106 @@ function getPropertyActiveAdvertisementCount(group: PropertyListingGroup) {
   );
 }
 
+// 연결 구매고객 패널의 '광고' 탭 내용. 바깥 배경·여백·머리글은 그 패널이
+// 대고, 여기서는 광고 목록만 그린다.
 function PropertyAdPanel({ group }: { group: PropertyListingGroup }) {
   const adRows = getPropertyAdRows(group);
-  const activeAdvertisementCount = getPropertyActiveAdvertisementCount(group);
+  const headers = [
+    { label: "거래", icon: <Tag />, width: 74 },
+    { label: "광고 채널", icon: <Megaphone />, width: 156 },
+    { label: "상태", icon: <Info />, width: 104 },
+    { label: "가격/보증금", icon: <WonCircleIcon />, width: 180 },
+    { label: "월세", icon: <WonCircleIcon />, width: 104 },
+    { label: "등록일", icon: <CalendarDays />, width: 112 },
+    { label: "메모", icon: <PencilLine /> },
+    { label: "원문", icon: <ExternalLink />, width: 108 },
+  ];
 
   return (
     <div
-      id={`property-ad-panel-${group.id}`}
+      data-property-ad-panel
       role="region"
       aria-label={`${group.property?.site?.name ?? "매물"} 광고 현황`}
-      className="border-b border-border bg-[#f3f9fb] py-3 pl-[60px] pr-4"
     >
-      <div className="mb-2 flex items-center gap-1.5">
-        <Megaphone className="size-3.5 text-[#337ea9]" />
-        <span className="text-xs font-semibold text-[#337ea9]">
-          광고 노출 {activeAdvertisementCount}개
-        </span>
-        <span className="text-[11.5px] text-[#6b9fba]">· CP사별 현황</span>
-      </div>
+      <table
+        aria-label="광고 현황 표"
+        className="w-full min-w-[1018px] table-fixed border-collapse text-left"
+      >
+        <colgroup>
+          {headers.map(({ label, width }) => <col key={label} style={{ width }} />)}
+        </colgroup>
+        <thead>
+          <tr data-property-ad-header className="h-9 border-b border-border text-[13px] font-normal leading-[1.6154] text-muted-foreground">
+            {headers.map(({ label, icon }) => (
+              <th key={label} scope="col" className="h-9 px-2.5 py-0 font-normal">
+                <TableHeaderLabel icon={icon} label={label} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {adRows.length === 0 ? (
+            <tr>
+              <td colSpan={headers.length} className="h-[37px] border-b border-border px-2.5 text-[13px] text-muted-foreground">
+                등록된 광고가 없습니다.
+              </td>
+            </tr>
+          ) : adRows.map(({ listing, advertisement }) => {
+            const statusMeta = adStatusMeta[advertisement.status] ?? adStatusMeta.active;
+            const advertisedPrice = advertisement.advertisedPrice ?? advertisement.advertisedDeposit;
+            const priceText = advertisedPrice != null ? formatPrice(advertisedPrice) : "—";
+            const rentText = advertisement.advertisedMonthlyRent != null
+              ? formatPrice(advertisement.advertisedMonthlyRent) : "—";
+            const channelLabel = getAdChannelLabel(advertisement.channel);
 
-      {adRows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">등록된 광고가 없습니다.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <div className="min-w-[650px] max-w-[760px]">
-            <div className="flex items-center gap-1.5 pb-1.5 pl-[13px] pr-1">
-              <span className="w-[52px] shrink-0 text-[11px] font-semibold text-muted-foreground">
-                거래
-              </span>
-              <span className="w-[128px] shrink-0 text-[11px] font-semibold text-muted-foreground">
-                CP사
-              </span>
-              <span className="w-[72px] shrink-0 text-[11px] font-semibold text-muted-foreground">
-                상태
-              </span>
-              <span className="w-[130px] shrink-0 text-[11px] font-semibold text-muted-foreground">
-                가격/보증금
-              </span>
-              <span className="w-[90px] shrink-0 text-[11px] font-semibold text-muted-foreground">
-                월세
-              </span>
-              <span className="w-[72px] shrink-0 text-[11px] font-semibold text-muted-foreground">
-                등록일
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              {adRows.map(({ listing, advertisement }) => {
-                const statusMeta =
-                  adStatusMeta[advertisement.status] ?? adStatusMeta.active;
-                const advertisedPrice =
-                  advertisement.advertisedPrice ??
-                  advertisement.advertisedDeposit;
-
-                return (
-                  <div
-                    key={advertisement.id}
-                    className="flex items-center gap-1.5 rounded-lg border border-[#d8ebf3] bg-white px-3 py-2"
-                  >
-                    <div className="w-[52px] shrink-0">
-                      <TransactionMiniLabel
-                        transactionType={listing.transactionType}
-                      />
-                    </div>
-                    <div className="w-[128px] shrink-0 truncate text-[13px] font-semibold text-foreground">
-                      {getAdChannelLabel(advertisement.channel)}
-                    </div>
-                    <div className="w-[72px] shrink-0">
-                      <span
-                        className={cn(
-                          "inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-medium leading-5",
-                          statusMeta.className,
-                        )}
-                      >
-                        {statusMeta.label}
-                      </span>
-                    </div>
-                    <div className="w-[130px] shrink-0 truncate text-[12.5px] font-medium tabular-nums text-foreground">
-                      {advertisedPrice != null
-                        ? formatPrice(advertisedPrice)
-                        : "-"}
-                    </div>
-                    <div className="w-[90px] shrink-0 truncate text-[12.5px] tabular-nums text-foreground/70">
-                      {advertisement.advertisedMonthlyRent != null
-                        ? formatPrice(advertisement.advertisedMonthlyRent)
-                        : "-"}
-                    </div>
-                    <div className="w-[72px] shrink-0 truncate text-[12.5px] tabular-nums text-foreground/70">
-                      {formatDateShort(advertisement.startedAt)}
-                    </div>
-                    {advertisement.url && (
-                      <a
-                        href={advertisement.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                        className="ml-auto inline-flex shrink-0 items-center gap-1 text-[11.5px] font-medium text-[#337ea9] hover:underline"
-                      >
-                        원문 보기
-                        <ExternalLink className="size-3" />
-                      </a>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+            return (
+              <tr
+                key={advertisement.id}
+                data-property-ad-row={advertisement.id}
+                className="h-[37px] border-b border-border text-[14px] font-[450] leading-[1.5] text-foreground hover:bg-muted [&>td]:h-9 [&>td]:px-2.5 [&>td]:py-0 [&>td]:align-middle [&>td:not(:last-child)]:border-r [&>td:not(:last-child)]:border-border"
+              >
+                <td>
+                  <TransactionMiniLabel
+                    transactionType={listing.transactionType}
+                    className="h-5 rounded-[3px] py-0 text-[13px] font-normal leading-none"
+                  />
+                </td>
+                <td title={channelLabel}><span className="block truncate">{channelLabel}</span></td>
+                <td>
+                  <span className={cn(
+                    "inline-flex h-5 items-center gap-1.5 whitespace-nowrap rounded-full pl-[7px] pr-[9px] text-[13px] font-normal leading-none",
+                    statusMeta.className,
+                  )}>
+                    <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-current opacity-70" />
+                    {statusMeta.label}
+                  </span>
+                </td>
+                <td title={priceText} className="tabular-nums"><span className="block truncate">{priceText}</span></td>
+                <td title={rentText} className="tabular-nums"><span className="block truncate">{rentText}</span></td>
+                <td className="tabular-nums">{formatDateShort(advertisement.startedAt)}</td>
+                <td title={advertisement.memo?.trim() || undefined}>
+                  <span className="block truncate">{advertisement.memo?.trim() || "—"}</span>
+                </td>
+                <td>
+                  {advertisement.url ? (
+                    <a
+                      href={advertisement.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`${channelLabel} ${transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType} 광고 원문 보기`}
+                      onClick={(event) => event.stopPropagation()}
+                      className="-ml-1 inline-flex h-6 items-center gap-1 rounded px-1 text-[13px] text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      원문 보기
+                      <ExternalLink className="size-3.5" aria-hidden="true" />
+                    </a>
+                  ) : <span className="text-muted-foreground">—</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -6400,7 +6037,7 @@ function IntakeMemoCell({
   onSave,
 }: {
   intake: PropertyListingGroup["representative"];
-  onSave: (intakeId: string, value: unknown) => void;
+  onSave: (intakeId: string, value: unknown) => CellSaveResult;
 }) {
   const value = intake.memo?.trim();
   return (
@@ -6409,16 +6046,21 @@ function IntakeMemoCell({
       field="memo"
       value={intake.memo}
       onSave={(recordId, _field, newValue) => {
-        onSave(recordId, newValue);
+        return onSave(recordId, newValue);
       }}
       editType="text"
-      activation="doubleClick"
+      ariaLabel="의뢰 메모"
+      multiline
+      commitOnBlur
+      activation="click"
       portalAnchor="tableCell"
       editorChrome="floating"
       hoverHighlight={false}
     >
-      <span className="line-clamp-2 min-w-0 text-[13px] leading-4 text-slate-600">
-        {value || <span className="text-slate-400">-</span>}
+      <span className="block min-w-0 py-[7.5px] text-[14px] font-[450] leading-[21px] text-foreground">
+        <span className="line-clamp-2">
+          {value || <span className="text-muted-foreground">-</span>}
+        </span>
       </span>
     </EditableCell>
   );
@@ -6480,7 +6122,7 @@ function MoveInAvailableStack({
   onPatch,
 }: {
   listings: ListingSummary[];
-  onPatch: (recordId: string, patch: UpdateListingDto) => void;
+  onPatch: (recordId: string, patch: UpdateListingDto) => CellSaveResult;
 }) {
   const hasMultiple = listings.length > 1;
   return (
@@ -6493,8 +6135,9 @@ function MoveInAvailableStack({
       onClick={(event) => event.stopPropagation()}
     >
       {listings.map((listing) => (
-        <div
+        <PropertyListingCell
           key={listing.id}
+          listingId={listing.id}
           className={cn(
             "flex min-w-0 items-center",
             hasMultiple ? "flex-none" : "flex-1",
@@ -6510,7 +6153,7 @@ function MoveInAvailableStack({
               "unknown"
             }
             onSave={(recordId, field, value) => {
-              onPatch(recordId, { [field]: value } as UpdateListingDto);
+              return onPatch(recordId, { [field]: value } as UpdateListingDto);
             }}
             onChipSave={(recordId, payload) => {
               const patch: UpdateListingDto = {
@@ -6521,7 +6164,7 @@ function MoveInAvailableStack({
                   Object.assign(patch, { [write.field]: write.value });
                 }
               }
-              onPatch(recordId, patch);
+              return onPatch(recordId, patch);
             }}
             editType="select-chip"
             chipOptions={moveInAvailableChipOptions}
@@ -6530,7 +6173,7 @@ function MoveInAvailableStack({
               <MoveInAvailableSummary listing={listing} />
             </span>
           </EditableCell>
-        </div>
+        </PropertyListingCell>
       ))}
     </div>
   );
@@ -6543,14 +6186,14 @@ function MoveInAvailableSummary({ listing }: { listing: ListingSummary }) {
     <div className="flex min-w-0 flex-col gap-0.5 py-1">
       <span
         className={cn(
-          "inline-flex w-fit max-w-full whitespace-nowrap rounded-md px-1.5 py-0.5 text-[12px] font-medium leading-5",
+          "inline-flex h-5 w-fit max-w-full whitespace-nowrap rounded-[4px] px-1.5 text-[14px] font-[450] leading-5",
           summary.className,
         )}
       >
         <span className="truncate">{summary.label}</span>
       </span>
       {summary.detail && (
-        <span className="truncate text-[11px] text-slate-500">
+        <span className="truncate text-[11px] text-muted-foreground">
           {summary.detail}
         </span>
       )}
@@ -6558,13 +6201,14 @@ function MoveInAvailableSummary({ listing }: { listing: ListingSummary }) {
   );
 }
 
-function TransactionBadge({ transactionType }: { transactionType: string }) {
+function TransactionBadge({ transactionType, className }: { transactionType: string; className?: string }) {
   const transactionMeta = transactionTypeMeta[transactionType];
   return (
     <span
       className={cn(
         "inline-flex max-w-full rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5",
         transactionMeta?.className ?? "bg-[#f1f1ef] text-[#787774]",
+        className,
       )}
     >
       {transactionMeta?.label ?? transactionType}
@@ -6574,15 +6218,18 @@ function TransactionBadge({ transactionType }: { transactionType: string }) {
 
 function TransactionMiniLabel({
   transactionType,
+  className,
 }: {
   transactionType: string;
+  className?: string;
 }) {
   const transactionMeta = transactionTypeMeta[transactionType];
   return (
     <span
       className={cn(
-        "inline-flex min-w-8 justify-center rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5",
+        "inline-flex min-w-8 shrink-0 justify-center rounded-[4px] px-1.5 py-0.5 text-[11px] font-medium leading-5",
         transactionMeta?.className ?? "bg-[#f1f1ef] text-[#787774]",
+        className,
       )}
     >
       {transactionMeta?.label ?? transactionType}

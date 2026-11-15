@@ -40,7 +40,7 @@ const EVENT_TYPE_LABEL: Record<string, string> = {
 
 const MATCH_STAGE_LABEL: Record<string, string> = {
   buyerInterested: '고객 관심',
-  viewingConfirmed: '임장 가능 확인',
+  viewingConfirmed: '임장 조율',
   viewing: '임장',
   negotiating: '협상',
   closed: '매칭 종료',

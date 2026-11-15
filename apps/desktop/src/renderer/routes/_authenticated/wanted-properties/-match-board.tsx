@@ -386,7 +386,7 @@ function StageActionPopoverContent({
         <p className="text-sm font-semibold">{stageLabel}</p>
         <p className="mt-1 text-xs text-muted-foreground">
           {stage === MatchStage.VIEWING_CONFIRMED
-            ? '집주인·점유자에게 임장 가능 여부를 확인한 뒤 다음 단계로 진행합니다.'
+            ? '집주인·점유자와 임장 일정을 조율한 뒤 다음 단계로 진행합니다.'
             : state === 'current'
             ? '업무 결과를 선택해 다음 단계로 진행하거나 이 단계에서 종료합니다.'
             : state === 'completed'

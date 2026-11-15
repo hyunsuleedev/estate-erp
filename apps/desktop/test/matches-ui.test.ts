@@ -16,8 +16,12 @@ const matchDetailSource = readFileSync(
   ),
   'utf8',
 );
-const propertiesPageSource = readFileSync(
-  resolve(testDir, '../src/renderer/routes/_authenticated/properties/index.tsx'),
+// 매물관리의 매칭 펼침(연결 구매고객)은 별도 파일로 분리되어 있다.
+const propertyMatchPanelSource = readFileSync(
+  resolve(
+    testDir,
+    '../src/renderer/routes/_authenticated/properties/-components/property-match-panel.tsx',
+  ),
   'utf8',
 );
 const matchGroupsSource = readFileSync(
@@ -643,7 +647,7 @@ describe('desktop matches workbench', () => {
     for (const source of [
       matchesPageSource,
       matchDetailSource,
-      propertiesPageSource,
+      propertyMatchPanelSource,
     ]) {
       assert.match(
         source,
@@ -709,7 +713,7 @@ describe('desktop matches workbench', () => {
     assert.match(statusConfigSource, /buyerInterested: \{ label: '고객 관심'/);
     assert.match(
       statusConfigSource,
-      /viewingConfirmed: \{ label: '임장 가능 확인'/,
+      /viewingConfirmed: \{ label: '임장 조율'/,
     );
     assert.match(matchBoardSource, /onStageChange\(MatchStage\.NEGOTIATING\)/);
     assert.doesNotMatch(matchBoardSource, /onStageChange\('ownerContacted'\)/);

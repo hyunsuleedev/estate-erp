@@ -17,20 +17,33 @@ import {
   type ColumnResizeMode,
   type RowSelectionState,
   type SortingState,
+  type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowDown, ArrowUp, Minus, Plus } from 'lucide-react';
+import { Minus, Plus } from 'lucide-react';
 import type { ListingIntake, ListingIntakeListing } from '@estate-erp/api-client';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { CellTableNavigationProvider } from '@/components/data-table/cell-navigation';
+import { movePropertyCell, resolvePropertyCell, type PropertyCellAddress, type PropertyCellDirection } from '../-property-cell-navigation';
+import { PropertyListingCellProvider } from './property-listing-cell';
+import { PropertyColumnMenu, propertyDetailColumnIds, propertyTableColumns } from './property-table-controls';
+import { PROPERTY_LISTING_ITEM_HEIGHT } from '../-property-table-metrics';
 
 const VIRTUALIZE_THRESHOLD = 50;
-const PROPERTY_LISTING_ITEM_HEIGHT = 40;
 const END_REACHED_THRESHOLD = 320;
 const PINNED_BODY_CELL_Z_INDEX = 10;
-const PROPERTY_DETAIL_GUIDE_LEAD = 10;
-const PROPERTY_DETAIL_GUIDE_TOGGLE_SIZE = 20;
+// 고정 열 경계선: 평소에는 다른 칸 선과 같은 굵기(1px)에 색만 조금 진한 선 한 줄.
+// 선(또는 접기 버튼)에 마우스를 올리면 선 전체에 5px 폭의 옅은 띠가 나타난다 —
+// 머리글의 열 폭 조절 손잡이와 같은 방식이다. 띠는 ::after 로 그리고 누를 수 없다.
+// 머리글과 행이 같은 클래스를 써서 위에서 아래까지 한 선으로 이어진다.
+// 옅은 칸 테두리는 빼서(border-r-0) 두 줄로 보이지 않게 한다.
+const PINNED_EDGE_LINE_CLASS =
+  "border-r-0 shadow-[1px_0_0_0_#cfcecb] after:pointer-events-none after:absolute after:inset-y-0 after:-right-[3px] after:z-[1] after:w-[5px] after:transition-colors after:content-[''] group-has-[[data-column-edge-hit]:hover]/ptable:after:bg-foreground/10 group-has-[[data-column-group-toggle]:hover]/ptable:after:bg-foreground/10";
+// Overlay the 17px +/- control on the header boundary without a spacer row.
+// 접기 버튼(16px)의 절반. 버튼 가운데가 고정 열 경계에 오도록 이만큼 왼쪽에서 시작한다.
+const PROPERTY_DETAIL_GUIDE_TOGGLE_SIZE = 8;
 
 type ListingProperty = NonNullable<ListingIntake['property']>;
 
@@ -47,7 +60,8 @@ export type PropertyListingGroup = {
 type PropertyListingColumnMeta = {
   cellClassName?: string;
   grow?: boolean;
-  onCellDoubleClick?: (group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => void;
+  listingCell?: boolean;
+  onCellClick?: (group: PropertyListingGroup, event: ReactMouseEvent<HTMLTableCellElement>) => void;
 };
 
 export type ListingSummary = Pick<
@@ -82,6 +96,9 @@ interface PropertyListingsTableProps {
   pageSize: number;
   sorting?: SortingState;
   onSortingChange?: (sorting: SortingState) => void;
+  columnVisibility?: VisibilityState;
+  onColumnVisibilityChange?: (id: string, visible: boolean) => void;
+  columnFilterActions?: Partial<Record<string, () => void>>;
   onRowClick?: (row: PropertyListingGroup) => void;
   onRequestClose?: () => void;
   isLoading?: boolean;
@@ -108,6 +125,9 @@ export function PropertyListingsTable({
   pageSize,
   sorting,
   onSortingChange,
+  columnVisibility = {},
+  onColumnVisibilityChange,
+  columnFilterActions,
   onRowClick,
   onRequestClose,
   isLoading = false,
@@ -122,18 +142,30 @@ export function PropertyListingsTable({
   columnGroupControl,
 }: PropertyListingsTableProps) {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [focusedCell, setFocusedCell] = useState<{
-    row: number;
-    col: number;
-  } | null>(null);
+  const [selectedCell, setSelectedCell] = useState<PropertyCellAddress | null>(null);
   const [columnResizeMode] = useState<ColumnResizeMode>('onChange');
   const tableRef = useRef<HTMLTableElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
-  const resolvedPinning = useMemo<ColumnPinningState>(
-    () => ({ left: ['_select', 'info', 'site', 'dong', 'unit', 'supplyArea', 'actions'], right: [] }),
-    [],
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || tableRef.current?.contains(target)) return;
+      // Editors own dismissal, validation and pending saves. Their successful
+      // outside close clears selection through cellNavigation.clear instead.
+      if (tableRef.current?.querySelector('[data-property-row-id][data-column-id] [data-editing="true"]')) return;
+      // Use the table boundary: the flex scroller also contains the blank area
+      // below the final row. Row checkbox selection is deliberately independent.
+      setSelectedCell(null);
+    };
+    document.addEventListener('click', handleOutsideClick, true);
+    return () => document.removeEventListener('click', handleOutsideClick, true);
+  }, []);
+
+  const [resolvedPinning, setColumnPinning] = useState<ColumnPinningState>(
+    () => ({ left: ['_select', 'info', 'site', 'dong', 'unit', 'supplyArea'], right: [] }),
   );
+  const [wrappedColumns, setWrappedColumns] = useState<Record<string, boolean>>({});
 
   const allColumns = useMemo<ColumnDef<PropertyListingGroup, unknown>[]>(
     () => [
@@ -174,6 +206,7 @@ export function PropertyListingsTable({
       sorting: sorting ?? [],
       rowSelection,
       columnPinning: resolvedPinning,
+      columnVisibility,
     },
     onSortingChange: (updater) => {
       const next = typeof updater === 'function' ? updater(sorting ?? []) : updater;
@@ -194,6 +227,75 @@ export function PropertyListingsTable({
   });
 
   const rows = table.getRowModel().rows;
+  const visibleColumns = table.getVisibleLeafColumns();
+  const navigationRows = useMemo(() => rows.map((row) => row.original), [rows]);
+  const navigationColumns = useMemo(() => visibleColumns.map((column) => ({
+    id: column.id,
+    listingCell: Boolean((column.columnDef.meta as PropertyListingColumnMeta | undefined)?.listingCell),
+  })), [visibleColumns]);
+  const movableColumns = useMemo(() => navigationColumns.filter((column) => column.id !== '_select'), [navigationColumns]);
+  const navigationModelRef = useRef({ rows: navigationRows, columns: navigationColumns, movableColumns });
+  navigationModelRef.current = { rows: navigationRows, columns: navigationColumns, movableColumns };
+  const focusedCell = useMemo(() => {
+    if (!selectedCell) return null;
+    const cell = resolvePropertyCell(selectedCell, navigationRows, navigationColumns);
+    if (!cell) return null;
+    return {
+      row: navigationRows.findIndex((row) => row.id === cell.rowId),
+      col: navigationColumns.findIndex((column) => column.id === cell.columnId),
+      listingId: cell.listingId,
+    };
+  }, [selectedCell, navigationRows, navigationColumns]);
+  const moveSelection = useCallback((direction: PropertyCellDirection) => {
+    setSelectedCell((previous) => {
+      if (!navigationRows.length || !movableColumns.length) return null;
+      const current = previous?.columnId !== '_select' && previous
+        ? previous
+        : { rowId: previous?.rowId ?? navigationRows[0].id, columnId: movableColumns[0].id };
+      return movePropertyCell(current, navigationRows, movableColumns, previous ? direction : 'current');
+    });
+    // An idle editor must not keep DOM focus after the logical selection moves.
+    scrollerRef.current?.focus({ preventScroll: true });
+  }, [navigationRows, movableColumns]);
+  const cellNavigation = useMemo(() => {
+    const address = (trigger: HTMLElement, previous: PropertyCellAddress | null, recordId?: string): PropertyCellAddress | null => {
+      const model = navigationModelRef.current;
+      const cell = trigger.closest<HTMLElement>('[data-property-row-id][data-column-id]');
+      const rowId = cell?.dataset.propertyRowId;
+      const columnId = cell?.dataset.columnId;
+      if (!rowId || !columnId) return null;
+      const listingColumn = model.columns.find((column) => column.id === columnId)?.listingCell;
+      const listingId = listingColumn
+        ? trigger.closest<HTMLElement>('[data-listing-cell-id]')?.dataset.listingCellId ?? recordId
+        : previous?.rowId === rowId ? previous.listingId : undefined;
+      return resolvePropertyCell({ rowId, columnId, listingId }, model.rows, model.columns);
+    };
+    return {
+      select: (trigger: HTMLElement, focusTable = false) => {
+        setSelectedCell((previous) => address(trigger, previous));
+        if (focusTable) scrollerRef.current?.focus({ preventScroll: true });
+      },
+      clear: (trigger: HTMLElement, recordId?: string) => {
+        setSelectedCell((previous) => {
+          const cell = address(trigger, previous, recordId);
+          // An older async save must not clear a newer row, column or listing.
+          return cell && previous?.rowId === cell.rowId &&
+            previous.columnId === cell.columnId && previous.listingId === cell.listingId
+            ? null
+            : previous;
+        });
+      },
+      finish: (trigger: HTMLElement, direction: 'current' | 'next' | 'previous' | 'down', recordId?: string) => {
+        setSelectedCell((previous) => {
+          const cell = address(trigger, previous, recordId);
+          // A pending save can finish after a refresh, sort or virtual unmount.
+          const model = navigationModelRef.current;
+          return cell ? movePropertyCell(cell, model.rows, model.movableColumns, direction) : null;
+        });
+        scrollerRef.current?.focus({ preventScroll: true });
+      },
+    };
+  }, []);
   const canVirtualize = rows.length > VIRTUALIZE_THRESHOLD;
   const rowVirtualizer = useVirtualizer({
     count: canVirtualize ? rows.length : 0,
@@ -219,61 +321,65 @@ export function PropertyListingsTable({
     if (focusedCell === null) return;
     if (canVirtualize) {
       rowVirtualizer.scrollToIndex(focusedCell.row, { align: 'auto' });
-      return;
     }
-    if (!tableRef.current) return;
-    const trs = tableRef.current.querySelectorAll('tbody tr[data-property-row="true"]');
-    trs[focusedCell.row]?.scrollIntoView({ block: 'nearest' });
+    const frame = requestAnimationFrame(() => {
+      const cell = tableRef.current?.querySelector<HTMLElement>(`td[data-table-row="${focusedCell.row}"][data-table-col="${focusedCell.col}"]`);
+      const surface = focusedCell.listingId
+        ? cell?.querySelector<HTMLElement>(`[data-listing-cell-id="${CSS.escape(focusedCell.listingId)}"]`) ?? cell
+        : cell;
+      surface?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [focusedCell, canVirtualize, rowVirtualizer]);
 
   useEffect(() => {
     if (!canVirtualize) return;
     rowVirtualizer.measure();
-  }, [canVirtualize, expandedRowIds, getExpandedRowHeight, rowVirtualizer]);
+  }, [canVirtualize, expandedRowIds, getExpandedRowHeight, rowVirtualizer, wrappedColumns, columnVisibility]);
+
+  // Hidden columns and disclosure changes must not leave focus on a different cell.
+  useEffect(() => {
+    if (selectedCell && !focusedCell) setSelectedCell(null);
+  }, [selectedCell, focusedCell]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      const colCount = allColumns.length;
-      const startCol = 1;
-
+      // Menus, open buttons and editors own their keyboard interactions, including portals.
+      if (e.defaultPrevented || e.nativeEvent.isComposing) return;
+      const onIdleEditor = e.target instanceof Element && e.target.closest('[data-editable-cell-trigger]:not([data-editing])');
+      if (e.target !== e.currentTarget && !onIdleEditor) return;
+      if (rows.length === 0) return;
       switch (e.key) {
-        case 'ArrowDown': {
-          e.preventDefault();
-          setFocusedCell((prev) => ({
-            row: prev === null ? 0 : Math.min(rows.length - 1, prev.row + 1),
-            col: prev?.col ?? startCol,
-          }));
-          break;
-        }
-        case 'ArrowUp': {
-          e.preventDefault();
-          setFocusedCell((prev) => ({
-            row: prev === null ? 0 : Math.max(0, prev.row - 1),
-            col: prev?.col ?? startCol,
-          }));
-          break;
-        }
-        case 'ArrowRight': {
-          e.preventDefault();
-          setFocusedCell((prev) => ({
-            row: prev?.row ?? 0,
-            col: prev === null ? startCol : Math.min(colCount - 1, prev.col + 1),
-          }));
-          break;
-        }
+        case 'ArrowDown':
+        case 'ArrowUp':
+        case 'ArrowRight':
         case 'ArrowLeft': {
           e.preventDefault();
-          setFocusedCell((prev) => ({
-            row: prev?.row ?? 0,
-            col: prev === null ? startCol : Math.max(startCol, prev.col - 1),
-          }));
+          moveSelection(e.key === 'ArrowDown' ? 'down' : e.key === 'ArrowUp' ? 'up' : e.key === 'ArrowRight' ? 'next' : 'previous');
           break;
         }
-        case 'Enter': {
-          if (focusedCell !== null && onRowClick) {
+        case 'Tab': {
+          if (!focusedCell) return;
+          e.preventDefault();
+          moveSelection(e.shiftKey ? 'previous' : 'next');
+          break;
+        }
+        case 'Enter':
+        case 'F2': {
+          if (focusedCell !== null) {
             e.preventDefault();
+            const cell = tableRef.current?.querySelector<HTMLElement>(`td[data-table-row="${focusedCell.row}"][data-table-col="${focusedCell.col}"]`);
+            const listingColumn = navigationColumns[focusedCell.col]?.listingCell;
+            const surface = listingColumn && focusedCell.listingId
+              ? cell?.querySelector<HTMLElement>(`[data-listing-cell-id="${CSS.escape(focusedCell.listingId)}"]`)
+              : cell;
+            const trigger = surface?.querySelector<HTMLButtonElement>('[data-editable-cell-trigger]:not(:disabled)');
+            if (trigger && !e.metaKey && !e.ctrlKey) {
+              trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'F2', bubbles: true }));
+              return;
+            }
             const row = rows[focusedCell.row];
-            if (row) onRowClick(row.original);
+            if (row && e.key === 'Enter' && (!listingColumn || e.metaKey || e.ctrlKey)) onRowClick?.(row.original);
           }
           break;
         }
@@ -291,13 +397,13 @@ export function PropertyListingsTable({
             onRequestClose();
             break;
           }
-          setFocusedCell(null);
+          setSelectedCell(null);
           table.resetRowSelection();
           break;
         }
       }
     },
-    [allColumns.length, focusedCell, onRequestClose, onRowClick, rows, table],
+    [focusedCell, onRequestClose, onRowClick, rows, table, moveSelection, navigationColumns],
   );
 
   const handleScroll = useCallback(
@@ -315,35 +421,15 @@ export function PropertyListingsTable({
 
   const focusedRow = focusedCell !== null && rows[focusedCell.row]?.original ? rows[focusedCell.row].original : null;
   const tableTotalSize = table.getTotalSize();
-  const leafColumns = table.getAllLeafColumns();
-  const propertyDetailStartColumn = leafColumns.find(
-    (column) => column.id === 'unitType',
-  );
-  const listingAvailabilityColumn = leafColumns.find(
-    (column) => column.id === 'listingAvailability',
-  );
-  const propertyDetailGroupStart =
-    propertyDetailStartColumn?.getStart() ??
-    listingAvailabilityColumn?.getStart() ??
-    0;
-  const propertyDetailGroupEnd =
-    listingAvailabilityColumn?.getStart() ??
-    propertyDetailGroupStart;
-  const propertyDetailGuideLeft = Math.max(
-    0,
-    propertyDetailGroupStart - PROPERTY_DETAIL_GUIDE_LEAD,
-  );
-  const propertyDetailGuideWidth = Math.max(
-    0,
-    propertyDetailGroupEnd - propertyDetailGuideLeft,
-  );
-  const propertyDetailGuideCapLeft = Math.max(
-    0,
-    propertyDetailGroupEnd - 1,
-  );
+  const leafColumns = table.getVisibleLeafColumns();
+  const visibleColumnCount = leafColumns.length;
+  // Pin a contiguous prefix so the +/- group remains in its original order.
+  const propertyDetailGroupStart = leafColumns
+    .filter((column) => ['_select', 'info', 'site', 'dong', 'unit', 'supplyArea'].includes(column.id))
+    .reduce((width, column) => width + column.getSize(), 0);
   const propertyDetailToggleLeft = Math.max(
     0,
-    propertyDetailGuideLeft - PROPERTY_DETAIL_GUIDE_TOGGLE_SIZE,
+    propertyDetailGroupStart - PROPERTY_DETAIL_GUIDE_TOGGLE_SIZE,
   );
 
   const growColumnId = leafColumns.find(
@@ -376,6 +462,7 @@ export function PropertyListingsTable({
           ref={canVirtualize && !isExpanded ? rowVirtualizer.measureElement : undefined}
           data-index={rowIndex}
           data-property-row="true"
+          style={{ height: estimatePropertyGroupRowHeight(row.original) }}
           data-state={row.getIsSelected() ? 'selected' : undefined}
           className="group"
         >
@@ -389,48 +476,94 @@ export function PropertyListingsTable({
             const columnMeta = cell.column.columnDef.meta as
               | PropertyListingColumnMeta | undefined;
             const shouldGrow = cell.column.id === growColumnId;
+            const hasListingCells = columnMeta?.listingCell && row.original.listings.length > 0;
+            const hasSplitListingCells = hasListingCells && row.original.listings.length > 1;
+            // A single listing uses the full td, whose height may come from another column.
+            const isWholeCellFocused = isFocused && !hasSplitListingCells;
 
             return (
               <td
                 key={cell.id}
                 data-table-col={colIndex}
                 data-table-row={rowIndex}
+                data-column-id={cell.column.id}
+                data-property-row-id={row.id}
+                data-pinned-edge={isLastPinned || undefined}
+                data-cell-selected={isWholeCellFocused || undefined}
                 className={cn(
-                  'relative select-none align-middle border-b border-[#eeeeec] px-2.5 text-[13px]',
+                  'relative select-none align-middle border-b border-border px-2.5 text-[14px] font-[450] leading-[21px] text-foreground',
                   !isLastCol && 'border-r border-r-[#eeeeec]',
-                  'group-hover:bg-slate-50/70',
+                  isLastPinned && PINNED_EDGE_LINE_CLASS,
+                  'group-hover:bg-muted/70',
                   'group-data-[state=selected]:bg-primary/5',
-                  isFocused && 'bg-blue-50/60 outline outline-1 -outline-offset-1 outline-blue-500/30',
-                  isRowFocused && !isFocused && 'bg-slate-50',
+                  isWholeCellFocused && 'bg-blue-50/40 outline outline-2 -outline-offset-2 outline-[#2383e2]',
+                  isRowFocused && !isFocused && 'bg-muted',
                   onRowClick && 'cursor-default',
-                  isPinned && 'bg-white group-hover:bg-slate-50/70 group-data-[state=selected]:bg-primary/5',
-                  isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
+                  isPinned && 'bg-white group-hover:bg-muted group-data-[state=selected]:bg-secondary',
                   columnMeta?.cellClassName,
+                  wrappedColumns[cell.column.id] && 'py-1.5 [&_.truncate]:whitespace-normal [&_.truncate]:overflow-visible [&_.line-clamp-2]:line-clamp-none [&_span]:break-words',
                 )}
                 style={{
+                  // A definite td height lets h-full edit triggers fill the
+                  // cell; table layout still grows for wrapped text.
+                  height: estimatePropertyGroupRowHeight(row.original),
                   width: shouldGrow ? undefined : cell.column.getSize(),
                   ...getPinStyle(cell.column),
                 }}
-                onClick={() => {
-                  setFocusedCell({ row: rowIndex, col: colIndex });
+                onClick={(event) => {
+                  const surfaces = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-listing-cell-id]'));
+                  const nearest = surfaces.reduce<HTMLElement | null>((best, surface) => {
+                    const distance = (element: HTMLElement) => {
+                      const rect = element.getBoundingClientRect();
+                      return Math.abs(event.clientY - (rect.top + rect.height / 2));
+                    };
+                    return !best || distance(surface) < distance(best) ? surface : best;
+                  }, null);
+                  cellNavigation.select(nearest ?? event.currentTarget, true);
+                  columnMeta?.onCellClick?.(row.original, event);
                 }}
                 onDoubleClick={(event) => {
-                  setFocusedCell({ row: rowIndex, col: colIndex });
-                  if (columnMeta?.onCellDoubleClick) {
-                    columnMeta.onCellDoubleClick(row.original, event);
-                    return;
-                  }
+                  if (hasListingCells) return;
+                  cellNavigation.select(event.currentTarget, true);
+                  if (columnMeta?.onCellClick) return;
                   onRowClick?.(row.original);
                 }}
               >
-                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                <PropertyListingCellProvider value={{
+                  rowId: row.id,
+                  columnId: cell.column.id,
+                  rowIndex,
+                  columnIndex: colIndex,
+                  selectedListingId: isFocused && hasSplitListingCells ? focusedCell?.listingId : undefined,
+                }}>
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </PropertyListingCellProvider>
+                {isLastPinned && columnGroupControl && (
+                  // 경계선 전체가 접기/펼치기 손잡이다. 선을 가운데 둔 9px 띠를 누르면
+                  // 머리글의 버튼과 같은 동작을 한다. 키보드·스크린리더는 머리글 버튼을 쓴다.
+                  <span
+                    data-column-edge-hit
+                    aria-hidden="true"
+                    title={
+                      columnGroupControl.collapsed
+                        ? '타입–확인 컬럼 펼치기'
+                        : '타입–확인 컬럼 접기'
+                    }
+                    className="absolute -right-[5px] top-0 z-[2] h-full w-[9px] cursor-pointer"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      columnGroupControl.onToggle();
+                    }}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                  />
+                )}
               </td>
             );
           })}
         </tr>
         {isExpanded && (
           <tr data-expanded-row={row.original.id}>
-            <td colSpan={allColumns.length} className="border-0 p-0 align-top">
+            <td colSpan={visibleColumnCount} className="border-0 p-0 align-top">
               {/* Keep expanded content within the visible scroller width as columns scroll. */}
               <div className="sticky left-0 w-[100cqw]">
                 {renderExpandedRow?.(row.original)}
@@ -443,7 +576,48 @@ export function PropertyListingsTable({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <CellTableNavigationProvider value={cellNavigation}>
+    <div
+      // 접기 버튼이 표 위쪽 선에 반쯤 걸치도록 표 위에 버튼 높이의 절반(8px)을 비워 둔다.
+      // 경계선이나 접기 버튼에 마우스를 올리면 선 전체에 옅은 띠가 뜨고 상자 테두리가 진해진다
+      // (버튼이 스크롤 영역 밖에 있어서 묶음 기준을 이 바깥 상자에 둔다).
+      className={cn(
+        "relative flex h-full min-h-0 flex-col group/ptable [&:has([data-column-edge-hit]:hover)_[data-column-group-toggle]]:border-[#a3a09a]",
+        columnGroupControl && "pt-2",
+      )}
+    >
+      {columnGroupControl && (
+        <button
+          type="button"
+          aria-label={
+            columnGroupControl.collapsed
+              ? "타입–확인 컬럼 펼치기"
+              : "타입–확인 컬럼 접기"
+          }
+          aria-expanded={!columnGroupControl.collapsed}
+          title={
+            columnGroupControl.collapsed
+              ? "타입–확인 컬럼 펼치기"
+              : "타입–확인 컬럼 접기"
+          }
+          data-column-group-toggle="property-details"
+          // 표 위쪽 선과 고정 열 경계선이 만나는 자리에 놓인 작은 +/− 상자.
+          // 위 절반은 표 밖, 아래 절반은 머리글에 걸친다. 테두리가 경계선과 같은 색이라
+          // 선이 상자 아래로 이어져 한 부품처럼 보인다.
+          // 고정 열은 가로로 스크롤해도 제자리라서, 스크롤 영역 밖에 고정 위치로 둔다.
+          // 매물 화면 공통의 '누르면 살짝 줄어드는' 효과는 끈다 (active:scale-100!).
+          className="absolute top-0 z-50 inline-flex size-4 active:scale-100! shrink-0 items-center justify-center rounded-[4px] border border-[#cfcecb] bg-white p-0 text-[#8f8c86] outline-none transition-colors hover:border-[#a3a09a] hover:text-foreground focus-visible:ring-2 focus-visible:ring-foreground/20"
+          // 경계선(1px)은 고정 열 바깥쪽에 그려지므로 0.5px 더해 선 가운데에 맞춘다.
+          style={{ left: propertyDetailToggleLeft + 0.5 }}
+          onClick={columnGroupControl.onToggle}
+        >
+          {columnGroupControl.collapsed ? (
+            <Plus className="size-2.5" strokeWidth={2.25} />
+          ) : (
+            <Minus className="size-2.5" strokeWidth={2.25} />
+          )}
+        </button>
+      )}
       <div
         ref={scrollerRef}
         data-property-table-scroller
@@ -452,108 +626,30 @@ export function PropertyListingsTable({
         onKeyDown={handleKeyDown}
         onScroll={handleScroll}
       >
-        {columnGroupControl && (
-          <div
-            data-property-column-guide
-            className="sticky top-0 z-40 h-9 border-b border-border bg-[#f7f7f5]"
-            style={{ width: "100%", minWidth: tableTotalSize }}
-          >
-            <div
-              className="relative h-full pt-2"
-              style={{ width: tableTotalSize, minWidth: tableTotalSize }}
-            >
-              {!columnGroupControl.collapsed && (
-                <>
-                  <span
-                    aria-hidden="true"
-                    data-column-group-line="property-details"
-                    className="pointer-events-none absolute top-[18px] z-40 h-px bg-slate-400"
-                    style={{
-                      left: propertyDetailGuideLeft,
-                      width: propertyDetailGuideWidth,
-                    }}
-                  />
-                  <span
-                    aria-hidden="true"
-                    data-column-group-cap="property-details"
-                    className="pointer-events-none absolute top-[18px] z-40 h-2 w-px bg-slate-400"
-                    style={{ left: propertyDetailGuideCapLeft }}
-                  />
-                </>
-              )}
-              <button
-                type="button"
-                aria-label={
-                  columnGroupControl.collapsed
-                    ? "타입–확인 컬럼 펼치기"
-                    : "타입–확인 컬럼 접기"
-                }
-                aria-expanded={!columnGroupControl.collapsed}
-                title={
-                  columnGroupControl.collapsed
-                    ? "타입–확인 컬럼 펼치기"
-                    : "타입–확인 컬럼 접기"
-                }
-                data-column-group-toggle="property-details"
-                className="sticky z-50 inline-flex size-5 items-center justify-center rounded-[3px] border border-[#9ba7a3] bg-white p-0 text-[#536b64] shadow-[0_1px_1px_rgba(42,51,47,0.05)] outline-none transition-colors hover:border-[#738b83] hover:bg-[#f4f8f6] hover:text-[#315d50] focus-visible:ring-2 focus-visible:ring-[#4c8c7c]/35"
-                style={{
-                  left: propertyDetailToggleLeft,
-                  marginLeft: propertyDetailToggleLeft,
-                }}
-                onClick={columnGroupControl.onToggle}
-              >
-                {columnGroupControl.collapsed ? (
-                  <Plus className="size-3" />
-                ) : (
-                  <Minus className="size-3" />
-                )}
-              </button>
-            </div>
-          </div>
-        )}
         <table
           ref={tableRef}
           className="w-full table-fixed border-separate border-spacing-0 caption-bottom text-sm"
           style={{ width: '100%', minWidth: tableTotalSize }}
         >
-          <thead className={cn(
-              "sticky z-20 bg-[#f7f7f5]",
-              columnGroupControl ? "top-9" : "top-0",
-            )}
+          <thead
+            className="sticky top-0 z-20 bg-white"
           >
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header, colIndex) => {
+                {headerGroup.headers.map((header, headerIndex) => {
+                  const isLastHeader =
+                    headerIndex === headerGroup.headers.length - 1;
                   const canSort =
                     header.column.columnDef.enableSorting !== false && !!onSortingChange && header.id !== '_select';
                   const activeSort = (sorting ?? [])[0];
                   const sorted: false | 'asc' | 'desc' =
                     activeSort?.id === header.column.id ? activeSort.desc ? 'desc' : 'asc'
                       : false;
-                  const isLast = colIndex === headerGroup.headers.length - 1;
                   const isPinned = header.column.getIsPinned() === 'left';
-                  const isLastPinned = isPinned && header.column.getIsLastColumn('left');
+                  const isLastPinned =
+                    isPinned && header.column.getIsLastColumn('left');
                   const shouldGrow = header.column.id === growColumnId;
-                  const isDetailColumn = [
-                    "unitType",
-                    "matching",
-                    "advertisement",
-                    "confirmationAt",
-                  ].includes(header.column.id);
-                  const handleSortToggle = () => {
-                    if (!canSort) return;
-                    const current = sorting ?? [];
-                    const active = current[0];
-                    let next: SortingState;
-                    if (!active || active.id !== header.column.id) {
-                      next = [{ id: header.column.id, desc: false }];
-                    } else if (!active.desc) {
-                      next = [{ id: header.column.id, desc: true }];
-                    } else {
-                      next = [];
-                    }
-                    onSortingChange?.(next);
-                  };
+
 
                   return (
                     <th
@@ -567,13 +663,14 @@ export function PropertyListingsTable({
                               ? 'none'
                               : undefined
                       }
+                      data-pinned-edge={isLastPinned || undefined}
                       className={cn(
-                        "relative h-9 border-b border-[#d8d6d0] bg-[#f7f7f5] px-2.5 text-left align-middle text-[13px] font-medium normal-case tracking-normal text-muted-foreground",
-                        !isLast && 'border-r border-r-[#eeeeec]',
-                        canSort && 'select-none hover:text-foreground',
-                        isDetailColumn && "bg-[#f2f6f4] text-[#52645e]",
-                        isPinned && "bg-[#f5f4f1]",
-                        isLastPinned && 'shadow-[1px_0_0_0_#d9d9d6]',
+                        "relative h-9 border-b border-t border-border bg-white px-2.5 text-left align-middle text-[13px] font-normal leading-[21px] normal-case tracking-normal text-muted-foreground transition-colors",
+                        canSort && 'select-none hover:bg-[#f6f5f3] hover:text-[#2c2c2b]',
+                        sorted && "text-[#2c2c2b]",
+                        // 칸 구분선: 아래 행과 같은 옅은 세로선. 고정 열의 끝은 경계선이 대신한다.
+                        !isLastHeader && 'border-r border-r-[#eeeeec]',
+                        isLastPinned && PINNED_EDGE_LINE_CLASS,
                       )}
                       style={{
                         width: shouldGrow ? undefined : header.getSize(),
@@ -586,31 +683,31 @@ export function PropertyListingsTable({
                           : {}),
                       }}
                     >
-                      <div className="flex h-full min-w-0 items-center gap-1 text-slate-500">
-                        {canSort ? (
-                          <button
-                            type="button"
-                            onClick={handleSortToggle}
-                            className="-mx-1 flex h-full min-w-0 flex-1 items-center gap-1 rounded-sm px-1 text-left outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#4c8c7c]/35"
+                      <div className="flex h-full min-w-0 items-center gap-1">
+                        {header.id === '_select' ? (
+                          flexRender(header.column.columnDef.header, header.getContext())
+                        ) : (
+                          <PropertyColumnMenu
+                            id={header.column.id}
+                            sorted={sorted}
+                            onSort={canSort ? (direction) => onSortingChange?.(direction ? [{ id: header.column.id, desc: direction === 'desc' }] : []) : undefined}
+                            onFilter={columnFilterActions?.[header.column.id]}
+                            pinned={isPinned}
+                            onPin={() => {
+                              const ids = ['_select', ...propertyTableColumns.map((column) => column.field)];
+                              setColumnPinning({ left: ids.slice(0, ids.indexOf(header.column.id) + 1), right: [] });
+                            }}
+                            onUnpin={() => setColumnPinning({ left: ['_select'], right: [] })}
+                            onHide={header.column.id !== 'site' && onColumnVisibilityChange
+                              ? () => { onColumnVisibilityChange(header.column.id, false); scrollerRef.current?.focus({ preventScroll: true }); }
+                              : undefined}
+                            wrapped={wrappedColumns[header.column.id] ?? false}
+                            onWrap={['site', 'memo'].includes(header.column.id)
+                              ? () => setWrappedColumns((previous) => ({ ...previous, [header.column.id]: !previous[header.column.id] }))
+                              : undefined}
                           >
-                            {header.isPlaceholder
-                              ? null
-                              : flexRender(
-                                  header.column.columnDef.header,
-                                  header.getContext(),
-                                )}
-                            {sorted === 'asc' && (
-                              <ArrowUp aria-hidden="true" className="size-3 shrink-0" />
-                            )}
-                            {sorted === 'desc' && (
-                              <ArrowDown aria-hidden="true" className="size-3 shrink-0" />
-                            )}
-                          </button>
-                        ) : header.isPlaceholder ? null : (
-                          flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )
+                            {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                          </PropertyColumnMenu>
                         )}
                       </div>
                       {header.column.getCanResize() && (
@@ -630,10 +727,10 @@ export function PropertyListingsTable({
             ))}
           </thead>
           <tbody>
-            {isLoading && <LoadingRows columns={allColumns.length} />}
+            {isLoading && <LoadingRows columns={visibleColumnCount} />}
             {!isLoading && rows.length === 0 && (
               <tr>
-                <td colSpan={allColumns.length} className="h-32 text-center text-sm text-muted-foreground">
+                <td colSpan={visibleColumnCount} className="h-32 text-center text-sm text-muted-foreground">
                   {emptyMessage}
                 </td>
               </tr>
@@ -642,13 +739,13 @@ export function PropertyListingsTable({
               <>
                 {paddingTop > 0 && (
                   <tr aria-hidden="true">
-                    <td colSpan={allColumns.length} style={{ height: paddingTop, padding: 0, border: 0 }} />
+                    <td colSpan={visibleColumnCount} style={{ height: paddingTop, padding: 0, border: 0 }} />
                   </tr>
                 )}
                 {virtualRows.map((virtualRow) => renderRow(rows[virtualRow.index], virtualRow.index))}
                 {paddingBottom > 0 && (
                   <tr aria-hidden="true">
-                    <td colSpan={allColumns.length} style={{ height: paddingBottom, padding: 0, border: 0 }} />
+                    <td colSpan={visibleColumnCount} style={{ height: paddingBottom, padding: 0, border: 0 }} />
                   </tr>
                 )}
               </>
@@ -656,7 +753,7 @@ export function PropertyListingsTable({
             {!isLoading && rows.length > 0 && (!canVirtualize || virtualRows.length === 0) && rows.map(renderRow)}
             {!isLoading && isLoadingMore && (
               <tr>
-                <td colSpan={allColumns.length} className="h-10 px-3 text-center text-xs text-muted-foreground">
+                <td colSpan={visibleColumnCount} className="h-10 px-3 text-center text-xs text-muted-foreground">
                   더 불러오는 중...
                 </td>
               </tr>
@@ -685,12 +782,13 @@ export function PropertyListingsTable({
         </div>
       )}
     </div>
+    </CellTableNavigationProvider>
   );
 }
 
 function estimatePropertyGroupRowHeight(group?: PropertyListingGroup) {
   return (
-    Math.max(1, group?.listings.length ?? 1) * PROPERTY_LISTING_ITEM_HEIGHT
+    Math.max(1, group?.listings.length ?? 1) * PROPERTY_LISTING_ITEM_HEIGHT + 1
   );
 }
 
@@ -703,7 +801,7 @@ function LoadingRows({ columns }: { columns: number }) {
             <td
               key={j}
               className={cn(
-                'h-10 border-b border-[#eeeeec] px-2.5 align-middle',
+                'h-[37px] border-b border-border px-2.5 align-middle',
                 j < columns - 1 && 'border-r border-r-[#eeeeec]',
               )}
             >

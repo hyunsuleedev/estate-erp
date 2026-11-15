@@ -11,13 +11,22 @@ function source(relativePath: string): string {
 }
 
 describe('property full-page window', () => {
-  it('opens the inspector full page in a standalone window instead of a tab', () => {
+  it('expands the inspector in a resource tab and keeps a separate window action in its menu', () => {
     const pageSource = source(
       '../src/renderer/routes/_authenticated/properties/index.tsx',
     );
-    const handlerStart = pageSource.indexOf('const openFullPage = async () =>');
+    const handlerStart = pageSource.indexOf('const openInNewWindow = async () =>');
     const handlerEnd = pageSource.indexOf('\n  };', handlerStart);
     const handler = pageSource.slice(handlerStart, handlerEnd);
+
+    const tabHandlerStart = pageSource.indexOf('const openInNewTab = () =>');
+    const tabHandlerEnd = pageSource.indexOf('\n  };', tabHandlerStart);
+    const tabHandler = pageSource.slice(tabHandlerStart, tabHandlerEnd);
+    assert.ok(tabHandlerStart >= 0 && tabHandlerEnd > tabHandlerStart);
+    assert.match(tabHandler, /openOrRevealResource\(\{/);
+    assert.match(tabHandler, /tabResourceKeys\.entity\("property", property\.id\)/);
+    assert.match(tabHandler, /onClose\(false\)/);
+    assert.doesNotMatch(tabHandler, /openPropertyWindow|createTab/);
 
     assert.ok(handlerStart >= 0 && handlerEnd > handlerStart);
     assert.match(handler, /tabsBridge\.openPropertyWindow\(\{/);
@@ -28,11 +37,15 @@ describe('property full-page window', () => {
     const inspectorViewSource = source(
       '../src/renderer/routes/_authenticated/properties/-components/property-inspector-view.tsx',
     );
-    assert.match(pageSource, /isOpeningFullPage=\{isOpeningFullPage\}/);
-    assert.match(inspectorViewSource, /disabled=\{isOpeningFullPage\}/);
+    const rowActionsSource = source(
+      '../src/renderer/routes/_authenticated/properties/-property-intake-actions.tsx',
+    );
+    assert.match(pageSource, /onOpenNewTab=\{openInNewTab\}/);
+    assert.match(pageSource, /isOpeningNewWindow=\{isOpeningNewWindow\}/);
+    assert.match(rowActionsSource, /onSelect=\{onOpenInNewWindow\} disabled=\{isOpeningNewWindow\}/);
     assert.match(
       inspectorViewSource,
-      /aria-label="전체 페이지를 새 창으로 열기"/,
+      /aria-label="전체 페이지를 새 탭으로 열기"/,
     );
   });
 
@@ -146,10 +159,10 @@ describe('property full-page window', () => {
     const returnIndex = method.indexOf('return windowId;');
     assert.ok(hostIndex >= 0 && loadIndex > hostIndex && returnIndex > loadIndex);
 
-    // 탭 화면의 자리는 main이 창 크기로 정한다(탭바 40px 아래 전부).
+    // 탭 화면의 자리는 main이 창 크기로 정한다(탭바 36px 아래 전부).
     assert.match(
       mainSource,
-      /private tabViewBoundsFor\(win: BrowserWindow\): NativeTabBounds \{[\s\S]*?y: DETACHED_TITLEBAR_HEIGHT,[\s\S]*?height: Math\.max\(0, height - DETACHED_TITLEBAR_HEIGHT\)/,
+      /private tabViewBoundsFor\(win: BrowserWindow\): NativeTabBounds \{[\s\S]*?y: TITLEBAR_HEIGHT,[\s\S]*?height: Math\.max\(0, height - TITLEBAR_HEIGHT\)/,
     );
   });
 

@@ -29,6 +29,7 @@ import type {
 } from '../common/callOverlay';
 import type {
   NativeSidebarState,
+  SidebarPreviewCommand,
   NativeTabAssignment,
   NativeTabNavigateCommand,
   NativeTabRetentionUpdate,
@@ -154,6 +155,8 @@ interface TabsBridge {
   onToast?: (callback: (toast: WindowToast) => void) => () => void;
   /** 탭 화면: 사이드바 접기/펴기 요청. 그 창의 모든 탭 화면이 따른다. */
   requestSidebarOpen?: (open: boolean) => void;
+  requestSidebarPreview?: (command: SidebarPreviewCommand, tabId: string) => void;
+  onSidebarPreview?: (callback: (command: SidebarPreviewCommand) => void) => () => void;
 }
 
 /**
@@ -176,6 +179,8 @@ interface DesktopAuthBridge {
   login?: (credentials: DesktopAuthCredentials) => Promise<DesktopAuthLoginResult>;
   /** 셸 창에만 있다. 가입 화면이 받은 값으로 계정을 만들고 바로 로그인한다. */
   signup?: (input: DesktopAuthSignupInput) => Promise<DesktopAuthSignupResult>;
+  /** 셸 창에만 있다. 가입 때 받은 이메일로 비밀번호 재설정 링크를 보낸다. */
+  requestPasswordReset?: (email: string) => Promise<DesktopAuthActionResult>;
   /** 셸 창에만 있다. 서버에 닿지 못한 상태에서 다시 확인한다. */
   retry?: () => Promise<DesktopAuthActionResult>;
 }
@@ -215,6 +220,8 @@ export type { DesktopAuthBridge };
 interface ElectronBridge {
   platform: string;
   surface: RendererSurfaceInfo;
+  /** 앱을 켠 뒤 처음 연 창의 로그인 전 화면에서만 true. */
+  isLaunchWindow?: boolean;
   auth: DesktopAuthBridge;
   realtime?: DesktopRealtimeBridge;
   updater?: UpdaterBridge;

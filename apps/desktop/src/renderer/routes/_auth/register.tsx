@@ -6,11 +6,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AuthRegisterError, useAuth } from '@/providers/auth-provider';
 import {
+  SIGNUP_EMAIL_MAX_LENGTH,
+  SIGNUP_EMAIL_RULE,
   SIGNUP_NAME_MAX_LENGTH,
   SIGNUP_PASSWORD_RULE,
   SIGNUP_USERNAME_RULE,
+  isValidSignupEmail,
   isValidSignupUsername,
   meetsSignupPasswordPolicy,
+  normalizeSignupEmail,
   normalizeSignupUsername,
 } from '../../../common/signupRules';
 
@@ -28,6 +32,7 @@ export const Route = createFileRoute('/_auth/register')({
 interface SignupAttempt {
   loginId: string;
   name: string;
+  email: string;
   startedAt: number;
   error?: string;
   continueAtLogin?: boolean;
@@ -41,13 +46,14 @@ function recentAttempt(): SignupAttempt | null {
     : null;
 }
 
-type FieldErrors = Partial<Record<'loginId' | 'password' | 'passwordConfirm' | 'name', string>>;
+type FieldErrors = Partial<Record<'loginId' | 'password' | 'passwordConfirm' | 'name' | 'email', string>>;
 
 function validate(input: {
   loginId: string;
   password: string;
   passwordConfirm: string;
   name: string;
+  email: string;
 }): FieldErrors {
   const errors: FieldErrors = {};
   if (!isValidSignupUsername(input.loginId)) errors.loginId = SIGNUP_USERNAME_RULE;
@@ -59,11 +65,12 @@ function validate(input: {
   else if (input.name.length > SIGNUP_NAME_MAX_LENGTH) {
     errors.name = `이름은 ${SIGNUP_NAME_MAX_LENGTH}자까지 입력할 수 있습니다.`;
   }
+  if (!isValidSignupEmail(input.email)) errors.email = SIGNUP_EMAIL_RULE;
   return errors;
 }
 
 /**
- * 사장님 가입. 계정(아이디·비밀번호·이름)만 만들고, 사무소는 가입 직후 이어지는
+ * 사장님 가입. 계정(아이디·비밀번호·이름·이메일)만 만들고, 사무소는 가입 직후 이어지는
  * 사무소 만들기 화면에서 만든다. 직원 계정은 사장님이 직원관리에서 만든다.
  */
 function RegisterPage() {
@@ -72,6 +79,7 @@ function RegisterPage() {
   const [returned] = useState(recentAttempt);
   const [loginId, setLoginId] = useState(returned?.loginId ?? '');
   const [name, setName] = useState(returned?.name ?? '');
+  const [email, setEmail] = useState(returned?.email ?? '');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -90,6 +98,7 @@ function RegisterPage() {
       password,
       passwordConfirm,
       name: name.trim(),
+      email: normalizeSignupEmail(email),
     };
     const nextFieldErrors = validate(input);
     setFieldErrors(nextFieldErrors);
@@ -102,11 +111,12 @@ function RegisterPage() {
     const attempt: SignupAttempt = {
       loginId: input.loginId,
       name: input.name,
+      email: input.email,
       startedAt: Date.now(),
     };
     lastAttempt = attempt;
     try {
-      await register(input.loginId, '', input.password, input.name, '');
+      await register(input.loginId, input.email, input.password, input.name, '');
       // 성공하면 로그인 상태가 되고 인증 레이아웃이 사무소 만들기로 넘긴다.
       if (lastAttempt === attempt) lastAttempt = null;
     } catch (err) {
@@ -224,6 +234,29 @@ function RegisterPage() {
                     aria-invalid={Boolean(fieldErrors.name)}
                     aria-describedby={describedBy}
                     placeholder="이름"
+                  />
+                )}
+              </Field>
+              <Field
+                id="register-email"
+                label="이메일"
+                hint="비밀번호를 잊었을 때 재설정 링크를 받는 주소입니다. 로그인은 아이디로 합니다."
+                error={fieldErrors.email}
+              >
+                {(describedBy) => (
+                  <Input
+                    id="register-email"
+                    type="email"
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    maxLength={SIGNUP_EMAIL_MAX_LENGTH}
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    disabled={isSubmitting}
+                    aria-invalid={Boolean(fieldErrors.email)}
+                    aria-describedby={describedBy}
+                    placeholder="name@example.com"
                   />
                 )}
               </Field>

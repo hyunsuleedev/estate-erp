@@ -785,7 +785,7 @@ describe('DesktopAuthController: owner signup', () => {
     await controller.start();
 
     // Auth0가 소문자로 저장하므로 보내기 전에 맞춘다.
-    const result = await controller.signup(' New-Owner ', 'Passw0rd!x', ' 새 사장 ');
+    const result = await controller.signup(' New-Owner ', 'Passw0rd!x', ' 새 사장 ', ' Owner@Example.com ');
 
     assert.deepEqual(result, { ok: true });
     assert.deepEqual(auth0.state.signups, [
@@ -794,6 +794,7 @@ describe('DesktopAuthController: owner signup', () => {
         connection: 'Username-Password-Authentication',
         username: 'new-owner',
         password: 'Passw0rd!x',
+        email: 'owner@example.com',
         name: '새 사장',
       },
     ]);
@@ -810,16 +811,20 @@ describe('DesktopAuthController: owner signup', () => {
     const { controller, auth0 } = setup();
     await controller.start();
 
-    const badId = await controller.signup('한글 아이디', 'Passw0rd!x', '이름');
-    const longId = await controller.signup('a'.repeat(31), 'Passw0rd!x', '이름');
-    const weak = await controller.signup('new-owner', 'abcdefg1', '이름');
-    const longName = await controller.signup('new-owner', 'Passw0rd!x', '가'.repeat(51));
+    const badId = await controller.signup('한글 아이디', 'Passw0rd!x', '이름', 'owner@example.com');
+    const longId = await controller.signup('a'.repeat(31), 'Passw0rd!x', '이름', 'owner@example.com');
+    const weak = await controller.signup('new-owner', 'abcdefg1', '이름', 'owner@example.com');
+    const longName = await controller.signup('new-owner', 'Passw0rd!x', '가'.repeat(51), 'owner@example.com');
 
     assert.equal(badId.ok, false);
     assert.match((badId as { error: string }).error, /영문 소문자, 숫자/);
     assert.match((longId as { error: string }).error, /1~30자/);
     assert.match((weak as { error: string }).error, /8자 이상/);
     assert.match((longName as { error: string }).error, /50자/);
+    const noEmail = await controller.signup('new-owner', 'Passw0rd!x', '이름', '');
+    const badEmail = await controller.signup('new-owner', 'Passw0rd!x', '이름', 'owner@example');
+    assert.match((noEmail as { error: string }).error, /이메일 주소/);
+    assert.match((badEmail as { error: string }).error, /이메일 주소/);
     assert.equal(auth0.state.signups.length, 0);
     assert.equal(controller.getSnapshot().status, 'signed-out');
   });
@@ -829,7 +834,7 @@ describe('DesktopAuthController: owner signup', () => {
     await controller.start();
     const before = changes.length;
 
-    const result = await controller.signup('hyunsu', 'Passw0rd!x', '이름');
+    const result = await controller.signup('hyunsu', 'Passw0rd!x', '이름', 'owner@example.com');
 
     assert.deepEqual(result, {
       ok: false,
@@ -848,7 +853,7 @@ describe('DesktopAuthController: owner signup', () => {
     });
     await controller.start();
 
-    const refused = await controller.signup('taken', 'Passw0rd!x', '이름');
+    const refused = await controller.signup('taken', 'Passw0rd!x', '이름', 'owner@example.com');
 
     assert.deepEqual(refused, { ok: false, error: collision });
     let snapshot = controller.getSnapshot();
@@ -859,7 +864,7 @@ describe('DesktopAuthController: owner signup', () => {
     await tick();
     assert.equal(auth0.state.revoked.length, 1);
 
-    assert.deepEqual(await controller.signup('fresh', 'Passw0rd!x', '이름'), { ok: true });
+    assert.deepEqual(await controller.signup('fresh', 'Passw0rd!x', '이름', 'owner@example.com'), { ok: true });
     snapshot = controller.getSnapshot();
     assert.equal(snapshot.status, 'signed-in');
     assert.equal(snapshot.error, null);
@@ -871,7 +876,7 @@ describe('DesktopAuthController: owner signup', () => {
     });
     await controller.start();
 
-    assert.deepEqual(await controller.signup('new-owner', 'Passw0rd!x', '이름'), { ok: true });
+    assert.deepEqual(await controller.signup('new-owner', 'Passw0rd!x', '이름', 'owner@example.com'), { ok: true });
 
     assert.equal(controller.getSnapshot().status, 'unreachable');
     assert.notEqual(store.saved, null);
@@ -885,7 +890,7 @@ describe('DesktopAuthController: owner signup', () => {
     await controller.start();
     auth0.state.tokenOffline = true;
 
-    const result = await controller.signup('new-owner', 'Passw0rd!x', '이름');
+    const result = await controller.signup('new-owner', 'Passw0rd!x', '이름', 'owner@example.com');
 
     assert.equal(result.ok, false);
     assert.equal((result as { continueAtLogin?: boolean }).continueAtLogin, true);
@@ -905,7 +910,7 @@ describe('DesktopAuthController: owner signup', () => {
     await controller.start();
     auth0.state.offline = true;
 
-    const result = await controller.signup('new-owner', 'Passw0rd!x', '이름');
+    const result = await controller.signup('new-owner', 'Passw0rd!x', '이름', 'owner@example.com');
 
     assert.deepEqual(result, {
       ok: false,
@@ -919,7 +924,7 @@ describe('DesktopAuthController: owner signup', () => {
     await controller.start();
     await controller.login('hyunsu', 'secret');
 
-    const result = await controller.signup('new-owner', 'Passw0rd!x', '이름');
+    const result = await controller.signup('new-owner', 'Passw0rd!x', '이름', 'owner@example.com');
 
     assert.equal(result.ok, false);
     assert.match((result as { error: string }).error, /로그아웃한 뒤 가입/);
@@ -937,9 +942,9 @@ describe('DesktopAuthController: owner signup', () => {
     await controller.start();
 
     const [first, duplicate, other] = await Promise.all([
-      controller.signup('owner-a', 'Passw0rd!x', '가'),
-      controller.signup('owner-a', 'Passw0rd!x', '가'),
-      controller.signup('owner-b', 'Passw0rd!x', '나'),
+      controller.signup('owner-a', 'Passw0rd!x', '가', 'owner@example.com'),
+      controller.signup('owner-a', 'Passw0rd!x', '가', 'owner@example.com'),
+      controller.signup('owner-b', 'Passw0rd!x', '나', 'owner@example.com'),
     ]);
 
     assert.deepEqual(first, { ok: true });

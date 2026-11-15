@@ -15,6 +15,7 @@ export {
   FloorCell,
 } from './cells';
 export { CellEditProvider, EditableCell, useCellEdit } from './cell-editor';
+export type { CellSaveResult } from './cell-edit-state';
 export type { ChipOption, ChipSavePayload, DateWrite } from './cell-editor';
 export type {
   FilterDefinition,

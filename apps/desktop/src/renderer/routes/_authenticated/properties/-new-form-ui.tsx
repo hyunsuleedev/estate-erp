@@ -20,9 +20,9 @@ export function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border bg-card p-5">
+    <section data-registration-section className="rounded-lg border bg-card p-5">
       <header className="mb-4 flex items-baseline gap-2">
-        <span className="flex size-5 shrink-0 translate-y-0.5 items-center justify-center rounded-sm bg-muted text-[11px] font-medium tabular-nums text-muted-foreground">
+        <span data-registration-step className="flex size-5 shrink-0 translate-y-0.5 items-center justify-center rounded-sm bg-muted text-[11px] font-medium tabular-nums text-muted-foreground">
           {step}
         </span>
         <h2 className="text-sm font-semibold">{title}</h2>

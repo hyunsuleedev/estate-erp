@@ -82,6 +82,10 @@ import {
   mergeLedgerPages,
 } from "./-customer-ledger-pagination";
 import { CustomerCaseActionMenu } from "./-customer-case-action-menu";
+import {
+  BrokerageCaseListButton,
+  BrokerageCasePlanHost,
+} from "./-brokerage-case-plan-dialog";
 import { CustomerDemandIntakeActionMenu } from "./-customer-demand-intake-action-menu";
 import { CustomerDemandIntentActionMenu } from "./-customer-demand-intent-action-menu";
 import { LedgerMatchPanel } from "../wanted-properties/-ledger-match-panel";
@@ -561,6 +565,7 @@ function CustomersNextPage() {
             <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
               {totalCases.toLocaleString()}개 케이스
             </span>
+            <BrokerageCaseListButton className="h-8 shrink-0" />
             <Button
               type="button"
               size="sm"
@@ -572,6 +577,8 @@ function CustomersNextPage() {
             </Button>
           </div>
         </section>
+        {/* 진행 계획 창은 줄이 아니라 화면에 하나만 둔다(줄이 다시 그려져도 남는다). */}
+        <BrokerageCasePlanHost />
 
         <section
           className="shrink-0 overflow-x-auto border-b border-border bg-[#faf9f6]"

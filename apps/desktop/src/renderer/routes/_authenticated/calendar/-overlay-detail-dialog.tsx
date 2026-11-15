@@ -1,9 +1,17 @@
-import { CalendarClock, CircleDollarSign, Landmark } from 'lucide-react';
-import { CONTRACT_TRANSACTION_TYPE_LABELS } from '@estate-erp/shared';
-import type { Contract } from '@estate-erp/api-client';
+import {
+  CalendarClock,
+  CircleDollarSign,
+  Landmark,
+  Pin,
+  X,
+  ArrowUpRight,
+} from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { CONTRACT_TRANSACTION_TYPE_LABELS } from "@estate-erp/shared";
+import type { Contract } from "@estate-erp/api-client";
 
-import { StatusBadge } from '@/components/domain';
-import { Button } from '@/components/ui/button';
+import { StatusBadge } from "@/components/domain";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -12,15 +20,94 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { formatDate, formatMoney, formatPhone } from '@/lib/format';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dialog";
+import { formatDate, formatMoney, formatPhone } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import {
   OVERLAY_META,
   type OverlayItem,
   type OverlayKind,
-} from './-calendar-overlay';
-import { withAlpha } from './-event-meta';
+} from "./-calendar-overlay";
+import { withAlpha } from "./-event-meta";
+
+export function CalendarOverlayInspector({
+  item,
+  onClose,
+  onPin,
+}: {
+  item: OverlayItem;
+  onClose: () => void;
+  onPin?: () => void;
+}) {
+  const navigate = useNavigate();
+  return (
+    <>
+      <div className="border-b px-4 py-3">
+        <div className="flex items-center gap-1">
+          <span className="mr-auto text-[11px] text-muted-foreground">
+            {OVERLAY_META[item.kind].label} · 원본 연결
+          </span>
+          {onPin && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="상세를 오른쪽에 고정"
+              onClick={onPin}
+            >
+              <Pin className="size-4" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="재무 일정 상세 닫기"
+            onClick={onClose}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+        <h2 className="mt-2 text-base font-semibold leading-6">{item.title}</h2>
+        <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+          날짜 변경은 연결된 계약·수금 원장에서 반영됩니다.
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {item.source.type === "contract" ? (
+          <ContractOverlayContent
+            contract={item.source.contract}
+            activeKind={item.kind}
+          />
+        ) : (
+          <CommissionOverlayContent item={item} />
+        )}
+      </div>
+      <div className="border-t p-3">
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            if (item.source.type === "contract")
+              void navigate({
+                to: "/contracts",
+                search: { editorContractId: item.source.contract.id },
+              });
+            else
+              void navigate({
+                to: "/cashflow/ledger",
+                search: {
+                  deal: item.source.payment.dealId,
+                  payment: item.source.payment.id,
+                },
+              });
+          }}
+        >
+          <ArrowUpRight className="size-4" />
+          원본 {item.source.type === "contract" ? "계약" : "수금"} 열기
+        </Button>
+      </div>
+    </>
+  );
+}
 
 export function CalendarOverlayDetailDialog({
   item,
@@ -40,10 +127,10 @@ export function CalendarOverlayDetailDialog({
               className="flex size-10 shrink-0 items-center justify-center rounded-lg"
               style={{
                 color: meta.color,
-                backgroundColor: withAlpha(meta.color, '14'),
+                backgroundColor: withAlpha(meta.color, "14"),
               }}
             >
-              {item.source.type === 'contract' ? (
+              {item.source.type === "contract" ? (
                 <Landmark className="size-[18px]" />
               ) : (
                 <CircleDollarSign className="size-[18px]" />
@@ -54,7 +141,7 @@ export function CalendarOverlayDetailDialog({
                 <DialogTitle className="min-w-0 truncate text-base">
                   {item.title}
                 </DialogTitle>
-                {item.source.type === 'contract' ? (
+                {item.source.type === "contract" ? (
                   <StatusBadge
                     kind="contractStatus"
                     status={item.source.contract.status}
@@ -75,7 +162,7 @@ export function CalendarOverlayDetailDialog({
           </div>
 
           <div className="min-h-0 overflow-y-auto px-6 py-5">
-            {item.source.type === 'contract' ? (
+            {item.source.type === "contract" ? (
               <ContractOverlayContent
                 contract={item.source.contract}
                 activeKind={item.kind}
@@ -116,14 +203,17 @@ function ContractOverlayContent({
         </h3>
         <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4">
           <DetailField label="거래 유형" value={transactionType} />
-          <DetailField label="거래 금액" value={formatMoney(contract.totalPrice)} />
+          <DetailField
+            label="거래 금액"
+            value={formatMoney(contract.totalPrice)}
+          />
           <DetailField
             label="매도인"
-            value={contract.sellerContact?.name ?? '—'}
+            value={contract.sellerContact?.name ?? "—"}
           />
           <DetailField
             label="매수인"
-            value={contract.buyerContact?.name ?? '—'}
+            value={contract.buyerContact?.name ?? "—"}
           />
           {contract.monthlyRent ? (
             <DetailField
@@ -146,21 +236,21 @@ function ContractOverlayContent({
             label="계약일"
             date={contract.contractDate}
             amount={contract.statedDeposit}
-            active={activeKind === 'contractDate'}
+            active={activeKind === "contractDate"}
             color={OVERLAY_META.contractDate.color}
           />
           <ContractScheduleRow
             label="중도금일"
             date={contract.statedInterimDate}
             amount={contract.statedInterimPayment}
-            active={activeKind === 'interimDate'}
+            active={activeKind === "interimDate"}
             color={OVERLAY_META.interimDate.color}
           />
           <ContractScheduleRow
             label="잔금일"
             date={contract.statedBalanceDate}
             amount={contract.statedBalance}
-            active={activeKind === 'balanceDate'}
+            active={activeKind === "balanceDate"}
             color={OVERLAY_META.balanceDate.color}
           />
         </div>
@@ -187,13 +277,13 @@ function ContractScheduleRow({
   return (
     <div
       className={cn(
-        'flex items-center gap-3 border-b border-border px-3.5 py-3 last:border-b-0',
-        active && 'bg-muted/45',
+        "flex items-center gap-3 border-b border-border px-3.5 py-3 last:border-b-0",
+        active && "bg-muted/45",
       )}
     >
       <span
         className="h-8 w-[3px] shrink-0 rounded-full"
-        style={{ backgroundColor: active ? color : withAlpha(color, '55') }}
+        style={{ backgroundColor: active ? color : withAlpha(color, "55") }}
       />
       <span className="min-w-0 flex-1">
         <span className="block text-[11px] text-muted-foreground">{label}</span>
@@ -209,12 +299,12 @@ function ContractScheduleRow({
 }
 
 function CommissionOverlayContent({ item }: { item: OverlayItem }) {
-  if (item.source.type !== 'commissionPayment') return null;
+  if (item.source.type !== "commissionPayment") return null;
   const payment = item.source.payment;
   const taxInvoiceLabel = {
-    none: '미발행',
-    issued: '발행',
-    sent: '전송 완료',
+    none: "미발행",
+    issued: "발행",
+    sent: "전송 완료",
   }[payment.taxInvoiceStatus];
 
   return (
@@ -224,14 +314,17 @@ function CommissionOverlayContent({ item }: { item: OverlayItem }) {
           수금 정보
         </h3>
         <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-4">
-          <DetailField label="수금 예정일" value={formatDate(payment.dueDate)} />
+          <DetailField
+            label="수금 예정일"
+            value={formatDate(payment.dueDate)}
+          />
           <DetailField
             label="구분"
-            value={payment.clientSide === 'seller' ? '매도측' : '매수측'}
+            value={payment.clientSide === "seller" ? "매도측" : "매수측"}
           />
           <DetailField
             label="납부자"
-            value={payment.payerContact?.name ?? '—'}
+            value={payment.payerContact?.name ?? "—"}
           />
           <DetailField
             label="연락처"
@@ -245,7 +338,7 @@ function CommissionOverlayContent({ item }: { item: OverlayItem }) {
             label="수금 금액"
             value={formatMoney(payment.actualAmount)}
           />
-          <DetailField label="수금 방법" value={payment.method ?? '—'} />
+          <DetailField label="수금 방법" value={payment.method ?? "—"} />
           <DetailField label="세금계산서" value={taxInvoiceLabel} />
         </div>
       </section>
@@ -269,7 +362,9 @@ function DetailField({ label, value }: { label: string; value: string }) {
 function NoteBlock({ label, value }: { label: string; value: string }) {
   return (
     <section className="border-t border-border pt-5">
-      <h3 className="text-[11px] font-semibold text-muted-foreground">{label}</h3>
+      <h3 className="text-[11px] font-semibold text-muted-foreground">
+        {label}
+      </h3>
       <p className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-muted/45 px-3.5 py-3 text-xs leading-5 text-foreground">
         {value}
       </p>

@@ -2,10 +2,10 @@
  * 관리단지 호수 툴바 조각 — 매물관리 툴바(properties/-components/property-toolbar.tsx)와
  * 같은 모양을 쓴다.
  *
- * - 1행 "찾기": 단지 버튼 · 한 줄 검색바(동 │ 호수·이름·전화·상담) · 보기 전환 · 동·호수 추가
+ * - 1행 "찾기": 단지 버튼 · 동 범위 칩 · 검색 아이콘(누르면 펼쳐짐) · 보기 전환
  * - 2행 "좁히기": 관리호수/전체 알약 탭 · 필터 칩(타입 · 소유자 · 등록 매물) · "+ 필터"(세입자 · 상담) · 초기화
  */
-import { useRef, useState, type RefObject } from 'react';
+import { useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Building2, Check, ChevronDown, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -25,9 +25,6 @@ import {
   type RecordPresenceFilter,
 } from './-site-helpers';
 
-/** 매물관리 1행과 같은 따뜻한 베이지 바탕 */
-const toolbarSurfaceClassName = 'bg-[#f1f0ec]';
-const searchBarDividerClassName = 'h-4 w-px shrink-0 bg-[rgba(55,53,47,0.14)]';
 
 // ── 1행: 한 줄 검색바 (동 │ 검색) ───────────────────────────────
 
@@ -58,78 +55,115 @@ export function UnitSearchBar({
   const dongSummary = summarizeDongScope(dongOptions, selectedDongIds);
   const hasDongs = dongOptions.length > 0;
 
+  const [searchFocused, setSearchFocused] = useState(false);
+  // 검색은 평소 돋보기 아이콘만 있고, 누르거나 "/"를 치면 펼쳐진다 (매물관리와 같은 동작)
+  const searchExpanded = searchFocused || query.length > 0;
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>
-        <div
-          className={cn(
-            'flex h-[30px] min-w-[240px] max-w-[560px] flex-1 items-center rounded-full',
-            toolbarSurfaceClassName,
-          )}
-        >
-          {hasDongs && (
-            <>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={`동 범위: ${dongSummary ?? '전체 동'}`}
-                  className="flex h-full min-w-[92px] shrink basis-[150px] items-center gap-1.5 rounded-l-full pl-3.5 pr-3 text-[13px] transition-colors hover:bg-[rgba(55,53,47,0.05)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/20 data-[state=open]:bg-[rgba(55,53,47,0.05)]"
-                >
-                  <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span
-                    className={cn(
-                      'min-w-0 flex-1 truncate text-left',
-                      dongSummary ? 'font-semibold text-foreground' : 'text-muted-foreground',
-                    )}
-                  >
-                    {dongSummary ?? '전체 동'}
-                  </span>
-                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                </button>
-              </PopoverTrigger>
-              <span className={searchBarDividerClassName} aria-hidden="true" />
-            </>
-          )}
-          <label
+      {/* 동 범위: 매물관리의 지역·단지와 같은 필터 칩. 고르기 전엔 테두리 없이, 고르면 파란 알약 */}
+      {hasDongs && (
+        <PopoverAnchor asChild>
+          <div
             className={cn(
-              'flex h-full min-w-[110px] flex-1 cursor-text items-center gap-2 pl-3 pr-1.5 transition-colors hover:bg-[rgba(55,53,47,0.05)] focus-within:bg-white focus-within:shadow-[inset_0_0_0_1px_rgba(55,53,47,0.3)]',
-              hasDongs ? 'rounded-r-full' : 'rounded-full pl-3.5',
+              'inline-flex h-[30px] max-w-[220px] shrink-0 items-center rounded-full text-[13px] transition-colors',
+              dongSummary
+                ? 'bg-[rgba(35,131,226,0.1)] text-[#2383e2] hover:bg-[rgba(35,131,226,0.15)]'
+                : 'text-[#6f6c66] hover:bg-[rgba(60,52,40,0.06)] hover:text-foreground',
+              open && !dongSummary && 'bg-[rgba(60,52,40,0.06)] text-foreground',
             )}
           >
-            <Search className="size-3.5 shrink-0 text-muted-foreground" />
-            <input
-              ref={searchRef}
-              value={query}
-              onChange={(event) => onQueryChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  if (query) onQueryChange('');
-                  else event.currentTarget.blur();
-                }
-              }}
-              placeholder="호수 · 이름 · 전화 · 상담 (/)"
-              aria-label="호수, 이름, 전화번호, 상담 내용 검색"
-              disabled={disabled}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
-            />
-            {searchHint && (
-              <span className="shrink-0 whitespace-nowrap text-[11px] text-muted-foreground @max-3xl:hidden">
-                {searchHint}
-              </span>
-            )}
-            {query && (
+            <PopoverTrigger asChild>
               <button
                 type="button"
-                aria-label="검색어 지우기"
-                onClick={() => onQueryChange('')}
-                className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[#a5a39f] hover:bg-[rgba(55,53,47,0.1)] hover:text-foreground"
+                aria-label={`동 범위: ${dongSummary ?? '전체 동'}`}
+                className={cn(
+                  'inline-flex h-full min-w-0 items-center gap-1.5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/40',
+                  dongSummary ? 'pl-2.5 pr-1' : 'px-2.5',
+                )}
+              >
+                <Building2
+                  aria-hidden="true"
+                  className={cn('size-3.5 shrink-0', !dongSummary && 'text-[#a3a09a]')}
+                />
+                {dongSummary ? (
+                  <span className="min-w-0 truncate font-semibold">{dongSummary}</span>
+                ) : (
+                  <>
+                    <span className="shrink-0">동</span>
+                    <ChevronDown className="size-3 shrink-0 text-[#a5a39f]" />
+                  </>
+                )}
+              </button>
+            </PopoverTrigger>
+            {dongSummary && (
+              <button
+                type="button"
+                aria-label="동 범위 해제"
+                onClick={() => onDongChange([])}
+                className="mr-0.5 inline-flex size-[22px] shrink-0 items-center justify-center rounded-full text-[#2383e2] transition-colors hover:bg-[rgba(35,131,226,0.18)]"
               >
                 <X className="size-3" />
               </button>
             )}
-          </label>
-        </div>
-      </PopoverAnchor>
+          </div>
+        </PopoverAnchor>
+      )}
+      <label
+        title={searchExpanded ? undefined : '호수 · 이름 · 전화 · 상담 검색 ( / )'}
+        className={cn(
+          'flex h-[30px] items-center overflow-hidden rounded-full transition-[width,background-color] duration-150 motion-reduce:transition-none',
+          // 펼쳐졌을 때는 줄 폭이 모자라면 먼저 줄어든다(최소 140px). 오른쪽 보기 전환이 밀려 잘리지 않게 한다.
+          searchExpanded
+            ? 'w-[300px] min-w-[140px] shrink cursor-text gap-1.5 bg-[rgba(60,52,40,0.045)] pl-2.5 pr-1'
+            : 'w-[30px] shrink-0 cursor-pointer justify-center text-[#6f6c66] hover:bg-[rgba(60,52,40,0.06)] hover:text-foreground',
+          disabled && 'pointer-events-none opacity-50',
+        )}
+      >
+        <Search
+          aria-hidden="true"
+          className={cn('size-3.5 shrink-0', searchExpanded && 'text-[#a3a09a]')}
+        />
+        <input
+          ref={searchRef}
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              if (query) onQueryChange('');
+              else event.currentTarget.blur();
+            }
+          }}
+          placeholder={searchExpanded ? '호수 · 이름 · 전화 · 상담' : undefined}
+          aria-label="호수, 이름, 전화번호, 상담 내용 검색"
+          disabled={disabled}
+          className={cn(
+            'bg-transparent p-0 text-[13px] text-foreground outline-none placeholder:text-[#a3a09a]',
+            searchExpanded ? 'min-w-0 flex-1' : 'w-0 opacity-0',
+          )}
+        />
+        {searchExpanded && searchHint && (
+          <span className="shrink-0 whitespace-nowrap text-[11px] text-muted-foreground @max-3xl:hidden">
+            {searchHint}
+          </span>
+        )}
+        {query && (
+          <button
+            type="button"
+            aria-label="검색어 지우기"
+            onClick={(event) => {
+              event.preventDefault();
+              onQueryChange('');
+              searchRef.current?.focus();
+            }}
+            className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[#a3a09a] hover:bg-[rgba(60,52,40,0.08)] hover:text-foreground"
+          >
+            <X className="size-3" />
+          </button>
+        )}
+      </label>
       {hasDongs && (
         <PopoverContent
           ref={dongPanelRef}
@@ -239,14 +273,18 @@ export function RecordFilterChip({
   value,
   onChange,
   options,
+  icon,
 }: {
   label: string;
   value: RecordPresenceFilter;
   onChange: (value: RecordPresenceFilter) => void;
   options: ReadonlyArray<RecordFilterOption>;
+  icon?: ReactNode;
 }) {
   return (
     <ToolbarFilterChip
+      shape="soft"
+      icon={icon}
       label={label}
       summary={summarizeRecordFilter(value, options)}
       onClear={() => onChange('all')}

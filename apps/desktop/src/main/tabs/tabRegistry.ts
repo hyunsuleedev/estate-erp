@@ -188,14 +188,14 @@ export class TabRegistry {
   registerWindow(
     windowId: number,
     kind: WindowKind,
-    options: { fullscreen?: boolean } = {},
+    options: { fullscreen?: boolean; sidebarOpen?: boolean } = {},
   ): void {
     this.transact(() => {
       if (this.windows.has(windowId)) return;
       this.windows.set(windowId, {
         kind,
         tabs: createEmptyTabWindowState(),
-        sidebarOpen: this.lastSidebarOpen,
+        sidebarOpen: options.sidebarOpen ?? this.lastSidebarOpen,
         fullscreen: options.fullscreen ?? false,
         revision: 0,
         ackSeq: 0,
@@ -668,7 +668,8 @@ export class TabRegistry {
         sourceWindowId,
       });
       if (windowId === null) return { ok: false, error: 'failed to create the window' };
-      this.registerWindow(windowId, 'detached');
+      // 상세 새 창은 내용부터 보여 준다. 다른 창의 선택이나 마지막 기본값은 바꾸지 않는다.
+      this.registerWindow(windowId, 'detached', { sidebarOpen: false });
       const record = this.windows.get(windowId);
       if (!record) return { ok: false, error: 'window was not registered' };
       this.step(windowId, workspace.insertTab(record.tabs.workspace, tab));

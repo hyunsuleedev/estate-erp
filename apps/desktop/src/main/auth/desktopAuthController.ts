@@ -2,16 +2,20 @@ import {
   authSessionPrincipal,
   type DesktopAuthLoginResult,
   type DesktopAuthRefreshResult,
+  type DesktopAuthActionResult,
   type DesktopAuthSignupResult,
   type DesktopAuthSessionSnapshot,
   type DesktopAuthStatus,
 } from '../../common/desktopAuth';
 import {
+  SIGNUP_EMAIL_RULE,
   SIGNUP_NAME_MAX_LENGTH,
   SIGNUP_PASSWORD_RULE,
   SIGNUP_USERNAME_RULE,
+  isValidSignupEmail,
   isValidSignupUsername,
   meetsSignupPasswordPolicy,
+  normalizeSignupEmail,
   normalizeSignupUsername,
 } from '../../common/signupRules';
 import { Auth0SignupError, toLoginError } from './auth0DesktopSession';
@@ -38,8 +42,15 @@ export interface AuthProviderSession {
   sessionId(): number;
   isSignedInNow(): boolean;
   loginWithPassword(username: string, password: string): Promise<void>;
+  /** 가입 때 받은 이메일로 비밀번호 재설정 링크를 보낸다. */
+  requestPasswordReset(email: string): Promise<void>;
   /** 계정을 만들고 바로 로그인한다. 로그인된 상태에서는 만들지 않는다. */
-  signUpWithPassword(username: string, password: string, name: string): Promise<void>;
+  signUpWithPassword(
+    username: string,
+    password: string,
+    name: string,
+    email: string,
+  ): Promise<void>;
   getAccessToken(): Promise<string | null>;
   /** expectedSessionId가 지금 세션일 때만 로그아웃한다. 했으면 true. */
   logout(expectedSessionId?: number): Promise<boolean>;
@@ -229,6 +240,29 @@ export class DesktopAuthController {
   }
 
   /**
+   * 비밀번호 찾기: 사장님이 가입 때 넣은 이메일로 재설정 링크를 보낸다. 직원은
+   * 이메일이 없으므로 사장님이 직원관리에서 재설정한다.
+   */
+  async requestPasswordReset(email: string): Promise<DesktopAuthActionResult> {
+    const normalizedEmail = normalizeSignupEmail(email);
+    if (!isValidSignupEmail(normalizedEmail)) {
+      return { ok: false, error: SIGNUP_EMAIL_RULE };
+    }
+    try {
+      await this.provider.requestPasswordReset(normalizedEmail);
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : '재설정 메일을 보내지 못했습니다.',
+      };
+    }
+    return { ok: true };
+  }
+
+  /**
    * 사장님 가입: 계정을 만들고 바로 로그인한 뒤 사용자를 확인한다. 처음 확인할 때
    * 서버가 사무소 없는 owner를 만들고, 화면은 이어서 사무소 만들기로 간다.
    *
@@ -239,10 +273,12 @@ export class DesktopAuthController {
     username: string,
     password: string,
     name: string,
+    email: string,
   ): Promise<DesktopAuthSignupResult> {
     await this.start();
     const normalizedUsername = normalizeSignupUsername(username);
     const trimmedName = name.trim();
+    const normalizedEmail = normalizeSignupEmail(email);
     if (!isValidSignupUsername(normalizedUsername)) {
       return { ok: false, error: SIGNUP_USERNAME_RULE };
     }
@@ -255,11 +291,15 @@ export class DesktopAuthController {
         error: `이름은 ${SIGNUP_NAME_MAX_LENGTH}자까지 입력할 수 있습니다.`,
       };
     }
+    if (!isValidSignupEmail(normalizedEmail)) {
+      return { ok: false, error: SIGNUP_EMAIL_RULE };
+    }
     try {
       await this.provider.signUpWithPassword(
         normalizedUsername,
         password,
         trimmedName,
+        normalizedEmail,
       );
     } catch (error) {
       if (error instanceof Auth0SignupError) {

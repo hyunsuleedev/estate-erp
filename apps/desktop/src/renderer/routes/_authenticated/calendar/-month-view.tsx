@@ -7,6 +7,8 @@ import {
   Landmark,
   Link2,
   PanelRightClose,
+  Pin,
+  X,
   Pencil,
   Plus,
   UserRound,
@@ -17,11 +19,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EntityChip } from "@/components/domain";
-import {
-  buildMonthCells,
-  isSameCalendarDate,
-  WEEK_DAY_LABELS,
-} from "./-calendar-view-utils";
+import { isSameCalendarDate } from "./-calendar-view-utils";
 import {
   formatDayTitle,
   formatEventContext,
@@ -34,6 +32,7 @@ import {
   withAlpha,
 } from "./-event-meta";
 import { OVERLAY_META, type OverlayItem } from "./-calendar-overlay";
+import { CalendarOverlayInspector } from "./-overlay-detail-dialog";
 import {
   LINK_KIND_LABEL,
   linksFromEvent,
@@ -41,166 +40,13 @@ import {
   type LinkedEntity,
 } from "./-event-link-picker";
 
-export function MonthCalendarView({
-  currentDate,
-  selectedDate,
-  eventsByDate,
-  overlaysByDate,
-  onCreate,
-  onSelectEvent,
-  onEdit,
-  onSelectDate,
-  onOpenDate,
-  onSelectOverlay,
-}: {
-  currentDate: Date;
-  selectedDate: Date;
-  eventsByDate: Map<string, CalendarEvent[]>;
-  overlaysByDate: Map<string, OverlayItem[]>;
-  onCreate: (date: Date) => void;
-  onSelectEvent: (event: CalendarEvent) => void;
-  onEdit: (event: CalendarEvent) => void;
-  onSelectDate: (date: Date) => void;
-  onOpenDate: (date: Date) => void;
-  onSelectOverlay: (item: OverlayItem) => void;
-}) {
-  const cells = buildMonthCells(currentDate);
-
-  return (
-    <div className="flex min-h-full min-w-[720px] flex-col overflow-hidden bg-background">
-      <div className="grid shrink-0 grid-cols-7 border-b border-border bg-muted/35">
-        {WEEK_DAY_LABELS.map((day, index) => (
-          <div
-            key={day}
-            className={cn(
-              "px-3 py-2 text-[11px] font-medium text-muted-foreground",
-              index === 0 && "text-destructive-strong",
-              index === 6 && "text-info-strong",
-            )}
-          >
-            {day}요일
-          </div>
-        ))}
-      </div>
-
-      <div className="grid flex-1 grid-cols-7 [grid-auto-rows:minmax(112px,1fr)]">
-        {cells.map((cell) => {
-          const dayEvents = eventsByDate.get(cell.key) ?? [];
-          const dayOverlays = overlaysByDate.get(cell.key) ?? [];
-          const isSelected = isSameCalendarDate(selectedDate, cell.date);
-          const isToday = isSameCalendarDate(new Date(), cell.date);
-
-          return (
-            <div
-              key={cell.key}
-              data-calendar-day
-              className={cn(
-                "group relative min-h-28 select-none border-b border-r border-border bg-background p-2 transition-colors",
-                isSelected ? "bg-secondary/55" : "hover:bg-muted/35",
-                cell.isOutsideMonth && "bg-muted/20",
-              )}
-            >
-              <button
-                type="button"
-                data-calendar-cell-trigger
-                onClick={() => onOpenDate(cell.date)}
-                aria-label={`${formatDayTitle(cell.date)} 일정 보기`}
-                aria-pressed={isSelected}
-                className="absolute inset-0 z-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
-              />
-
-              <div className="pointer-events-none relative z-10 flex items-center justify-between gap-1">
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "inline-flex size-6 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums",
-                    isToday && "bg-foreground text-background",
-                    !isToday &&
-                      isSelected &&
-                      "bg-background text-foreground ring-1 ring-border",
-                    !isToday &&
-                      cell.isOutsideMonth &&
-                      "text-muted-foreground/55",
-                    !isToday &&
-                      !isSelected &&
-                      !cell.isOutsideMonth &&
-                      "text-foreground",
-                  )}
-                >
-                  {cell.date.getDate()}
-                </span>
-
-                <div className="flex items-center gap-1">
-                  {dayEvents.length > 0 ? (
-                    <span className="text-[10px] tabular-nums text-muted-foreground">
-                      {dayEvents.length}건
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSelectDate(cell.date);
-                      onCreate(cell.date);
-                    }}
-                    className="pointer-events-auto flex size-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-[opacity,background-color,color] hover:bg-secondary hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 group-hover:opacity-100"
-                    aria-label={`${formatDayTitle(cell.date)}에 일정 추가`}
-                    title="이 날짜에 일정 추가"
-                  >
-                    <Plus className="size-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="pointer-events-none relative z-10 mt-1.5 space-y-1">
-                {dayEvents.slice(0, 3).map((event) => (
-                  <MonthEventPill
-                    key={event.id}
-                    event={event}
-                    onSelect={onSelectEvent}
-                    onEdit={onEdit}
-                  />
-                ))}
-                {dayEvents.length > 3 ? (
-                  <button
-                    type="button"
-                    onClick={() => onOpenDate(cell.date)}
-                    className="pointer-events-auto rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  >
-                    +{dayEvents.length - 3}개 더보기
-                  </button>
-                ) : null}
-                {dayOverlays.slice(0, 1).map((item) => (
-                  <OverlayPill
-                    key={item.id}
-                    item={item}
-                    onSelect={onSelectOverlay}
-                  />
-                ))}
-                {dayOverlays.length > 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => onOpenDate(cell.date)}
-                    className="pointer-events-auto rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  >
-                    +{dayOverlays.length - 1}건 재무
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 export function MonthEventPill({
   event,
   onSelect,
   onEdit,
 }: {
   event: CalendarEvent;
-  onSelect: (event: CalendarEvent) => void;
+  onSelect: (event: CalendarEvent, anchor?: HTMLElement) => void;
   onEdit: (event: CalendarEvent) => void;
 }) {
   const color = getEventColor(event);
@@ -208,10 +54,11 @@ export function MonthEventPill({
   return (
     <button
       type="button"
+      data-calendar-event
       title={`${formatEventTimeRange(event)} · ${event.title} · 더블클릭하여 수정`}
       onClick={(clickEvent) => {
         clickEvent.stopPropagation();
-        onSelect(event);
+        onSelect(event, clickEvent.currentTarget);
       }}
       onDoubleClick={(clickEvent) => {
         clickEvent.stopPropagation();
@@ -224,6 +71,11 @@ export function MonthEventPill({
       }}
     >
       <span className="flex min-w-0 items-center gap-1.5">
+        {!event.allDay && (
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+            {formatTime(event.start)}
+          </span>
+        )}
         <span className="min-w-0 truncate text-[11px] font-semibold text-foreground">
           {event.title}
         </span>
@@ -238,17 +90,18 @@ export function OverlayPill({
   onSelect,
 }: {
   item: OverlayItem;
-  onSelect: (item: OverlayItem) => void;
+  onSelect: (item: OverlayItem, anchor?: HTMLElement) => void;
 }) {
   const meta = OVERLAY_META[item.kind];
 
   return (
     <button
       type="button"
+      data-calendar-event
       title={`${item.title}${item.sublabel ? ` · ${item.sublabel}` : ""}`}
       onClick={(clickEvent) => {
         clickEvent.stopPropagation();
-        onSelect(item);
+        onSelect(item, clickEvent.currentTarget);
       }}
       className="pointer-events-auto block w-full rounded-[5px] border-l-2 px-2 py-1 text-left transition-[background-color,filter] hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       style={{
@@ -276,6 +129,7 @@ export function SelectedDayPanel({
   selectedDateEvents,
   selectedDateOverlays,
   selectedEvent,
+  selectedOverlay,
   onCreate,
   onSelectEvent,
   onClearSelectedEvent,
@@ -288,11 +142,12 @@ export function SelectedDayPanel({
   selectedDateEvents: CalendarEvent[];
   selectedDateOverlays: OverlayItem[];
   selectedEvent: CalendarEvent | null;
+  selectedOverlay?: OverlayItem | null;
   onCreate: (date: Date) => void;
-  onSelectEvent: (event: CalendarEvent) => void;
+  onSelectEvent: (event: CalendarEvent, anchor?: HTMLElement) => void;
   onClearSelectedEvent: () => void;
   onEdit: (event: CalendarEvent) => void;
-  onSelectOverlay: (item: OverlayItem) => void;
+  onSelectOverlay: (item: OverlayItem, anchor?: HTMLElement) => void;
 }) {
   return (
     <aside
@@ -300,11 +155,13 @@ export function SelectedDayPanel({
       aria-label="선택한 날짜의 일정"
       aria-hidden={!isOpen}
       className={cn(
-        "hidden w-[312px] shrink-0 flex-col border-l border-border bg-muted/15 2xl:w-[328px]",
-        isOpen && "xl:flex",
+        "absolute inset-y-0 right-0 z-30 w-[320px] shrink-0 flex-col border-l border-border bg-background shadow-xl xl:static xl:shadow-none",
+        isOpen ? "flex" : "hidden",
       )}
     >
-      {selectedEvent ? (
+      {selectedOverlay ? (
+        <CalendarOverlayInspector item={selectedOverlay} onClose={onClose} />
+      ) : selectedEvent ? (
         <SelectedEventInspector
           event={selectedEvent}
           selectedDate={selectedDate}
@@ -376,9 +233,10 @@ export function SelectedDayPanel({
                     <button
                       key={event.id}
                       type="button"
-                      onClick={() => onSelectEvent(event)}
+                      onClick={(e) => onSelectEvent(event, e.currentTarget)}
                       onDoubleClick={() => onEdit(event)}
                       className="flex w-full items-center gap-2.5 border-b border-border/60 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
+                      data-calendar-event
                       title={`${formatEventTimeRange(event)} · 상세 보기 · 더블클릭하여 수정`}
                     >
                       <span className="w-14 shrink-0">
@@ -423,7 +281,7 @@ export function SelectedDayPanel({
                     <button
                       key={item.id}
                       type="button"
-                      onClick={() => onSelectOverlay(item)}
+                      onClick={(e) => onSelectOverlay(item, e.currentTarget)}
                       className="flex w-full items-center gap-2.5 border-b border-border/60 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
                     >
                       <Landmark
@@ -465,15 +323,17 @@ export function SelectedDayPanel({
   );
 }
 
-function SelectedEventInspector({
+export function SelectedEventInspector({
   event,
   selectedDate,
   onBack,
   onClose,
   onEdit,
+  onPin,
 }: {
   event: CalendarEvent;
   selectedDate: Date;
+  onPin?: () => void;
   onBack: () => void;
   onClose: () => void;
   onEdit: (event: CalendarEvent) => void;
@@ -501,21 +361,40 @@ function SelectedEventInspector({
             className="-ml-2 flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
             <ArrowLeft className="size-3.5 shrink-0" />
-            <span className="truncate">{formatDayTitle(selectedDate)} 일정</span>
+            <span className="truncate">
+              {formatDayTitle(selectedDate)} 일정
+            </span>
           </button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="-mr-2 size-8"
-            onClick={onClose}
-            aria-label="오른쪽 패널 접기"
-            aria-expanded={true}
-            aria-controls="calendar-details-panel"
-            title="오른쪽 패널 접기"
-          >
-            <PanelRightClose className="size-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {onPin && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={onPin}
+                aria-label="상세를 오른쪽에 고정"
+                title="오른쪽에 고정"
+              >
+                <Pin className="size-4" />
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="-mr-2 size-8"
+              onClick={onClose}
+              aria-label="일정 상세 닫기"
+              aria-expanded={true}
+              aria-controls="calendar-details-panel"
+              title="오른쪽 패널 접기"
+            >
+              {onPin ? (
+                <X className="size-4" />
+              ) : (
+                <PanelRightClose className="size-4" />
+              )}
+            </Button>
+          </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-1.5">
@@ -599,7 +478,9 @@ function SelectedEventInspector({
                     <button
                       key={kind}
                       type="button"
-                      onClick={() => void navigate({ to: "/wanted-properties" })}
+                      onClick={() =>
+                        void navigate({ to: "/wanted-properties" })
+                      }
                       className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background py-1 pr-2.5 pl-2 text-xs transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     >
                       <Link2 className="size-3.5 shrink-0 text-muted-foreground" />

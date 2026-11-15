@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Lock, MoreVertical, PhoneCall, Trash2 } from 'lucide-react';
+import { ExternalLink, Lock, MoreVertical, PhoneCall, Trash2 } from 'lucide-react';
 import type { ListingIntake } from '@estate-erp/api-client';
 import {
   IntakeCheckResult,
@@ -297,9 +297,16 @@ export function IntakeConfirmDialog({
 export function PropertyRowActions({
   listings,
   intake,
+  triggerLabel = '행 작업 메뉴',
+  onOpenInNewWindow,
+  isOpeningNewWindow = false,
 }: {
   listings: RowActionListing[];
   intake: ListingIntake | null;
+  /** 메뉴 버튼의 접근성 이름. 상세 패널에서는 "매물 작업 메뉴"로 쓴다. */
+  triggerLabel?: string;
+  onOpenInNewWindow?: () => void;
+  isOpeningNewWindow?: boolean;
 }) {
   const invalidate = useInvalidatePropertyLists();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -324,11 +331,20 @@ export function PropertyRowActions({
     <div className="flex items-center justify-center" onClick={(event) => event.stopPropagation()}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label="행 작업 메뉴">
+          <Button variant="ghost" size="icon-sm" aria-label={triggerLabel}>
             <MoreVertical className="size-4 text-slate-500" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
+          {onOpenInNewWindow && (
+            <>
+              <DropdownMenuItem onSelect={onOpenInNewWindow} disabled={isOpeningNewWindow}>
+                <ExternalLink className="size-3.5" />
+                새 창으로 열기
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
           {intake && (
             <>
               <DropdownMenuLabel className="text-[11px] text-muted-foreground">

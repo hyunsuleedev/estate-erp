@@ -14,23 +14,25 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 
-export function PublicListingEditor({ listingId }: { listingId: string }) {
-  const [open, setOpen] = useState(false);
+/** 고객 공개 매물(소비자 사이트) 설정. 거래 조건 행의 메뉴에서 연다. */
+export function PublicListingDialog({
+  listingId,
+  open,
+  onOpenChange,
+}: {
+  listingId: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const query = useQuery({
     queryKey: ["public-listing", listingId],
-    queryFn: () => api.publicListings.settings(listingId),
-    enabled: open,
+    queryFn: () => api.publicListings.settings(listingId as string),
+    enabled: open && Boolean(listingId),
   });
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="mt-2">
-          공개 매물 설정
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open && Boolean(listingId)} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>고객에게 공개할 매물</DialogTitle>
@@ -38,7 +40,7 @@ export function PublicListingEditor({ listingId }: { listingId: string }) {
             공개용 설명과 사진을 입력하세요. 가격은 현재 거래 조건과 연동됩니다.
           </DialogDescription>
         </DialogHeader>
-        {query.isPending ? (
+        {!listingId ? null : query.isPending ? (
           <p role="status">불러오는 중…</p>
         ) : query.isError ? (
           <div role="alert">

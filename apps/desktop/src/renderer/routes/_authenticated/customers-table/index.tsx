@@ -110,6 +110,10 @@ import {
 } from "../customers/-customer-ledger-pagination";
 import { CustomerCaseActionMenu } from "../customers/-customer-case-action-menu";
 import {
+  BrokerageCaseListButton,
+  BrokerageCasePlanHost,
+} from "../customers/-brokerage-case-plan-dialog";
+import {
   CONSULTATION_TYPE_LABELS,
   getFollowUpState,
 } from "../buyer-requirements/-buyer-utils";
@@ -931,6 +935,7 @@ function CustomersPage() {
                   },
                 ]}
               />
+              <BrokerageCaseListButton className="h-[30px] shrink-0 rounded-full px-3" />
               <Button
                 type="button"
                 size="sm"
@@ -944,6 +949,8 @@ function CustomersPage() {
             </div>
           </div>
         </section>
+        {/* 진행 계획 창은 줄이 아니라 화면에 하나만 둔다(줄이 다시 그려져도 남는다). */}
+        <BrokerageCasePlanHost />
 
         <section
           className="flex shrink-0 items-center gap-2 border-b border-border bg-white px-3 pb-2"

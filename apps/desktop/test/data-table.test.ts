@@ -284,21 +284,16 @@ describe('desktop data table', () => {
       /data-property-workspace[\s\S]*?className="relative flex min-h-0 flex-1 overflow-hidden/,
     );
     assert.match(pageSource, /data-property-inspector/);
-    assert.match(pageSource, /data-property-inspector-backdrop/);
+    assert.doesNotMatch(pageSource, /data-property-inspector-backdrop/);
     assert.match(
       pageSource,
       /data-property-inspector[\s\S]*?className="absolute inset-y-0 right-0 z-50/,
     );
-    assert.match(
-      pageSource,
-      /data-property-inspector-backdrop[\s\S]*?bg-slate-950\/10[\s\S]*?onClick=\{closePropertyInspector\}/,
-      'the inspector backdrop should dim the page and close the inspector when clicked',
-    );
     assert.match(pageSource, /data-property-inspector-resize-handle/);
     assert.match(
       pageSource,
-      /<\/section>\s*\{selectedIntakeId && \(\s*<>[\s\S]*?<PropertyInspector/,
-      'the inspector and its backdrop should be page-level siblings after the workspace so they cover both filter rows',
+      /<\/section>\s*\{selectedIntakeId && \(\s*<PropertyInspector/,
+      'the inspector covers both filter rows while the uncovered list remains interactive',
     );
     assert.match(pageSource, /role="separator"/);
     assert.match(pageSource, /aria-label="상세 패널 너비 조절"/);
@@ -618,15 +613,12 @@ describe('desktop data table', () => {
     assert.doesNotMatch(pageSource, /aria-label="빠른 보기"/);
     assert.match(
       cssSource,
-      /\[data-property-inspector\][\s\S]*?animation: property-inspector-enter 180ms/,
+      /\[data-property-inspector\][\s\S]*?transition: transform 200ms/,
     );
+    assert.doesNotMatch(cssSource, /property-inspector-backdrop/);
     assert.match(
       cssSource,
-      /\[data-property-inspector-backdrop\][\s\S]*?animation: property-inspector-backdrop-enter 160ms/,
-    );
-    assert.match(
-      cssSource,
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\[data-property-inspector\][\s\S]*?animation-duration: 1ms/,
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\[data-property-inspector\][\s\S]*?transition: none/,
     );
   });
 
@@ -677,7 +669,7 @@ describe('desktop data table', () => {
     assert.doesNotMatch(source, /행 더블클릭 시 빠른 확인 패널을 엽니다/);
   });
 
-  it('places the row actions column after the unit and supply columns', () => {
+  it('moves the row actions menu from the table into the property detail panel', () => {
     const source = readFileSync(
       resolve(
         testDir,
@@ -685,30 +677,22 @@ describe('desktop data table', () => {
       ),
       'utf8',
     );
-
-    const unitColumnIndex = source.indexOf("id: 'unit'");
-    const supplyAreaColumnIndex = source.indexOf("id: 'supplyArea'");
-    const actionsColumnIndex = source.indexOf("id: 'actions'");
-    const unitTypeColumnIndex = source.indexOf("id: 'unitType'");
-
-    assert.ok(unitColumnIndex !== -1, 'unit column should exist');
-    assert.ok(supplyAreaColumnIndex !== -1, 'supply area column should exist');
-    assert.ok(actionsColumnIndex !== -1, 'row actions column should exist');
-    assert.ok(unitTypeColumnIndex !== -1, 'unit type column should exist');
-    assert.ok(
-      unitColumnIndex < supplyAreaColumnIndex &&
-        supplyAreaColumnIndex < actionsColumnIndex &&
-        actionsColumnIndex < unitTypeColumnIndex,
-      'row actions should be positioned between supply area and unit type',
+    const inspectorSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/-components/property-inspector-view.tsx',
+      ),
+      'utf8',
     );
+
+    // 표에는 '작업' 칸이 없다. 확인 기록·거래별 매물 삭제는 상세 패널 위 막대의 메뉴로 옮겼다.
+    assert.doesNotMatch(source, /id: ["']actions["']/);
     assert.match(
       source,
-      /id: 'actions'[\s\S]*?size: 40,[\s\S]*?minSize: 40,[\s\S]*?maxSize: 40,[\s\S]*?cellClassName: 'px-0'/,
+      /headerActions=\{\s*<PropertyRowActions[\s\S]*?listings=\{listings\}[\s\S]*?intake=\{intake\}[\s\S]*?triggerLabel="매물 작업 메뉴"/,
     );
-    assert.match(
-      source,
-      /id: 'actions'[\s\S]*?header: \(\) => <span className="sr-only">작업<\/span>/,
-    );
+    assert.match(inspectorSource, /headerActions\?: ReactNode/);
+    assert.match(inspectorSource, /<div className="flex-1" \/>\s*\{headerActions\}/);
   });
 
   it('uses a spreadsheet-style control above the header to collapse columns from type through confirmation', () => {
@@ -750,19 +734,30 @@ describe('desktop data table', () => {
       tableSource,
       /data-column-group-toggle="property-details"[\s\S]*?left: propertyDetailToggleLeft,[\s\S]*?marginLeft: propertyDetailToggleLeft/,
     );
+    // 경계선 위의 작은 +/− 상자: 테두리가 경계선과 같은 색이라 선과 한 부품처럼 보인다.
     assert.match(
       tableSource,
-      /border-\[#9ba7a3\] bg-white[\s\S]*?text-\[#536b64\]/,
+      /data-column-group-toggle="property-details"[\s\S]*?size-4[\s\S]*?border-\[#cfcecb\] bg-white[\s\S]*?text-\[#8f8c86\]/,
     );
+    // 고정 열 경계선은 머리글과 행이 같은 선 하나를 쓴다 (다른 칸 선보다 조금 굵다).
+    assert.match(
+      tableSource,
+      /const PINNED_EDGE_LINE_CLASS =\s*"border-r-0 shadow-\[1px_0_0_0_#cfcecb\] [^"]*group-has-\[\[data-column-edge-hit\]:hover\]\/ptable:after:bg-foreground\/10/,
+    );
+    assert.equal(
+      (tableSource.match(/isLastPinned && PINNED_EDGE_LINE_CLASS/g) ?? []).length,
+      2,
+    );
+
     assert.doesNotMatch(
       tableSource,
       /border-slate-700 bg-slate-700 text-white/,
     );
     assert.match(
       tableSource,
-      /columnGroupControl\.collapsed \? \([\s\S]*?<Plus className="size-3" \/>/,
+      /columnGroupControl\.collapsed \? \([\s\S]*?<Plus className="size-2\.5"/,
     );
-    assert.match(tableSource, /<Minus className="size-3" \/>/);
+    assert.match(tableSource, /<Minus className="size-2\.5"/);
     assert.match(
       pageSource,
       /\.\.\.\(!arePropertyDetailColumnsCollapsed[\s\S]*?id: 'unitType'[\s\S]*?id: 'matching'[\s\S]*?id: 'advertisement'[\s\S]*?id: 'confirmationAt'/,
@@ -796,11 +791,12 @@ describe('desktop data table', () => {
       tableSource,
       /data-property-table-scroller[\s\S]*?data-property-column-guide[\s\S]*?data-column-group-line="property-details"/,
     );
-    assert.match(tableSource, /className="relative h-full pt-2"/);
+    assert.match(tableSource, /className="relative flex h-full items-start"/);
     assert.match(
       tableSource,
-      /data-column-group-cap="property-details"[\s\S]*?top-\[18px\][\s\S]*?h-2 w-px[\s\S]*?left: propertyDetailGuideCapLeft/,
+      /data-column-group-line="property-details"[\s\S]*?top-\[9px\][\s\S]*?h-\[2px\]/,
     );
+    assert.doesNotMatch(tableSource, /data-column-group-cap=/);
     assert.match(
       tableSource,
       /data-column-group-toggle="property-details"[\s\S]*?className="sticky z-50/,
@@ -817,12 +813,12 @@ describe('desktop data table', () => {
     );
     assert.match(
       cssSource,
-      /\[data-column-group-toggle="property-details"\]\[aria-expanded="true"\]::before[\s\S]*?right: calc\(100% \+ 1px\);[\s\S]*?top: 7px;[\s\S]*?width: 100vw;[\s\S]*?height: 11px;[\s\S]*?background: #f7f7f5;/,
+      /\[data-column-group-toggle="property-details"\]\[aria-expanded="true"\]::before[\s\S]*?right: calc\(100% \+ 1px\);[\s\S]*?top: 6px;[\s\S]*?width: 100vw;[\s\S]*?height: 2px;[\s\S]*?background: #ffffff;/,
       'the sticky toggle should mask guide segments without covering its border',
     );
     assert.match(
       tableSource,
-      /data-property-column-guide[\s\S]*?bg-\[#f7f7f5\]/,
+      /data-property-column-guide[\s\S]*?className="sticky top-0 z-40 bg-white"/,
       'the guide band and its mask should share the header color',
     );
     assert.doesNotMatch(
@@ -925,7 +921,21 @@ describe('desktop data table', () => {
     );
   });
 
-  it('keeps the row actions column in the left sticky column group', () => {
+  it('keeps the property panel open when Esc closes a confirm dialog opened from it', () => {
+    const source = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+    // 패널의 매물 작업 메뉴가 여는 삭제 확인창은 AlertDialog(role=alertdialog)다.
+    // 창 전체 Esc 처리와 패널 Esc 처리 둘 다 이 확인창이 떠 있으면 패널을 닫지 않아야 한다.
+    const guards = source.match(/'\[role="dialog"\], \[role="alertdialog"\], \[role="listbox"\]/g) ?? [];
+    assert.equal(guards.length, 2);
+  });
+
+  it('pins the identity columns without a row actions column', () => {
     const source = readFileSync(
       resolve(
         testDir,
@@ -936,7 +946,7 @@ describe('desktop data table', () => {
 
     assert.match(
       source,
-      /left: \['_select', 'info', 'site', 'dong', 'unit', 'supplyArea', 'actions'\]/,
+      /left: \['_select', 'info', 'site', 'dong', 'unit', 'supplyArea'\]/,
     );
   });
 
@@ -999,14 +1009,10 @@ describe('desktop data table', () => {
     );
 
     assert.match(editorSource, /editorChrome\?: 'cell' \| 'floating'/);
-    assert.match(editorSource, /data-cell-edit-popup=\{isFloatingEditor/);
-    assert.match(
-      editorSource,
-      /rounded-md border border-border p-1 shadow-\[0_12px_28px_rgba\(15,23,42,0\.2\)\]/,
-    );
+    assert.match(editorSource, /data-cell-edit-popup[\s\S]*?role="dialog"/);
     assert.match(
       pageSource,
-      /activation="doubleClick"[\s\S]*?editorChrome="floating"/,
+      /activation="click"[\s\S]*?editorChrome="floating"/,
     );
     assert.doesNotMatch(editorSource, /\bPencil\b/);
   });
@@ -1056,20 +1062,42 @@ describe('desktop data table', () => {
       'utf8',
     );
 
-    assert.match(pageSource, /const \[expandedAdRows, setExpandedAdRows\]/);
-    assert.match(pageSource, /label="광고 현황"/);
-    assert.match(pageSource, /listing\.activeAdvertisements/);
-    assert.match(pageSource, /listing\.activeAdvertisementCount/);
+    const panelSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/-components/property-match-panel.tsx',
+      ),
+      'utf8',
+    );
+
+    // 매칭 열과 광고 열은 하나의 펼침 패널을 공유하고, 패널 머리글의 탭으로
+    // 연결 구매고객 ↔ 광고를 전환한다.
     assert.match(
       pageSource,
-      /광고 노출 \{activeAdvertisementCount\}개/,
+      /const \[expandedPanels, setExpandedPanels\] = useState<\s*ReadonlyMap<string, "match" \| "ad">/,
     );
+    assert.match(pageSource, /listing\.activeAdvertisements/);
+    assert.match(pageSource, /listing\.activeAdvertisementCount/);
     assert.match(pageSource, /renderExpandedRow=\{renderExpandedPropertyRow\}/);
+    // 두 열의 토글은 같은 펼침 컨트롤을 쓴다.
     assert.equal(
       pageSource.match(/<ListingPanelToggle/g)?.length,
       2,
       'matching and advertisement counts should share the same expansion control',
     );
+    // 두 토글 모두 통합 패널을 가리킨다 (광고 전용 패널 ID는 사라졌다).
+    assert.doesNotMatch(pageSource, /property-ad-panel-/);
+    assert.equal(
+      (pageSource.match(/panelId=\{`property-expand-panel-\$\{group\.id\}`\}/g) ??
+        [])
+        .length,
+      2,
+    );
+    assert.match(panelSource, /id=\{`property-expand-panel-\$\{group\.id\}`\}/);
+    // 패널 머리글은 두 탭을 가진다.
+    assert.match(panelSource, /label="연결 구매고객"/);
+    assert.match(panelSource, /label="광고"/);
+    assert.match(panelSource, /activeTab === 'ad' \? \(\s*adPanel/);
     assert.match(tableSource, /expandedRowIds\?: ReadonlySet<string>/);
     assert.match(tableSource, /data-expanded-row=\{row\.original\.id\}/);
     assert.match(tableSource, /renderExpandedRow\?\.\(row\.original\)/);
@@ -1091,11 +1119,15 @@ describe('desktop data table', () => {
       'utf8',
     );
 
-    const matchingColumnIndex = pageSource.indexOf("id: 'matching'");
-    const advertisementColumnIndex = pageSource.indexOf("id: 'advertisement'");
-    const confirmationAtColumnIndex = pageSource.indexOf(
-      "id: 'confirmationAt'",
-    );
+    const columnIdIndex = (id: string) => {
+      const match = pageSource.search(
+        new RegExp(`id: ['"]${id}['"]`),
+      );
+      return match;
+    };
+    const matchingColumnIndex = columnIdIndex('matching');
+    const advertisementColumnIndex = columnIdIndex('advertisement');
+    const confirmationAtColumnIndex = columnIdIndex('confirmationAt');
 
     assert.ok(matchingColumnIndex !== -1, 'matching column should be rendered');
     assert.ok(
@@ -1113,22 +1145,25 @@ describe('desktop data table', () => {
         advertisementColumnIndex < confirmationAtColumnIndex,
       'matching and advertisement should sit between type and confirmation',
     );
-    assert.match(pageSource, /label="매칭"/);
-    assert.match(pageSource, /label="연결 구매고객"/);
-    assert.match(
-      pageSource,
-      /<span className="text-\[12\.5px\] font-semibold text-foreground">\s*연결 구매고객\s*<\/span>/,
+    const panelSource = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/-components/property-match-panel.tsx',
+      ),
+      'utf8',
     );
-    assert.match(pageSource, /data-property-match-branch-list/);
-    assert.match(pageSource, /data-property-match-branch-trunk/);
-    assert.match(pageSource, /data-property-match-branch-connector/);
-    assert.match(pageSource, /d="M0 0C0 18 14 32 32 32"/);
-    assert.match(pageSource, /xl:grid-cols-\[minmax\(260px,320px\)_minmax\(620px,1fr\)_auto\]/);
-    assert.match(pageSource, /<MatchProgressTrack match=\{match\} actions=\{actions\} \/>/);
-    assert.match(pageSource, /data-property-match-memo-trigger/);
-    assert.match(pageSource, /<MatchConvertDialog/);
-    assert.match(pageSource, /buildViewingCalendarEventPayload/);
-    assert.match(pageSource, /api\.matches\.updateStage/);
+
+    assert.match(pageSource, /label="매칭"/);
+    // 연결 구매고객 패널 — 고객을 펼치면 단계 경로와 다음 작업이 나온다.
+    assert.match(panelSource, /label="연결 구매고객"/);
+    assert.match(panelSource, /data-property-match-row=\{match\.id\}/);
+    assert.match(panelSource, /data-property-match-detail=\{match\.id\}/);
+    assert.match(panelSource, /<MatchStagePath/);
+    assert.match(panelSource, /<MatchConvertDialog/);
+    assert.match(panelSource, /buildViewingCalendarEventPayload/);
+    assert.match(panelSource, /api\.matches\.updateStage/);
+    // 메모는 매물 표와 같은 공통 셀 편집기를 쓴다.
+    assert.match(panelSource, /<EditableCell/);
     assert.match(pageSource, /_count: listing\._count/);
     assert.match(clientSource, /activeAdvertisementCount\?: number/);
     assert.match(clientSource, /_count\?: \{ matches: number \}/);
@@ -1173,6 +1208,148 @@ describe('desktop data table', () => {
     );
   });
 
+  it('uses the soft toolbar shape on the property page only and keeps the pill default elsewhere', () => {
+    const page = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+    const toolbar = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/-components/property-toolbar.tsx',
+      ),
+      'utf8',
+    );
+
+    // 거래 탭은 광고노트와 같은 알약 탭에서 트랙만 옅은 회색으로 낮춘 것(고른 탭은 검정 채움)
+    assert.match(page, /<ToolbarPillTabs\s+shape="muted"\s+ariaLabel="거래유형"/);
+    assert.match(toolbar, /muted \? "bg-\[rgba\(55,53,47,0\.08\)\]" : toolbarSurfaceClassName/);
+    assert.match(page, /<ToolbarSearchBar\s+shape="soft"/);
+    // 목록/지도는 거래 탭과 같은 둥근 회색 트랙, 고른 쪽은 흰 알약
+    assert.match(page, /<ToolbarPillToggle\s+shape="muted"\s+ariaLabel="매물 보기 방식"/);
+    // 다른 화면은 prop을 주지 않으므로 기본값이 기존 알약 모양이어야 한다
+    assert.equal(toolbar.match(/shape = "pill",/g)?.length, 5);
+    // soft 위치 칸: 단지 │ 동 │ 호가 한 칸, 동·호는 고정 너비 입력칸, 검색칸은 따로
+    // 지역·단지는 필터 칩 모양(고르기 전 테두리 없음, 고르면 파란 알약)
+    assert.match(toolbar, /<span className="shrink-0">지역·단지<\/span>[\s\S]*?aria-label="위치 필터 해제"/);
+    // 동·호는 버블 하나에 같은 너비의 두 칸: 비면 옅은 회색, 값이 있으면 파란 버블 + 둘 다 지우는 ×
+    const unitBubble = toolbar.slice(toolbar.indexOf('aria-label="동·호"'), toolbar.indexOf('검색: 평소에는 돋보기'));
+    assert.match(unitBubble, /rounded-full[\s\S]*?dong \|\| unit\s*\? "bg-\[rgba\(35,131,226,0\.1\)\][^"]*"\s*: "bg-\[rgba\(60,52,40,0\.045\)\]/);
+    assert.match(unitBubble, /<Hash[\s\S]*?suffix="동"\s+className="w-\[84px\] pl-2"[\s\S]*?suffix="호"\s+className="w-\[84px\] pl-2"/);
+    assert.match(unitBubble, /aria-label="동·호 지우기"[\s\S]*?onDongChange\(""\);\s*onUnitChange\(""\);/);
+    // 검색은 평소 돋보기 아이콘만, 입력 중이거나 검색어가 있을 때만 펼쳐지고 자리 표시도 그때만 나온다
+    assert.match(toolbar, /const searchExpanded = searchFocused \|\| search\.length > 0;/);
+    assert.match(toolbar, /placeholder=\{searchExpanded \? searchPlaceholder : undefined\}/);
+    assert.match(toolbar, /searchExpanded \? "min-w-0 flex-1" : "w-0 opacity-0"/);
+    assert.match(toolbar, /function SoftUnitSegment[\s\S]*?text-right font-semibold tabular-nums/);
+  });
+
+  it('renders the property filter row as borderless chips with icons, tinting only the set ones', () => {
+    const page = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+    const toolbar = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/-components/property-toolbar.tsx',
+      ),
+      'utf8',
+    );
+
+    for (const [label, icon] of [
+      ['label="매물상태"', '<Info />'],
+      ['label={priceFilterLabel}', '<WonCircleIcon />'],
+      ['label="월세"', '<WonCircleIcon />'],
+      ['label="공급평형"', '<Ruler />'],
+      ['label="방/욕실"', '<BedDouble />'],
+      ['label={item.label}', 'item.icon'],
+    ]) {
+      const chip = [
+        '<ToolbarFilterChip',
+        ...(label === 'label={item.label}' ? ['key={item.key}'] : []),
+        label,
+        'shape="soft"',
+        `icon={${icon}}`,
+      ].join(' ');
+      assert.ok(
+        page.replace(/\s+/g, ' ').includes(chip),
+        `${label} chip should be soft and carry ${icon}`,
+      );
+    }
+    // 유형·입주일·광고도 "+ 필터" 메뉴에 숨기지 않고 값이 없어도 늘 칩으로 보인다
+    assert.doesNotMatch(page, /AddFilterMenu/);
+    assert.match(page, /\{extraFilterItems\.map\(\(item\) => \(\s*<ToolbarFilterChip/);
+    for (const key of ['siteTypes', 'moveIn', 'advertisement']) {
+      assert.match(page, new RegExp(`key: "${key}"`));
+    }
+    // 좁은 창에서도 칩이 옆으로 숨지 않고 다음 줄로 내려간다
+    const filterRowStart = page.indexOf('{isFilterRowOpen && (');
+    const filterRow = page.slice(filterRowStart, page.indexOf('label="매물상태"', filterRowStart));
+    assert.match(filterRow, /"flex shrink-0 items-start gap-2/);
+    assert.match(filterRow, /className="flex min-w-0 flex-1 flex-wrap items-center/);
+    assert.doesNotMatch(filterRow, /overflow-x-auto/);
+    // soft: 설정 전에는 테두리·바탕이 없고, 설정 후에만 파란 알약
+    assert.match(toolbar, /active\s*\? "rounded-full bg-\[rgba\(35,131,226,0\.1\)\] text-\[#2383e2\][^"]*"\s*: "rounded-full text-\[#6f6c66\]/);
+    // hover·열림 바탕도 Notion처럼 끝이 둥근 알약이다(각진 6px 모서리를 쓰지 않는다)
+    assert.doesNotMatch(
+      toolbar.slice(toolbar.indexOf('export function ToolbarFilterChip'), toolbar.indexOf('export function ToolbarToggleChip')),
+      /soft[\s\S]{0,400}rounded-\[6px\] (?:text|px)/,
+    );
+    // 다른 화면이 쓰는 기본 모양(테두리 있는 알약)은 그대로다
+    assert.match(toolbar, /"rounded-full border text-\[12\.5px\]"/);
+  });
+
+  it('folds the property filter row from a filter icon next to search and keeps reset and columns reachable', () => {
+    const page = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+
+    assert.match(page, /const \[isFilterRowOpen, setIsFilterRowOpen\] = useState\(true\);/);
+    // 아이콘은 검색(ToolbarSearchBar) 바로 뒤에 있다
+    assert.match(page, /<\/ToolbarSearchBar>\s*<button[\s\S]{0,400}?aria-pressed=\{isFilterRowOpen\}[\s\S]{0,700}?<ListFilter className="size-3\.5" \/>/);
+    assert.match(page, /\{isFilterRowOpen && \(\s*<section[\s\S]*?label="매물상태"/);
+    // 컬럼은 필터 아이콘 바로 옆의 아이콘 버튼이고, 접혀 있을 때는 초기화가 찾기 줄 오른쪽으로 옮겨 온다
+    assert.match(page, /<ListFilter className="size-3\.5" \/>\s*<\/button>\s*<PropertyColumnSettings/);
+    const columnControls = readFileSync(
+      resolve(testDir, '../src/renderer/routes/_authenticated/properties/-components/property-table-controls.tsx'),
+      'utf8',
+    );
+    assert.match(columnControls, /aria-label="컬럼 설정"[\s\S]*?<Columns3 className="size-3\.5" \/>/);
+    assert.match(page, /const filterRowActions = \([\s\S]*?초기화[\s\S]*?\n  \);/);
+    assert.doesNotMatch(page.slice(page.indexOf('const filterRowActions = ('), page.indexOf('const filterRowActions = (') + 800), /Columns3/);
+    assert.match(page, /\{!isFilterRowOpen && filterRowActions\}/);
+    assert.equal(page.match(/\{filterRowActions\}/g)?.length, 1);
+  });
+
+  it('keeps the monthly rent chip beside the price chip on the all and monthly tabs', () => {
+    const page = readFileSync(
+      resolve(
+        testDir,
+        '../src/renderer/routes/_authenticated/properties/index.tsx',
+      ),
+      'utf8',
+    );
+
+    // 가격/보증금 칩 바로 다음이 월세 칩이고, 전체·월세 탭(또는 값이 남은 경우)에 보인다
+    assert.match(
+      page,
+      /label=\{priceFilterLabel\}[\s\S]*?<\/ToolbarFilterChip>\s*\{\/\*[\s\S]*?\*\/\}\s*\{\(selectedTransactionType === "all" \|\|\s*selectedTransactionType === "monthly" \|\|\s*monthlyRentFilterSummary\) && \(\s*<ToolbarFilterChip\s+label="월세"/,
+    );
+    // + 필터 메뉴에는 월세가 없다
+    assert.doesNotMatch(page, /key: "monthlyRent"/);
+  });
+
   it('combines province district and ward filters into the location search bar popover', () => {
     const source = readFileSync(
       resolve(
@@ -1185,6 +1362,11 @@ describe('desktop data table', () => {
     assert.match(
       source,
       /<ToolbarSearchBar[\s\S]*?ariaLabel="시도"[\s\S]*?ariaLabel="시군구"[\s\S]*?ariaLabel="법정동"[\s\S]*?<\/ToolbarSearchBar>/,
+    );
+    // 지역 세 단계는 고르기 상자가 아니라 펼친 목록(ToolbarRegionColumn)이고, 단지 목록과 한 면에 놓인다
+    assert.match(
+      source,
+      /<ToolbarSearchBar[\s\S]*?popoverClassName="w-\[736px\][\s\S]*?<ToolbarRegionColumn\s+ariaLabel="시도"[\s\S]*?<ToolbarRegionColumn\s+ariaLabel="시군구"[\s\S]*?<ToolbarRegionColumn\s+ariaLabel="법정동"[\s\S]*?<ChecklistFilterPanel[\s\S]*?지역 초기화[\s\S]*?완료[\s\S]*?<\/ToolbarSearchBar>/,
     );
     assert.doesNotMatch(source, /<FilterPopoverChip\s+label="시도"/);
     assert.doesNotMatch(source, /<FilterPopoverChip\s+label="시군구"/);

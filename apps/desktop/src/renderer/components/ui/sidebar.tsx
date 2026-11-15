@@ -28,7 +28,7 @@ const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
-const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+const SIDEBAR_KEYBOARD_SHORTCUT = "\\"
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -38,6 +38,11 @@ type SidebarContextProps = {
   setOpenMobile: (open: boolean) => void
   isMobile: boolean
   toggleSidebar: () => void
+  preview: boolean
+  showPreview: () => void
+  hidePreview: () => void
+  keepPreview: () => void
+  leavePreview: () => void
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -71,6 +76,28 @@ function SidebarProvider({
   // We use openProp and setOpenProp for control from outside the component.
   const [_open, _setOpen] = React.useState(defaultOpen)
   const open = openProp ?? _open
+  const [preview, setPreview] = React.useState(false)
+  const previewCloseTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const keepPreview = React.useCallback(() => {
+    if (previewCloseTimer.current) clearTimeout(previewCloseTimer.current)
+    previewCloseTimer.current = null
+  }, [])
+  const hidePreview = React.useCallback(() => {
+    keepPreview()
+    setPreview(false)
+  }, [keepPreview])
+  const showPreview = React.useCallback(() => {
+    keepPreview()
+    if (!open) setPreview(true)
+  }, [keepPreview, open])
+  const leavePreview = React.useCallback(() => {
+    if (previewCloseTimer.current) return
+    previewCloseTimer.current = setTimeout(hidePreview, 240)
+  }, [hidePreview])
+  React.useEffect(() => {
+    hidePreview()
+    return keepPreview
+  }, [open, hidePreview, keepPreview])
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(open) : value
@@ -109,7 +136,7 @@ function SidebarProvider({
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
   // This makes it easier to style the sidebar with Tailwind classes.
-  const state = open ? "expanded" : "collapsed"
+  const state = open || preview ? "expanded" : "collapsed"
 
   const contextValue = React.useMemo<SidebarContextProps>(
     () => ({
@@ -120,8 +147,14 @@ function SidebarProvider({
       openMobile,
       setOpenMobile,
       toggleSidebar,
+      preview: preview && !open,
+      showPreview,
+      hidePreview,
+      keepPreview,
+      leavePreview,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar,
+      preview, showPreview, hidePreview, keepPreview, leavePreview]
   )
 
   return (
@@ -161,7 +194,7 @@ function Sidebar({
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
 }) {
-  const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+  const { isMobile, state, open, preview, openMobile, setOpenMobile } = useSidebar()
 
   if (collapsible === "none") {
     return (
@@ -207,7 +240,8 @@ function Sidebar({
     <div
       className="group peer hidden text-sidebar-foreground md:block"
       data-state={state}
-      data-collapsible={state === "collapsed" ? collapsible : ""}
+      data-collapsible={!open ? collapsible : ""}
+      data-preview={preview || undefined}
       data-variant={variant}
       data-side={side}
       data-slot="sidebar"
@@ -226,6 +260,8 @@ function Sidebar({
       />
       <div
         data-slot="sidebar-container"
+        inert={collapsible === "offcanvas" && !open && !preview}
+        aria-hidden={collapsible === "offcanvas" && !open && !preview || undefined}
         className={cn(
           "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
           side === "left"
@@ -256,7 +292,13 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar } = useSidebar()
+  const { open, toggleSidebar, showPreview, leavePreview } = useSidebar()
+  const hoverTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearHover = () => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    hoverTimer.current = null
+  }
+  React.useEffect(() => clearHover, [])
 
   return (
     <Button
@@ -265,14 +307,23 @@ function SidebarTrigger({
       variant="ghost"
       size="icon"
       className={cn("size-7", className)}
+      aria-label={open ? "사이드바 숨기기" : "사이드바 펼치기"}
+      aria-expanded={open}
+      title={open ? "사이드바 숨기기 (⌘/Ctrl + \\)" : "사이드바 펼치기 (⌘/Ctrl + \\)"}
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "mouse" || event.buttons || open) return
+        clearHover()
+        hoverTimer.current = setTimeout(showPreview, 320)
+      }}
+      onPointerLeave={() => { clearHover(); leavePreview() }}
       onClick={(event) => {
+        clearHover()
         onClick?.(event)
         toggleSidebar()
       }}
       {...props}
     >
       <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
     </Button>
   )
 }

@@ -136,8 +136,9 @@ function UnitTableHeaderLabel({
   label: string;
 }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-1 text-[12px] font-normal text-muted-foreground">
-      <span className="shrink-0 [&>svg]:size-3 [&>svg]:text-muted-foreground/70">
+    // 매물관리 표 머리 글자와 같은 모양
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-inherit">
+      <span className="shrink-0 [&>svg]:size-3.5 [&>svg]:text-[#a3a09a]">
         {icon}
       </span>
       <span className="truncate">{label}</span>
@@ -864,10 +865,10 @@ function SitesPage() {
           header: () => (
             <UnitTableHeaderLabel icon={<Building2 />} label="동" />
           ),
-          size: 68,
+          size: 64,
           enableSorting: true,
           cell: ({ row }) => (
-            <span className="truncate text-[13px] font-medium text-slate-700">
+            <span className="truncate text-[13px] font-medium tabular-nums text-[#37352f]">
               {getDongName(row.original.dongId) || ''}
             </span>
           ),
@@ -879,7 +880,7 @@ function SitesPage() {
       size: 72,
       enableSorting: true,
       cell: ({ row }) => (
-        <span className="truncate text-[13px] font-semibold tabular-nums text-slate-900">
+        <span className="truncate text-[13px] font-semibold tabular-nums text-[#2c2c2b]">
           {row.original.name}
         </span>
       ),
@@ -887,14 +888,14 @@ function SitesPage() {
     {
       id: 'supplyArea',
       header: () => <UnitTableHeaderLabel icon={<Ruler />} label="공급" />,
-      size: 78,
+      size: 70,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
         const m2 = unit.supplyAreaM2 ?? unit.siteUnitType?.supplyAreaM2;
         if (!m2) return <UnitTableEmptyCell />;
         return (
-          <span className="whitespace-nowrap text-[13px] tabular-nums text-slate-700">
+          <span className="whitespace-nowrap text-[13px] tabular-nums text-[#37352f]">
             {formatPyeong(m2)}
           </span>
         );
@@ -903,14 +904,14 @@ function SitesPage() {
     {
       id: 'exclusiveArea',
       header: () => <UnitTableHeaderLabel icon={<Ruler />} label="전용" />,
-      size: 78,
+      size: 70,
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
         const m2 = unit.exclusiveAreaM2 ?? unit.siteUnitType?.exclusiveAreaM2;
         if (!m2) return <UnitTableEmptyCell />;
         return (
-          <span className="whitespace-nowrap text-[13px] tabular-nums text-slate-700">
+          <span className="whitespace-nowrap text-[13px] tabular-nums text-[#37352f]">
             {formatPyeong(m2)}
           </span>
         );
@@ -919,12 +920,12 @@ function SitesPage() {
     {
       id: 'unitType',
       header: () => <UnitTableHeaderLabel icon={<Type />} label="타입" />,
-      size: 72,
+      size: 64,
       enableSorting: true,
       cell: ({ row }) => {
         const typeName = row.original.siteUnitType?.name;
         return typeName ? (
-          <span className="truncate text-[13px] text-slate-700">
+          <span className="truncate text-[13px] text-[#37352f]">
             {typeName}
           </span>
         ) : (
@@ -935,7 +936,7 @@ function SitesPage() {
     {
       id: 'ownerName',
       header: () => <UnitTableHeaderLabel icon={<User />} label="소유자명" />,
-      size: 140,
+      size: 120,
       minSize: 112,
       enableSorting: true,
       cell: ({ row }) => {
@@ -945,7 +946,7 @@ function SitesPage() {
         const ownerNames = owners.map(({ contact }) => contact.name).join('\n');
         return (
           <div className="flex min-w-0 items-center gap-1.5" title={ownerNames}>
-            <span className="truncate text-[13px] font-medium text-slate-900">
+            <span className="truncate text-[13px] font-medium text-[#2c2c2b]">
               {primaryOwner.contact.name}
             </span>
             {owners.length > 1 && (
@@ -977,7 +978,7 @@ function SitesPage() {
           .join('\n');
         return (
           <span
-            className="block min-w-0 truncate whitespace-nowrap text-[12px] tabular-nums text-slate-500"
+            className="block min-w-0 truncate whitespace-nowrap text-[12px] tabular-nums text-[#6f6c66]"
             title={phoneSummary}
           >
             {formatPhone(phone)}
@@ -988,7 +989,7 @@ function SitesPage() {
     {
       id: 'tenant',
       header: () => <UnitTableHeaderLabel icon={<Users />} label="세입자" />,
-      size: 180,
+      size: 170,
       enableSorting: true,
       cell: ({ row }) => {
         const tenants = (row.original.properties ?? []).flatMap(
@@ -999,11 +1000,11 @@ function SitesPage() {
         const primary = tenants[0];
         return (
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[13px] font-medium text-slate-800">
+            <span className="truncate text-[13px] font-medium text-[#2c2c2b]">
               {primary.contact.name}
             </span>
             {primary.contact.phone && (
-              <span className="shrink-0 text-[12px] tabular-nums text-slate-500">
+              <span className="shrink-0 text-[12px] tabular-nums text-[#6f6c66]">
                 {formatPhone(primary.contact.phone)}
               </span>
             )}
@@ -1014,7 +1015,7 @@ function SitesPage() {
     {
       id: 'listing',
       header: () => <UnitTableHeaderLabel icon={<Tag />} label="등록 매물" />,
-      size: 180,
+      size: 170,
       enableSorting: true,
       cell: ({ row }) => {
         const listings = (row.original.properties ?? []).flatMap(
@@ -1040,7 +1041,7 @@ function SitesPage() {
               {transactionMeta.label}
             </span>
             <span
-              className="truncate text-[13px] font-medium tabular-nums text-slate-900"
+              className="truncate text-[13px] font-medium tabular-nums text-[#2c2c2b]"
               title={formatListingPrice(primary)}
             >
               {formatListingPrice(primary)}
@@ -1074,11 +1075,11 @@ function SitesPage() {
         if (!latest) return <UnitTableEmptyCell />;
         return (
           <div className="flex min-w-0 items-center gap-1.5" title={latest.content}>
-            <span className="max-w-20 shrink-0 truncate text-[12px] font-medium text-slate-700">
+            <span className="max-w-20 shrink-0 truncate text-[12px] font-medium text-[#37352f]">
               {latest.contact.name}
             </span>
-            <span className="text-slate-300">·</span>
-            <span className="truncate text-[13px] text-slate-700">
+            <span className="text-[#cfccc6]">·</span>
+            <span className="truncate text-[13px] text-[#37352f]">
               {latest.content}
             </span>
           </div>
@@ -1090,7 +1091,7 @@ function SitesPage() {
       header: () => (
         <UnitTableHeaderLabel icon={<CalendarDays />} label="상담일" />
       ),
-      size: 100,
+      size: 88,
       enableSorting: true,
       cell: ({ row }) => {
         const latest = (row.original.properties ?? [])
@@ -1102,7 +1103,7 @@ function SitesPage() {
           )[0];
         if (!latest) return <UnitTableEmptyCell />;
         return (
-          <span className="whitespace-nowrap text-[12px] tabular-nums text-slate-500">
+          <span className="whitespace-nowrap text-[12px] tabular-nums text-[#6f6c66]">
             {formatDate(latest.createdAt)}
           </span>
         );
@@ -1326,6 +1327,7 @@ function SitesPage() {
             />
             <div className="ml-auto flex shrink-0 items-center gap-2">
               <ToolbarPillToggle
+                shape="muted"
                 ariaLabel="단지 보기 방식"
                 value={unitViewMode}
                 onChange={setUnitViewMode}
@@ -1339,13 +1341,15 @@ function SitesPage() {
             </div>
           </section>
 
-          {/* 2차 필터: 호수별 CRM 등록 상태 — 매물관리 툴바 2행과 같은 칩 */}
-          <section className="flex min-h-[47px] shrink-0 items-center gap-2 border-b border-border bg-white px-3 py-2">
+          {/* 2차 필터: 호수별 CRM 등록 상태 — 매물관리 툴바 2행과 같은 칩.
+              표와의 사이에는 선을 두지 않는다(표 머리 윗선이 나눈다). */}
+          <section className="flex min-h-[44px] shrink-0 items-center gap-2 bg-white px-3 pb-1.5 pt-2">
             {/* 칩이 많아 한 줄을 넘치면 옆으로 숨기지 않고 다음 줄로 내린다 — 설정한 필터가 가려지지 않게 */}
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
               {unitViewMode === 'table' && (
                 <>
                   <ToolbarPillTabs
+                    shape="muted"
                     ariaLabel="호수 목록 범위"
                     value={unitTableScope}
                     onChange={setUnitTableScope}
@@ -1359,6 +1363,8 @@ function SitesPage() {
               )}
               {unitTypeOptions.length > 0 && (
                 <ToolbarFilterChip
+                  shape="soft"
+                  icon={<Type />}
                   label="타입"
                   summary={summarizeSelection(unitTypeOptions, selectedUnitTypeIds)}
                   onClear={() => setSelectedUnitTypeIds([])}
@@ -1380,12 +1386,14 @@ function SitesPage() {
                 </ToolbarFilterChip>
               )}
               <RecordFilterChip
+                icon={<User />}
                 label="소유자"
                 value={ownerFilter}
                 onChange={setOwnerFilter}
                 options={registeredPresenceOptions}
               />
               <RecordFilterChip
+                icon={<Tag />}
                 label="등록 매물"
                 value={listingFilter}
                 onChange={setListingFilter}
@@ -1397,6 +1405,8 @@ function SitesPage() {
                 .map((item) => (
                   <ToolbarFilterChip
                     key={item.key}
+                    shape="soft"
+                    icon={item.icon}
                     label={item.label}
                     summary={item.summary}
                     onClear={item.onClear}
@@ -1407,6 +1417,7 @@ function SitesPage() {
                 ))}
               <AddFilterMenu
                 items={moreUnitFilterItems}
+                shape="soft"
                 hint="타입 · 소유자 · 등록 매물은 이 줄에 늘 보입니다."
               />
             </div>
@@ -1429,7 +1440,7 @@ function SitesPage() {
               {hasActiveUnitFilters && (
                 <button
                   type="button"
-                  className={toolbarGhostButtonClassName}
+                  className={cn(toolbarGhostButtonClassName, 'rounded-full')}
                   onClick={resetUnitFilters}
                 >
                   <RotateCcw className="size-3.5" />
@@ -1471,6 +1482,7 @@ function SitesPage() {
                   onRowClick={handleSelectUnit}
                   layout="full-height"
                   variant="notion"
+                  headerTone="refresh"
                   rowHeight={33}
                   pinnedColumns={unitPinnedColumns}
                   columnGroupControls={[

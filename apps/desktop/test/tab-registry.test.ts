@@ -610,7 +610,7 @@ describe('TabRegistry: actions from the tab bar', () => {
     assert.equal(s.active(), a);
   });
 
-  it('keeps the sidebar per window and gives new windows the last choice', () => {
+  it('keeps the sidebar per window and lets a collapsed detail window reopen it', () => {
     const s = setup();
     assert.equal(s.state().sidebarOpen, true);
 
@@ -1628,6 +1628,9 @@ describe('TabRegistry: windows that hold tabs moved by other means', () => {
     assert.equal(s.tab(result.tabId).resourceKey, tabResourceKeys.entity('property', 'p1'));
     assert.equal(s.host.views.shown(result.windowId)?.id, result.tabId);
     assert.equal(s.state(result.windowId).tabs.length, 1);
+    assert.equal(s.state(result.windowId).sidebarOpen, false);
+    assert.equal(s.state(MAIN).sidebarOpen, true);
+    assert.equal(s.registry.getSidebarOpen(null), true, 'opening a detail window preserves the last user choice');
     assert.deepEqual(s.ids(MAIN), before);
     assert.equal(s.active(), active);
 

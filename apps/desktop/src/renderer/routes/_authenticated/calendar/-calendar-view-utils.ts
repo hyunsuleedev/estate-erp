@@ -106,7 +106,8 @@ export function groupEventsByDate<T extends CalendarLikeEvent>(events: T[]) {
   for (const event of sortEventsByStart(events)) {
     const startDate = new Date(event.start);
     const endDate = event.end ? new Date(event.end) : startDate;
-    const lastDay = startOfDay(endDate < startDate ? startDate : endDate);
+    // A midnight end is exclusive, matching timed-grid and month-bar placement.
+    const lastDay = startOfDay(new Date(Math.max(startDate.getTime(), endDate.getTime() - (endDate > startDate ? 1 : 0))));
 
     let cursor = startOfDay(startDate);
     let guard = 0;

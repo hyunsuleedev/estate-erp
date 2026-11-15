@@ -48,6 +48,8 @@ interface AuthContextValue extends AuthState {
     name: string,
     officeName: string,
   ) => Promise<void>;
+  /** 가입 때 받은 이메일로 비밀번호 재설정 링크를 보낸다. */
+  requestPasswordReset: (email: string) => Promise<void>;
   refresh: () => Promise<void>;
   logout: () => void;
 }
@@ -172,23 +174,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applySnapshot, bridge],
   );
 
-  // 사장님 가입: 계정을 만들고 바로 로그인한다. 이메일과 사무소는 여기서 받지 않는다
-  // (사무소는 로그인 뒤 사무소 만들기 화면에서 만든다).
+  // 사장님 가입: 계정을 만들고 바로 로그인한다. 이메일은 비밀번호 재설정 링크를 받을
+  // 주소다. 사무소는 로그인 뒤 사무소 만들기 화면에서 만든다.
   const register = useCallback(
-    async (loginId: string, _email: string, password: string, name: string) => {
+    async (loginId: string, email: string, password: string, name: string) => {
       if (!bridge) {
         throw new Error('데스크톱 앱에서만 가입할 수 있습니다.');
       }
       if (!bridge.signup) {
         throw new Error('회원가입은 메인 창에서 진행해 주세요.');
       }
-      const result = await bridge.signup({ username: loginId, password, name });
+      const result = await bridge.signup({ username: loginId, password, name, email });
       if (!result.ok) {
         throw new AuthRegisterError(result.error, result.continueAtLogin === true);
       }
       applySnapshot(await bridge.getSession());
     },
     [applySnapshot, bridge],
+  );
+
+  const requestPasswordReset = useCallback(
+    async (email: string) => {
+      if (!bridge?.requestPasswordReset) {
+        throw new Error('비밀번호 찾기는 메인 창에서 진행해 주세요.');
+      }
+      const result = await bridge.requestPasswordReset(email);
+      if (!result.ok) {
+        throw new Error(result.error ?? '재설정 메일을 보내지 못했습니다.');
+      }
+    },
+    [bridge],
   );
 
   const refresh = useCallback(async () => {
@@ -224,10 +239,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionId: snapshot?.authenticated ? snapshot.providerSessionId : null,
       login,
       register,
+      requestPasswordReset,
       refresh,
       logout,
     }),
-    [isShell, login, logout, refresh, register, snapshot, status],
+    [isShell, login, logout, refresh, register, requestPasswordReset, snapshot, status],
   );
 
   return (

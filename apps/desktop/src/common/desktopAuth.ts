@@ -62,6 +62,8 @@ export interface DesktopAuthSignupInput {
   password: string;
   /** 표시 이름. 비우면 아이디가 이름이 된다. */
   name: string;
+  /** 비밀번호 재설정 링크를 받을 주소. 사장님 가입에서만 받는다. */
+  email: string;
 }
 
 export type DesktopAuthSignupResult =
@@ -139,6 +141,7 @@ export function parseAuthCredentials(
 }
 
 const MAX_NAME_LENGTH = 200;
+const MAX_EMAIL_LENGTH = 320;
 
 /** IPC로 들어온 가입 입력의 형식만 확인한다. 규칙 확인은 main의 세션 코어가 한다. */
 export function parseAuthSignupInput(value: unknown): DesktopAuthSignupInput | null {
@@ -146,5 +149,7 @@ export function parseAuthSignupInput(value: unknown): DesktopAuthSignupInput | n
   if (!credentials || !isRecord(value)) return null;
   const name = value.name === undefined ? '' : value.name;
   if (typeof name !== 'string' || name.length > MAX_NAME_LENGTH) return null;
-  return { ...credentials, name: name.trim() };
+  const email = value.email;
+  if (typeof email !== 'string' || email.length > MAX_EMAIL_LENGTH) return null;
+  return { ...credentials, name: name.trim(), email: email.trim() };
 }

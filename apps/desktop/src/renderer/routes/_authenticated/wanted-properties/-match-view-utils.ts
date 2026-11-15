@@ -93,11 +93,11 @@ const MATCH_STAGE_ACTION_COPY: Partial<Record<MatchProgressStage, MatchStageActi
     closeLabel: '후보에서 제외 · 종료',
   },
   [MatchStage.BUYER_INTERESTED]: {
-    progressLabel: '관심 있음 · 임장 가능 확인으로',
+    progressLabel: '관심 있음 · 임장 조율로',
     closeLabel: '관심 없음 · 종료',
   },
   [MatchStage.VIEWING_CONFIRMED]: {
-    progressLabel: '임장 가능 · 임장으로',
+    progressLabel: '조율 완료 · 임장으로',
     closeLabel: '임장 불가 · 종료',
   },
   [MatchStage.VIEWING]: {
@@ -356,7 +356,7 @@ export function getMatchStageBlockReason(
     currentIndex >= 0 &&
     currentIndex < viewingConfirmedIndex
   ) {
-    return '집주인·점유자의 임장 가능 확인을 먼저 완료해 주세요.';
+    return '집주인·점유자와 임장 조율을 먼저 완료해 주세요.';
   }
 
   if (

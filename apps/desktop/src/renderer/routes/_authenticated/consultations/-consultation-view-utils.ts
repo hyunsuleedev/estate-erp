@@ -460,13 +460,13 @@ export const buyerReqStatusLabels: Record<string, string> = {
 export const matchStageLabels: Record<string, string> = {
   suggested: '내부 후보',
   buyerInterested: '고객 관심',
-  viewingConfirmed: '임장 가능 확인',
+  viewingConfirmed: '임장 조율',
   viewing: '임장',
   negotiating: '협상',
   dealCreated: '거래전환',
   closed: '종료',
   buyerContacted: '고객 관심',
-  ownerContacted: '임장 가능 확인',
+  ownerContacted: '임장 조율',
 };
 
 const consultationTypeLabels: Record<string, string> = {

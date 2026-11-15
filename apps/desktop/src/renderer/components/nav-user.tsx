@@ -30,19 +30,21 @@ import {
 export function NavUser({
   user,
   onLogout,
+  onMenuOpenChange,
 }: {
   user: {
     name: string
     email: string
   }
   onLogout: () => void
+  onMenuOpenChange?: (open: boolean) => void
 }) {
   const { isMobile } = useSidebar()
 
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={onMenuOpenChange}>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"

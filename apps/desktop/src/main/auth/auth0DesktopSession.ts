@@ -1,5 +1,6 @@
 import type { Auth0DesktopConfig } from '../../common/auth0DesktopConfig';
 import {
+  SIGNUP_EMAIL_RULE,
   SIGNUP_PASSWORD_RULE,
   SIGNUP_USERNAME_RULE,
 } from '../../common/signupRules';
@@ -97,6 +98,8 @@ export class Auth0LoginError extends Error {
 
 export type Auth0SignupFailure =
   | 'username-taken'
+  | 'email-taken'
+  | 'invalid-email'
   | 'weak-password'
   | 'invalid-username'
   | 'username-length'
@@ -126,6 +129,20 @@ export function toSignupError(status: number, body: unknown): Auth0SignupError {
       : {};
   const code = typeof payload.code === 'string' ? payload.code : null;
   const error = typeof payload.error === 'string' ? payload.error : null;
+  // 이메일이 겹치면 Auth0가 invalid_signup에 data.identifierType = "email"을 붙여 준다.
+  const data =
+    typeof payload.data === 'object' && payload.data !== null
+      ? (payload.data as Record<string, unknown>)
+      : {};
+  if (code === 'invalid_signup' && data.identifierType === 'email') {
+    return new Auth0SignupError(
+      'email-taken',
+      '이미 가입에 사용된 이메일입니다. 다른 이메일을 입력해 주세요.',
+    );
+  }
+  if (error && /email/i.test(error)) {
+    return new Auth0SignupError('invalid-email', SIGNUP_EMAIL_RULE);
+  }
   if (code === 'invalid_signup' || code === 'user_exists' || code === 'username_exists') {
     return new Auth0SignupError(
       'username-taken',
@@ -210,9 +227,14 @@ const TOKEN_REQUEST_TIMEOUT_MS = 15_000;
 const REVOKE_TIMEOUT_MS = 5_000;
 const SIGNUP_REQUEST_TIMEOUT_MS = 15_000;
 const STORE_WAIT_MS = 1_000;
-/** 이 답을 받은 refresh token은 다시 보내도 받아 주지 않는다. 세션을 끝낸다. */
+/**
+ * 이 답을 받은 refresh token은 다시 보내도 받아 주지 않는다. 세션을 끝낸다.
+ * access_denied는 Auth0의 post-login Action(apps/server/auth0/actions/session-claims.js)이
+ * 비밀번호가 바뀌기 전에 로그인한 세션의 갱신을 거절할 때 온다.
+ */
 const SESSION_ENDING_TOKEN_ERRORS = new Set([
   'invalid_grant',
+  'access_denied',
   'invalid_client',
   'unauthorized_client',
 ]);
@@ -317,11 +339,46 @@ export class Auth0DesktopSession {
     username: string,
     password: string,
     name: string,
+    email: string,
   ): Promise<void> {
     return this.runAttempt(
-      JSON.stringify(['signup', username, password, name]),
-      () => this.performSignup(username, password, name),
+      JSON.stringify(['signup', username, password, name, email]),
+      () => this.performSignup(username, password, name, email),
     );
+  }
+
+  /**
+   * 사장님 가입 때 받은 이메일로 비밀번호 재설정 링크를 보낸다. Auth0는 그 이메일의
+   * 계정이 없어도 같은 답을 주므로, 여기서도 계정이 있는지 알려 주지 않는다.
+   * 링크에서 비밀번호를 바꾸는 화면은 Auth0가 띄운다.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    const { config } = this.options;
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        `${this.endpointBaseUrl}/dbconnections/change_password`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            client_id: config.clientId,
+            connection: config.realm,
+            email,
+          }),
+          signal: AbortSignal.timeout(SIGNUP_REQUEST_TIMEOUT_MS),
+        },
+      );
+    } catch {
+      throw new Error('서버에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.');
+    }
+    if (response.status === 429) {
+      throw new Error('요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.');
+    }
+    // 404(그 이메일의 계정 없음)는 성공과 똑같이 다룬다.
+    if (!response.ok && response.status !== 404) {
+      throw new Error('재설정 메일을 보내지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
   }
 
   private runAttempt(key: string, run: () => Promise<void>): Promise<void> {
@@ -494,6 +551,7 @@ export class Auth0DesktopSession {
     username: string,
     password: string,
     name: string,
+    email: string,
   ): Promise<void> {
     await this.ready();
     if (this.isSignedInNow()) {
@@ -515,6 +573,7 @@ export class Auth0DesktopSession {
             connection: config.realm,
             username,
             password,
+            email,
             ...(name ? { name } : {}),
           }),
           signal: AbortSignal.timeout(SIGNUP_REQUEST_TIMEOUT_MS),

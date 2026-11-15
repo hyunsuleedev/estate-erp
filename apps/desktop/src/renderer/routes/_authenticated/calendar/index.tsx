@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarPlus2,
   CalendarX2,
   ChevronLeft,
   ChevronRight,
   PanelRightOpen,
+  Search,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { CalendarEvent } from "@estate-erp/api-client";
 
@@ -33,13 +35,27 @@ import {
   formatDateRange,
   formatFullDate,
   formatMonthTitle,
+  formatEventTimeRange,
+  formatEventContext,
 } from "./-event-meta";
 import { useCalendarOverlays, type OverlayItem } from "./-calendar-overlay";
-import { EventDialog } from "./-event-dialog";
-import { CalendarOverlayDetailDialog } from "./-overlay-detail-dialog";
-import { MonthCalendarView, SelectedDayPanel } from "./-month-view";
+import { EventEditor, type EventDraftPreset } from "./-event-dialog";
+import { CalendarOverlayInspector } from "./-overlay-detail-dialog";
+import { SelectedDayPanel, SelectedEventInspector } from "./-month-view";
+import { MonthCalendarView, type MonthViewport } from "./-month-grid-view";
 import { TimeGridCalendarView } from "./-time-grid-view";
 import { AgendaCalendarView } from "./-agenda-view";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
+import { useEventTiming } from "./-use-event-timing";
+import { readWorkspaceState, writeWorkspaceState } from "./-workspace-state";
+import type { CalendarDraftPreview } from "./-event-draft-preview";
+import { GRID_HOUR_HEIGHT } from "./-time-grid-layout";
 
 const viewOptions: Array<{ value: CalendarViewMode; label: string }> = [
   { value: "month", label: "월" },
@@ -51,18 +67,50 @@ const viewOptions: Array<{ value: CalendarViewMode; label: string }> = [
 const EMPTY_CALENDAR_EVENTS: CalendarEvent[] = [];
 const EMPTY_OVERLAYS_BY_DATE = new Map<string, OverlayItem[]>();
 
-/** 서버 findAll이 start 기준으로만 필터하므로, 범위 이전에 시작해 범위에 걸치는 멀티데이 이벤트를 위해 조회 시작을 당긴다. */
-const MULTI_DAY_LOOKBACK_MS = 31 * 86_400_000;
-
 export const Route = createFileRoute("/_authenticated/calendar/")({
   component: CalendarPage,
 });
 
 function CalendarPage() {
   const { user } = useAuth();
-  const [viewMode, setViewMode] = useState<CalendarViewMode>("month");
-  const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const storageKey = `calendar-workspace:${user?.id ?? "anonymous"}`;
+  const [initialWorkspace] = useState(() => readWorkspaceState(storageKey));
+  const [viewMode, setViewMode] = useState<CalendarViewMode>(
+    initialWorkspace.viewMode,
+  );
+  const [currentDate, setCurrentDate] = useState(
+    new Date(initialWorkspace.currentDate),
+  );
+  const [selectedDate, setSelectedDate] = useState(
+    new Date(initialWorkspace.selectedDate),
+  );
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollPositions = useRef(initialWorkspace.scroll);
+  const monthViewport = useRef<MonthViewport | undefined>(
+    initialWorkspace.monthViewport,
+  );
+  const [monthRange, setMonthRange] = useState<{
+    start: Date;
+    end: Date;
+  } | null>(null);
+  const [monthNavigationVersion, setMonthNavigationVersion] = useState(0);
+  const jumpToMonth = () => {
+    monthViewport.current = undefined;
+    setMonthNavigationVersion((value) => value + 1);
+  };
+  const anchorRef = useRef<HTMLElement | null>(null);
+  const virtualAnchor = useRef({
+    getBoundingClientRect: () =>
+      anchorRef.current?.getBoundingClientRect() ?? new DOMRect(100, 100, 1, 1),
+  });
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [editorPreview, setEditorPreview] =
+    useState<CalendarDraftPreview | null>(null);
+  const [draft, setDraft] = useState<EventDraftPreset | null>(null);
+  const timing = useEventTiming();
   const [userFilter, setUserFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [isMineOnly, setIsMineOnly] = useState(false);
@@ -71,16 +119,19 @@ function CalendarPage() {
   const [dialogEvent, setDialogEvent] = useState<CalendarEvent | null>(null);
   const [dialogDefaultDate, setDialogDefaultDate] = useState(new Date());
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [selectedOverlay, setSelectedOverlay] = useState<OverlayItem | null>(null);
+  const [selectedOverlay, setSelectedOverlay] = useState<OverlayItem | null>(
+    null,
+  );
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
 
   const range = useMemo(
-    () => getCalendarRange(currentDate, viewMode),
-    [currentDate, viewMode],
+    () =>
+      viewMode === "month" && monthRange
+        ? monthRange
+        : getCalendarRange(currentDate, viewMode),
+    [currentDate, viewMode, monthRange],
   );
-  const fetchStart = new Date(
-    range.start.getTime() - MULTI_DAY_LOOKBACK_MS,
-  ).toISOString();
+  const fetchStart = range.start.toISOString();
   const fetchEnd = range.end.toISOString();
 
   const { data: employees = [] } = useQuery({
@@ -112,7 +163,53 @@ function CalendarPage() {
     placeholderData: keepPreviousData,
   });
 
+  const searchQuery = useQuery({
+    queryKey: [
+      "calendar-events",
+      "search",
+      { userId: effectiveUserId ?? "", type: typeFilter },
+    ],
+    queryFn: () =>
+      api.calendarEvents.findAll({
+        userId: effectiveUserId,
+        type: typeFilter || undefined,
+      }),
+    enabled: searchOpen,
+    staleTime: 30_000,
+  });
+  const searchResults = useMemo(() => {
+    const query = searchText.trim().toLocaleLowerCase();
+    const records = searchQuery.data ?? [];
+    return records.filter(
+      (event) =>
+        !query ||
+        `${event.title} ${event.description ?? ""} ${formatEventContext(event)}`
+          .toLocaleLowerCase()
+          .includes(query),
+    );
+  }, [searchQuery.data, searchText]);
   const overlay = useCalendarOverlays(showFinance);
+  const persistWorkspace = () =>
+    writeWorkspaceState(storageKey, {
+      viewMode,
+      currentDate: currentDate.toISOString(),
+      selectedDate: selectedDate.toISOString(),
+      scroll: scrollPositions.current,
+      monthViewport: monthViewport.current,
+    });
+  useEffect(persistWorkspace, [
+    storageKey,
+    viewMode,
+    currentDate,
+    selectedDate,
+  ]);
+  useLayoutEffect(() => {
+    if (!scrollRef.current || eventsQuery.isLoading || viewMode === "month")
+      return;
+    scrollRef.current.scrollTop =
+      scrollPositions.current[viewMode] ??
+      (viewMode === "week" || viewMode === "day" ? GRID_HOUR_HEIGHT * 8 : 0);
+  }, [viewMode, eventsQuery.isLoading]);
 
   const events = useMemo(() => {
     const raw = eventsQuery.data ?? EMPTY_CALENDAR_EVENTS;
@@ -132,7 +229,9 @@ function CalendarPage() {
   const selectedDateEvents =
     eventsByDate.get(getLocalDateKey(selectedDate)) ?? EMPTY_CALENDAR_EVENTS;
   const selectedEvent = selectedEventId
-    ? (events.find((event) => event.id === selectedEventId) ?? null)
+    ? (events.find((event) => event.id === selectedEventId) ??
+      searchQuery.data?.find((event) => event.id === selectedEventId) ??
+      null)
     : null;
 
   const rangeLabel =
@@ -146,7 +245,10 @@ function CalendarPage() {
         ? formatFullDate(currentDate)
         : formatMonthTitle(currentDate);
 
-  const handleOpenCreate = (date: Date) => {
+  const handleOpenCreate = (date: Date, end?: Date) => {
+    setDraft(
+      end ? { start: date.toISOString(), end: end.toISOString() } : null,
+    );
     setDialogEvent(null);
     setDialogDefaultDate(date);
     setSelectedDate(date);
@@ -159,18 +261,23 @@ function CalendarPage() {
     setIsDialogOpen(true);
   };
 
-  const handleSelectEvent = (event: CalendarEvent) => {
+  const handleSelectEvent = (event: CalendarEvent, anchor?: HTMLElement) => {
+    anchorRef.current =
+      anchor ??
+      (document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null);
     setSelectedDate(new Date(event.start));
+    setSelectedOverlay(null);
     setSelectedEventId(event.id);
-    if (window.matchMedia("(min-width: 1280px)").matches) {
-      setIsRightPanelOpen(true);
-      return;
-    }
-
-    handleOpenEdit(event);
   };
 
-  const handleSelectOverlay = (item: OverlayItem) => {
+  const handleSelectOverlay = (item: OverlayItem, anchor?: HTMLElement) => {
+    anchorRef.current =
+      anchor ??
+      (document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null);
     const overlayDate = new Date(`${item.dateKey}T00:00:00`);
     if (!Number.isNaN(overlayDate.getTime())) {
       setSelectedDate(overlayDate);
@@ -182,40 +289,41 @@ function CalendarPage() {
   const handleSelectDate = (date: Date) => {
     setSelectedDate(date);
     setSelectedEventId(null);
-
-    if (viewMode === "month" && date.getMonth() !== currentDate.getMonth()) {
-      setCurrentDate(new Date(date.getFullYear(), date.getMonth(), 1));
-      return;
-    }
+    setSelectedOverlay(null);
 
     if (viewMode !== "month") {
       setCurrentDate(date);
     }
   };
 
-  const handleOpenDatePanel = (date: Date) => {
-    handleSelectDate(date);
-    setIsRightPanelOpen(true);
-  };
-
   const handleNavigate = (direction: -1 | 1) => {
+    jumpToMonth();
     const nextDate = addCalendarPeriod(currentDate, viewMode, direction);
     setCurrentDate(nextDate);
     setSelectedDate(nextDate);
     setSelectedEventId(null);
+    setSelectedOverlay(null);
   };
 
   const handleToday = () => {
+    jumpToMonth();
     const today = new Date();
     setCurrentDate(today);
     setSelectedDate(today);
     setSelectedEventId(null);
+    setSelectedOverlay(null);
   };
 
   const handleViewChange = (value: string) => {
     const nextViewMode = value as CalendarViewMode;
     setViewMode(nextViewMode);
+    if (nextViewMode === "month") {
+      jumpToMonth();
+      setMonthRange(null);
+      setCurrentDate(selectedDate);
+    }
     setSelectedEventId(null);
+    setSelectedOverlay(null);
 
     if (nextViewMode !== "month") {
       setCurrentDate(selectedDate);
@@ -224,16 +332,34 @@ function CalendarPage() {
 
   const handleMiniCalendarSelect = (date: Date | undefined) => {
     if (!date) return;
+    jumpToMonth();
     setSelectedDate(date);
     setCurrentDate(date);
     setSelectedEventId(null);
+    setSelectedOverlay(null);
   };
 
   // 키보드 단축키 — T(오늘) / N(새 일정) / J·←(이전) / K·→(다음)
   useEffect(() => {
     const onKeyDown = (keyEvent: KeyboardEvent) => {
-      if (isDialogOpen) return;
-      if (keyEvent.metaKey || keyEvent.ctrlKey || keyEvent.altKey) return;
+      if (isDialogOpen || keyEvent.isComposing || keyEvent.defaultPrevented)
+        return;
+      if (
+        (keyEvent.metaKey || keyEvent.ctrlKey) &&
+        keyEvent.key.toLowerCase() === "f"
+      ) {
+        keyEvent.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+      if (
+        searchOpen ||
+        filtersOpen ||
+        keyEvent.metaKey ||
+        keyEvent.ctrlKey ||
+        keyEvent.altKey
+      )
+        return;
       const target = keyEvent.target as HTMLElement | null;
       if (
         target &&
@@ -245,7 +371,18 @@ function CalendarPage() {
         return;
       }
 
+      if (target?.closest('[role="dialog"], [role="listbox"], [role="menu"]'))
+        return;
       switch (keyEvent.key.toLowerCase()) {
+        case "d":
+          handleViewChange("day");
+          break;
+        case "w":
+          handleViewChange("week");
+          break;
+        case "m":
+          handleViewChange("month");
+          break;
         case "t":
           handleToday();
           break;
@@ -267,12 +404,19 @@ function CalendarPage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDialogOpen, selectedDate, currentDate, viewMode]);
+  }, [
+    isDialogOpen,
+    searchOpen,
+    filtersOpen,
+    selectedDate,
+    currentDate,
+    viewMode,
+  ]);
 
   return (
     <div
       data-calendar-page
-      className="-m-4 flex min-h-0 flex-1 overflow-hidden bg-background"
+      className="relative -m-4 flex min-h-0 flex-1 overflow-hidden bg-background"
     >
       <CalendarWorkspaceRail
         currentDate={currentDate}
@@ -280,11 +424,12 @@ function CalendarPage() {
         typeFilter={typeFilter}
         isMineOnly={isMineOnly}
         showFinance={showFinance}
-        onCreate={() => handleOpenCreate(selectedDate)}
         onSelectDate={handleMiniCalendarSelect}
         onMonthChange={(date) => {
+          jumpToMonth();
           setCurrentDate(date);
           setSelectedEventId(null);
+          setSelectedOverlay(null);
         }}
         onTypeFilterChange={setTypeFilter}
         onMineOnlyChange={setIsMineOnly}
@@ -292,25 +437,24 @@ function CalendarPage() {
       />
 
       <section className="flex min-w-0 flex-1 flex-col bg-background">
-        <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5 py-3">
-          <div className="flex min-w-0 items-baseline gap-2.5">
-            <h1 className="truncate text-[17px] font-bold tracking-[-0.02em] text-foreground">
-              {headerTitle}
-            </h1>
-            <span
-              className="whitespace-nowrap text-[11px] tabular-nums text-muted-foreground"
-              title={`${rangeLabel} · ${events.length}건`}
-            >
-              <span className="hidden md:inline">{rangeLabel} · </span>
-              {events.length}건
-            </span>
-          </div>
-
-          <div className="flex h-8 items-center rounded-lg bg-muted p-0.5">
+        <header
+          className="flex h-[54px] shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-3"
+          data-calendar-toolbar
+        >
+          <h1
+            className="min-w-20 max-w-44 shrink truncate text-[15px] font-semibold tracking-tight"
+            title={
+              viewMode === "month"
+                ? `${headerTitle} · 휠을 스크롤하여 날짜 탐색`
+                : `${headerTitle} · ${rangeLabel} · ${events.length}건`
+            }
+          >
+            {headerTitle}
+          </h1>
+          <div className="flex shrink-0 items-center gap-0.5">
             <Button
               variant="ghost"
               size="icon-sm"
-              className="size-7"
               onClick={() => handleNavigate(-1)}
               aria-label="이전 기간"
               title="이전 기간 (J)"
@@ -320,16 +464,14 @@ function CalendarPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2.5 text-xs"
               onClick={handleToday}
-              title="오늘로 이동 (T)"
+              title="오늘 (T)"
             >
               오늘
             </Button>
             <Button
               variant="ghost"
               size="icon-sm"
-              className="size-7"
               onClick={() => handleNavigate(1)}
               aria-label="다음 기간"
               title="다음 기간 (K)"
@@ -337,11 +479,10 @@ function CalendarPage() {
               <ChevronRight className="size-4" />
             </Button>
           </div>
-
           <div
             role="tablist"
             aria-label="캘린더 보기"
-            className="flex h-8 items-center rounded-lg bg-muted p-0.5"
+            className="flex h-8 shrink-0 items-center rounded-md bg-muted/60 p-0.5"
           >
             {viewOptions.map((option) => (
               <button
@@ -351,7 +492,7 @@ function CalendarPage() {
                 aria-selected={viewMode === option.value}
                 onClick={() => handleViewChange(option.value)}
                 className={cn(
-                  "h-7 rounded-md px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                  "h-7 rounded px-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   viewMode === option.value
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",
@@ -361,22 +502,129 @@ function CalendarPage() {
               </button>
             ))}
           </div>
-
-          <div className="min-w-2 flex-1" />
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className={cn(isMineOnly && "pointer-events-none opacity-50")}>
-              <FilterSelect
-                label="담당자"
-                value={userFilter}
-                onChange={setUserFilter}
-                options={employees.map((employee) => ({
-                  value: employee.id,
-                  label: employee.name,
-                }))}
-              />
-            </div>
-            <div className="flex items-center gap-2 min-[1500px]:hidden">
+          <div className="min-w-0 flex-1" />
+          <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                ref={searchButtonRef}
+                variant="ghost"
+                size="icon-sm"
+                aria-label="일정 검색"
+                title="일정 검색 (⌘/Ctrl+F)"
+              >
+                <Search className="size-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-[380px] max-w-[calc(100vw-2rem)] p-0"
+            >
+              <div className="border-b p-3">
+                <Input
+                  autoFocus
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="일정·고객·매물 검색"
+                  aria-label="일정 검색어"
+                />
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  전체 기간 · 선택한 담당자·유형 적용
+                </p>
+              </div>
+              <div className="max-h-80 overflow-y-auto p-1">
+                {searchQuery.isLoading ? (
+                  <p className="p-4 text-xs text-muted-foreground">
+                    일정을 찾고 있습니다…
+                  </p>
+                ) : searchQuery.isError ? (
+                  <Button
+                    variant="ghost"
+                    onClick={() => void searchQuery.refetch()}
+                  >
+                    검색 다시 시도
+                  </Button>
+                ) : searchResults.length === 0 ? (
+                  <p className="p-4 text-xs text-muted-foreground">
+                    일치하는 일정이 없습니다.
+                  </p>
+                ) : (
+                  searchResults.slice(0, 40).map((event) => (
+                    <button
+                      key={event.id}
+                      type="button"
+                      className="block w-full rounded-md px-3 py-2.5 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => {
+                        const date = new Date(event.start);
+                        jumpToMonth();
+                        setCurrentDate(date);
+                        setSearchOpen(false);
+                        handleSelectEvent(
+                          event,
+                          searchButtonRef.current ?? undefined,
+                        );
+                      }}
+                    >
+                      <span className="block truncate text-xs font-medium">
+                        {event.title}
+                      </span>
+                      <span className="mt-1 block text-[11px] text-muted-foreground">
+                        {new Date(event.start).toLocaleDateString("ko-KR")} ·{" "}
+                        {formatEventTimeRange(event)}
+                      </span>
+                    </button>
+                  ))
+                )}
+                {searchResults.length > 40 && (
+                  <p className="px-3 py-2 text-[11px] text-muted-foreground">
+                    {searchResults.length}건 중 40건 · 검색어를 더 입력해
+                    주세요.
+                  </p>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+          <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                aria-label="캘린더 필터"
+              >
+                <SlidersHorizontal className="size-4" />
+                <span>
+                  {isMineOnly
+                    ? "내 일정"
+                    : userFilter
+                      ? (employees.find(
+                          (employee) => employee.id === userFilter,
+                        )?.name ?? "담당자")
+                      : "필터"}
+                  {typeFilter
+                    ? ` · ${EVENT_TYPE_META[typeFilter]?.label ?? typeFilter}`
+                    : ""}
+                </span>
+                {!showFinance && (
+                  <span className="text-[10px] text-muted-foreground">
+                    재무 숨김
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 space-y-3">
+              <div
+                className={cn(isMineOnly && "pointer-events-none opacity-50")}
+              >
+                <FilterSelect
+                  label="담당자"
+                  value={userFilter}
+                  onChange={setUserFilter}
+                  options={employees.map((employee) => ({
+                    value: employee.id,
+                    label: employee.name,
+                  }))}
+                />
+              </div>
               <FilterSelect
                 label="유형"
                 value={typeFilter}
@@ -386,47 +634,46 @@ function CalendarPage() {
                   label: meta.label,
                 }))}
               />
-              <label className="flex h-8 items-center gap-2 rounded-md bg-muted px-2.5 text-[11px] text-muted-foreground">
+              <label className="flex items-center justify-between text-xs">
+                내 일정만
                 <Switch
                   size="sm"
                   checked={isMineOnly}
                   onCheckedChange={setIsMineOnly}
                 />
-                내 일정
               </label>
-              <label className="flex h-8 items-center gap-2 rounded-md bg-muted px-2.5 text-[11px] text-muted-foreground">
+              <label className="flex items-center justify-between text-xs">
+                계약·재무 일정
                 <Switch
                   size="sm"
                   checked={showFinance}
                   onCheckedChange={setShowFinance}
                 />
-                재무
               </label>
-            </div>
+            </PopoverContent>
+          </Popover>
+          <Button
+            size="sm"
+            onClick={() => handleOpenCreate(selectedDate)}
+            title="새 일정 (N)"
+            aria-label="새 일정"
+          >
+            <CalendarPlus2 className="size-4" />
+            <span className="hidden min-[1100px]:inline">새 일정</span>
+          </Button>
+          {!isRightPanelOpen && (
             <Button
-              size="sm"
-              className="h-8"
-              onClick={() => handleOpenCreate(selectedDate)}
-              title="새 일정 (N)"
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setIsRightPanelOpen(true)}
+              aria-label="오른쪽 패널 펼치기"
+              aria-expanded={false}
+              aria-controls="calendar-details-panel"
             >
-              <CalendarPlus2 className="size-4" />새 일정
+              <PanelRightOpen className="size-4" />
             </Button>
-            {!isRightPanelOpen ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="hidden size-8 xl:inline-flex"
-                onClick={() => setIsRightPanelOpen(true)}
-                aria-label="오른쪽 패널 펼치기"
-                aria-expanded={false}
-                aria-controls="calendar-details-panel"
-                title="오른쪽 패널 펼치기"
-              >
-                <PanelRightOpen className="size-4" />
-              </Button>
-            ) : null}
-          </div>
+          )}
         </header>
 
         {showFinance && overlay.isError ? (
@@ -435,7 +682,21 @@ function CalendarPage() {
           </div>
         ) : null}
 
-        <main className="min-h-0 flex-1 overflow-auto">
+        <main
+          ref={scrollRef}
+          data-calendar-scroll
+          className={cn(
+            "min-h-0 flex-1",
+            viewMode === "month"
+              ? "overflow-x-auto overflow-y-hidden"
+              : "overflow-auto",
+          )}
+          onScroll={(e) => {
+            if (viewMode === "month") return;
+            scrollPositions.current[viewMode] = e.currentTarget.scrollTop;
+            persistWorkspace();
+          }}
+        >
           {eventsQuery.isLoading ? (
             <CalendarSkeleton viewMode={viewMode} />
           ) : eventsQuery.isError ? (
@@ -460,21 +721,81 @@ function CalendarPage() {
                 <MonthCalendarView
                   currentDate={currentDate}
                   selectedDate={selectedDate}
-                  eventsByDate={eventsByDate}
+                  draft={isDialogOpen ? editorPreview : null}
+                  events={events}
                   overlaysByDate={overlaysByDate}
-                  onCreate={handleOpenCreate}
+                  selectedEventId={selectedEventId}
+                  pendingId={timing.pendingId}
+                  navigationVersion={monthNavigationVersion}
+                  initialViewport={monthViewport.current}
+                  onRangeChange={(next) =>
+                    setMonthRange((previous) =>
+                      previous?.start.getTime() === next.start.getTime() &&
+                      previous?.end.getTime() === next.end.getTime()
+                        ? previous
+                        : next,
+                    )
+                  }
+                  onViewportChange={(viewport, visibleDate) => {
+                    monthViewport.current = viewport;
+                    setCurrentDate((previous) =>
+                      previous.getFullYear() === visibleDate.getFullYear() &&
+                      previous.getMonth() === visibleDate.getMonth()
+                        ? previous
+                        : visibleDate,
+                    );
+                    writeWorkspaceState(storageKey, {
+                      viewMode,
+                      currentDate: visibleDate.toISOString(),
+                      selectedDate: selectedDate.toISOString(),
+                      scroll: scrollPositions.current,
+                      monthViewport: viewport,
+                    });
+                  }}
+                  onCreate={(from, to) => {
+                    setDraft({
+                      allDay: true,
+                      start: from.toISOString(),
+                      end: to.toISOString(),
+                    });
+                    setDialogEvent(null);
+                    setDialogDefaultDate(from);
+                    setSelectedDate(from);
+                    setIsDialogOpen(true);
+                  }}
                   onSelectEvent={handleSelectEvent}
                   onEdit={handleOpenEdit}
                   onSelectDate={handleSelectDate}
-                  onOpenDate={handleOpenDatePanel}
+                  onOpenDay={(date) => {
+                    setSelectedDate(date);
+                    setCurrentDate(date);
+                    setViewMode("day");
+                    setSelectedEventId(null);
+                    setSelectedOverlay(null);
+                  }}
                   onSelectOverlay={handleSelectOverlay}
+                  onChangeTime={(event, next) => {
+                    void timing.save(event, next);
+                  }}
+                  onGestureStart={() => {
+                    setSelectedEventId(null);
+                    setSelectedOverlay(null);
+                  }}
                 />
               ) : null}
 
               {viewMode === "week" || viewMode === "day" ? (
                 <TimeGridCalendarView
                   dates={timeGridDates}
+                  draft={isDialogOpen ? editorPreview : null}
                   eventsByDate={eventsByDate}
+                  overlaysByDate={overlaysByDate}
+                  selectedEventId={selectedEventId}
+                  pendingId={timing.pendingId}
+                  onSelectOverlay={handleSelectOverlay}
+                  onChangeTime={(event, next) => {
+                    void timing.save(event, next);
+                  }}
                   onCreate={handleOpenCreate}
                   onSelectEvent={handleSelectEvent}
                   onEdit={handleOpenEdit}
@@ -498,14 +819,19 @@ function CalendarPage() {
       </section>
 
       <SelectedDayPanel
-        isOpen={isRightPanelOpen}
-        onClose={() => setIsRightPanelOpen(false)}
+        isOpen={isRightPanelOpen && !isDialogOpen}
+        onClose={() => {
+          setIsRightPanelOpen(false);
+          setSelectedEventId(null);
+          setSelectedOverlay(null);
+        }}
         selectedDate={selectedDate}
         selectedDateEvents={selectedDateEvents}
         selectedDateOverlays={
           overlaysByDate.get(getLocalDateKey(selectedDate)) ?? []
         }
         selectedEvent={selectedEvent}
+        selectedOverlay={selectedOverlay}
         onCreate={handleOpenCreate}
         onSelectEvent={handleSelectEvent}
         onClearSelectedEvent={() => setSelectedEventId(null)}
@@ -513,19 +839,66 @@ function CalendarPage() {
         onSelectOverlay={handleSelectOverlay}
       />
 
-      <EventDialog
+      <EventEditor
         open={isDialogOpen}
         onOpenChange={setIsDialogOpen}
         event={dialogEvent}
         defaultDate={dialogDefaultDate}
+        draft={draft}
+        onPreviewChange={setEditorPreview}
       />
 
-      <CalendarOverlayDetailDialog
-        item={selectedOverlay}
+      <Popover
+        open={
+          !!(selectedEvent || selectedOverlay) &&
+          !isRightPanelOpen &&
+          !isDialogOpen
+        }
         onOpenChange={(open) => {
-          if (!open) setSelectedOverlay(null);
+          if (!open && !isRightPanelOpen) {
+            setSelectedEventId(null);
+            setSelectedOverlay(null);
+          }
         }}
-      />
+      >
+        <PopoverAnchor virtualRef={virtualAnchor} />
+        <PopoverContent
+          side="right"
+          align="start"
+          sideOffset={8}
+          collisionPadding={12}
+          className="flex max-h-[min(620px,calc(100dvh-5rem))] w-[320px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg p-0 motion-reduce:animate-none"
+          onCloseAutoFocus={(e) => {
+            e.preventDefault();
+            if (anchorRef.current?.isConnected)
+              anchorRef.current.focus({ preventScroll: true });
+          }}
+          onInteractOutside={(e) => {
+            if ((e.target as HTMLElement)?.closest("[data-calendar-event]"))
+              e.preventDefault();
+          }}
+        >
+          {selectedOverlay ? (
+            <CalendarOverlayInspector
+              item={selectedOverlay}
+              onClose={() => setSelectedOverlay(null)}
+              onPin={() => setIsRightPanelOpen(true)}
+            />
+          ) : selectedEvent ? (
+            <SelectedEventInspector
+              event={selectedEvent}
+              selectedDate={selectedDate}
+              onBack={() => {
+                setSelectedEventId(null);
+                setIsRightPanelOpen(true);
+              }}
+              onClose={() => setSelectedEventId(null)}
+              onEdit={handleOpenEdit}
+              onPin={() => setIsRightPanelOpen(true)}
+            />
+          ) : null}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -575,7 +948,6 @@ function CalendarWorkspaceRail({
   typeFilter,
   isMineOnly,
   showFinance,
-  onCreate,
   onSelectDate,
   onMonthChange,
   onTypeFilterChange,
@@ -587,7 +959,6 @@ function CalendarWorkspaceRail({
   typeFilter: string;
   isMineOnly: boolean;
   showFinance: boolean;
-  onCreate: () => void;
   onSelectDate: (date: Date | undefined) => void;
   onMonthChange: (date: Date) => void;
   onTypeFilterChange: (value: string) => void;
@@ -596,15 +967,6 @@ function CalendarWorkspaceRail({
 }) {
   return (
     <aside className="hidden w-[236px] shrink-0 flex-col border-r border-border bg-muted/25 min-[1500px]:flex">
-      <div className="px-4 pb-3 pt-4">
-        <Button className="w-full justify-start" onClick={onCreate}>
-          <CalendarPlus2 className="size-4" />새 일정
-          <kbd className="ml-auto rounded border border-primary-foreground/20 px-1.5 py-0.5 text-[10px] font-normal text-primary-foreground/70">
-            N
-          </kbd>
-        </Button>
-      </div>
-
       <div className="border-y border-border bg-background px-1 py-3">
         <MiniCalendar
           mode="single"

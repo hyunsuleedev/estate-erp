@@ -11,6 +11,12 @@ declare module '@tanstack/react-table' {
   interface ColumnMeta<TData extends RowData, TValue> {
     cellClassName?: string;
     grow?: boolean;
+    /** Property table: each listing owns a separate selectable cell in this column. */
+    listingCell?: boolean;
+    onCellClick?: (
+      row: TData,
+      event: MouseEvent<HTMLTableCellElement>,
+    ) => void;
     onCellDoubleClick?: (
       row: TData,
       event: MouseEvent<HTMLTableCellElement>,
@@ -159,6 +165,9 @@ export interface DataTableProps<TData> {
   // Visual density/style. 'notion' renders a flat database grid with lighter
   // typography and visible cell dividers.
   variant?: 'default' | 'notion';
+  // 'refresh': 매물관리 표와 같은 머리(흰 바탕 · 12px 글자 · 11px 접기 띠 · 둥근 +/− 버튼).
+  // 쓰는 화면만 켜고, 나머지 화면의 표 머리는 그대로 둔다.
+  headerTone?: 'default' | 'refresh';
   // Row height in px. Defaults to 32. Set to 'auto' for content-driven height.
   rowHeight?: number | 'auto';
   // Column pinning (left only for now).

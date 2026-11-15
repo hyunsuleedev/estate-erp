@@ -64,7 +64,7 @@ import {
   type ScreenPoint,
   type TabDropScene,
 } from './tabs/tabDrop';
-import { detachedTabOrigin } from '../common/tabs/tabBarModel';
+import { detachedTabOrigin, TAB_BAR_METRICS } from '../common/tabs/tabBarModel';
 import { TabViewCoordinator } from './tabs/tabViewCoordinator';
 import { recordViewLocation } from './tabs/viewLocation';
 import {
@@ -76,6 +76,7 @@ import {
   type DesktopAuthLoginResult,
   type DesktopAuthRefreshResult,
   type DesktopAuthSessionSnapshot,
+  type DesktopAuthActionResult,
   type DesktopAuthSignupInput,
   type DesktopAuthSignupResult,
 } from '../common/desktopAuth';
@@ -97,6 +98,7 @@ import {
   type NativeTabRetentionUpdate,
 } from '../common/nativeTabs';
 import {
+  RENDERER_LAUNCH_WINDOW_ARGUMENT,
   RENDERER_SURFACE_ARGUMENT,
   RENDERER_TAB_ID_ARGUMENT,
 } from '../common/rendererSurface';
@@ -169,7 +171,7 @@ interface WindowEntry {
   recoveryTimer: ReturnType<typeof setTimeout> | null;
 }
 
-const DETACHED_TITLEBAR_HEIGHT = 40;
+const TITLEBAR_HEIGHT = TAB_BAR_METRICS.height;
 
 /**
  * Escape를 누른 흔적을 이 시간 동안 기억한다. 앱 창 밖에서 끝난 끌기가 "손을 뗀 것"인지
@@ -187,7 +189,12 @@ function shouldAutoOpenDevTools(): boolean {
   return !app.isPackaged && process.env.ESTATE_NO_AUTO_DEVTOOLS !== '1';
 }
 
+// 시작 장면은 앱을 켠 뒤 처음 연 창에서만 보여 준다. 나중에 여는 창(분리한 탭 등)은 표시를 받지 못한다.
+let launchWindowMarked = false;
+
 function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
+  const launchWindow = !launchWindowMarked;
+  launchWindowMarked = true;
   const isMac = process.platform === 'darwin';
   const isWin = process.platform === 'win32';
 
@@ -195,8 +202,8 @@ function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
     isMac
       ? {
           titleBarStyle: 'hiddenInset',
-          // 헤더 h-10 (40px) 기준 traffic light 가운데 정렬
-          trafficLightPosition: { x: 16, y: 12 },
+          // 36px 타이틀바 가운데에 macOS 창 버튼을 정렬한다.
+          trafficLightPosition: { x: 16, y: (TITLEBAR_HEIGHT - 16) / 2 },
         }
       : isWin
         ? {
@@ -206,8 +213,7 @@ function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
               symbolColor: nativeTheme.shouldUseDarkColors
                 ? '#ffffff'
                 : '#1f1f1f',
-              // 헤더 h-10 (40px)와 동기화
-              height: 40,
+              height: TITLEBAR_HEIGHT,
             },
           }
         : {};
@@ -218,7 +224,9 @@ function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
       preload: path.join(__dirname, 'preload.js'),
       // 창 자체의 화면이라는 역할은 main이 여기서 정해 준다. 역할을 받지 못한 문서에는
       // preload가 아무 통로도 내주지 않는다.
-      additionalArguments: [`${RENDERER_SURFACE_ARGUMENT}window-shell`],
+      additionalArguments: [`${RENDERER_SURFACE_ARGUMENT}window-shell`].concat(
+        launchWindow ? [RENDERER_LAUNCH_WINDOW_ARGUMENT] : [],
+      ),
     },
     ...platformOptions,
   };
@@ -389,7 +397,7 @@ export class WindowManager {
   private lastEscapeInputAt = 0;
   /** 탭 화면 위에 뜨는 전화 수신 팝업 층. 통화 중에도 탭 화면을 숨기지 않는다. */
   private readonly callOverlays = new CallOverlayHost({
-    titlebarHeight: DETACHED_TITLEBAR_HEIGHT,
+    titlebarHeight: TITLEBAR_HEIGHT,
     onInsetChange: (windowId) => this.publishCallOverlayInset(windowId),
     createView: () => {
       const view = new WebContentsView({
@@ -638,14 +646,14 @@ export class WindowManager {
     }
   }
 
-  /** 탭 화면이 차지하는 자리: 창 안쪽에서 탭바(위 40px) 아래 전부. */
+  /** 탭 화면이 차지하는 자리: 창 안쪽에서 타이틀바 아래 전부. */
   private tabViewBoundsFor(win: BrowserWindow): NativeTabBounds {
     const { width, height } = win.getContentBounds();
     return {
       x: 0,
-      y: DETACHED_TITLEBAR_HEIGHT,
+      y: TITLEBAR_HEIGHT,
       width,
-      height: Math.max(0, height - DETACHED_TITLEBAR_HEIGHT),
+      height: Math.max(0, height - TITLEBAR_HEIGHT),
     };
   }
 
@@ -1067,7 +1075,7 @@ export class WindowManager {
       sourceContent: source.getContentBounds(),
       zoomFactor: source.webContents.getZoomFactor(),
       windows: windows.map(({ id, content }) => ({ id, content })),
-      stripHeight: DETACHED_TITLEBAR_HEIGHT,
+      stripHeight: TITLEBAR_HEIGHT,
       escapePressed: Date.now() - this.lastEscapeInputAt < ESCAPE_EVIDENCE_MS,
     };
   }
@@ -1412,9 +1420,14 @@ export class WindowManager {
     return this.auth.login(username, password);
   }
 
+  /** 로그인 화면의 비밀번호 찾기. 가입 때 받은 이메일로 재설정 링크를 보낸다. */
+  requestPasswordResetAuth(email: string): Promise<DesktopAuthActionResult> {
+    return this.auth.requestPasswordReset(email);
+  }
+
   /** 가입 화면이 받은 값으로 계정을 만들고 바로 로그인한다. */
   signupAuth(input: DesktopAuthSignupInput): Promise<DesktopAuthSignupResult> {
-    return this.auth.signup(input.username, input.password, input.name);
+    return this.auth.signup(input.username, input.password, input.name, input.email);
   }
 
   /** 화면이 보여 주던 세션이 지금 세션일 때만 로그아웃한다. */
@@ -1555,12 +1568,24 @@ export class WindowManager {
     return true;
   }
 
-  /** 창의 화면 또는 탭 화면이 속한 창의 사이드바 상태. 새 창은 마지막 선택을 따른다. */
+  /** 창의 화면 또는 탭 화면이 속한 창의 사이드바 상태. 상세 새 창은 접힌 상태로 시작한다. */
   getSidebarStateForSender(senderWebContentsId: number): NativeSidebarState {
     const windowId = this.isWindowShellSender(senderWebContentsId)
       ? this.windowIdForShellSender(senderWebContentsId)
       : (this.nativeTabs.lookupSender(senderWebContentsId)?.hostId ?? null);
     return { open: this.tabRegistry.getSidebarOpen(windowId) };
+  }
+
+  /** Hover belongs only to the tab that was active when its titlebar requested it. */
+  requestSidebarPreview(senderId: number, payload: unknown): void {
+    if (!payload || typeof payload !== 'object') return;
+    const { command, tabId } = payload as { command?: unknown; tabId?: unknown };
+    if (command !== 'show' && command !== 'leave' && command !== 'hide') return;
+    const windowId = this.windowIdForTabBarSender(senderId);
+    if (windowId === null || typeof tabId !== 'string' ||
+        this.tabRegistry.getActiveTabId(windowId) !== tabId ||
+        this.tabRegistry.getSidebarOpen(windowId)) return;
+    this.nativeTabs.sendToTab(tabId, 'tabs:sidebarPreview', command);
   }
 
   /** 탭 화면 안에서 사이드바를 접거나 편 요청. 그 창의 모든 탭 화면이 따른다. */
@@ -1964,6 +1989,16 @@ export function registerTabIpcHandlers(manager: WindowManager) {
     return manager.signupAuth(input);
   });
 
+  ipcMain.handle('auth:requestPasswordReset', async (event, payload: unknown) => {
+    if (!isCurrentWindowShellEvent(event)) {
+      return { ok: false, error: 'invalid password reset requester' };
+    }
+    if (typeof payload !== 'string' || payload.length > 320) {
+      return { ok: false, error: '이메일 주소를 정확히 입력해 주세요.' };
+    }
+    return manager.requestPasswordResetAuth(payload);
+  });
+
   ipcMain.handle('auth:retry', async (event) => {
     if (!isCurrentWindowShellEvent(event)) {
       return { ok: false, error: 'invalid retry requester' };
@@ -2118,6 +2153,10 @@ export function registerTabIpcHandlers(manager: WindowManager) {
   ipcMain.handle('tabs:getSidebarState', (event): NativeSidebarState => {
     if (!isCurrentRegisteredEvent(event)) return { open: true };
     return manager.getSidebarStateForSender(event.sender.id);
+  });
+
+  ipcMain.on('tabs:requestSidebarPreview', (event, payload: unknown) => {
+    if (windowIdOfTabBarEvent(event) !== null) manager.requestSidebarPreview(event.sender.id, payload);
   });
 
   ipcMain.on('tabs:requestSidebarOpen', (event, open: unknown) => {

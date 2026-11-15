@@ -370,11 +370,11 @@ describe('tab bar chrome', () => {
   });
 
   it('knows where the single tab of a detached window sits', () => {
-    // 탭(36px)은 탭 줄(40px)의 바닥에 붙는다: 위에서 4px. 개발 앱의 분리된 창에서 잰 값과 같다.
-    assert.equal(TAB_BAR_METRICS.height - TAB_BAR_METRICS.tabHeight, 4);
-    // macOS: 신호등 자리 92 + 뒤로/앞으로 버튼 칸 60. 그 밖: 여백 16 + 60.
-    assert.deepEqual(detachedTabOrigin('darwin'), { x: 152, y: 4 });
-    assert.deepEqual(detachedTabOrigin('win32'), { x: 76, y: 4 });
-    assert.deepEqual(detachedTabOrigin('linux'), { x: 76, y: 4 });
+    // Notion처럼 탭과 탭 줄 높이가 모두 36px여서 위쪽 빈틈이 없다.
+    assert.equal(TAB_BAR_METRICS.height - TAB_BAR_METRICS.tabHeight, 0);
+    // macOS: 신호등 자리 92 + 사이드바 버튼 32 + 탐색 버튼 60. 그 밖: 16 + 32 + 60.
+    assert.deepEqual(detachedTabOrigin('darwin'), { x: 184, y: 0 });
+    assert.deepEqual(detachedTabOrigin('win32'), { x: 108, y: 0 });
+    assert.deepEqual(detachedTabOrigin('linux'), { x: 108, y: 0 });
   });
 });

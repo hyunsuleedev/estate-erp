@@ -30,12 +30,14 @@ import type {
 } from './common/callOverlay';
 import type {
   NativeSidebarState,
+  SidebarPreviewCommand,
   NativeTabAssignment,
   NativeTabNavigateCommand,
   NativeTabRetentionUpdate,
 } from './common/nativeTabs';
 import {
   parseRendererSurfaceArguments,
+  RENDERER_LAUNCH_WINDOW_ARGUMENT,
   type RendererSurfaceInfo,
 } from './common/rendererSurface';
 import type { TabCommand } from './common/tabCommands';
@@ -101,6 +103,9 @@ const shellAuthBridge = {
   /** 계정을 만들고 바로 로그인한다. */
   signup: (input: DesktopAuthSignupInput): Promise<DesktopAuthSignupResult> =>
     ipcRenderer.invoke('auth:signup', input),
+  /** 가입 때 받은 이메일로 비밀번호 재설정 링크를 보낸다. */
+  requestPasswordReset: (email: string): Promise<DesktopAuthActionResult> =>
+    ipcRenderer.invoke('auth:requestPasswordReset', email),
   /** 서버에 닿지 못한 상태에서 사용자 확인을 다시 시도한다. */
   retry: (): Promise<DesktopAuthActionResult> => ipcRenderer.invoke('auth:retry'),
 };
@@ -275,6 +280,7 @@ const updaterBridge = {
 const windowShellBridge = {
   platform: process.platform,
   surface,
+  isLaunchWindow: process.argv.includes(RENDERER_LAUNCH_WINDOW_ARGUMENT),
   auth: shellAuthBridge,
   realtime: realtimeBridge,
   updater: updaterBridge,
@@ -290,7 +296,11 @@ const windowShellBridge = {
 const tabBarWindowBridge = {
   platform: process.platform,
   surface: { kind: 'tab-bar', tabId: null } as const,
-  tabs: { tabBar: tabBarBridge },
+  tabs: {
+    tabBar: tabBarBridge,
+    requestSidebarPreview: (command: SidebarPreviewCommand, tabId: string) =>
+      ipcRenderer.send('tabs:requestSidebarPreview', { command, tabId }),
+  },
 };
 
 /**
@@ -358,6 +368,11 @@ const nativeTabBridge = {
     ...overlayInsetBridge,
     ...sidebarStateBridge,
     onSidebarState: onNativeSidebarState,
+    onSidebarPreview: (callback: (command: SidebarPreviewCommand) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, command: SidebarPreviewCommand) => callback(command);
+      ipcRenderer.on('tabs:sidebarPreview', handler);
+      return () => ipcRenderer.removeListener('tabs:sidebarPreview', handler);
+    },
     requestSidebarOpen: (open: boolean) =>
       ipcRenderer.send('tabs:requestSidebarOpen', open),
     openPropertyWindow: (payload: OpenPropertyWindowPayload) =>

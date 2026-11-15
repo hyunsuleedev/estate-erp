@@ -52,6 +52,9 @@ export interface NativeSidebarState {
   open: boolean;
 }
 
+/** Transient hover UI; never changes the window's pinned sidebar preference. */
+export type SidebarPreviewCommand = 'show' | 'leave' | 'hide';
+
 /**
  * Native renderer가 main-process LRU에 전달하는 보존 신호다.
  * 활성 탭과 이동 중인 탭은 main이 자체적으로 보호하고, renderer만 알 수 있는

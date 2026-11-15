@@ -15,7 +15,8 @@ export const Route = createFileRoute('/_auth/login')({
  * 확인하면 세션이 바뀌고, 인증 레이아웃이 업무 화면으로 넘긴다.
  */
 function LoginPage() {
-  const { login, authError } = useAuth();
+  const { login, authError, requestPasswordReset } = useAuth();
+  const [isResetOpen, setIsResetOpen] = useState(false);
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -101,6 +102,17 @@ function LoginPage() {
                 로그인
               </Button>
             </form>
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                onClick={() => setIsResetOpen((open) => !open)}
+                aria-expanded={isResetOpen}
+              >
+                비밀번호를 잊으셨나요?
+              </button>
+            </div>
+            {isResetOpen && <PasswordResetForm onSubmit={requestPasswordReset} />}
           </div>
         </div>
 
@@ -109,6 +121,66 @@ function LoginPage() {
         </footer>
       </section>
     </main>
+  );
+}
+
+/**
+ * 사장님만 쓴다. 가입 때 넣은 이메일로 재설정 링크를 보낸다. 그 이메일의 계정이
+ * 있는지는 알려 주지 않는다.
+ */
+function PasswordResetForm({ onSubmit }: { onSubmit: (email: string) => Promise<void> }) {
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+  const [sentTo, setSentTo] = useState('');
+  const [isSending, setIsSending] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setSentTo('');
+    setIsSending(true);
+    try {
+      await onSubmit(email.trim());
+      setSentTo(email.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '재설정 메일을 보내지 못했습니다.');
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  return (
+    <form className="mt-4 space-y-3 border-t pt-4" onSubmit={handleSubmit} aria-busy={isSending} noValidate>
+      <div className="space-y-2">
+        <Label htmlFor="reset-email">가입할 때 입력한 이메일</Label>
+        <Input
+          id="reset-email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          disabled={isSending}
+          placeholder="name@example.com"
+        />
+        <p className="text-xs text-muted-foreground">
+          직원 계정은 사무소 대표가 직원관리에서 비밀번호를 다시 설정합니다.
+        </p>
+      </div>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      {sentTo && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {sentTo} 주소로 가입한 계정이 있으면 재설정 링크를 보냈습니다. 메일함을 확인해 주세요.
+        </p>
+      )}
+      <Button type="submit" variant="outline" className="w-full" disabled={isSending || !email.trim()}>
+        {isSending && <Loader2 className="size-4 animate-spin" />}
+        재설정 메일 받기
+      </Button>
+    </form>
   );
 }
 
