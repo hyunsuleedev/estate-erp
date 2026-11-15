@@ -73,7 +73,7 @@ export const VERIFIED_CLAIMS_MAX_ENTRIES = 5_000;
 /** 사용자 확인에 쓰는 검증된 클레임. */
 export type VerifiedStaffClaims = Pick<
   Auth0AccessTokenClaims,
-  'sub' | 'exp' | 'iat' | 'azp'
+  'sub' | 'exp' | 'iat' | 'azp' | 'sessionAuthTime'
 >;
 /**
  * 연결할 수 없다고 판정한 Auth0 계정을 기억하는 시간. 같은 계정이 요청을 반복해도
@@ -165,7 +165,7 @@ export class StaffAuthService {
    * 거절한다.
    */
   async resolveStaffUser(
-    claims: Pick<Auth0AccessTokenClaims, 'sub' | 'iat'>,
+    claims: Pick<Auth0AccessTokenClaims, 'sub' | 'iat' | 'sessionAuthTime'>,
     options: ResolveStaffUserOptions = {},
   ): Promise<StaffUser> {
     const auth0UserId = claims.sub;
@@ -185,7 +185,10 @@ export class StaffAuthService {
     if (!user.isActive || user.office?.isActive === false) {
       throw new UnauthorizedException('비활성화된 계정입니다.');
     }
-    if (isIssuedBeforeCutoff(claims.iat, user.tokensValidAfter)) {
+    if (
+      isIssuedBeforeCutoff(claims.iat, user.tokensValidAfter) ||
+      isSessionStartedBeforeCutoff(claims.sessionAuthTime, user.tokensValidAfter)
+    ) {
       throw new UnauthorizedException(
         '로그인이 만료되었습니다. 다시 로그인해 주세요.',
       );
@@ -394,6 +397,7 @@ export class StaffAuthService {
         exp: claims.exp,
         iat: claims.iat,
         azp: claims.azp,
+        sessionAuthTime: claims.sessionAuthTime,
       },
     });
   }
@@ -404,6 +408,21 @@ export class StaffAuthService {
  * iat는 초 단위라, 기준 시각과 같은 초에 발급된 토큰도 이전으로 본다(안전한 쪽).
  * 기준 시각이 있는데 토큰에 iat가 없으면 확인할 수 없으므로 거절한다.
  */
+/**
+ * 이 토큰의 세션이 기준 시각(tokensValidAfter) 이전에 로그인한 것인지.
+ * 기준 시각 뒤에 refresh token으로 새로 받은 토큰은 iat가 기준 시각보다 늦어
+ * isIssuedBeforeCutoff를 통과한다. 세션의 로그인 시각은 토큰을 새로 받아도 그대로라,
+ * refresh token 폐기가 실패했거나 늦어져도 예전 세션은 여기서 계속 거절된다.
+ * 로그인 시각이 없는 토큰(Action이 넣기 전 발급분 등)은 iat 검사만 받는다.
+ */
+export function isSessionStartedBeforeCutoff(
+  sessionAuthTimeSeconds: number | undefined,
+  tokensValidAfter: Date | null,
+): boolean {
+  if (!tokensValidAfter || typeof sessionAuthTimeSeconds !== 'number') return false;
+  return sessionAuthTimeSeconds <= Math.floor(tokensValidAfter.getTime() / 1000);
+}
+
 export function isIssuedBeforeCutoff(
   issuedAtSeconds: number | undefined,
   tokensValidAfter: Date | null,

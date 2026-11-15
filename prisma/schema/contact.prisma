@@ -16,7 +16,6 @@ model Contact {
   phones                    ContactPhone[]
   propertyContacts          PropertyContact[]
   buyerIntakeContacts       BuyerIntakeContact[]
-  brokerageCaseParticipants BrokerageCaseParticipant[]
   consultations             Consultation[]
   tenants                   Tenant[]
   tasks                     Task[]

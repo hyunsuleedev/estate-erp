@@ -68,8 +68,7 @@ model Office {
   buyerIntakeContacts                  BuyerIntakeContact[]
   buyerRequirements                    BuyerRequirement[]
   brokerageCases                       BrokerageCase[]
-  brokerageCaseParticipants            BrokerageCaseParticipant[]
-  brokerageCaseDependencies            BrokerageCaseDependency[]
+  brokerageCaseSteps                   BrokerageCaseStep[]
   matches                              Match[]
   deals                                Deal[]
   dealPayments                         DealPayment[]
@@ -152,10 +151,6 @@ model User {
   /// 지금 시각으로 바꿔, 이미 발급된 토큰을 만료(최대 15분~1시간)를 기다리지 않고 끊는다.
   /// API 키(esk_)에는 적용하지 않는다.
   tokensValidAfter DateTime? @map("tokens_valid_after")
-
-  /// 이전 로그인 서비스(Clerk)의 user.id. 더 이상 인증에 쓰지 않는다.
-  /// 운영 사용자를 Auth0로 옮길 때 대응 관계를 찾기 위해 남겨 둔다.
-  clerkId String? @unique @map("clerk_id")
 
   /// 마지막 로그인 시각 (audit, 비활성 계정 추적).
   lastLoginAt DateTime? @map("last_login_at")

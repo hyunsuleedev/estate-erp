@@ -241,7 +241,7 @@ export class MatchesService {
       currentIndex < viewingConfirmedIndex
     ) {
       throw new BadRequestException(
-        '집주인·점유자의 임장 가능 확인을 먼저 완료해 주세요',
+        '집주인·점유자와 임장 조율을 먼저 완료해 주세요',
       );
     }
 

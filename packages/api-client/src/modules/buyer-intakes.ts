@@ -31,8 +31,8 @@ export interface BuyerIntakeContact {
 export interface BuyerIntake {
   id: string;
   officeId: string;
-  brokerageCaseId: string;
-  casePriorityRank: number;
+  /** 사용자가 중개 건으로 묶었을 때만 있다. */
+  brokerageCaseId: string | null;
   lifecycleStatus: BuyerIntakeLifecycleStatus;
   receivedAt: string;
   memo: string | null;

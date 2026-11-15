@@ -222,12 +222,40 @@ export class DealsService {
     }
   }
 
+  /**
+   * 거래가 어느 구매 의뢰의 것인지 정한다. 매칭에서 전환한 거래는 그 매칭의
+   * 희망조건이 속한 의뢰다. 매칭 없이 만든 거래(공동중개로 다른 사무소 매물을 살 때)는
+   * 사용자가 고른 의뢰를 쓰고, 구매 의뢰 없이 바로 계약한 거래는 비워 둔다.
+   */
+  private async resolveBuyerIntakeId(
+    tx: Pick<Prisma.TransactionClient, 'match' | 'buyerIntake'>,
+    officeId: string,
+    dto: { matchId?: string; buyerIntakeId?: string },
+  ): Promise<string | null> {
+    if (dto.matchId) {
+      const match = await tx.match.findFirst({
+        where: { id: dto.matchId, officeId },
+        select: { buyerRequirement: { select: { buyerIntakeId: true } } },
+      });
+      if (match) return match.buyerRequirement.buyerIntakeId;
+    }
+    if (!dto.buyerIntakeId) return null;
+    const intake = await tx.buyerIntake.findFirst({
+      where: { id: dto.buyerIntakeId, officeId },
+      select: { id: true },
+    });
+    if (!intake) throw new NotFoundException('구매 의뢰를 찾을 수 없습니다.');
+    return intake.id;
+  }
+
   async create(
     officeId: string,
     dto: {
       propertyId?: string;
       listingId?: string;
       matchId?: string;
+      /** 매칭 없이 만드는 거래가 어느 구매 의뢰의 것인지. 매칭이 있으면 무시한다. */
+      buyerIntakeId?: string;
       transactionType?: string;
       agreedPrice?: number;
       agreedDeposit?: number;
@@ -319,11 +347,14 @@ export class DealsService {
         }
       }
 
+      const buyerIntakeId = await this.resolveBuyerIntakeId(tx, officeId, dto);
+
       const created = await tx.deal.create({
         data: {
           officeId,
           listingId,
           matchId: dto.matchId,
+          buyerIntakeId,
           stage: DealStage.PREPARING,
           transactionType,
           agreedPrice: dto.agreedPrice,
@@ -698,6 +729,35 @@ export class DealsService {
     });
 
     return this.withPropertyContext(deal);
+  }
+
+  /**
+   * 이미 만든 거래를 구매 의뢰에 잇거나 끊는다. 매칭 없이 만든 거래(공동중개로 다른
+   * 사무소 매물을 산 경우)를 나중에 그 손님의 구매 의뢰에 연결할 때 쓴다.
+   * 매칭에서 전환한 거래는 매칭이 정한 의뢰를 바꾸지 못한다.
+   */
+  async setBuyerIntake(
+    id: string,
+    officeId: string,
+    dto: { buyerIntakeId?: string | null },
+  ) {
+    const existing = await this.prisma.deal.findFirst({
+      where: { id, officeId },
+      select: { id: true, matchId: true },
+    });
+    if (!existing) throw new NotFoundException('Deal not found');
+    if (existing.matchId) {
+      throw new BadRequestException(
+        '매칭에서 전환한 거래의 구매 의뢰는 바꿀 수 없습니다.',
+      );
+    }
+    const buyerIntakeId = dto.buyerIntakeId
+      ? await this.resolveBuyerIntakeId(this.prisma, officeId, {
+          buyerIntakeId: dto.buyerIntakeId,
+        })
+      : null;
+    await this.prisma.deal.update({ where: { id }, data: { buyerIntakeId } });
+    return this.findOne(id, officeId);
   }
 
   async cancel(

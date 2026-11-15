@@ -103,14 +103,10 @@ suite("public catalog PostgreSQL integration", () => {
     const property = await db.property.create({
       data: { officeId: office.id, siteId: site.id },
     });
-    const caseFile = await db.brokerageCase.create({
-      data: { officeId: office.id },
-    });
     const intake = await db.listingIntake.create({
       data: {
         officeId: office.id,
         propertyId: property.id,
-        brokerageCaseId: caseFile.id,
         memo: "SECRET_INTAKE",
       },
     });
@@ -259,7 +255,6 @@ suite("public catalog PostgreSQL integration", () => {
       await db.publicListing.deleteMany({ where: { listingId: listing.id } });
       await db.listing.delete({ where: { id: listing.id } });
       await db.listingIntake.delete({ where: { id: intake.id } });
-      await db.brokerageCase.delete({ where: { id: caseFile.id } });
       await db.property.delete({ where: { id: property.id } });
       await db.site.delete({ where: { id: site.id } });
       await db.office.deleteMany({

@@ -14,10 +14,6 @@ import {
   buyerIntakeContactsInclude,
   withBuyerRequirementContact,
 } from './buyer-requirement.presenter';
-import {
-  buyerCaseParticipants,
-  resolveBrokerageCaseForIntake,
-} from '../brokerage-cases/brokerage-case.resolver';
 
 export interface BuyerRequirementSearchQuery {
   // Multi-value filters (comma-separated or arrays). Single string is treated
@@ -415,18 +411,9 @@ export class BuyerRequirementsService {
         }
 
         if (!intake) {
-          const contacts = [
-            { contactId, role: 'buyer', isPrimary: true },
-          ];
-          const resolvedCase = await resolveBrokerageCaseForIntake(tx, {
-            officeId,
-            intakeKind: 'buyer',
-            participants: buyerCaseParticipants(contacts),
-          });
           intake = await tx.buyerIntake.create({
             data: {
               officeId,
-              ...resolvedCase,
               contacts: {
                 create: {
                   role: 'buyer',

@@ -39,15 +39,15 @@ export interface ListingIntakeListing {
   /** 상세 응답의 전체 광고 게재 이력. 목록 응답에는 포함하지 않는다. */
   advertisements?: ListingAdvertisement[];
   priceHistories?: ListingPriceHistory[];
-  /** 목록의 매칭 칩에 표시할 연결 매칭 수 */
+  /** 목록의 매칭 칩에 표시할 연결 매칭 수 (stage=closed 제외). */
   _count?: { matches: number };
 }
 
 export interface ListingIntake {
   id: string;
   officeId: string;
-  brokerageCaseId: string;
-  casePriorityRank: number;
+  /** 사용자가 중개 건으로 묶었을 때만 있다. */
+  brokerageCaseId: string | null;
   propertyId: string;
   lifecycleStatus: IntakeLifecycleStatus;
   lifecycleChangedAt: string;

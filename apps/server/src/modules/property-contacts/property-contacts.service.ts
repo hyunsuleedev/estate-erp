@@ -10,7 +10,6 @@ import {
   normalizePhone,
   withPrimaryContactPhone,
 } from '../contacts/contact-phone.utils';
-import { mergePropertyListingCaseParticipants } from '../brokerage-cases/brokerage-case.resolver';
 
 const ACTIVE_PROPERTY_CONTACT_STATUS = 'active';
 const PROPERTY_CONTACT_STATUSES = new Set([
@@ -81,11 +80,6 @@ export class PropertyContactsService {
           contact: { include: { phones: contactPhonesIncludeOrdered } },
         },
       });
-      await mergePropertyListingCaseParticipants(
-        tx,
-        officeId,
-        dto.propertyId,
-      );
       return withPrimaryContactPhone(created);
     });
   }
@@ -150,11 +144,6 @@ export class PropertyContactsService {
           contact: { include: { phones: contactPhonesIncludeOrdered } },
         },
       });
-      await mergePropertyListingCaseParticipants(
-        tx,
-        officeId,
-        pcData.propertyId,
-      );
       return withPrimaryContactPhone(created);
     });
   }
@@ -215,11 +204,6 @@ export class PropertyContactsService {
           contact: { include: { phones: contactPhonesIncludeOrdered } },
         },
       });
-      await mergePropertyListingCaseParticipants(
-        tx,
-        officeId,
-        existing.propertyId,
-      );
       return withPrimaryContactPhone(updated);
     });
   }

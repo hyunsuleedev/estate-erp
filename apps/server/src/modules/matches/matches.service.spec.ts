@@ -158,7 +158,7 @@ describe('MatchesService stage progression', () => {
       service.updateStage('match-1', 'office-1', { stage: 'viewing' }),
     ).rejects.toThrow(
       new BadRequestException(
-        '집주인·점유자의 임장 가능 확인을 먼저 완료해 주세요',
+        '집주인·점유자와 임장 조율을 먼저 완료해 주세요',
       ),
     );
     expect(prisma.match.update).not.toHaveBeenCalled();

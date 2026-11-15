@@ -39,7 +39,7 @@ src/modules/
 
 - 직원(owner/manager/agent) 로그인 서비스는 Auth0다. 서버는 Auth0 접근 토큰(RS256, `aud` = `AUTH0_AUDIENCE`)을 검증하고, 토큰의 `sub`로 `User.auth0Id`를 찾는다 (`modules/auth/staff-auth.service.ts`).
 - 아이디(`loginId`) 문자열로 연결하지 않는다. 사무소·역할·활성 여부는 토큰이 아니라 DB에서 요청마다 읽는다(기억하는 것은 토큰 서명 확인 결과뿐이다).
-- 접근 차단의 기준은 DB다: `User.isActive`, `Office.isActive`, `User.tokensValidAfter`(이 시각 이전에 발급된 토큰 거절). Auth0 차단·refresh token 폐기는 뒤처리다 (`modules/auth/auth0-account-sync.service.ts`).
+- 접근 차단의 기준은 DB다: `User.isActive`, `Office.isActive`, `User.tokensValidAfter`(이 시각 이전에 발급됐거나, 이 시각 이전에 로그인한 세션이 갱신해 받은 토큰 거절. 세션 로그인 시각은 Auth0 Action이 토큰에 넣는다: `apps/server/auth0/`). Auth0 차단·refresh token 폐기는 뒤처리다 (`modules/auth/auth0-account-sync.service.ts`).
 - 실시간 연결은 토큰 만료 시각에 서버가 끊는다. 다시 연결할 때 인증을 처음부터 거친다. 사무소 없는 계정은 연결할 수 없다.
 - 처음 로그인한 가입자는 사무소 없는 owner로 만들어지고, 온보딩(`POST /offices/me`)에서 사무소를 만든다.
 - 직원 계정 생성·비밀번호 재설정·차단은 Auth0 Management API로 한다 (`modules/auth/auth0-management.service.ts`, `modules/employees`).

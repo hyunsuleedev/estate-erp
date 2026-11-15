@@ -466,17 +466,33 @@ async function wipe({ prisma, officeId }: Pick<Ctx, 'prisma' | 'officeId'>) {
   });
 
   // BuyerRequirement
-  if (demoContactIds.length > 0) {
-    // 마이그레이션으로 기존 DEMO intake에 백필된 케이스 연결부터 해제한다.
-    await prisma.brokerageCaseDependency.deleteMany({
-      where: {
-        officeId,
-        brokerageCase: {
-          participants: { some: { contactId: { in: demoContactIds } } },
+  // 진행 계획의 단계는 의뢰를 가리키므로 의뢰보다 먼저 지운다. DEMO 건의 단계와,
+  // 사용자가 직접 묶은 건에 들어 있는 DEMO 의뢰의 단계가 대상이다.
+  await prisma.brokerageCaseStep.deleteMany({
+    where: {
+      officeId,
+      OR: [
+        { brokerageCase: { memo: demoLike } },
+        ...(demoContactIds.length > 0
+          ? [
+              {
+                buyerIntake: {
+                  contacts: { some: { contactId: { in: demoContactIds } } },
+                },
+              },
+            ]
+          : []),
+        {
+          listingIntake: {
+            OR: [
+              { id: { in: intakeIds } },
+              { propertyId: { in: uniquePropIds } },
+            ],
+          },
         },
-      },
-    });
-  }
+      ],
+    },
+  });
   await prisma.buyerRequirement.deleteMany({
     where: {
       officeId,
@@ -521,19 +537,15 @@ async function wipe({ prisma, officeId }: Pick<Ctx, 'prisma' | 'officeId'>) {
     },
   });
 
-  // Buyer/ListingIntake가 모두 제거된 뒤 DEMO 고객 원장 업무철을 정리한다.
-  if (demoContactIds.length > 0) {
-    await prisma.brokerageCaseParticipant.deleteMany({
-      where: { officeId, contactId: { in: demoContactIds } },
-    });
-  }
+  // Buyer/ListingIntake가 모두 제거된 뒤 DEMO 중개 건을 정리한다.
   await prisma.brokerageCase.deleteMany({
     where: {
       officeId,
       OR: [
         { memo: demoLike },
+        // DEMO 의뢰만 담고 있던 건은 의뢰와 단계가 지워져 빈 건으로 남는다.
         {
-          participants: { none: {} },
+          steps: { none: {} },
           buyerIntakes: { none: {} },
           listingIntakes: { none: {} },
         },
@@ -848,16 +860,9 @@ async function seedListings(
       orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
       select: { contactId: true },
     });
-    const resolvedCase = await seedBrokerageCase(
-      ctx,
-      owner.contactId,
-      'seller',
-      'listing',
-    );
     const intake = await ctx.prisma.listingIntake.create({
       data: {
         officeId: ctx.officeId,
-        ...resolvedCase,
         propertyId: properties[def.propertyIdx].id,
         lifecycleStatus: def.lifecycleStatus,
         lifecycleChangedAt: daysAgo(def.receivedDaysAgo),
@@ -1207,16 +1212,9 @@ async function seedBuyerRequirements(
     const intakeKey = `${def.contact.id}:${def.intakeKey ?? 'primary'}`;
     let intake = intakeByKey.get(intakeKey);
     if (!intake) {
-      const resolvedCase = await seedBrokerageCase(
-        ctx,
-        def.contact.id,
-        'buyer',
-        'buyer',
-      );
       intake = await ctx.prisma.buyerIntake.create({
         data: {
           officeId: ctx.officeId,
-          ...resolvedCase,
           lifecycleStatus: 'open',
           receivedAt: daysAgo(def.receivedDaysAgo ?? 7),
           memo: def.intakeMemo ?? `${DEMO_TAG} ${def.contact.name} 구매 의뢰`,
@@ -1277,74 +1275,130 @@ async function seedBuyerRequirements(
   return created;
 }
 
-// 우선순위 1 기존 집 매도대금이 우선순위 1 새 집 매수의 선행조건인
-// 현실적인 갈아타기 케이스. 추가 Intake는 별도 의뢰로 유지한다.
-// 같은 ListingIntake 안의 매매/전세 Listing은 처분 방식의 대안이다.
+// 사용자가 직접 묶은 중개 건의 예: 기존 집을 팔고 상급 평형을 사는 갈아타기.
+// 이 고객의 진행 중 매물 의뢰와 구매 의뢰를 한 건으로 묶고 진행 계획을 짠다.
+// 다른 고객의 의뢰는 건 없이 둔다(대부분의 의뢰가 그렇다).
 async function seedTradeUpScenario(
   ctx: Ctx,
   contact: Awaited<ReturnType<typeof seedContacts>>[number],
 ) {
-  const brokerageCase = await ctx.prisma.brokerageCase.findFirstOrThrow({
-    where: {
-      officeId: ctx.officeId,
-      archivedAt: null,
-      memo: { contains: DEMO_TAG },
-      participants: { some: { contactId: contact.id, isPrincipal: true } },
-    },
-    select: {
-      id: true,
-      listingIntakes: {
-        where: { lifecycleStatus: { in: ['open', 'hold'] } },
-        orderBy: { casePriorityRank: 'asc' },
-        select: { id: true, casePriorityRank: true },
+  const [listingIntakes, buyerIntakes] = await Promise.all([
+    ctx.prisma.listingIntake.findMany({
+      where: {
+        officeId: ctx.officeId,
+        lifecycleStatus: { in: ['open', 'hold'] },
+        property: {
+          propertyContacts: {
+            some: {
+              contactId: contact.id,
+              status: 'active',
+              role: { in: ['owner', 'co_owner'] },
+            },
+          },
+        },
       },
-      buyerIntakes: {
-        where: { lifecycleStatus: { in: ['open', 'hold'] } },
-        orderBy: { casePriorityRank: 'asc' },
-        select: { id: true, casePriorityRank: true },
+      orderBy: { receivedAt: 'asc' },
+      select: {
+        id: true,
+        property: {
+          select: {
+            site: { select: { name: true } },
+            unit: { select: { name: true } },
+          },
+        },
       },
-    },
-  });
+    }),
+    ctx.prisma.buyerIntake.findMany({
+      where: {
+        officeId: ctx.officeId,
+        lifecycleStatus: { in: ['open', 'hold'] },
+        contacts: { some: { contactId: contact.id } },
+      },
+      orderBy: { receivedAt: 'asc' },
+      select: {
+        id: true,
+        requirements: {
+          orderBy: { priorityRank: 'asc' },
+          select: { transactionType: true },
+          take: 1,
+        },
+      },
+    }),
+  ]);
 
-  if (
-    brokerageCase.listingIntakes.length < 1 ||
-    brokerageCase.buyerIntakes.length < 1
-  ) {
+  if (listingIntakes.length < 1 || buyerIntakes.length < 1) {
     throw new Error(
-      `${contact.name} 갈아타기 케이스에는 활성 매도 주택과 매수 의뢰가 각각 1개 이상 필요합니다.`,
+      `${contact.name} 갈아타기 건에는 활성 매도 주택과 매수 의뢰가 각각 1개 이상 필요합니다.`,
     );
   }
 
-  const fromListingIntakeId = brokerageCase.listingIntakes[0].id;
-  const toBuyerIntakeId = brokerageCase.buyerIntakes[0].id;
-  const requiredBy = new Date();
-  requiredBy.setDate(requiredBy.getDate() + 75);
-
-  await ctx.prisma.brokerageCase.update({
-    where: { id: brokerageCase.id },
-    data: {
-      title: `${contact.name} 실거주 갈아타기`,
-      memo: `${DEMO_TAG} 기존 주택 1채 처분과 상급 평형 1채 매수를 연결한 갈아타기 업무철`,
-    },
-  });
-  await ctx.prisma.brokerageCaseDependency.create({
+  const brokerageCase = await ctx.prisma.brokerageCase.create({
     data: {
       officeId: ctx.officeId,
-      brokerageCaseId: brokerageCase.id,
-      fromListingIntakeId,
-      toBuyerIntakeId,
-      type: 'sale_proceeds',
-      isRequired: true,
-      expectedAmount: 218000, // 26.8억 매도가 - 말소할 대출 5억
-      requiredBy,
-      status: 'planned',
-      memo: `${DEMO_TAG} 매도 잔금 수령 후 같은 주에 매수 잔금 지급`,
+      title: `${contact.name} 실거주 갈아타기`,
+      memo: `${DEMO_TAG} 기존 주택 1채 처분과 상급 평형 1채 매수를 연결한 갈아타기`,
     },
+    select: { id: true },
+  });
+  // 의뢰를 건에 먼저 담아야 단계가 그 의뢰를 가리킬 수 있다.
+  await ctx.prisma.listingIntake.updateMany({
+    where: { id: { in: listingIntakes.map((intake) => intake.id) } },
+    data: { brokerageCaseId: brokerageCase.id },
+  });
+  await ctx.prisma.buyerIntake.updateMany({
+    where: { id: { in: buyerIntakes.map((intake) => intake.id) } },
+    data: { brokerageCaseId: brokerageCase.id },
+  });
+
+  const typeLabel: Record<string, string> = {
+    sale: '매매',
+    jeonse: '전세',
+    monthly: '월세',
+  };
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + 75);
+  // 순서는 사람이 정한다: 먼저 팔고, 대출을 받고, 사고, 이사한다.
+  const steps: Array<{
+    sortOrder: number;
+    title: string;
+    listingIntakeId?: string;
+    buyerIntakeId?: string;
+    targetDate?: Date;
+    memo?: string;
+  }> = [
+    ...listingIntakes.map((intake, index) => ({
+      sortOrder: 1,
+      title: `${[intake.property.site.name, intake.property.unit?.name].filter(Boolean).join(' ')} 매도`,
+      listingIntakeId: intake.id,
+      memo:
+        index === 0
+          ? `${DEMO_TAG} 26.8억 매도 목표, 대출 5억 말소 후 잔금 수령`
+          : undefined,
+    })),
+    {
+      sortOrder: 2,
+      title: '대출 실행',
+      targetDate,
+      memo: `${DEMO_TAG} 매수 잔금 전 주담대 실행`,
+    },
+    ...buyerIntakes.map((intake) => ({
+      sortOrder: 3,
+      title: `${typeLabel[intake.requirements[0]?.transactionType ?? ''] ?? ''} 구매 의뢰`.trim(),
+      buyerIntakeId: intake.id,
+    })),
+    { sortOrder: 4, title: '이사', memo: `${DEMO_TAG} 매도 잔금과 같은 주` },
+  ];
+  await ctx.prisma.brokerageCaseStep.createMany({
+    data: steps.map((step) => ({
+      officeId: ctx.officeId,
+      brokerageCaseId: brokerageCase.id,
+      ...step,
+    })),
   });
 }
 
-// 현실적인 범위 안에서 복수 의뢰 UI 극단값을 유지하도록
-// seed 실행 자체에서 고객 원장 시나리오를 검증한다.
+// seed 실행 자체에서 고객 원장 시나리오를 검증한다: 직접 묶은 갈아타기 건 하나와,
+// 건 없이 당사자 기준으로 묶여 보이는 나머지 의뢰들.
 async function verifyCustomerLedgerScenarios(ctx: Ctx) {
   const cases = await ctx.prisma.brokerageCase.findMany({
     where: {
@@ -1353,90 +1407,75 @@ async function verifyCustomerLedgerScenarios(ctx: Ctx) {
       memo: { contains: DEMO_TAG },
     },
     select: {
-      participants: {
-        where: { isPrincipal: true },
-        select: { contact: { select: { name: true } } },
-      },
-      buyerIntakes: {
-        where: { lifecycleStatus: { in: ['open', 'hold'] } },
-        select: {
-          requirements: {
-            where: { status: { in: ['active', 'hold'] } },
-            select: { id: true, priorityRank: true },
-          },
-        },
-      },
+      buyerIntakes: { select: { id: true } },
       listingIntakes: {
-        where: { lifecycleStatus: { in: ['open', 'hold'] } },
-        select: {
-          propertyId: true,
-          listings: {
-            where: { isPaused: false },
-            select: { id: true },
-          },
-        },
+        select: { listings: { where: { isPaused: false }, select: { id: true } } },
       },
-      dependencies: {
-        where: { status: { not: 'cancelled' } },
-        select: { id: true },
+      steps: {
+        select: { listingIntakeId: true, buyerIntakeId: true, dealId: true },
       },
     },
   });
+  const [unbundledListingIntakes, unbundledBuyerIntakes, twoRankIntakes] =
+    await Promise.all([
+      ctx.prisma.listingIntake.count({
+        where: {
+          officeId: ctx.officeId,
+          brokerageCaseId: null,
+          lifecycleStatus: { in: ['open', 'hold'] },
+          memo: { contains: DEMO_TAG },
+        },
+      }),
+      ctx.prisma.buyerIntake.count({
+        where: {
+          officeId: ctx.officeId,
+          brokerageCaseId: null,
+          lifecycleStatus: { in: ['open', 'hold'] },
+          memo: { contains: DEMO_TAG },
+        },
+      }),
+      ctx.prisma.buyerIntake.count({
+        where: {
+          officeId: ctx.officeId,
+          memo: { contains: DEMO_TAG },
+          requirements: { some: { priorityRank: 2 } },
+        },
+      }),
+    ]);
 
-  const violations = cases.flatMap((item) => {
-    const customer = item.participants[0]?.contact.name ?? '이름 없는 고객';
-    const demandCount = item.buyerIntakes.reduce(
-      (sum, intake) => sum + intake.requirements.length,
-      0,
-    );
-    const propertyCount = new Set(
-      item.listingIntakes.map((intake) => intake.propertyId),
-    ).size;
-    return demandCount > 2 || propertyCount > 2
-      ? [`${customer}(매수 ${demandCount}, 매도주택 ${propertyCount})`]
-      : [];
-  });
-  if (violations.length > 0) {
-    throw new Error(
-      `비현실적인 고객 원장 데모 케이스: ${violations.join(', ')}`,
-    );
-  }
-
-  const hasTradeUpCase = cases.some(
+  const tradeUp = cases.find(
     (item) =>
       item.buyerIntakes.length >= 1 &&
       item.listingIntakes.length >= 1 &&
-      item.dependencies.length > 0,
+      item.steps.some(
+        (step) => !step.listingIntakeId && !step.buyerIntakeId && !step.dealId,
+      ),
+  );
+  const everyIntakeHasStep = cases.every(
+    (item) =>
+      item.steps.filter((step) => step.listingIntakeId || step.buyerIntakeId)
+        .length ===
+      item.buyerIntakes.length + item.listingIntakes.length,
   );
   const hasAlternativeListings = cases.some((item) =>
     item.listingIntakes.some((intake) => intake.listings.length > 1),
   );
-  const hasDemandPriorityExample = cases.some((item) =>
-    item.buyerIntakes.some(
-      (intake) =>
-        intake.requirements.length === 2 &&
-        intake.requirements
-          .map((requirement) => requirement.priorityRank)
-          .sort((left, right) => left - right)
-          .join(',') === '1,2',
-    ),
-  );
-  const hasMultipleIntakeStressCase = cases.some(
-    (item) => item.buyerIntakes.length >= 2 && item.listingIntakes.length >= 2,
-  );
   if (
-    !hasTradeUpCase ||
+    cases.length !== 1 ||
+    !tradeUp ||
+    !everyIntakeHasStep ||
     !hasAlternativeListings ||
-    !hasDemandPriorityExample ||
-    !hasMultipleIntakeStressCase
+    unbundledListingIntakes < 1 ||
+    unbundledBuyerIntakes < 1 ||
+    twoRankIntakes < 1
   ) {
     throw new Error(
-      '고객 원장 데모에는 갈아타기, 동일 intake의 복수 listing, 구함 1·2순위, 동일 케이스의 복수 BuyerIntake/ListingIntake 예시가 필요합니다.',
+      '고객 원장 데모에는 직접 묶은 갈아타기 건 하나(의뢰마다 단계, 직접 추가한 단계, 같은 의뢰의 복수 listing 포함)와, 건 없는 매물·구매 의뢰, 구함 1·2순위 예시가 필요합니다.',
     );
   }
 
   console.log(
-    `   고객 원장 ${cases.length}건 검증 완료 (갈아타기, 구함 우선순위, 동일 케이스 BuyerIntake 2 + ListingIntake 2 예시 포함)`,
+    `   고객 원장 검증 완료 (갈아타기 건 1개 · 단계 ${tradeUp.steps.length}개, 건 없는 매물 의뢰 ${unbundledListingIntakes}개 · 구매 의뢰 ${unbundledBuyerIntakes}개)`,
   );
 }
 
@@ -1486,71 +1525,6 @@ async function verifySingleOccupyingDealPerIntake(ctx: Ctx) {
   }
 }
 
-async function seedBrokerageCase(
-  ctx: Ctx,
-  contactId: string,
-  role: 'buyer' | 'seller',
-  intakeKind: 'buyer' | 'listing',
-) {
-  let brokerageCase = await ctx.prisma.brokerageCase.findFirst({
-    where: {
-      officeId: ctx.officeId,
-      archivedAt: null,
-      memo: { contains: DEMO_TAG },
-      participants: { some: { contactId, isPrincipal: true } },
-    },
-    include: { participants: true },
-    orderBy: { createdAt: 'asc' },
-  });
-  if (!brokerageCase) {
-    brokerageCase = await ctx.prisma.brokerageCase.create({
-      data: {
-        officeId: ctx.officeId,
-        memo: `${DEMO_TAG} 고객 원장 업무철`,
-        participants: {
-          create: {
-            roles: [role],
-            isPrincipal: true,
-            isCommunicationPrimary: true,
-            office: { connect: { id: ctx.officeId } },
-            contact: {
-              connect: {
-                officeId_id: { officeId: ctx.officeId, id: contactId },
-              },
-            },
-          },
-        },
-      },
-      include: { participants: true },
-    });
-  } else {
-    const participant = brokerageCase.participants.find(
-      (item) => item.contactId === contactId,
-    );
-    if (participant && !participant.roles.includes(role)) {
-      await ctx.prisma.brokerageCaseParticipant.update({
-        where: { id: participant.id },
-        data: { roles: [...participant.roles, role] },
-      });
-    }
-  }
-
-  const aggregate =
-    intakeKind === 'buyer'
-      ? await ctx.prisma.buyerIntake.aggregate({
-          where: { officeId: ctx.officeId, brokerageCaseId: brokerageCase.id },
-          _max: { casePriorityRank: true },
-        })
-      : await ctx.prisma.listingIntake.aggregate({
-          where: { officeId: ctx.officeId, brokerageCaseId: brokerageCase.id },
-          _max: { casePriorityRank: true },
-        });
-  return {
-    brokerageCaseId: brokerageCase.id,
-    casePriorityRank: (aggregate._max.casePriorityRank ?? 0) + 1,
-  };
-}
-
 function toPreferredRegions(names: string[]) {
   return names.map((name) => {
     const region = REGION_BY_NAME[name as keyof typeof REGION_BY_NAME];
@@ -1581,7 +1555,7 @@ async function seedMatches(
     { listingIdx: 1, buyerIdx: 3, stage: stages[3] }, // 24.2억 × 학군 → 임장
     { listingIdx: 2, buyerIdx: 1, stage: stages[1] }, // 31.9억 × VIP → 고객 관심
     { listingIdx: 3, buyerIdx: 2, stage: stages[5] }, // 19.8억 × 투자 → 거래 생성
-    { listingIdx: 5, buyerIdx: 0, stage: stages[2] }, // 전세 × 신혼 → 임장 가능 확인
+    { listingIdx: 5, buyerIdx: 0, stage: stages[2] }, // 전세 × 신혼 → 임장 조율
     { listingIdx: 0, buyerIdx: 3, stage: stages[0] }, // 급매 × 학군 → 내부 후보
     { listingIdx: 2, buyerIdx: 4, stage: stages[1] }, // 펜트하우스 × 갈아타기 → 고객 관심
   ];

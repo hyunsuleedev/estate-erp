@@ -6,9 +6,6 @@ describe('ListingIntakesService', () => {
       listingIntake: {
         create: jest.fn().mockResolvedValue({ id: 'intake-1' }),
         findFirst: jest.fn(),
-        aggregate: jest.fn().mockResolvedValue({
-          _max: { casePriorityRank: null },
-        }),
         update: jest.fn().mockResolvedValue({ id: 'intake-1' }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
@@ -20,17 +17,6 @@ describe('ListingIntakesService', () => {
             isPrimary: true,
           },
         ]),
-      },
-      brokerageCase: {
-        findFirst: jest.fn(),
-        findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({ id: 'case-1' }),
-        update: jest.fn().mockResolvedValue({}),
-      },
-      brokerageCaseParticipant: {
-        findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({}),
-        update: jest.fn().mockResolvedValue({}),
       },
       deal: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -109,7 +95,7 @@ describe('ListingIntakesService', () => {
     expect(args.select.property.select.site.select).not.toHaveProperty('metadata');
     expect(args.select.listings.select._count).toEqual({
       select: {
-        matches: true,
+        matches: { where: { stage: { not: 'closed' } } },
         advertisements: { where: { status: 'active' } },
       },
     });
@@ -131,6 +117,20 @@ describe('ListingIntakesService', () => {
       createdAt: true,
     });
   });
+
+  it.each([undefined, 'matching'] as const)(
+    'excludes closed matches from counts used for list sort %s',
+    async (sortBy) => {
+      const { prisma, service } = createService();
+
+      await service.findAll('office-1', { sortBy });
+
+      const args = prisma.listingIntake.findMany.mock.calls[0][0];
+      expect(args.select.listings.select._count.select.matches).toEqual({
+        where: { stage: { not: 'closed' } },
+      });
+    },
+  );
 
   it('exposes active advertisements separately from advertisement history', async () => {
     const { prisma, service } = createService();
@@ -1150,26 +1150,12 @@ describe('ListingIntakesService', () => {
     const tx = {
       listingIntake: {
         create: jest.fn().mockResolvedValue({ id: 'intake-1' }),
-        aggregate: jest.fn().mockResolvedValue({
-          _max: { casePriorityRank: null },
-        }),
       },
       listing: {
         create: jest.fn(),
       },
       propertyContact: {
         findMany: jest.fn().mockResolvedValue([]),
-      },
-      brokerageCase: {
-        findFirst: jest.fn(),
-        findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({ id: 'case-1' }),
-        update: jest.fn().mockResolvedValue({}),
-      },
-      brokerageCaseParticipant: {
-        findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({}),
-        update: jest.fn().mockResolvedValue({}),
       },
       $executeRaw: jest.fn().mockResolvedValue(0),
     };
@@ -1190,7 +1176,12 @@ describe('ListingIntakesService', () => {
         }),
       }),
     );
-    expect(tx.brokerageCaseParticipant.create).not.toHaveBeenCalled();
+    // 건은 사용자가 고를 때만 붙는다.
+    expect(tx.listingIntake.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ brokerageCaseId: null }),
+      }),
+    );
   });
 
   it('emits a realtime intake update after creating an intake', async () => {

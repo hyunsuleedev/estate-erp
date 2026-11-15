@@ -9,6 +9,7 @@ import {
   StaffAuthService,
   VERIFIED_CLAIMS_MAX_ENTRIES,
   isIssuedBeforeCutoff,
+  isSessionStartedBeforeCutoff,
 } from './staff-auth.service';
 
 const SUB = 'auth0|abc';
@@ -93,6 +94,8 @@ function createService(options: {
   getUser?: jest.Mock;
   exp?: number;
   iat?: number | null;
+  /** 세션이 로그인한 시각(초). 없으면 클레임을 넣지 않는다. */
+  sessionAuthTime?: number;
   azp?: string | null;
   staffClientIds?: string;
 }) {
@@ -104,6 +107,9 @@ function createService(options: {
       ? {}
       : { iat: options.iat ?? Math.floor(Date.now() / 1000) }),
     ...(options.azp === null ? {} : { azp: options.azp ?? DESKTOP_CLIENT }),
+    ...(options.sessionAuthTime === undefined
+      ? {}
+      : { sessionAuthTime: options.sessionAuthTime }),
   });
   const getUser =
     options.getUser ??
@@ -308,6 +314,39 @@ describe('StaffAuthService', () => {
     );
   });
 
+  it('refuses a renewed token of a session that logged in before the cut-off, also from the claim cache', async () => {
+    const cutoff = new Date(Date.now() - 60_000);
+    const cutoffSeconds = Math.floor(cutoff.getTime() / 1000);
+    const user = { ...linkedUser, tokensValidAfter: cutoff };
+    const exp = Math.floor(Date.now() / 1000) + 900;
+
+    // refresh token 폐기가 실패해 예전 PC가 기준 시각 뒤에 토큰을 새로 받았다.
+    const stale = createService({
+      users: [user],
+      iat: cutoffSeconds + 30,
+      sessionAuthTime: cutoffSeconds - 3600,
+      exp,
+    });
+    await expect(stale.service.authenticateBearerToken('token')).rejects.toThrow(
+      '다시 로그인해 주세요',
+    );
+    // 두 번째 요청은 기억해 둔 클레임을 쓴다. 로그인 시각이 거기서 빠지면 통과해 버린다.
+    await expect(stale.service.authenticateBearerToken('token')).rejects.toThrow(
+      '다시 로그인해 주세요',
+    );
+
+    // 기준 시각 뒤에 새로 로그인한 세션은 통과한다.
+    const fresh = createService({
+      users: [user],
+      iat: cutoffSeconds + 30,
+      sessionAuthTime: cutoffSeconds + 20,
+      exp,
+    });
+    await expect(fresh.service.authenticateBearerToken('token')).resolves.toMatchObject({
+      userId: 'user-1',
+    });
+  });
+
   it('compares issue time and cut-off on the safe side', () => {
     const cutoff = new Date('2026-11-11T03:00:00.400Z');
     const second = Math.floor(cutoff.getTime() / 1000);
@@ -317,6 +356,19 @@ describe('StaffAuthService', () => {
     expect(isIssuedBeforeCutoff(undefined, cutoff)).toBe(true);
     expect(isIssuedBeforeCutoff(undefined, null)).toBe(false);
     expect(isIssuedBeforeCutoff(1, null)).toBe(false);
+  });
+
+  it('rejects a session that logged in before the cutoff even when its token was renewed later', () => {
+    const cutoff = new Date('2026-11-11T10:00:00.900Z');
+    const second = Math.floor(cutoff.getTime() / 1000);
+    // refresh token으로 새로 받은 토큰은 iat가 기준 시각 뒤지만 로그인 시각은 그대로다.
+    expect(isIssuedBeforeCutoff(second + 600, cutoff)).toBe(false);
+    expect(isSessionStartedBeforeCutoff(second - 3600, cutoff)).toBe(true);
+    expect(isSessionStartedBeforeCutoff(second, cutoff)).toBe(true);
+    expect(isSessionStartedBeforeCutoff(second + 1, cutoff)).toBe(false);
+    // 로그인 시각이 없는 토큰은 iat 검사만 받는다.
+    expect(isSessionStartedBeforeCutoff(undefined, cutoff)).toBe(false);
+    expect(isSessionStartedBeforeCutoff(second - 1, null)).toBe(false);
   });
 
   it('keys the cache by a fixed-size hash and never holds more than the cap', async () => {

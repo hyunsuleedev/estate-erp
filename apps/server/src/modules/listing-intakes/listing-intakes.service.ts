@@ -15,6 +15,7 @@ import {
   ListingAvailability,
   ListingAdvertisementStatus,
   MaintenanceFeeInclude,
+  MatchStage,
   NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
   OCCUPYING_DEAL_STAGES,
   SiteType,
@@ -39,9 +40,10 @@ import {
 import { RealtimeService } from '../../realtime/realtime.service';
 import { closeOpenMatchesForIntake } from '../matches/match-lifecycle-sync';
 import {
-  listingCaseParticipants,
-  resolveBrokerageCaseForIntake,
-} from '../brokerage-cases/brokerage-case.resolver';
+  appendIntakeStep,
+  assertActiveBrokerageCase,
+  listingIntakeStepTitle,
+} from '../brokerage-cases/brokerage-case-membership';
 
 const DEFAULT_INTAKE_LIFECYCLE_STATUS = IntakeLifecycleStatus.OPEN;
 const VALID_INTAKE_LIFECYCLE_STATUSES: ReadonlySet<string> = new Set(
@@ -200,7 +202,7 @@ const LISTING_INTAKE_SORT_CANDIDATE_SELECT = {
       deals: OCCUPYING_DEALS_SELECT,
       _count: {
         select: {
-          matches: true,
+          matches: { where: { stage: { not: MatchStage.CLOSED } } },
           advertisements: { where: ACTIVE_LISTING_ADVERTISEMENT_WHERE },
         },
       },
@@ -504,23 +506,15 @@ export class ListingIntakesService {
     }
 
     const intake = await this.prisma.$transaction(async (tx) => {
-      const participants = await listingCaseParticipants(
-        tx,
-        officeId,
-        dto.propertyId,
-      );
-      const resolvedCase = await resolveBrokerageCaseForIntake(tx, {
-        officeId,
-        requestedCaseId: dto.brokerageCaseId,
-        autoAttach: lifecycleStatus !== IntakeLifecycleStatus.CLOSED,
-        intakeKind: 'listing',
-        participants,
-      });
+      // 건은 사용자가 고른 경우에만 붙는다. 서버가 당사자를 보고 묶지 않는다.
+      if (dto.brokerageCaseId) {
+        await assertActiveBrokerageCase(tx, officeId, dto.brokerageCaseId);
+      }
       const created = await tx.listingIntake
         .create({
           data: {
             officeId,
-            ...resolvedCase,
+            brokerageCaseId: dto.brokerageCaseId ?? null,
             propertyId: dto.propertyId,
             lifecycleStatus,
             lifecycleChangedAt: new Date(),
@@ -573,6 +567,16 @@ export class ListingIntakesService {
             isPaused: listing.isPaused,
             memo: listing.memo,
           },
+        });
+      }
+
+      if (dto.brokerageCaseId) {
+        await appendIntakeStep(tx, {
+          officeId,
+          brokerageCaseId: dto.brokerageCaseId,
+          kind: 'listing',
+          intakeId: created.id,
+          title: await listingIntakeStepTitle(tx, dto.propertyId),
         });
       }
 
@@ -1434,7 +1438,7 @@ export class ListingIntakesService {
           deals: OCCUPYING_DEALS_SELECT,
           _count: {
             select: {
-              matches: true,
+              matches: { where: { stage: { not: MatchStage.CLOSED } } },
               advertisements: {
                 where: ACTIVE_LISTING_ADVERTISEMENT_WHERE,
               },

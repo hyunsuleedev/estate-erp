@@ -1,5 +1,10 @@
 // ============================================================
-// 중개 케이스 — 여러 구매/매도 의뢰를 함께 보는 활성 업무철
+// 중개 건 — 사용자가 묶을 때만 생기는 업무철 (갈아타기 등)
+//
+// 의뢰는 건 없이 존재한다. 한 가족의 매물 의뢰와 구매 의뢰가 서로 물려 있을 때
+// 사용자가 직접 묶고, 진행 계획(BrokerageCaseStep)으로 순서를 정한다.
+// 서버가 알아서 묶지 않는다. 당사자는 의뢰(BuyerIntakeContact, PropertyContact)에서
+// 읽고 건에 따로 복사하지 않는다.
 // ============================================================
 
 model BrokerageCase {
@@ -11,11 +16,10 @@ model BrokerageCase {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  office         Office                     @relation(fields: [officeId], references: [id], onDelete: Restrict)
-  participants   BrokerageCaseParticipant[]
+  office         Office              @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  steps          BrokerageCaseStep[]
   buyerIntakes   BuyerIntake[]
   listingIntakes ListingIntake[]
-  dependencies   BrokerageCaseDependency[]
 
   // 하위 테이블의 복합 FK가 office_id까지 함께 검증한다.
   @@unique([officeId, id])
@@ -23,52 +27,41 @@ model BrokerageCase {
   @@map("brokerage_cases")
 }
 
-model BrokerageCaseParticipant {
-  id                     String   @id @default(uuid()) @db.Uuid
-  officeId               String   @map("office_id") @db.Uuid
-  brokerageCaseId        String   @map("brokerage_case_id") @db.Uuid
-  contactId              String   @map("contact_id") @db.Uuid
-  roles                  String[] @default([])
-  isPrincipal            Boolean  @default(false) @map("is_principal")
-  isCommunicationPrimary Boolean  @default(false) @map("is_communication_primary")
-  memo                   String?
-  createdAt              DateTime @default(now()) @map("created_at")
-  updatedAt              DateTime @updatedAt @map("updated_at")
+// ============================================================
+// 건의 진행 계획 — 사람이 정한 단계와 순서
+//
+// 단계는 건에 담긴 매물 의뢰나 구매 의뢰, 또는 의뢰 없이 바로 만든 거래 하나를
+// 가리키거나, 아무것도 가리키지 않는다("대출 실행", "이사").
+// 가리키는 대상의 진행 상태와 잔금일은 저장하지 않고 의뢰·거래에서 읽는다.
+// ============================================================
 
-  office        Office        @relation(fields: [officeId], references: [id], onDelete: Restrict)
-  brokerageCase BrokerageCase @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Cascade)
-  contact       Contact       @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
+model BrokerageCaseStep {
+  id              String    @id @default(uuid()) @db.Uuid
+  officeId        String    @map("office_id") @db.Uuid
+  brokerageCaseId String    @map("brokerage_case_id") @db.Uuid
+  /// 사용자가 정한 차례. 같은 번호면 동시 진행.
+  sortOrder       Int       @map("sort_order")
+  title           String
+  // 이 단계가 가리키는 것. 셋 중 하나만 채우거나 모두 비운다 (CHECK 제약은 migration SQL).
+  listingIntakeId String?   @map("listing_intake_id") @db.Uuid
+  buyerIntakeId   String?   @map("buyer_intake_id") @db.Uuid
+  /// 의뢰 없이 바로 만든 거래. 의뢰가 있으면 의뢰를 가리키고 이 칸은 비운다.
+  dealId          String?   @map("deal_id") @db.Uuid
+  targetDate      DateTime? @map("target_date") @db.Date
+  memo            String?   @db.Text
+  /// 아무것도 가리키지 않는 단계만 사용자가 체크한다.
+  doneAt          DateTime? @map("done_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  @@unique([brokerageCaseId, contactId])
-  @@index([officeId, contactId, brokerageCaseId])
-  @@index([officeId, brokerageCaseId, isPrincipal])
-  // 케이스당 주 연락창구는 최대 한 명. partial unique index는 migration SQL에서 생성한다.
-  @@map("brokerage_case_participants")
-}
+  office        Office         @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  brokerageCase BrokerageCase  @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Cascade)
+  // 같은 건에 담긴 의뢰만 가리킬 수 있다 (복합 FK가 DB에서 강제).
+  listingIntake ListingIntake? @relation(fields: [officeId, brokerageCaseId, listingIntakeId], references: [officeId, brokerageCaseId, id], onDelete: Restrict)
+  buyerIntake   BuyerIntake?   @relation(fields: [officeId, brokerageCaseId, buyerIntakeId], references: [officeId, brokerageCaseId, id], onDelete: Restrict)
+  deal          Deal?          @relation(fields: [dealId], references: [id], onDelete: SetNull)
 
-model BrokerageCaseDependency {
-  id                  String    @id @default(uuid()) @db.Uuid
-  officeId            String    @map("office_id") @db.Uuid
-  brokerageCaseId     String    @map("brokerage_case_id") @db.Uuid
-  fromListingIntakeId String    @map("from_listing_intake_id") @db.Uuid
-  toBuyerIntakeId     String    @map("to_buyer_intake_id") @db.Uuid
-  type                String // sale_proceeds, timing, move_sequence, other
-  isRequired          Boolean   @default(true) @map("is_required")
-  expectedAmount      Int?      @map("expected_amount") // 예상 순유입/배정액, 만원
-  requiredBy          DateTime? @map("required_by")
-  status              String    @default("planned") // planned, confirmed, resolved, cancelled
-  memo                String?   @db.Text
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
-
-  office            Office        @relation(fields: [officeId], references: [id], onDelete: Restrict)
-  brokerageCase     BrokerageCase @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Cascade)
-  fromListingIntake ListingIntake @relation("BrokerageCaseDependencySource", fields: [officeId, brokerageCaseId, fromListingIntakeId], references: [officeId, brokerageCaseId, id], onDelete: Restrict)
-  toBuyerIntake     BuyerIntake   @relation("BrokerageCaseDependencyTarget", fields: [officeId, brokerageCaseId, toBuyerIntakeId], references: [officeId, brokerageCaseId, id], onDelete: Restrict)
-
-  @@unique([brokerageCaseId, fromListingIntakeId, toBuyerIntakeId, type])
-  @@index([officeId, brokerageCaseId])
-  @@index([fromListingIntakeId])
-  @@index([toBuyerIntakeId])
-  @@map("brokerage_case_dependencies")
+  @@index([officeId, brokerageCaseId, sortOrder])
+  @@index([dealId])
+  @@map("brokerage_case_steps")
 }

@@ -20,10 +20,10 @@ import {
   withPrimaryPhone,
 } from "../contacts/contact-phone.utils";
 import {
-  buyerCaseParticipants,
-  mergeBuyerIntakeCaseParticipants,
-  resolveBrokerageCaseForIntake,
-} from "../brokerage-cases/brokerage-case.resolver";
+  appendIntakeStep,
+  assertActiveBrokerageCase,
+  BUYER_INTAKE_STEP_TITLE,
+} from "../brokerage-cases/brokerage-case-membership";
 
 export interface BuyerIntakeContactInput {
   contactId: string;
@@ -328,17 +328,14 @@ export class BuyerIntakesService {
     const lifecycleStatus =
       dto.lifecycleStatus ?? IntakeLifecycleStatus.OPEN;
     const intake = await this.prisma.$transaction(async (tx) => {
-      const resolvedCase = await resolveBrokerageCaseForIntake(tx, {
-        officeId,
-        requestedCaseId: dto.brokerageCaseId,
-        autoAttach: lifecycleStatus !== IntakeLifecycleStatus.CLOSED,
-        intakeKind: "buyer",
-        participants: buyerCaseParticipants(contacts),
-      });
-      return tx.buyerIntake.create({
+      // 건은 사용자가 고른 경우에만 붙는다. 서버가 당사자를 보고 묶지 않는다.
+      if (dto.brokerageCaseId) {
+        await assertActiveBrokerageCase(tx, officeId, dto.brokerageCaseId);
+      }
+      const created = await tx.buyerIntake.create({
         data: {
           officeId,
-          ...resolvedCase,
+          brokerageCaseId: dto.brokerageCaseId ?? null,
           lifecycleStatus,
           receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined,
           memo: dto.memo,
@@ -357,6 +354,16 @@ export class BuyerIntakesService {
         },
         include: buyerIntakeInclude,
       });
+      if (dto.brokerageCaseId) {
+        await appendIntakeStep(tx, {
+          officeId,
+          brokerageCaseId: dto.brokerageCaseId,
+          kind: "buyer",
+          intakeId: created.id,
+          title: BUYER_INTAKE_STEP_TITLE,
+        });
+      }
+      return created;
     });
 
     return this.present(intake);
@@ -416,7 +423,6 @@ export class BuyerIntakesService {
           isPrimary: makePrimary,
         },
       });
-      await mergeBuyerIntakeCaseParticipants(tx, officeId, id);
 
       const updated = await tx.buyerIntake.findUniqueOrThrow({
         where: { id },
@@ -460,7 +466,6 @@ export class BuyerIntakesService {
         where: { id: participant.id },
         data: dto,
       });
-      await mergeBuyerIntakeCaseParticipants(tx, officeId, id);
       const updated = await tx.buyerIntake.findUniqueOrThrow({
         where: { id },
         include: buyerIntakeInclude,

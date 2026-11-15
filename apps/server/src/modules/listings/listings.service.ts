@@ -28,10 +28,6 @@ import {
   OCCUPYING_DEALS_SELECT,
 } from './listing-state';
 import {
-  listingCaseParticipants,
-  resolveBrokerageCaseForIntake,
-} from '../brokerage-cases/brokerage-case.resolver';
-import {
   ACTIVE_LISTING_ADVERTISEMENT_WHERE,
   withActiveAdvertisementSummary,
 } from './listing-advertisement-summary';
@@ -920,20 +916,9 @@ export class ListingsService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const participants = await listingCaseParticipants(
-          tx,
-          officeId,
-          propertyId,
-        );
-        const resolvedCase = await resolveBrokerageCaseForIntake(tx, {
-          officeId,
-          intakeKind: 'listing',
-          participants,
-        });
         return tx.listingIntake.create({
           data: {
             officeId,
-            ...resolvedCase,
             propertyId,
             lifecycleChangedAt: new Date(),
             lifecycleChangedBy: 'user',

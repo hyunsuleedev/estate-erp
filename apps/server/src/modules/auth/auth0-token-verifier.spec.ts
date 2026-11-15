@@ -103,6 +103,25 @@ describe('Auth0TokenVerifier', () => {
     expect(verifier.getIssuer()).toBe(ISSUER);
   });
 
+  it('reads the session login time from the Auth0 Action claim, only when it is a number', async () => {
+    const { verifier, privateKey } = setup();
+    const withClaim = await verifier.verifyAccessToken(
+      signToken(privateKey, validPayload({ 'https://estaitt.com/auth_time': 1794757516 })),
+    );
+    expect(withClaim.sessionAuthTime).toBe(1794757516);
+
+    const without = await verifier.verifyAccessToken(signToken(privateKey, validPayload()));
+    expect(without.sessionAuthTime).toBeUndefined();
+    // 토큰 본문에 sessionAuthTime을 직접 써 넣어도 믿지 않는다. Action의 클레임만 읽는다.
+    const forged = await verifier.verifyAccessToken(
+      signToken(
+        privateKey,
+        validPayload({ sessionAuthTime: 9999999999, 'https://estaitt.com/auth_time': '9999999999' }),
+      ),
+    );
+    expect(forged.sessionAuthTime).toBeUndefined();
+  });
+
   it('rejects tokens for another API, another issuer, expired or tampered', async () => {
     const { verifier, privateKey } = setup();
     const now = Math.floor(Date.now() / 1000);

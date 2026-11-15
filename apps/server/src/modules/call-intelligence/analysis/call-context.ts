@@ -54,7 +54,7 @@ type Db = Pick<PrismaClient, 'contact' | 'propertyContact' | 'buyerIntakeContact
 export const MATCH_STAGE_TEXT: Record<string, string> = {
   suggested: '내부 후보',
   buyerInterested: '고객 관심',
-  viewingConfirmed: '임장 가능 확인',
+  viewingConfirmed: '임장 조율',
   viewing: '임장',
   negotiating: '협상',
   dealCreated: '거래 전환',

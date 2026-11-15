@@ -53,9 +53,6 @@ describe("BuyerIntakesService", () => {
         findUniqueOrThrow: jest.fn(),
         findMany: jest.fn(),
         count: jest.fn(),
-        aggregate: jest.fn().mockResolvedValue({
-          _max: { casePriorityRank: null },
-        }),
         update: jest.fn(),
       },
       buyerIntakeContact: {
@@ -64,19 +61,6 @@ describe("BuyerIntakesService", () => {
         create: jest.fn(),
         update: jest.fn(),
         delete: jest.fn(),
-      },
-      brokerageCase: {
-        findFirst: jest.fn(),
-        findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({
-          id: "00000000-0000-4000-8000-000000000005",
-        }),
-        update: jest.fn().mockResolvedValue({}),
-      },
-      brokerageCaseParticipant: {
-        findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({}),
-        update: jest.fn().mockResolvedValue({}),
       },
       $executeRaw: jest.fn(),
       $transaction: jest.fn(),

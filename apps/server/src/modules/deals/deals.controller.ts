@@ -43,6 +43,7 @@ export class DealsController {
       propertyId?: string;
       listingId?: string;
       matchId?: string;
+      buyerIntakeId?: string;
       transactionType?: string;
       agreedPrice?: number;
       agreedDeposit?: number;
@@ -76,6 +77,15 @@ export class DealsController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.dealsService.updateStage(id, user.officeId, dto);
+  }
+
+  @Patch(':id/buyer-intake')
+  setBuyerIntake(
+    @Param('id') id: string,
+    @Body() dto: { buyerIntakeId?: string | null },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.dealsService.setBuyerIntake(id, user.officeId, dto ?? {});
   }
 
   @Patch(':id/cancel')

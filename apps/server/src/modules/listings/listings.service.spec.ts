@@ -70,29 +70,6 @@ describe('ListingsService', () => {
       listingIntake: {
         findFirst: jest.fn(),
         create: jest.fn(),
-        aggregate: jest.fn().mockResolvedValue({
-          _max: { casePriorityRank: null },
-        }),
-      },
-      propertyContact: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            contactId: 'owner-1',
-            role: 'owner',
-            isPrimary: true,
-          },
-        ]),
-      },
-      brokerageCase: {
-        findFirst: jest.fn(),
-        findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({ id: 'case-1' }),
-        update: jest.fn().mockResolvedValue({}),
-      },
-      brokerageCaseParticipant: {
-        findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({}),
-        update: jest.fn().mockResolvedValue({}),
       },
       $queryRaw: jest.fn(),
       $executeRaw: jest.fn(),
@@ -129,8 +106,6 @@ describe('ListingsService', () => {
     expect(prisma.listingIntake.create).toHaveBeenCalledWith({
       data: {
         officeId: 'office-1',
-        brokerageCaseId: 'case-1',
-        casePriorityRank: 1,
         propertyId: 'property-1',
         lifecycleChangedAt: expect.any(Date),
         lifecycleChangedBy: 'user',

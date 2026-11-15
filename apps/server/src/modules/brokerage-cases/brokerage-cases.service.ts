@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { contactPhonesIncludeOrdered } from "../contacts/contact-phone.utils";
@@ -77,18 +72,6 @@ const ACTIVE_BUYER_REQUIREMENT_STATUSES = [
   "inactive",
 ] as const;
 const BUYER_URGENCIES = new Set(["urgent", "normal", "flexible"]);
-const DEPENDENCY_TYPES = new Set([
-  "sale_proceeds",
-  "timing",
-  "move_sequence",
-  "other",
-]);
-const DEPENDENCY_STATUSES = new Set([
-  "planned",
-  "confirmed",
-  "resolved",
-  "cancelled",
-]);
 
 function parseCsvValues(value: string | undefined) {
   return [
@@ -137,112 +120,259 @@ export function hasBuyerRequirementLedgerFilters(
   });
 }
 
-const activeCaseInclude = (officeId: string) =>
-  ({
-    participants: {
-      include: {
-        contact: {
-          include: {
-            phones: contactPhonesIncludeOrdered,
-            consultations: {
-              where: { officeId },
-              orderBy: [
-                { createdAt: "desc" as const },
-                { id: "desc" as const },
-              ],
-              take: 1,
-              select: {
-                id: true,
-                type: true,
-                content: true,
-                createdAt: true,
-              },
-            },
-          },
-        },
-      },
-      orderBy: [
-        { isCommunicationPrimary: "desc" as const },
-        { isPrincipal: "desc" as const },
-        { createdAt: "asc" as const },
-      ],
-    },
-    buyerIntakes: {
-      where: { lifecycleStatus: { in: ["open", "hold"] } },
-      orderBy: [
-        { casePriorityRank: "asc" as const },
-        { receivedAt: "asc" as const },
-      ],
-      include: {
-        contacts: {
-          include: {
-            contact: { include: { phones: contactPhonesIncludeOrdered } },
-          },
-          orderBy: [
-            { isPrimary: "desc" as const },
-            { createdAt: "asc" as const },
-          ],
-        },
-        requirements: {
-          orderBy: [
-            { priorityRank: "asc" as const },
-            { createdAt: "asc" as const },
-          ],
-          include: {
-            preferredSites: {
-              include: {
-                site: { select: { id: true, name: true, type: true } },
-              },
-              orderBy: { priority: "asc" as const },
-            },
-            preferredRegions: {
-              include: { province: true, district: true, ward: true },
-            },
-            assignedTo: { select: { id: true, name: true } },
-            _count: { select: { matches: true } },
-          },
-        },
-      },
-    },
-    listingIntakes: {
-      where: { lifecycleStatus: { in: ["open", "hold"] } },
-      orderBy: [
-        { casePriorityRank: "asc" as const },
-        { receivedAt: "asc" as const },
-      ],
-      include: {
-        property: {
-          include: {
-            site: {
-              include: {
-                ward: {
-                  include: { district: { include: { province: true } } },
-                },
-              },
-            },
-            unit: { include: { dong: true, siteUnitType: true } },
-          },
-        },
-        listings: {
-          orderBy: [{ createdAt: "asc" as const }],
-          include: { _count: { select: { matches: true } } },
-        },
-      },
-    },
-    dependencies: {
-      where: { status: { not: "cancelled" } },
-      orderBy: [{ isRequired: "desc" as const }, { createdAt: "asc" as const }],
-    },
-  }) satisfies Prisma.BrokerageCaseInclude;
 
-type ActiveCaseWithRelations = Prisma.BrokerageCaseGetPayload<{
-  include: ReturnType<typeof activeCaseInclude>;
+const ledgerBuyerIntakeInclude = {
+  contacts: {
+    include: {
+      contact: { include: { phones: contactPhonesIncludeOrdered } },
+    },
+    orderBy: [{ isPrimary: "desc" as const }, { createdAt: "asc" as const }],
+  },
+  requirements: {
+    orderBy: [
+      { priorityRank: "asc" as const },
+      { createdAt: "asc" as const },
+    ],
+    include: {
+      preferredSites: {
+        include: {
+          site: { select: { id: true, name: true, type: true } },
+        },
+        orderBy: { priority: "asc" as const },
+      },
+      preferredRegions: {
+        include: { province: true, district: true, ward: true },
+      },
+      assignedTo: { select: { id: true, name: true } },
+      _count: { select: { matches: true } },
+    },
+  },
+} satisfies Prisma.BuyerIntakeInclude;
+
+const ledgerListingIntakeInclude = {
+  property: {
+    include: {
+      site: {
+        include: {
+          ward: {
+            include: { district: { include: { province: true } } },
+          },
+        },
+      },
+      unit: { include: { dong: true, siteUnitType: true } },
+      // 매물 의뢰의 당사자는 그 부동산의 활성 관련인이다. 건에 따로 복사하지 않는다.
+      propertyContacts: {
+        where: { status: "active" },
+        include: {
+          contact: { include: { phones: contactPhonesIncludeOrdered } },
+        },
+        orderBy: [
+          { isPrimary: "desc" as const },
+          { createdAt: "asc" as const },
+        ],
+      },
+    },
+  },
+  listings: {
+    orderBy: [{ createdAt: "asc" as const }],
+    include: { _count: { select: { matches: true } } },
+  },
+} satisfies Prisma.ListingIntakeInclude;
+
+type LedgerBuyerIntake = Prisma.BuyerIntakeGetPayload<{
+  include: typeof ledgerBuyerIntakeInclude;
+}>;
+type LedgerListingIntake = Prisma.ListingIntakeGetPayload<{
+  include: typeof ledgerListingIntakeInclude;
 }>;
 
-interface CaseIdRow extends BrokerageCaseLedgerCursorRow {
+export interface LedgerLatestConsultation {
   id: string;
+  type: string;
+  content: string;
+  createdAt: Date;
+}
+
+/**
+ * 고객 원장의 한 줄. 사용자가 묶은 중개 건이 있으면 그 건이 한 줄이고, 없으면
+ * 실제 당사자(매수인·소유자) 조합이 같은 진행 중 의뢰들이 한 줄이다. 묶음은
+ * 저장하지 않고 조회할 때 의뢰의 당사자에서 계산한다.
+ */
+interface LedgerGroup {
+  id: string;
+  brokerageCase: {
+    id: string;
+    title: string | null;
+    memo: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    _count: { steps: number };
+  } | null;
+  primaryContactId: string | null;
+  createdAt: Date;
+  buyerIntakes: LedgerBuyerIntake[];
+  listingIntakes: LedgerListingIntake[];
+  latestConsultation: LedgerLatestConsultation | null;
+}
+
+interface LedgerParticipant {
+  contactId: string;
+  roles: string[];
+  isPrincipal: boolean;
+  contact: {
+    id: string;
+    name: string;
+    email: string | null;
+    phone: string | null;
+  };
+}
+
+interface GroupIdRow extends BrokerageCaseLedgerCursorRow {
+  id: string;
+  caseId: string | null;
+  primaryContactId: string | null;
+  createdAt: Date;
+  buyerIntakeIds: string[] | null;
+  listingIntakeIds: string[] | null;
   buyerRequirementIds: string[] | null;
   total: bigint | null;
+}
+
+const BUYER_PRINCIPAL_ROLES = ["buyer", "co_buyer"];
+const OWNER_PRINCIPAL_ROLES = ["owner", "co_owner"];
+
+/**
+ * 고객 원장의 묶음을 계산하는 CTE들 (WITH 뒤에 그대로 붙인다).
+ *
+ * - buyer_scope / listing_scope: 진행 중(open·hold) 의뢰와 그 실제 당사자.
+ *   구매 의뢰는 buyer·co_buyer, 매물 의뢰는 활성 owner·co_owner가 당사자다.
+ *   그런 역할이 하나도 없으면 연결된 사람 전원을 당사자로 본다. 연결된 사람이
+ *   없는 의뢰는 고객 원장에 나오지 않는다.
+ * - intake_groups: 의뢰마다 묶음 id. 중개 건에 담긴 의뢰는 건 id, 아니면 당사자
+ *   조합에서 만든 id(같은 조합이면 같은 값). 보관한 건의 의뢰도 건 없는 의뢰와
+ *   똑같이 당사자 조합으로 묶는다(원장에서 사라지면 다시 꺼낼 화면이 없다).
+ * - ledger_groups: 묶음마다 한 줄.
+ */
+function ledgerGroupCtes(officeId: string) {
+  return Prisma.sql`
+    buyer_scope AS (
+      SELECT
+        bi."id" AS intake_id,
+        -- 보관한 건의 의뢰는 건 없는 의뢰처럼 당사자 기준으로 묶는다(원장에서 숨기지 않는다).
+        CASE WHEN bc_scope."archived_at" IS NULL
+          THEN bi."brokerage_case_id" END AS case_id,
+        bi."received_at" AS received_at,
+        people.principal_ids,
+        people.primary_contact_id
+      FROM "buyer_intakes" bi
+      JOIN LATERAL (
+        SELECT
+          COALESCE(
+            ARRAY_AGG(bic."contact_id" ORDER BY bic."contact_id")
+              FILTER (WHERE bic."role" IN (${Prisma.join(BUYER_PRINCIPAL_ROLES)})),
+            ARRAY_AGG(bic."contact_id" ORDER BY bic."contact_id")
+          ) AS principal_ids,
+          (ARRAY_AGG(
+            bic."contact_id"
+            ORDER BY bic."is_primary" DESC,
+                     (bic."role" IN (${Prisma.join(BUYER_PRINCIPAL_ROLES)})) DESC,
+                     bic."created_at" ASC,
+                     bic."id" ASC
+          ))[1] AS primary_contact_id
+        FROM "buyer_intake_contacts" bic
+        WHERE bic."buyer_intake_id" = bi."id"
+          AND bic."office_id" = ${officeId}::uuid
+      ) people ON people.principal_ids IS NOT NULL
+      LEFT JOIN "brokerage_cases" bc_scope ON bc_scope."id" = bi."brokerage_case_id"
+      WHERE bi."office_id" = ${officeId}::uuid
+        AND bi."lifecycle_status" IN ('open', 'hold')
+    ),
+    listing_scope AS (
+      SELECT
+        li."id" AS intake_id,
+        -- 보관한 건의 의뢰는 건 없는 의뢰처럼 당사자 기준으로 묶는다(원장에서 숨기지 않는다).
+        CASE WHEN bc_scope."archived_at" IS NULL
+          THEN li."brokerage_case_id" END AS case_id,
+        li."received_at" AS received_at,
+        people.principal_ids,
+        people.primary_contact_id
+      FROM "listing_intakes" li
+      JOIN LATERAL (
+        SELECT
+          COALESCE(
+            ARRAY_AGG(pc."contact_id" ORDER BY pc."contact_id")
+              FILTER (WHERE pc."role" IN (${Prisma.join(OWNER_PRINCIPAL_ROLES)})),
+            ARRAY_AGG(pc."contact_id" ORDER BY pc."contact_id")
+          ) AS principal_ids,
+          (ARRAY_AGG(
+            pc."contact_id"
+            ORDER BY pc."is_primary" DESC,
+                     (pc."role" IN (${Prisma.join(OWNER_PRINCIPAL_ROLES)})) DESC,
+                     pc."created_at" ASC,
+                     pc."id" ASC
+          ))[1] AS primary_contact_id
+        FROM (
+          -- 같은 사람이 여러 역할로 연결돼 있어도 한 번만 센다.
+          SELECT DISTINCT ON (pc_all."contact_id") pc_all.*
+          FROM "property_contacts" pc_all
+          WHERE pc_all."property_id" = li."property_id"
+            AND pc_all."office_id" = ${officeId}::uuid
+            AND pc_all."status" = 'active'
+          ORDER BY pc_all."contact_id",
+                   (pc_all."role" IN (${Prisma.join(OWNER_PRINCIPAL_ROLES)})) DESC,
+                   pc_all."is_primary" DESC,
+                   pc_all."created_at" ASC
+        ) pc
+      ) people ON people.principal_ids IS NOT NULL
+      LEFT JOIN "brokerage_cases" bc_scope ON bc_scope."id" = li."brokerage_case_id"
+      WHERE li."office_id" = ${officeId}::uuid
+        AND li."lifecycle_status" IN ('open', 'hold')
+    ),
+    intake_groups AS (
+      SELECT
+        'buyer' AS kind,
+        scope.intake_id,
+        scope.case_id,
+        scope.received_at,
+        scope.primary_contact_id,
+        COALESCE(
+          scope.case_id,
+          OVERLAY(OVERLAY(
+            MD5(ARRAY_TO_STRING(scope.principal_ids, ','))
+            PLACING '4' FROM 13) PLACING '8' FROM 17)::uuid
+        ) AS group_id
+      FROM buyer_scope scope
+      UNION ALL
+      SELECT
+        'listing' AS kind,
+        scope.intake_id,
+        scope.case_id,
+        scope.received_at,
+        scope.primary_contact_id,
+        COALESCE(
+          scope.case_id,
+          OVERLAY(OVERLAY(
+            MD5(ARRAY_TO_STRING(scope.principal_ids, ','))
+            PLACING '4' FROM 13) PLACING '8' FROM 17)::uuid
+        ) AS group_id
+      FROM listing_scope scope
+    ),
+    ledger_groups AS (
+      SELECT
+        ig.group_id,
+        (ARRAY_AGG(ig.case_id))[1] AS case_id,
+        MIN(ig.received_at) AS created_at,
+        (ARRAY_AGG(
+          ig.primary_contact_id
+          ORDER BY ig.received_at ASC, ig.intake_id ASC
+        ))[1] AS primary_contact_id,
+        ARRAY_AGG(ig.intake_id ORDER BY ig.received_at ASC, ig.intake_id ASC)
+          FILTER (WHERE ig.kind = 'buyer') AS buyer_intake_ids,
+        ARRAY_AGG(ig.intake_id ORDER BY ig.received_at ASC, ig.intake_id ASC)
+          FILTER (WHERE ig.kind = 'listing') AS listing_intake_ids
+      FROM intake_groups ig
+      GROUP BY ig.group_id
+    )`;
 }
 
 @Injectable()
@@ -433,37 +563,28 @@ export class BrokerageCasesService {
       `);
     }
 
-    const caseConditions: Prisma.Sql[] = [
-      Prisma.sql`bc."office_id" = ${officeId}::uuid`,
-      Prisma.sql`bc."archived_at" IS NULL`,
-      // 고객 원장은 식별 가능한 참여자가 있는 업무철만 다룬다. 기존 데이터 중
-      // 소유자/구매자 연결 없이 만들어진 의뢰는 매물 원장에는 남되 여기엔 나오지 않는다.
-      Prisma.sql`EXISTS (
-        SELECT 1 FROM "brokerage_case_participants" bcp_visible
-        WHERE bcp_visible."brokerage_case_id" = bc."id"
-          AND bcp_visible."office_id" = ${officeId}::uuid
-      )`,
-    ];
+
+    const groupConditions: Prisma.Sql[] = [];
     // 요건 존재 여부는 buyer_totals/listing_totals LATERAL이 이미 계산하므로
     // 별도 EXISTS로 CTE를 다시 스캔하지 않는다.
     if (mode === "demand") {
-      caseConditions.push(Prisma.sql`buyer_totals.intent_count > 0`);
+      groupConditions.push(Prisma.sql`buyer_totals.intent_count > 0`);
     } else if (mode === "listing") {
-      caseConditions.push(Prisma.sql`listing_totals.intent_count > 0`);
+      groupConditions.push(Prisma.sql`listing_totals.intent_count > 0`);
       if (buyerFiltersActive) {
-        caseConditions.push(Prisma.sql`buyer_totals.intent_count > 0`);
+        groupConditions.push(Prisma.sql`buyer_totals.intent_count > 0`);
       }
     } else if (mode === "both") {
-      caseConditions.push(
+      groupConditions.push(
         Prisma.sql`buyer_totals.intent_count > 0`,
         Prisma.sql`listing_totals.intent_count > 0`,
       );
     } else if (buyerFiltersActive) {
-      // 구매고객 필터가 켜진 순간부터 고객원장은 "조건에 맞는 구함이 있는 케이스"다.
-      // 따라서 매물 의뢰 전용 BrokerageCase는 결과에서 제외한다.
-      caseConditions.push(Prisma.sql`buyer_totals.intent_count > 0`);
+      // 구매고객 필터가 켜진 순간부터 고객원장은 "조건에 맞는 구함이 있는 고객"이다.
+      // 따라서 매물 의뢰만 있는 줄은 결과에서 제외한다.
+      groupConditions.push(Prisma.sql`buyer_totals.intent_count > 0`);
     } else {
-      caseConditions.push(
+      groupConditions.push(
         Prisma.sql`(buyer_totals.intent_count > 0 OR listing_totals.intent_count > 0)`,
       );
     }
@@ -472,15 +593,14 @@ export class BrokerageCasesService {
     if (search) {
       const pattern = `%${search}%`;
       const phonePattern = `%${search.replace(/\D/g, "")}%`;
-      caseConditions.push(Prisma.sql`(
+      groupConditions.push(Prisma.sql`(
         bc."title" ILIKE ${pattern}
         OR EXISTS (
           SELECT 1
-          FROM "brokerage_case_participants" bcp_search
-          JOIN "contacts" c_search ON c_search."id" = bcp_search."contact_id"
+          FROM group_contacts gc_search
+          JOIN "contacts" c_search ON c_search."id" = gc_search.contact_id
           LEFT JOIN "contact_phones" cp_search ON cp_search."contact_id" = c_search."id"
-          WHERE bcp_search."brokerage_case_id" = bc."id"
-            AND bcp_search."office_id" = ${officeId}::uuid
+          WHERE gc_search.group_id = lg.group_id
             AND (
               c_search."name" ILIKE ${pattern}
               OR (${phonePattern} <> '%%' AND cp_search."phone" LIKE ${phonePattern})
@@ -489,13 +609,13 @@ export class BrokerageCasesService {
         OR EXISTS (
           SELECT 1
           FROM listing_matches lm_search
-          WHERE lm_search.case_id = bc.id
+          WHERE lm_search.group_id = lg.group_id
             AND lm_search.context_text ILIKE ${pattern}
         )
         OR EXISTS (
           SELECT 1
           FROM buyer_matches bm_search
-          WHERE bm_search.case_id = bc.id
+          WHERE bm_search.group_id = lg.group_id
             AND bm_search.context_text ILIKE ${pattern}
         )
       )`);
@@ -543,12 +663,33 @@ export class BrokerageCasesService {
     const listingContextText = search
       ? Prisma.sql`CONCAT_WS(' ', s."name", d."name", u."name", w."name")`
       : Prisma.sql`NULL::text`;
+    // 이름·전화 검색에서만 쓰는 묶음별 관련 연락처. 당사자가 아닌 대리인도 포함한다.
+    const groupContactsCte = search
+      ? Prisma.sql`,
+      group_contacts AS (
+        SELECT ig.group_id, bic."contact_id" AS contact_id
+        FROM intake_groups ig
+        JOIN "buyer_intake_contacts" bic ON bic."buyer_intake_id" = ig.intake_id
+        WHERE ig.kind = 'buyer'
+        UNION
+        SELECT ig.group_id, pc."contact_id" AS contact_id
+        FROM intake_groups ig
+        JOIN "listing_intakes" li_gc ON li_gc."id" = ig.intake_id
+        JOIN "property_contacts" pc
+          ON pc."property_id" = li_gc."property_id"
+         AND pc."office_id" = ${officeId}::uuid
+         AND pc."status" = 'active'
+        WHERE ig.kind = 'listing'
+      )`
+      : Prisma.sql``;
 
-    const idRows = await this.prisma.$queryRaw<CaseIdRow[]>(Prisma.sql`
-      WITH buyer_matches AS (
+    const idRows = await this.prisma.$queryRaw<GroupIdRow[]>(Prisma.sql`
+      WITH ${ledgerGroupCtes(officeId)},
+      buyer_matches AS (
         SELECT
-          bi."brokerage_case_id" AS case_id,
-          bi."case_priority_rank" AS intake_rank,
+          ig.group_id AS group_id,
+          ig.received_at AS intake_received_at,
+          ig.intake_id AS intake_id,
           br."id" AS intent_id,
           br."priority_rank" AS intent_rank,
           CASE WHEN br."transaction_type" = 'monthly'
@@ -561,14 +702,17 @@ export class BrokerageCasesService {
           br."area_max" AS area_max,
           (SELECT COUNT(*)::int FROM "matches" m WHERE m."buyer_req_id" = br."id") AS match_count,
           ${buyerContextText} AS context_text
-        FROM "buyer_intakes" bi
+        FROM intake_groups ig
+        JOIN "buyer_intakes" bi ON bi."id" = ig.intake_id
         JOIN "buyer_requirements" br ON br."buyer_intake_id" = bi."id"
-        WHERE ${Prisma.join(buyerConditions, " AND ")}
+        WHERE ig.kind = 'buyer'
+          AND ${Prisma.join(buyerConditions, " AND ")}
       ),
       listing_matches AS (
         SELECT
-          li."brokerage_case_id" AS case_id,
-          li."case_priority_rank" AS intake_rank,
+          ig.group_id AS group_id,
+          ig.received_at AS intake_received_at,
+          ig.intake_id AS intake_id,
           l."id" AS intent_id,
           1 AS intent_rank,
           CASE WHEN l."transaction_type" = 'monthly'
@@ -577,7 +721,8 @@ export class BrokerageCasesService {
           COALESCE(u."supply_area_m2", sut."supply_area_m2") AS area,
           (SELECT COUNT(*)::int FROM "matches" m WHERE m."listing_id" = l."id") AS match_count,
           ${listingContextText} AS context_text
-        FROM "listing_intakes" li
+        FROM intake_groups ig
+        JOIN "listing_intakes" li ON li."id" = ig.intake_id
         JOIN "listings" l ON l."intake_id" = li."id"
         JOIN "properties" ppty ON ppty."id" = li."property_id"
         JOIN "sites" s ON s."id" = ppty."site_id"
@@ -585,13 +730,20 @@ export class BrokerageCasesService {
         LEFT JOIN "dongs" d ON d."id" = u."dong_id"
         LEFT JOIN "site_unit_types" sut ON sut."id" = u."site_unit_type_id"
         LEFT JOIN "wards" w ON w."code" = s."ward_code"
-        WHERE ${Prisma.join(listingConditions, " AND ")}
-      ),
+        WHERE ig.kind = 'listing'
+          AND ${Prisma.join(listingConditions, " AND ")}
+      )${groupContactsCte},
       eligible AS (
         SELECT
-          bc."id",
-          bc."created_at",
-          primary_contact.customer_name,
+          lg.group_id AS "id",
+          lg.case_id,
+          lg.primary_contact_id,
+          lg.buyer_intake_ids,
+          lg.listing_intake_ids,
+          -- 줄의 등록일은 담긴 의뢰 중 가장 먼저 접수된 날이다. 건으로 묶거나 풀어도
+          -- 바뀌지 않아 줄이 목록에서 자리를 옮기지 않는다.
+          lg.created_at AS created_at,
+          primary_contact."name" AS customer_name,
           buyer_rep.budget_min,
           buyer_rep.budget_max,
           COALESCE(buyer_rep.monthly_rent_min, listing_rep.monthly_rent) AS monthly_rent_min,
@@ -602,30 +754,21 @@ export class BrokerageCasesService {
           buyer_totals.intent_ids AS buyer_requirement_ids,
           COALESCE(buyer_totals.intent_count, 0) + COALESCE(listing_totals.intent_count, 0) AS intent_count,
           COALESCE(buyer_totals.match_count, 0) + COALESCE(listing_totals.match_count, 0) AS match_count
-        FROM "brokerage_cases" bc
-        LEFT JOIN LATERAL (
-          SELECT c."name" AS customer_name
-          FROM "brokerage_case_participants" bcp
-          JOIN "contacts" c ON c."id" = bcp."contact_id"
-          WHERE bcp."brokerage_case_id" = bc."id"
-          ORDER BY bcp."is_communication_primary" DESC,
-                   bcp."is_principal" DESC,
-                   bcp."created_at" ASC,
-                   bcp."id" ASC
-          LIMIT 1
-        ) primary_contact ON true
+        FROM ledger_groups lg
+        LEFT JOIN "brokerage_cases" bc ON bc."id" = lg.case_id
+        LEFT JOIN "contacts" primary_contact ON primary_contact."id" = lg.primary_contact_id
         LEFT JOIN LATERAL (
           SELECT bm.*
           FROM buyer_matches bm
-          WHERE bm.case_id = bc."id"
-          ORDER BY bm.intake_rank ASC, bm.intent_rank ASC, bm.intent_id ASC
+          WHERE bm.group_id = lg.group_id
+          ORDER BY bm.intake_received_at ASC, bm.intake_id ASC, bm.intent_rank ASC, bm.intent_id ASC
           LIMIT 1
         ) buyer_rep ON true
         LEFT JOIN LATERAL (
           SELECT lm.*
           FROM listing_matches lm
-          WHERE lm.case_id = bc."id"
-          ORDER BY lm.intake_rank ASC, lm.intent_rank ASC, lm.intent_id ASC
+          WHERE lm.group_id = lg.group_id
+          ORDER BY lm.intake_received_at ASC, lm.intake_id ASC, lm.intent_rank ASC, lm.intent_id ASC
           LIMIT 1
         ) listing_rep ON true
         LEFT JOIN LATERAL (
@@ -633,21 +776,26 @@ export class BrokerageCasesService {
                  COALESCE(SUM(bm.match_count), 0)::int AS match_count,
                  ARRAY_AGG(
                    bm.intent_id
-                   ORDER BY bm.intake_rank ASC, bm.intent_rank ASC, bm.intent_id ASC
+                   ORDER BY bm.intake_received_at ASC, bm.intake_id ASC, bm.intent_rank ASC, bm.intent_id ASC
                  ) AS intent_ids
           FROM buyer_matches bm
-          WHERE bm.case_id = bc."id"
+          WHERE bm.group_id = lg.group_id
         ) buyer_totals ON true
         LEFT JOIN LATERAL (
           SELECT COUNT(*)::int AS intent_count,
                  COALESCE(SUM(lm.match_count), 0)::int AS match_count
           FROM listing_matches lm
-          WHERE lm.case_id = bc."id"
+          WHERE lm.group_id = lg.group_id
         ) listing_totals ON true
-        WHERE ${Prisma.join(caseConditions, " AND ")}
+        WHERE ${Prisma.join(groupConditions, " AND ")}
       )
       SELECT
         eligible."id",
+        eligible.case_id AS "caseId",
+        eligible.primary_contact_id AS "primaryContactId",
+        eligible.created_at AS "createdAt",
+        eligible.buyer_intake_ids AS "buyerIntakeIds",
+        eligible.listing_intake_ids AS "listingIntakeIds",
         eligible.buyer_requirement_ids AS "buyerRequirementIds",
         ${orderExpression} AS "sortValue",
         eligible.customer_name AS "customerName",
@@ -661,33 +809,16 @@ export class BrokerageCasesService {
 
     const hasNextPage = idRows.length > limit;
     const pageRows = hasNextPage ? idRows.slice(0, limit) : idRows;
-    const ids = pageRows.map((row) => row.id);
-    const cases = ids.length
-      ? await this.prisma.brokerageCase.findMany({
-          where: { officeId, id: { in: ids }, archivedAt: null },
-          include: activeCaseInclude(officeId),
-        })
-      : [];
-    const casesById = new Map(cases.map((item) => [item.id, item]));
-    const matchingRequirementIdsByCase = new Map(
-      pageRows.map(
-        (row) => [row.id, new Set(row.buyerRequirementIds ?? [])] as const,
+    const groups = await this.loadLedgerGroups(officeId, pageRows);
+    const items = groups.map((group, index) =>
+      this.present(
+        group,
+        visibleRequirementStatuses,
+        buyerFiltersActive
+          ? new Set(pageRows[index]?.buyerRequirementIds ?? [])
+          : undefined,
       ),
     );
-    const items = ids.flatMap((id) => {
-      const item = casesById.get(id);
-      return item
-        ? [
-            this.present(
-              item,
-              visibleRequirementStatuses,
-              buyerFiltersActive
-                ? (matchingRequirementIdsByCase.get(id) ?? new Set<string>())
-                : undefined,
-            ),
-          ]
-        : [];
-    });
     const total = cursor?.total ?? Number(pageRows[0]?.total ?? 0);
     const lastRow = hasNextPage ? pageRows.at(-1) : undefined;
     const nextCursor = lastRow
@@ -711,178 +842,231 @@ export class BrokerageCasesService {
     };
   }
 
-  async findOne(id: string, officeId: string) {
-    const brokerageCase = await this.prisma.brokerageCase.findFirst({
-      where: { id, officeId },
-      include: activeCaseInclude(officeId),
+  /** 이 쪽에 나올 묶음들의 의뢰·건·최근 상담을 한꺼번에 읽어 줄 순서대로 맞춘다. */
+  private async loadLedgerGroups(
+    officeId: string,
+    rows: GroupIdRow[],
+  ): Promise<LedgerGroup[]> {
+    if (rows.length === 0) return [];
+    const buyerIntakeIds = rows.flatMap((row) => row.buyerIntakeIds ?? []);
+    const listingIntakeIds = rows.flatMap((row) => row.listingIntakeIds ?? []);
+    const caseIds = rows.flatMap((row) => (row.caseId ? [row.caseId] : []));
+    const primaryContactIds = [
+      ...new Set(
+        rows.flatMap((row) =>
+          row.primaryContactId ? [row.primaryContactId] : [],
+        ),
+      ),
+    ];
+
+    const [buyerIntakes, listingIntakes, cases, consultations] =
+      await Promise.all([
+        buyerIntakeIds.length
+          ? this.prisma.buyerIntake.findMany({
+              where: { officeId, id: { in: buyerIntakeIds } },
+              include: ledgerBuyerIntakeInclude,
+            })
+          : [],
+        listingIntakeIds.length
+          ? this.prisma.listingIntake.findMany({
+              where: { officeId, id: { in: listingIntakeIds } },
+              include: ledgerListingIntakeInclude,
+            })
+          : [],
+        caseIds.length
+          ? this.prisma.brokerageCase.findMany({
+              where: { officeId, id: { in: caseIds } },
+              select: {
+                id: true,
+                title: true,
+                memo: true,
+                createdAt: true,
+                updatedAt: true,
+                _count: { select: { steps: true } },
+              },
+            })
+          : [],
+        // 대표 연락 고객마다 가장 최근 상담 하나.
+        primaryContactIds.length
+          ? this.prisma.consultation.findMany({
+              where: { officeId, contactId: { in: primaryContactIds } },
+              orderBy: [
+                { contactId: "asc" },
+                { createdAt: "desc" },
+                { id: "desc" },
+              ],
+              distinct: ["contactId"],
+              select: {
+                id: true,
+                contactId: true,
+                type: true,
+                content: true,
+                createdAt: true,
+              },
+            })
+          : [],
+      ]);
+
+    const buyerById = new Map(buyerIntakes.map((item) => [item.id, item]));
+    const listingById = new Map(listingIntakes.map((item) => [item.id, item]));
+    const caseById = new Map(cases.map((item) => [item.id, item]));
+    const consultationByContact = new Map(
+      consultations.map((item) => [item.contactId, item]),
+    );
+
+    return rows.map((row) => {
+      const consultation = row.primaryContactId
+        ? consultationByContact.get(row.primaryContactId)
+        : undefined;
+      return {
+        id: row.id,
+        brokerageCase: row.caseId ? (caseById.get(row.caseId) ?? null) : null,
+        primaryContactId: row.primaryContactId,
+        createdAt: row.createdAt,
+        buyerIntakes: (row.buyerIntakeIds ?? []).flatMap((id) => {
+          const intake = buyerById.get(id);
+          return intake ? [intake] : [];
+        }),
+        listingIntakes: (row.listingIntakeIds ?? []).flatMap((id) => {
+          const intake = listingById.get(id);
+          return intake ? [intake] : [];
+        }),
+        latestConsultation: consultation
+          ? {
+              id: consultation.id,
+              type: consultation.type,
+              content: consultation.content,
+              createdAt: consultation.createdAt,
+            }
+          : null,
+      };
     });
-    if (!brokerageCase)
-      throw new NotFoundException("중개 케이스를 찾을 수 없습니다.");
-    return this.present(brokerageCase);
   }
 
-  async update(
-    id: string,
-    officeId: string,
-    dto: { title?: string | null; memo?: string | null; archived?: boolean },
-  ) {
-    const existing = await this.prisma.brokerageCase.findFirst({
-      where: { id, officeId },
-      select: { id: true },
-    });
-    if (!existing)
-      throw new NotFoundException("중개 케이스를 찾을 수 없습니다.");
-    await this.prisma.brokerageCase.update({
-      where: { id },
-      data: {
-        title: dto.title,
-        memo: dto.memo,
-        archivedAt:
-          dto.archived === undefined
-            ? undefined
-            : dto.archived
-              ? new Date()
-              : null,
+  /**
+   * 묶음의 관련 연락처. 구매 의뢰의 참여자와 매물 의뢰 부동산의 활성 관련인을
+   * 사람 기준으로 합친다. 대표 연락 고객이 맨 앞, 그다음 실제 당사자 순이다.
+   */
+  private collectParticipants(group: LedgerGroup) {
+    const byContact = new Map<string, LedgerParticipant>();
+    const add = (
+      contact: {
+        id: string;
+        name: string;
+        email: string | null;
+        phones: Array<{ phone: string; isPrimary: boolean }>;
       },
-    });
-    return this.findOne(id, officeId);
-  }
+      role: string,
+      isPrincipal: boolean,
+    ) => {
+      const current = byContact.get(contact.id);
+      if (current) {
+        if (!current.roles.includes(role)) current.roles.push(role);
+        current.isPrincipal = current.isPrincipal || isPrincipal;
+        return;
+      }
+      byContact.set(contact.id, {
+        contactId: contact.id,
+        roles: [role],
+        isPrincipal,
+        contact: {
+          id: contact.id,
+          name: contact.name,
+          email: contact.email,
+          phone:
+            contact.phones.find((phone) => phone.isPrimary)?.phone ??
+            contact.phones[0]?.phone ??
+            null,
+        },
+      });
+    };
 
-  async createDependency(
-    brokerageCaseId: string,
-    officeId: string,
-    dto: {
-      fromListingIntakeId: string;
-      toBuyerIntakeId: string;
-      type: string;
-      isRequired?: boolean;
-      expectedAmount?: number | null;
-      requiredBy?: string | null;
-      status?: string;
-      memo?: string | null;
-    },
-  ) {
-    if (!DEPENDENCY_TYPES.has(dto.type)) {
-      throw new BadRequestException(
-        "유효하지 않은 케이스 의존관계 유형입니다.",
+    for (const intake of group.buyerIntakes) {
+      const hasBuyer = intake.contacts.some((item) =>
+        BUYER_PRINCIPAL_ROLES.includes(item.role),
       );
+      for (const item of intake.contacts) {
+        add(
+          item.contact,
+          item.role,
+          !hasBuyer || BUYER_PRINCIPAL_ROLES.includes(item.role),
+        );
+      }
     }
-    const status = dto.status ?? "planned";
-    if (!DEPENDENCY_STATUSES.has(status)) {
-      throw new BadRequestException(
-        "유효하지 않은 케이스 의존관계 상태입니다.",
+    for (const intake of group.listingIntakes) {
+      const propertyContacts = intake.property.propertyContacts;
+      const hasOwner = propertyContacts.some((item) =>
+        OWNER_PRINCIPAL_ROLES.includes(item.role),
       );
-    }
-    if (dto.expectedAmount !== undefined && dto.expectedAmount !== null) {
-      if (!Number.isInteger(dto.expectedAmount) || dto.expectedAmount < 0) {
-        throw new BadRequestException(
-          "예상 금액은 0 이상의 만원 단위 정수여야 합니다.",
+      for (const item of propertyContacts) {
+        add(
+          item.contact,
+          item.role === "owner"
+            ? "seller"
+            : item.role === "co_owner"
+              ? "co_seller"
+              : item.role,
+          !hasOwner || OWNER_PRINCIPAL_ROLES.includes(item.role),
         );
       }
     }
 
-    const [source, target] = await Promise.all([
-      this.prisma.listingIntake.findFirst({
-        where: {
-          id: dto.fromListingIntakeId,
-          officeId,
-          brokerageCaseId,
-        },
-        select: { id: true },
-      }),
-      this.prisma.buyerIntake.findFirst({
-        where: { id: dto.toBuyerIntakeId, officeId, brokerageCaseId },
-        select: { id: true },
-      }),
-    ]);
-    if (!source || !target) {
-      throw new BadRequestException(
-        "같은 케이스 안의 매도 의뢰와 구매 의뢰만 연결할 수 있습니다.",
-      );
-    }
-
-    try {
-      await this.prisma.brokerageCaseDependency.create({
-        data: {
-          officeId,
-          brokerageCaseId,
-          fromListingIntakeId: dto.fromListingIntakeId,
-          toBuyerIntakeId: dto.toBuyerIntakeId,
-          type: dto.type,
-          isRequired: dto.isRequired ?? true,
-          expectedAmount: dto.expectedAmount,
-          requiredBy: dto.requiredBy ? new Date(dto.requiredBy) : null,
-          status,
-          memo: dto.memo,
-        },
-      });
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
-        throw new ConflictException("이미 등록된 케이스 의존관계입니다.");
-      }
-      throw error;
-    }
-    return this.findOne(brokerageCaseId, officeId);
-  }
-
-  async removeDependency(
-    brokerageCaseId: string,
-    dependencyId: string,
-    officeId: string,
-  ) {
-    const dependency = await this.prisma.brokerageCaseDependency.findFirst({
-      where: { id: dependencyId, brokerageCaseId, officeId },
-      select: { id: true },
-    });
-    if (!dependency) {
-      throw new NotFoundException("케이스 의존관계를 찾을 수 없습니다.");
-    }
-    await this.prisma.brokerageCaseDependency.delete({
-      where: { id: dependency.id },
-    });
-    return this.findOne(brokerageCaseId, officeId);
+    return [...byContact.values()]
+      .map((participant, index) => ({
+        participant,
+        index,
+        isCommunicationPrimary:
+          participant.contactId === group.primaryContactId,
+      }))
+      .sort(
+        (left, right) =>
+          Number(right.isCommunicationPrimary) -
+            Number(left.isCommunicationPrimary) ||
+          Number(right.participant.isPrincipal) -
+            Number(left.participant.isPrincipal) ||
+          left.index - right.index,
+      )
+      .map(({ participant, isCommunicationPrimary }) => ({
+        // 저장된 행이 없으므로 연락처 id가 곧 이 줄 안에서의 식별자다.
+        id: participant.contactId,
+        contactId: participant.contactId,
+        roles: participant.roles,
+        isPrincipal: participant.isPrincipal,
+        isCommunicationPrimary,
+        memo: null,
+        contact: participant.contact,
+      }));
   }
 
   private present(
-    brokerageCase: ActiveCaseWithRelations,
+    group: LedgerGroup,
     visibleRequirementStatuses = new Set<string>(
       ACTIVE_BUYER_REQUIREMENT_STATUSES,
     ),
     visibleRequirementIds?: ReadonlySet<string>,
   ) {
-    const primarySourceParticipant =
-      brokerageCase.participants.find(
-        (participant) => participant.isCommunicationPrimary,
-      ) ??
-      brokerageCase.participants.find(
-        (participant) => participant.isPrincipal,
-      ) ??
-      brokerageCase.participants[0] ??
-      null;
-    const latestConsultation =
-      primarySourceParticipant?.contact.consultations[0] ?? null;
-    const participants = brokerageCase.participants.map((participant) => ({
-      id: participant.id,
-      contactId: participant.contactId,
-      roles: participant.roles,
-      isPrincipal: participant.isPrincipal,
-      isCommunicationPrimary: participant.isCommunicationPrimary,
-      memo: participant.memo,
-      contact: {
-        id: participant.contact.id,
-        name: participant.contact.name,
-        email: participant.contact.email,
-        phone:
-          participant.contact.phones.find((phone) => phone.isPrimary)?.phone ??
-          participant.contact.phones[0]?.phone ??
-          null,
-      },
-    }));
+    const participants = this.collectParticipants(group);
+    // 묶음 안에서 의뢰가 접수된 순서 (구매·매물을 합쳐 1부터).
+    const intakeOrder = new Map(
+      [
+        ...group.buyerIntakes.map((intake) => ({
+          id: intake.id,
+          receivedAt: intake.receivedAt,
+        })),
+        ...group.listingIntakes.map((intake) => ({
+          id: intake.id,
+          receivedAt: intake.receivedAt,
+        })),
+      ]
+        .sort(
+          (left, right) =>
+            left.receivedAt.getTime() - right.receivedAt.getTime() ||
+            left.id.localeCompare(right.id),
+        )
+        .map((intake, index) => [intake.id, index + 1] as const),
+    );
 
-    const demandIntents = brokerageCase.buyerIntakes.flatMap((intake) =>
+    const demandIntents = group.buyerIntakes.flatMap((intake) =>
       intake.requirements
         .filter(
           (requirement) =>
@@ -918,7 +1102,7 @@ export class BrokerageCasesService {
           return {
             kind: "demand" as const,
             buyerIntakeId: intake.id,
-            intakePriorityRank: intake.casePriorityRank,
+            intakePriorityRank: intakeOrder.get(intake.id) ?? 1,
             intakeRequirementCount: intake.requirements.length,
             lifecycleStatus: intake.lifecycleStatus,
             receivedAt: intake.receivedAt,
@@ -956,7 +1140,7 @@ export class BrokerageCasesService {
         }),
     );
 
-    const listingIntents = brokerageCase.listingIntakes.flatMap((intake) => {
+    const listingIntents = group.listingIntakes.flatMap((intake) => {
       const property = intake.property;
       const unit = property.unit;
       const area = toNumber(
@@ -976,7 +1160,7 @@ export class BrokerageCasesService {
         listingIntakeId: intake.id,
         intakeUpdatedAt: intake.updatedAt,
         intakeMemo: intake.memo,
-        intakePriorityRank: intake.casePriorityRank,
+        intakePriorityRank: intakeOrder.get(intake.id) ?? 1,
         lifecycleStatus: intake.lifecycleStatus,
         receivedAt: intake.receivedAt,
         listingId: listing.id,
@@ -1007,31 +1191,34 @@ export class BrokerageCasesService {
       }));
     });
 
+    const updatedAt = [
+      ...group.buyerIntakes.map((intake) => intake.updatedAt),
+      ...group.listingIntakes.map((intake) => intake.updatedAt),
+      ...(group.brokerageCase ? [group.brokerageCase.updatedAt] : []),
+    ].reduce(
+      (latest, value) => (value.getTime() > latest.getTime() ? value : latest),
+      group.createdAt,
+    );
+
     return {
-      id: brokerageCase.id,
-      title: brokerageCase.title,
-      memo: brokerageCase.memo,
-      archivedAt: brokerageCase.archivedAt,
-      createdAt: brokerageCase.createdAt,
-      updatedAt: brokerageCase.updatedAt,
+      // 묶음 id. 중개 건이 있으면 건 id, 없으면 당사자 조합에서 계산한 값이다.
+      id: group.id,
+      /** 사용자가 중개 건으로 묶었을 때만 있다. */
+      brokerageCaseId: group.brokerageCase?.id ?? null,
+      title: group.brokerageCase?.title ?? null,
+      memo: group.brokerageCase?.memo ?? null,
+      archivedAt: null,
+      createdAt: group.createdAt,
+      updatedAt,
+      stepCount: group.brokerageCase?._count.steps ?? 0,
       participants,
-      primaryParticipant:
-        participants.find(
-          (participant) => participant.isCommunicationPrimary,
-        ) ??
-        participants.find((participant) => participant.isPrincipal) ??
-        participants[0] ??
-        null,
-      latestConsultation: latestConsultation
-        ? {
-            id: latestConsultation.id,
-            type: latestConsultation.type,
-            content: latestConsultation.content,
-            createdAt: latestConsultation.createdAt,
-          }
-        : null,
+      primaryParticipant: participants[0] ?? null,
+      latestConsultation: group.latestConsultation,
       demandIntents,
       listingIntents,
+      // 필터와 상관없이 이 줄의 진행 중 의뢰 전부. 건으로 묶을 때 쓴다.
+      listingIntakeIds: group.listingIntakes.map((intake) => intake.id),
+      buyerIntakeIds: group.buyerIntakes.map((intake) => intake.id),
       intentCount: demandIntents.length + listingIntents.length,
       mode:
         demandIntents.length && listingIntents.length
@@ -1039,56 +1226,46 @@ export class BrokerageCasesService {
           : demandIntents.length
             ? ("demand" as const)
             : ("listing" as const),
-      dependencies: brokerageCase.dependencies,
     };
   }
 
   private async getSummary(officeId: string) {
-    const activeBuyer = {
-      some: {
-        lifecycleStatus: { in: ["open", "hold"] },
-        requirements: {
-          some: { status: { in: [...ACTIVE_BUYER_REQUIREMENT_STATUSES] } },
-        },
-      },
-    } satisfies Prisma.BuyerIntakeListRelationFilter;
-    const activeListing = {
-      some: {
-        lifecycleStatus: { in: ["open", "hold"] },
-        listings: { some: { isPaused: false } },
-      },
-    } satisfies Prisma.ListingIntakeListRelationFilter;
-    const base: Prisma.BrokerageCaseWhereInput = {
-      officeId,
-      archivedAt: null,
-      participants: { some: {} },
+    const rows = await this.prisma.$queryRaw<
+      Array<{ cases: bigint; demand: bigint; listing: bigint; both: bigint }>
+    >(Prisma.sql`
+      WITH ${ledgerGroupCtes(officeId)},
+      group_flags AS (
+        SELECT
+          ig.group_id,
+          BOOL_OR(ig.kind = 'buyer' AND EXISTS (
+            SELECT 1 FROM "buyer_requirements" br
+            WHERE br."buyer_intake_id" = ig.intake_id
+              AND br."status" IN (${Prisma.join([...ACTIVE_BUYER_REQUIREMENT_STATUSES])})
+          )) AS has_demand,
+          BOOL_OR(ig.kind = 'listing' AND EXISTS (
+            SELECT 1 FROM "listings" l
+            WHERE l."intake_id" = ig.intake_id
+              AND l."is_paused" = false
+          )) AS has_listing
+        FROM intake_groups ig
+        GROUP BY ig.group_id
+      )
+      SELECT
+        COUNT(*) FILTER (WHERE has_demand OR has_listing) AS cases,
+        COUNT(*) FILTER (WHERE has_demand) AS demand,
+        COUNT(*) FILTER (WHERE has_listing) AS listing,
+        COUNT(*) FILTER (WHERE has_demand AND has_listing) AS "both"
+      FROM group_flags
+    `);
+    const row = rows[0];
+    return {
+      cases: Number(row?.cases ?? 0),
+      demand: Number(row?.demand ?? 0),
+      listing: Number(row?.listing ?? 0),
+      both: Number(row?.both ?? 0),
     };
-    const [cases, demand, listing, both] = await Promise.all([
-      this.prisma.brokerageCase.count({
-        where: {
-          ...base,
-          OR: [
-            { buyerIntakes: activeBuyer },
-            { listingIntakes: activeListing },
-          ],
-        },
-      }),
-      this.prisma.brokerageCase.count({
-        where: { ...base, buyerIntakes: activeBuyer },
-      }),
-      this.prisma.brokerageCase.count({
-        where: { ...base, listingIntakes: activeListing },
-      }),
-      this.prisma.brokerageCase.count({
-        where: {
-          ...base,
-          buyerIntakes: activeBuyer,
-          listingIntakes: activeListing,
-        },
-      }),
-    ]);
-    return { cases, demand, listing, both };
   }
+
 
   private assertLedgerQuery(query: BrokerageCaseLedgerQuery) {
     if (query.mode && !CASE_MODES.has(query.mode)) {

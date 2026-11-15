@@ -33,6 +33,8 @@ export interface Deal {
   listingId: string | null;
   externalListingId: string | null;
   matchId: string | null;
+  /** 이 거래가 어느 구매 의뢰의 것인지. 구매 의뢰 없이 만든 거래는 null. */
+  buyerIntakeId: string | null;
   stage: string;
   stageChangedAt: string;
   isCancelled: boolean;
@@ -89,6 +91,8 @@ export interface CreateDealDto {
   propertyId?: string;
   listingId?: string;
   matchId?: string;
+  /** 매칭 없이 만드는 거래가 어느 구매 의뢰의 것인지. 매칭이 있으면 무시된다. */
+  buyerIntakeId?: string;
   transactionType?: string;
   agreedPrice?: number;
   agreedDeposit?: number;
@@ -155,6 +159,13 @@ export function createDealsApi(request: RequestFn) {
 
     updateStage: (id: string, dto: UpdateDealStageDto) =>
       request<Deal>(`/deals/${id}/stage`, { method: 'PATCH', body: dto }),
+
+    /** 매칭 없이 만든 거래를 구매 의뢰에 잇거나(null이면) 끊는다. */
+    setBuyerIntake: (id: string, buyerIntakeId: string | null) =>
+      request<Deal>(`/deals/${id}/buyer-intake`, {
+        method: 'PATCH',
+        body: { buyerIntakeId },
+      }),
 
     cancel: (id: string, dto: CancelDealDto = {}) =>
       request<Deal>(`/deals/${id}/cancel`, { method: 'PATCH', body: dto }),

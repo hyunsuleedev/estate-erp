@@ -14,11 +14,14 @@ const REQUIRED_ENV_VARS = [
  * - AUTH0_MGMT_*: 없으면 직원 계정 관리와 신규 가입자 확인이 요청 시점에야 실패한다.
  * - AUTH0_STAFF_CLIENT_IDS: 생략 시 기본값은 시험 테넌트의 데스크톱 앱이라, 운영
  *   테넌트의 앱 ID를 명시해야 한다.
+ * - AUTH0_EVENT_SECRET: 없으면 Auth0의 비밀번호 변경 알림을 받지 않아, 사장님이 메일
+ *   링크로 비밀번호를 바꿔도 예전 PC의 로그인이 끊기지 않는다.
  */
 const PRODUCTION_REQUIRED_ENV_VARS = [
   'AUTH0_MGMT_CLIENT_ID',
   'AUTH0_MGMT_CLIENT_SECRET',
   'AUTH0_STAFF_CLIENT_IDS',
+  'AUTH0_EVENT_SECRET',
 ] as const;
 
 export function validateEnv(config: Record<string, unknown>) {

@@ -4,7 +4,6 @@ const OFFICE_ID = "00000000-0000-4000-8000-000000000001";
 const INTAKE_ID = "00000000-0000-4000-8000-000000000002";
 const CONTACT_ID = "00000000-0000-4000-8000-000000000003";
 const NEW_INTAKE_ID = "00000000-0000-4000-8000-000000000004";
-const CASE_ID = "00000000-0000-4000-8000-000000000005";
 
 describe("BuyerRequirementsService", () => {
   it("구버전 contactId 등록도 열린 Intake를 재사용하고 다음 우선순위를 부여한다", async () => {
@@ -121,8 +120,7 @@ describe("BuyerRequirementsService", () => {
     const newIntake = {
       id: NEW_INTAKE_ID,
       officeId: OFFICE_ID,
-      brokerageCaseId: CASE_ID,
-      casePriorityRank: 2,
+      brokerageCaseId: null,
       lifecycleStatus: "open",
       receivedAt: new Date("2026-08-20T10:00:00.000Z"),
       memo: null,
@@ -160,31 +158,8 @@ describe("BuyerRequirementsService", () => {
     };
     const tx = {
       contact: { findFirst: jest.fn().mockResolvedValue({ id: CONTACT_ID }) },
-      brokerageCase: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: CASE_ID, participants: [{ contactId: CONTACT_ID }] },
-        ]),
-        create: jest.fn(),
-        update: jest.fn().mockResolvedValue({}),
-      },
-      brokerageCaseParticipant: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            id: "case-participant-1",
-            contactId: CONTACT_ID,
-            roles: ["buyer"],
-            isPrincipal: true,
-            isCommunicationPrimary: true,
-          },
-        ]),
-        create: jest.fn(),
-        update: jest.fn().mockResolvedValue({}),
-      },
       buyerIntake: {
         findFirst: jest.fn(),
-        aggregate: jest.fn().mockResolvedValue({
-          _max: { casePriorityRank: 1 },
-        }),
         create: jest.fn().mockResolvedValue(newIntake),
       },
       buyerRequirement: {
@@ -208,11 +183,11 @@ describe("BuyerRequirementsService", () => {
     });
 
     expect(tx.buyerIntake.findFirst).not.toHaveBeenCalled();
+    // 같은 고객의 열린 의뢰가 있어도 서버가 건으로 묶지 않는다. 새 의뢰는 건 없이 생긴다.
     expect(tx.buyerIntake.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          brokerageCaseId: CASE_ID,
-          casePriorityRank: 2,
+        data: expect.not.objectContaining({
+          brokerageCaseId: expect.anything(),
         }),
       }),
     );

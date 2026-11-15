@@ -56,8 +56,8 @@ model Consultation {
 model BuyerIntake {
   id               String   @id @default(uuid()) @db.Uuid
   officeId         String   @map("office_id") @db.Uuid
-  brokerageCaseId  String   @map("brokerage_case_id") @db.Uuid
-  casePriorityRank Int      @default(1) @map("case_priority_rank")
+  /// 사용자가 중개 건으로 묶었을 때만 채워진다.
+  brokerageCaseId  String?  @map("brokerage_case_id") @db.Uuid
   lifecycleStatus  String   @default("open") @map("lifecycle_status") // open, hold, closed
   receivedAt       DateTime @default(now()) @map("received_at")
   memo             String?
@@ -65,16 +65,17 @@ model BuyerIntake {
   updatedAt        DateTime @updatedAt @map("updated_at")
 
   office           Office                    @relation(fields: [officeId], references: [id])
-  brokerageCase    BrokerageCase             @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Restrict)
+  brokerageCase    BrokerageCase?            @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Restrict)
   contacts         BuyerIntakeContact[]
   requirements     BuyerRequirement[]
   consultations    Consultation[]
-  caseDependencies BrokerageCaseDependency[] @relation("BrokerageCaseDependencyTarget")
+  caseSteps        BrokerageCaseStep[]
+  /// 이 구매 의뢰에서 나온 거래
+  deals            Deal[]
 
   // 하위 테이블의 복합 FK가 office_id까지 함께 검증한다.
   @@unique([officeId, id])
   @@unique([officeId, brokerageCaseId, id])
-  @@index([officeId, brokerageCaseId, lifecycleStatus, casePriorityRank])
   @@index([officeId, lifecycleStatus, updatedAt])
   @@index([officeId, receivedAt])
   @@map("buyer_intakes")
@@ -243,6 +244,10 @@ model Deal {
   externalListingId String? @map("external_listing_id") @db.Uuid
   /// 어느 매칭에서 전환됐는지 (실적/직원 분석용)
   matchId           String? @map("match_id") @db.Uuid
+  /// 이 거래가 어느 구매 의뢰의 것인지. 매칭에서 전환하면 서버가 채운다. 매칭 없이
+  /// 만든 거래(공동중개로 다른 사무소 매물을 살 때)는 사용자가 고르고, 구매 의뢰 없이
+  /// 바로 계약한 거래는 비운다.
+  buyerIntakeId     String? @map("buyer_intake_id") @db.Uuid
 
   // ─── 파이프라인 ────────────────────────────────────────────
   /// preparing → preContract(선택) → contracted → settling → completed → closed
@@ -301,6 +306,7 @@ model Deal {
   listing         Listing?         @relation(fields: [listingId], references: [id])
   externalListing ExternalListing? @relation(fields: [externalListingId], references: [id])
   match           Match?           @relation("DealSourceMatch", fields: [matchId], references: [id])
+  buyerIntake     BuyerIntake?     @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Restrict)
   buyerContact    Contact?         @relation("DealBuyer", fields: [buyerContactId], references: [id])
   sellerContact   Contact?         @relation("DealSeller", fields: [sellerContactId], references: [id])
   partnerBroker   PartnerBroker?   @relation(fields: [partnerBrokerId], references: [id])
@@ -313,11 +319,14 @@ model Deal {
   tasks              Task[]
   /// 이 거래의 본계약·완료로 자동 종료된 다른 매칭 (거래 취소 시 되살린다)
   autoClosedMatches  Match[]             @relation("MatchClosedByDeal")
+  /// 중개 건의 진행 계획에서 이 거래를 직접 가리키는 단계
+  caseSteps          BrokerageCaseStep[]
 
   @@index([officeId, stage])
   @@index([officeId, isCancelled, stage])
   @@index([listingId])
   @@index([matchId])
+  @@index([officeId, buyerIntakeId])
   @@index([partnerBrokerId])
   @@map("deals")
 }

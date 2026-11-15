@@ -4,8 +4,10 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -20,13 +22,17 @@ import {
   type BrokerageCaseLedgerMode,
   type BrokerageCaseLedgerSortField,
 } from './brokerage-cases.service';
+import { BrokerageCasePlanService } from './brokerage-case-plan.service';
 
 @ApiTags('고객 원장')
 @ApiBearerAuth()
 @Controller('brokerage-cases')
 @UseGuards(JwtAuthGuard)
 export class BrokerageCasesController {
-  constructor(private readonly brokerageCases: BrokerageCasesService) {}
+  constructor(
+    private readonly brokerageCases: BrokerageCasesService,
+    private readonly plan: BrokerageCasePlanService,
+  ) {}
 
   @Get('ledger')
   findLedger(
@@ -97,50 +103,119 @@ export class BrokerageCasesController {
     });
   }
 
+  /** 보관하지 않은 중개 건 목록. 고객 원장에 줄이 없는 건도 여기서 연다. */
+  @Get()
+  findAll(@CurrentUser() user: CurrentUserPayload) {
+    return this.plan.findAll(user.officeId);
+  }
+
+  /** 사용자가 고른 의뢰들을 중개 건으로 묶는다. */
+  @Post()
+  create(
+    @Body()
+    dto: {
+      title?: string | null;
+      memo?: string | null;
+      listingIntakeIds?: string[];
+      buyerIntakeIds?: string[];
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.plan.create(user.officeId, dto ?? {});
+  }
+
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
-    return this.brokerageCases.findOne(id, user.officeId);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.plan.findOne(id, user.officeId);
   }
 
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body()
     dto: { title?: string | null; memo?: string | null; archived?: boolean },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.brokerageCases.update(id, user.officeId, dto);
+    return this.plan.update(id, user.officeId, dto ?? {});
   }
 
-  @Post(':id/dependencies')
-  createDependency(
-    @Param('id') id: string,
+  /** 묶음을 푼다. 의뢰와 거래는 남는다. */
+  @Delete(':id')
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.plan.remove(id, user.officeId);
+  }
+
+  /** 이 건에 더 담을 만한 의뢰·거래 제안. */
+  @Get(':id/candidates')
+  findCandidates(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.plan.findCandidates(id, user.officeId);
+  }
+
+  @Post(':id/intakes')
+  addIntake(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { kind: 'listing' | 'buyer'; intakeId: string },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.plan.addIntake(id, user.officeId, dto ?? ({} as never));
+  }
+
+  @Post(':id/steps')
+  createStep(
+    @Param('id', ParseUUIDPipe) id: string,
     @Body()
     dto: {
-      fromListingIntakeId: string;
-      toBuyerIntakeId: string;
-      type: string;
-      isRequired?: boolean;
-      expectedAmount?: number | null;
-      requiredBy?: string | null;
-      status?: string;
+      title?: string;
+      targetDate?: string | null;
       memo?: string | null;
+      dealId?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.brokerageCases.createDependency(id, user.officeId, dto);
+    return this.plan.createStep(id, user.officeId, dto ?? {});
   }
 
-  @Delete(':caseId/dependencies/:dependencyId')
-  removeDependency(
-    @Param('caseId') caseId: string,
-    @Param('dependencyId') dependencyId: string,
+  @Put(':id/steps/order')
+  reorderSteps(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { steps: Array<{ id: string; sortOrder: number }> },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.brokerageCases.removeDependency(
-      caseId,
-      dependencyId,
-      user.officeId,
-    );
+    return this.plan.reorderSteps(id, user.officeId, dto ?? { steps: [] });
+  }
+
+  @Patch(':id/steps/:stepId')
+  updateStep(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('stepId', ParseUUIDPipe) stepId: string,
+    @Body()
+    dto: {
+      title?: string;
+      targetDate?: string | null;
+      memo?: string | null;
+      done?: boolean;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.plan.updateStep(id, stepId, user.officeId, dto ?? {});
+  }
+
+  /** 단계를 지운다. 의뢰를 가리키는 단계였다면 그 의뢰도 건에서 빠진다. */
+  @Delete(':id/steps/:stepId')
+  removeStep(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('stepId', ParseUUIDPipe) stepId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.plan.removeStep(id, stepId, user.officeId);
   }
 }

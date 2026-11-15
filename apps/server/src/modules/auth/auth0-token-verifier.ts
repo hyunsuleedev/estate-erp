@@ -36,6 +36,13 @@ const JWKS_REFETCH_MIN_INTERVAL_MS = 30_000;
 const JWKS_MAX_AGE_MS = 6 * 60 * 60_000;
 const CLOCK_SKEW_SECONDS = 30;
 
+/**
+ * Auth0 post-login Action(apps/server/auth0/actions/session-claims.js)이 접근 토큰에
+ * 넣는 클레임. 이 세션이 비밀번호로 로그인한 시각(초)이며, refresh token으로 토큰을
+ * 새로 받아도 바뀌지 않는다.
+ */
+export const SESSION_AUTH_TIME_CLAIM = 'https://estaitt.com/auth_time';
+
 export interface Auth0AccessTokenClaims {
   iss: string;
   /** Auth0 user_id. 예: "auth0|6af3…" */
@@ -44,6 +51,11 @@ export interface Auth0AccessTokenClaims {
   exp: number;
   /** 발급 시각(초) */
   iat?: number;
+  /**
+   * 이 세션이 로그인한 시각(초). SESSION_AUTH_TIME_CLAIM에서 읽는다. Action이 넣지
+   * 않은 토큰에는 없다.
+   */
+  sessionAuthTime?: number;
   /** 토큰을 받은 앱의 client ID */
   azp?: string;
   scope?: string;
@@ -182,7 +194,14 @@ export class Auth0TokenVerifier {
     if (typeof payload.sub !== 'string' || !payload.sub) {
       throw unauthorized('사용자 정보가 없는 토큰입니다.');
     }
-    return payload as Auth0AccessTokenClaims;
+    const sessionAuthTime = payload[SESSION_AUTH_TIME_CLAIM];
+    return {
+      ...payload,
+      sessionAuthTime:
+        typeof sessionAuthTime === 'number' && Number.isFinite(sessionAuthTime)
+          ? sessionAuthTime
+          : undefined,
+    } as Auth0AccessTokenClaims;
   }
 
   /** 테스트에서 바꿔 끼운다. */
