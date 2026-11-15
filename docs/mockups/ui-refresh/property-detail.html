@@ -1,0 +1,1128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>매물 상세 · Notion 스타일 데모</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  /*
+   * 매물 상세 — Notion 데이터베이스 페이지 레이아웃(아이콘·제목 → 고정 속성 → 본문 / 접히는 속성 패널)
+   * Notion 값: 글자 rgb(55,53,47), 보조 rgba(55,53,47,.65), 선 rgb(233,233,231), 모서리 4px,
+   * 선택 태그 색은 Notion 밝은 테마의 select 색.
+   */
+  :root {
+    --n-text: rgb(55, 53, 47);
+    --n-text-2: rgba(55, 53, 47, 0.65);
+    --n-text-3: rgba(55, 53, 47, 0.45);
+    --n-line: rgb(233, 233, 231);
+    --n-hover: rgba(55, 53, 47, 0.06);
+    --n-press: rgba(55, 53, 47, 0.1);
+    --n-callout: rgb(247, 246, 243);
+    --n-blue: rgb(35, 131, 226);
+    --n-r: 4px;
+  }
+  .pd { flex: 1; min-height: 0; display: flex; color: var(--n-text); }
+  .pd .i { width: 16px; height: 16px; }
+
+  /* 선택·상태 태그 (Notion select 색) */
+  .nt { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 6px; border-radius: 3px; font-size: 13px; line-height: 20px; white-space: nowrap; background: rgba(227, 226, 224, 0.6); color: rgb(50, 48, 44); }
+  .nt .d { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.6; }
+  .nt.gray { background: rgba(227, 226, 224, 0.6); color: rgb(50, 48, 44); }
+  .nt.brown { background: rgb(238, 224, 218); color: rgb(68, 42, 30); }
+  .nt.orange { background: rgb(250, 222, 201); color: rgb(73, 41, 14); }
+  .nt.yellow { background: rgb(253, 236, 200); color: rgb(64, 44, 27); }
+  .nt.green { background: rgb(219, 237, 219); color: rgb(28, 56, 41); }
+  .nt.blue { background: rgb(211, 229, 239); color: rgb(24, 51, 71); }
+  .nt.purple { background: rgb(232, 222, 238); color: rgb(65, 36, 84); }
+  .nt.pink { background: rgb(245, 224, 233); color: rgb(76, 35, 55); }
+  .nt.red { background: rgb(255, 226, 221); color: rgb(93, 23, 21); }
+  .nt.click { cursor: default; }
+  .nt.click:hover { filter: brightness(0.96); }
+
+  /* ── 본문 ── */
+  .pd-main { flex: 1; min-width: 0; overflow: auto; position: relative; scroll-behavior: smooth; }
+  .doc { max-width: 940px; margin: 0 auto; padding: 22px 40px 140px; }
+
+  /* 고정 머리: 제목이 가려지면 나타난다 */
+  .stick {
+    position: sticky; top: 0; z-index: 6; height: 0; overflow: visible;
+  }
+  .stick-in {
+    display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 20px 0 24px;
+    background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(6px);
+    box-shadow: 0 1px 0 var(--n-line);
+    transform: translateY(-48px); opacity: 0; transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.14s;
+  }
+  .stick.show .stick-in { transform: none; opacity: 1; }
+  .stick .t { font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .stick .p { display: flex; gap: 12px; font-size: 13px; color: var(--n-text-2); white-space: nowrap; overflow: hidden; }
+  .stick .p b { color: var(--n-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stick .sp { flex: 1; }
+
+  /* 아이콘·제목 */
+  .doc-head { position: relative; padding-top: 28px; }
+  .doc-title { margin: 0; padding-right: 200px; font-size: 34px; line-height: 1.22; font-weight: 700; letter-spacing: -0.025em; }
+  .doc-title .u { font-variant-numeric: tabular-nums; }
+  .doc-sub { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 14px; color: var(--n-text-2); }
+  .doc-sub .sep { color: rgba(55, 53, 47, 0.25); }
+  .spec { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; }
+  .spec span { display: inline-flex; align-items: center; gap: 6px; }
+  .spec .i { width: 15px; height: 15px; color: var(--n-text-3); }
+  .spec small { font-size: 13px; color: var(--n-text-3); }
+  .head-actions { position: absolute; right: 0; top: 32px; display: flex; gap: 4px; }
+
+  /* Notion 버튼(글자형) */
+  .nb { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: var(--n-r); background: transparent; color: var(--n-text-2); font-size: 14px; cursor: default; white-space: nowrap; transition: background-color 0.1s, color 0.1s; }
+  .nb:hover { background: var(--n-hover); color: var(--n-text); }
+  .nb:active { background: var(--n-press); }
+  .nb.on { background: var(--n-hover); color: var(--n-text); }
+  .nb .i { width: 15px; height: 15px; }
+  .nb.solid { background: var(--n-blue); color: #fff; padding: 0 10px; font-weight: 500; }
+  .nb.solid:hover { background: rgb(5, 112, 222); color: #fff; }
+  .nb.line { box-shadow: inset 0 0 0 1px rgba(55, 53, 47, 0.16); color: var(--n-text); }
+  .nb.line:hover { background: var(--n-hover); }
+  .nb kbd { font: inherit; font-size: 11px; color: var(--n-text-3); margin-left: 2px; }
+  .nb.solid kbd { color: rgba(255, 255, 255, 0.7); }
+
+  /* 고정 속성(Notion Layouts의 pinned properties) */
+  .pins { display: grid; grid-template-columns: repeat(4, minmax(0, auto)); justify-content: start; gap: 0 4px; margin: 20px 0 6px -8px; }
+  .pin { min-width: 0; padding: 6px 8px 7px; border-radius: var(--n-r); cursor: default; }
+  .pin:hover { background: var(--n-hover); }
+  .pin .k { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--n-text-2); white-space: nowrap; }
+  .pin .k .i { width: 14px; height: 14px; color: var(--n-text-3); }
+  .pin .v { margin-top: 3px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 14px; min-height: 22px; }
+  .pin .v b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pin .v .t3 { color: var(--n-text-3); }
+  .pin + .pin { margin-left: 12px; }
+
+  /* 상담 입력칸 (Notion 댓글 상자 문법) */
+  .cmp { margin: 12px 0 0; padding: 10px 0 14px; border-bottom: 1px solid var(--n-line); }
+  .cmp-row { display: flex; align-items: flex-start; gap: 10px; }
+  .cmp-row .av { margin-top: 3px; }
+  .cmp-ph { flex: 1; height: 30px; display: flex; align-items: center; padding: 0 8px; margin-left: -8px; border-radius: var(--n-r); color: var(--n-text-3); font-size: 14px; cursor: text; }
+  .cmp-ph:hover { background: var(--n-hover); }
+  .cmp-ph kbd { margin-left: auto; font: inherit; font-size: 12px; color: var(--n-text-3); }
+  .cmp-box { flex: 1; min-width: 0; }
+  .cmp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .who-pick { height: 26px; display: inline-flex; align-items: center; gap: 6px; padding: 0 6px 0 4px; border: 0; border-radius: var(--n-r); background: rgba(35, 131, 226, 0.08); color: rgb(29, 109, 191); font-size: 13px; cursor: default; }
+  .who-pick:hover { background: rgba(35, 131, 226, 0.14); }
+  .who-pick small { color: rgba(29, 109, 191, 0.7); }
+  .who-pick .i { width: 13px; height: 13px; }
+  .tseg { display: inline-flex; padding: 2px; border-radius: 6px; background: rgba(55, 53, 47, 0.06); }
+  .tseg button { height: 22px; padding: 0 9px; border: 0; border-radius: 4px; background: transparent; color: var(--n-text-2); font-size: 13px; cursor: default; }
+  .tseg button.on { background: #fff; color: var(--n-text); box-shadow: 0 1px 2px rgba(15, 15, 15, 0.1); }
+  .cmp textarea { display: block; width: 100%; min-height: 64px; resize: none; border: 0; outline: 0; padding: 6px 0; font: inherit; font-size: 14px; line-height: 1.6; color: var(--n-text); background: transparent; field-sizing: content; }
+  .cmp textarea::placeholder { color: var(--n-text-3); }
+  .cmp-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .cmp-foot .sp { flex: 1; }
+  .ckl { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--n-text-2); cursor: default; user-select: none; }
+  .ckl:hover { color: var(--n-text); }
+
+  /* 체크 칸 (Notion to-do) */
+  .cb { width: 16px; height: 16px; flex: none; display: inline-grid; place-items: center; border-radius: 3px; box-shadow: inset 0 0 0 1.5px rgba(55, 53, 47, 0.85); background: #fff; color: #fff; cursor: default; transition: background-color 0.12s, box-shadow 0.12s; }
+  .cb .i { width: 12px; height: 12px; stroke-width: 3; opacity: 0; }
+  .cb:hover { background: var(--n-hover); }
+  .cb.on { background: var(--n-blue); box-shadow: none; }
+  .cb.on .i { opacity: 1; }
+
+  /* 구역 제목 (Notion 제목 2) */
+  .h2 { display: flex; align-items: center; gap: 8px; margin: 40px 0 8px; font-size: 20px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
+  .h2 .n { font-size: 15px; font-weight: 500; color: var(--n-text-3); }
+  .h2 .act { margin-left: auto; display: flex; gap: 2px; }
+
+  /* 콜아웃 (지금 챙길 것) */
+  .callout { display: flex; gap: 10px; margin-top: 18px; padding: 14px 16px 12px 12px; border-radius: var(--n-r); background: var(--n-callout); }
+  .callout > .ic { width: 24px; height: 24px; display: grid; place-items: center; flex: none; color: rgb(203, 145, 47); }
+  .callout > .ic .i { width: 20px; height: 20px; }
+  .callout .ct { flex: 1; min-width: 0; }
+  .callout .ttl { font-size: 14px; font-weight: 600; line-height: 24px; }
+  .callout .ttl .n { color: var(--n-text-3); font-weight: 500; margin-left: 4px; }
+  .todo { display: flex; align-items: flex-start; gap: 10px; padding: 5px 4px 5px 2px; margin: 0 -4px 0 -2px; border-radius: var(--n-r); }
+  .todo:hover { background: rgba(55, 53, 47, 0.04); }
+  .todo .cb { margin-top: 3px; }
+  .todo .tx { flex: 1; min-width: 0; font-size: 14px; line-height: 22px; }
+  .todo .tx small { display: block; font-size: 13px; line-height: 19px; color: var(--n-text-2); }
+  .todo .tx b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .todo .go { flex: none; height: 26px; font-size: 13px; }
+  .todo.done .tx { color: var(--n-text-3); text-decoration: line-through; text-decoration-color: rgba(55, 53, 47, 0.3); }
+  .todo.done .tx small { color: var(--n-text-3); }
+  .todo.flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { 0% { background: rgba(35, 131, 226, 0.14); } 100% { background: transparent; } }
+  .togg { display: inline-flex; align-items: center; gap: 4px; height: 26px; margin-top: 2px; padding: 0 6px 0 2px; border: 0; border-radius: var(--n-r); background: transparent; color: var(--n-text-2); font-size: 13px; cursor: default; }
+  .togg:hover { background: var(--n-hover); }
+  .togg .i { width: 14px; height: 14px; transition: transform 0.15s; }
+  .togg.is-open .i { transform: rotate(90deg); }
+
+  /* 인라인 데이터베이스 (Notion 표) */
+  .db { margin-top: 8px; }
+  .db-bar { display: flex; align-items: center; gap: 2px; height: 34px; border-bottom: 1px solid var(--n-line); }
+  .vt { height: 34px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; background: transparent; font-size: 14px; color: var(--n-text-2); cursor: default; position: relative; }
+  .vt .i { width: 15px; height: 15px; }
+  .vt:hover { color: var(--n-text); }
+  .vt.on { color: var(--n-text); font-weight: 500; }
+  .vt.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--n-text); border-radius: 1px; }
+  .db-bar .sp { flex: 1; }
+  .ntbl-wrap { overflow-x: auto; }
+  .ntbl { width: 100%; min-width: 780px; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
+  .ntbl th { height: 33px; padding: 0 8px; text-align: left; font-weight: 400; font-size: 14px; color: var(--n-text-2); border-bottom: 1px solid var(--n-line); border-right: 1px solid var(--n-line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+  .ntbl th:hover { background: var(--n-hover); }
+  .ntbl th .i { width: 14px; height: 14px; color: var(--n-text-3); margin-right: 6px; vertical-align: -2px; }
+  .ntbl td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid var(--n-line); border-right: 1px solid var(--n-line); line-height: 21px; }
+  .ntbl th:last-child, .ntbl td:last-child { border-right: 0; }
+  .ntbl tbody tr:hover td { background: rgba(55, 53, 47, 0.025); }
+  .ntbl td.r, .ntbl th.r { text-align: right; }
+  .ntbl .num { font-variant-numeric: tabular-nums; }
+  .ntbl .muted { color: var(--n-text-3); }
+  .ntbl .warn { color: rgb(203, 107, 31); }
+  .cellbtn { display: block; width: calc(100% + 8px); margin: -3px -4px; padding: 3px 4px; border: 0; border-radius: var(--n-r); background: transparent; text-align: left; font: inherit; color: inherit; cursor: default; }
+  .cellbtn:hover { background: var(--n-hover); }
+  .price { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .delta { display: block; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .delta.down { color: rgb(68, 131, 97); }
+  .delta.up { color: rgb(212, 76, 71); }
+  .delta small { color: var(--n-text-3); font-size: 12px; }
+  .ttl-cell { position: relative; display: flex; align-items: center; gap: 6px; min-height: 21px; }
+  .ttl-cell .rowopen { position: absolute; right: -4px; top: 50%; transform: translateY(-50%); white-space: nowrap; height: 22px; display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border: 0; border-radius: var(--n-r); background: #fff; box-shadow: 0 0 0 1px rgba(15, 15, 15, 0.1), 0 2px 4px rgba(15, 15, 15, 0.1); font-size: 12px; color: var(--n-text-2); opacity: 0; cursor: default; }
+  .ttl-cell .rowopen .i { width: 12px; height: 12px; }
+  tr:hover .ttl-cell .rowopen { opacity: 1; }
+  .newrow td { color: var(--n-text-3); border-right: 0; cursor: default; }
+  .newrow td:hover { background: var(--n-hover) !important; color: var(--n-text-2); }
+  .newrow .i { width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; }
+  .nv { display: block; width: calc(100% + 8px); margin: -3px -4px; padding: 3px 4px; border: 0; border-radius: var(--n-r); background: transparent; text-align: left; font: inherit; font-size: 13px; color: var(--n-text-2); cursor: default; line-height: 19px; }
+  .nv:hover { background: var(--n-hover); }
+  .nv b { color: var(--n-text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .nv .bad { color: rgb(212, 76, 71); }
+  .adline { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  .adline small { font-size: 12px; color: rgb(203, 107, 31); font-variant-numeric: tabular-nums; }
+
+  /* 거래 블록 (Notion 하위 페이지 링크 + 단계) */
+  .deal { margin-top: 14px; border-radius: var(--n-r); box-shadow: 0 0 0 1px var(--n-line); }
+  .deal.flash { animation: flash 1.4s ease-out; }
+  .deal-h { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--n-line); }
+  .deal-h .pg { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; text-decoration: underline; text-decoration-color: rgba(55, 53, 47, 0.25); text-underline-offset: 3px; cursor: default; }
+  .deal-h .pg:hover { background: var(--n-hover); border-radius: 3px; }
+  .deal-h .pg .i { width: 15px; height: 15px; color: var(--n-text-3); }
+  .deal-h .meta { font-size: 13px; color: var(--n-text-2); }
+  .deal-h .sp { flex: 1; }
+  .steps { display: flex; align-items: center; gap: 0; padding: 12px 12px 4px; overflow-x: auto; }
+  .step { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--n-text-3); white-space: nowrap; }
+  .step .m { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px rgba(55, 53, 47, 0.2); }
+  .step .m .i { width: 10px; height: 10px; stroke-width: 3; }
+  .step.done { color: var(--n-text-2); }
+  .step.done .m { background: rgb(68, 131, 97); box-shadow: none; color: #fff; }
+  .step.cur { color: var(--n-text); font-weight: 600; }
+  .step.cur .m { box-shadow: inset 0 0 0 5px var(--n-text); }
+  .steps .ln { width: 24px; height: 1px; flex: none; background: rgba(55, 53, 47, 0.16); margin: 0 10px; }
+  .pays { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 8px 4px 10px; }
+  .pay { padding: 6px 8px; border-radius: var(--n-r); }
+  .pay .k { font-size: 12px; color: var(--n-text-2); display: flex; align-items: center; gap: 6px; }
+  .pay .a { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pay .w { font-size: 12px; color: var(--n-text-2); font-variant-numeric: tabular-nums; }
+  .pay .w.soon { color: rgb(203, 107, 31); font-weight: 500; }
+
+  /* 기록 (Notion 댓글·변경 기록 문법) */
+  .rtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--n-line); margin-top: 4px; }
+  .pinned { margin-top: 12px; padding: 4px 0; }
+  .pinned-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--n-text-2); padding: 4px 0; }
+  .pinned-h .i { width: 13px; height: 13px; }
+  .dgrp { margin-top: 14px; }
+  .dgrp-h { font-size: 12px; font-weight: 600; color: var(--n-text-2); padding: 4px 0 2px; }
+  .rec { position: relative; display: flex; gap: 10px; padding: 8px 6px; margin: 0 -6px; border-radius: var(--n-r); }
+  .rec:hover { background: rgba(55, 53, 47, 0.03); }
+  .rec.new { animation: flash 1.6s ease-out; }
+  .rec .ri { width: 26px; height: 26px; flex: none; border-radius: 50%; display: grid; place-items: center; background: rgb(241, 240, 236); color: rgb(120, 117, 110); }
+  .rec .ri .i { width: 14px; height: 14px; }
+  .rec .ri.call { background: rgb(231, 243, 248); color: rgb(51, 126, 169); }
+  .rec .ri.visit { background: rgb(244, 240, 247); color: rgb(144, 101, 176); }
+  .rec .ri.text { background: rgb(241, 240, 236); color: rgb(120, 117, 110); }
+  .rec .ri.confirm { background: rgb(237, 243, 236); color: rgb(68, 131, 97); }
+  .rec .ri.price { background: rgb(253, 235, 236); color: rgb(205, 60, 58); }
+  .rec .ri.price.down { background: rgb(237, 243, 236); color: rgb(68, 131, 97); }
+  .rec .ri.ad { background: rgb(251, 243, 219); color: rgb(203, 145, 47); }
+  .rec .ri.deal { background: rgb(231, 243, 248); color: rgb(51, 126, 169); }
+  .rec .ri.intake { background: rgb(241, 240, 236); color: rgb(120, 117, 110); }
+  .rec .rb { flex: 1; min-width: 0; }
+  .rec .l1 { display: flex; align-items: baseline; gap: 6px; font-size: 14px; line-height: 22px; min-width: 0; }
+  .rec .l1 .tt { font-weight: 600; white-space: nowrap; }
+  .rec .l1 .mt { color: var(--n-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rec .l1 .sm { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rec .l1 .tm { margin-left: auto; padding-left: 8px; font-size: 12px; color: var(--n-text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .rec .by { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--n-text-3); }
+  .rec .by .av { width: 16px; height: 16px; font-size: 9px; }
+  .rec .body { margin: 2px 0 0; font-size: 14px; line-height: 1.65; color: rgba(55, 53, 47, 0.9); white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+  .rec .body.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .rec .more { border: 0; background: transparent; padding: 0; margin-top: 2px; font-size: 13px; color: var(--n-text-2); cursor: default; }
+  .rec .more:hover { color: var(--n-text); text-decoration: underline; }
+  .rec .tools { position: absolute; right: 6px; top: 6px; display: flex; gap: 2px; padding: 2px; border-radius: 6px; background: #fff; box-shadow: 0 0 0 1px rgba(15, 15, 15, 0.08), 0 3px 8px rgba(15, 15, 15, 0.08); opacity: 0; pointer-events: none; transition: opacity 0.1s; }
+  .rec:hover .tools { opacity: 1; pointer-events: auto; }
+  .rec:hover .l1 .tm { visibility: hidden; }
+  .rec .tools .nb { height: 24px; padding: 0 6px; font-size: 12px; }
+  .rec .tools .nb .i { width: 13px; height: 13px; }
+  .rec.is-pinned .ri { box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px rgb(203, 145, 47); }
+
+  /* ── 오른쪽 속성 패널 (Notion details panel) ── */
+  .pd-side { width: 320px; flex: none; border-left: 1px solid var(--n-line); overflow-y: auto; overflow-x: hidden; background: #fff; transition: width 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .pd-side .in { width: 320px; padding: 14px 16px 96px 20px; }
+  .pd.side-closed .pd-side { width: 0; border-left-color: transparent; }
+  .side-h { display: flex; align-items: center; gap: 4px; height: 30px; margin-bottom: 4px; font-size: 13px; font-weight: 600; color: var(--n-text-2); }
+  .side-h .sp { flex: 1; }
+  .grp { margin-top: 6px; }
+  .grp-h { display: flex; align-items: center; gap: 4px; width: 100%; height: 30px; padding: 0 4px 0 0; margin-left: -4px; border: 0; background: transparent; border-radius: var(--n-r); font-size: 13px; font-weight: 600; color: var(--n-text); cursor: default; }
+  .grp-h:hover { background: var(--n-hover); }
+  .grp-h .i { width: 14px; height: 14px; color: var(--n-text-3); transition: transform 0.15s; }
+  .grp.is-open > .grp-h .i { transform: rotate(90deg); }
+  .grp-h .n { color: var(--n-text-3); font-weight: 500; }
+  .grp-h .add { margin-left: auto; opacity: 0; }
+  .grp-h:hover .add { opacity: 1; }
+  .grp-b { padding: 2px 0 8px; }
+  .grp:not(.is-open) > .grp-b { display: none; }
+  .prop { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: start; min-height: 32px; }
+  .prop .k { display: flex; align-items: center; gap: 7px; height: 32px; font-size: 13px; color: var(--n-text-2); white-space: nowrap; }
+  .prop .k .i { width: 14px; height: 14px; color: var(--n-text-3); }
+  .prop .v { min-height: 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 6px; margin-left: -6px; border-radius: var(--n-r); font-size: 14px; line-height: 22px; cursor: default; }
+  .prop .v:hover { background: var(--n-hover); }
+  .prop .v small { font-size: 13px; color: var(--n-text-3); }
+  .prop .v.is-empty { color: var(--n-text-3); }
+  .person { display: flex; align-items: flex-start; gap: 9px; padding: 6px 6px; margin: 0 -6px; border-radius: var(--n-r); }
+  .person:hover { background: var(--n-hover); }
+  .person .av { margin-top: 2px; }
+  .person .pb { flex: 1; min-width: 0; }
+  .person .pn { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 22px; }
+  .person .pn b { font-weight: 600; }
+  .person .pd2 { font-size: 13px; line-height: 19px; color: var(--n-text-2); }
+  .person .pd2 .phn { font-variant-numeric: tabular-nums; border-radius: 3px; cursor: default; }
+  .person .pd2 .phn:hover { background: var(--n-hover); color: var(--n-text); }
+  .person .terms { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 21px; }
+  .person .call { opacity: 0; }
+  .person:hover .call { opacity: 1; }
+  .person.past { opacity: 0.72; }
+  .memo-v { width: 100%; white-space: pre-wrap; word-break: keep-all; }
+  .memo-edit { width: 100%; min-height: 54px; resize: none; border: 0; outline: 0; padding: 4px 6px; margin: -4px -6px; border-radius: var(--n-r); box-shadow: inset 0 0 0 1px rgba(35, 131, 226, 0.6), 0 0 0 3px rgba(35, 131, 226, 0.15); font: inherit; font-size: 14px; line-height: 22px; color: var(--n-text); background: #fff; field-sizing: content; }
+  .privnote { display: flex; gap: 6px; margin: 2px 0 6px; padding: 6px 8px; border-radius: var(--n-r); background: rgb(251, 243, 219); font-size: 13px; line-height: 19px; color: rgb(64, 44, 27); }
+  .privnote .i { width: 13px; height: 13px; margin-top: 3px; color: rgb(203, 145, 47); }
+  .side-sep { height: 1px; background: var(--n-line); margin: 10px 0; }
+
+  /* 떠 있는 편집 창 */
+  .npop { position: fixed; z-index: 60; width: 300px; padding: 12px; border-radius: 6px; background: #fff; box-shadow: 0 0 0 1px rgba(15, 15, 15, 0.05), 0 3px 6px rgba(15, 15, 15, 0.1), 0 9px 24px rgba(15, 15, 15, 0.2); animation: pop-in 0.12s ease-out; font-size: 14px; color: var(--n-text); }
+  @keyframes pop-in { from { opacity: 0; transform: translateY(-4px); } }
+  .npop.wide { width: 460px; }
+  .npop h4 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--n-text-2); }
+  .npop .inp { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px; border-radius: var(--n-r); background: rgba(242, 241, 238, 0.6); box-shadow: inset 0 0 0 1px rgba(15, 15, 15, 0.1); }
+  .npop .inp:focus-within { box-shadow: inset 0 0 0 1px rgba(35, 131, 226, 0.6), 0 0 0 3px rgba(35, 131, 226, 0.15); background: #fff; }
+  .npop input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; color: inherit; font-variant-numeric: tabular-nums; }
+  .npop .unit { color: var(--n-text-3); font-size: 13px; }
+  .npop .hint { margin: 6px 2px 10px; font-size: 13px; color: var(--n-text-2); font-variant-numeric: tabular-nums; }
+  .npop .row { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; }
+  .cmp-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .cmp-tbl th { text-align: left; font-weight: 400; color: var(--n-text-2); padding: 4px 6px; border-bottom: 1px solid var(--n-line); }
+  .cmp-tbl td { padding: 6px; border-bottom: 1px solid var(--n-line); font-variant-numeric: tabular-nums; }
+  .cmp-tbl tr.ours td { background: rgba(35, 131, 226, 0.06); }
+  .cmp-tbl td.r, .cmp-tbl th.r { text-align: right; }
+  .cmp-tbl .cheap { color: rgb(212, 76, 71); font-weight: 600; }
+</style>
+</head>
+<body data-active="properties">
+<main id="page">
+  <div class="pd" id="pd">
+    <div class="pd-main" id="main">
+      <div class="stick" id="mini"><div class="stick-in" id="miniIn"></div></div>
+      <article class="doc">
+        <header class="doc-head" id="head"></header>
+        <section class="pins" id="pins" aria-label="고정 속성"></section>
+        <section class="cmp" id="composer" aria-label="상담 기록 남기기"></section>
+        <section id="todo"></section>
+        <section id="offers"></section>
+        <section id="progress"></section>
+        <section id="records"></section>
+      </article>
+    </div>
+    <aside class="pd-side" id="side" aria-label="속성 패널"><div class="in" id="sideIn"></div></aside>
+  </div>
+</main>
+<script src="shell.js"></script>
+<script>
+(() => {
+  const I = UI.icon;
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // 이 데모에만 쓰는 아이콘 (lucide)
+  const EXTRA = {
+    layers: '<path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
+    bed: '<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/>',
+    compass: '<circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z"/>',
+    hammer: '<path d="m15 12-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9"/><path d="M17.64 15 22 10.64"/><path d="m20.91 11.7-1.25-1.25c-.6-.6-.93-1.4-.93-2.25v-.86L16.01 4.6a5.56 5.56 0 0 0-3.94-1.64H9l.92.82A6.18 6.18 0 0 1 12 8.4v1.56l2 2h2.47l2.26 1.91"/>',
+    flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>',
+    lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    pinOn: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+    panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+    trendDown: '<path d="M22 17 13.5 8.5 8.5 13.5 2 7"/><path d="M16 17h6v-6"/>',
+    trendUp: '<path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/>',
+    door: '<path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z"/>',
+    hash: '<path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/>',
+    aa: '<path d="M3 20 8 4l5 16"/><path d="M4.5 15h7"/><circle cx="17.5" cy="16.5" r="3.5"/><path d="M21 13v7"/>',
+    circleDot: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>',
+    textMsg: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
+    walk: '<circle cx="13" cy="4" r="2"/><path d="m11 21 1-6-3-3 1-5 4 3h4"/><path d="m8 21 2-5"/>',
+    inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    calCheck: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>',
+    alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  };
+  const ic = (n, cls = '') => EXTRA[n]
+    ? `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${EXTRA[n]}</svg>`
+    : I(n, cls);
+
+  // ── 날짜·금액 ──
+  const TODAY = new Date(2026, 10, 13);
+  const D = (y, m, d) => new Date(y, m - 1, d);
+  const pad = (n) => String(n).padStart(2, '0');
+  const day0 = (dt) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+  const diff = (a, b) => Math.round((day0(b) - day0(a)) / 864e5);
+  const md = (dt) => `${pad(dt.getMonth() + 1)}.${pad(dt.getDate())}`;
+  const sd = (dt) => (dt.getFullYear() === TODAY.getFullYear() ? md(dt) : `${String(dt.getFullYear()).slice(2)}.${md(dt)}`);
+  const fd = (dt) => `${dt.getFullYear()}.${md(dt)}`;
+  const ago = (dt) => { const n = diff(dt, TODAY); return n === 0 ? '오늘' : n === 1 ? '어제' : `${n}일 전`; };
+  const due = (dt) => { const n = diff(TODAY, dt); return n === 0 ? '오늘' : n === 1 ? '내일' : n > 0 ? `${n}일 후` : `${-n}일 지남`; };
+  const WD = ['일', '월', '화', '수', '목', '금', '토'];
+  const dayLabel = (dt) => { const n = diff(dt, TODAY); if (n === 0) return '오늘'; if (n === 1) return '어제'; return `${dt.getFullYear() === TODAY.getFullYear() ? '' : dt.getFullYear() + '년 '}${dt.getMonth() + 1}월 ${dt.getDate()}일 (${WD[dt.getDay()]})`; };
+  const money = (v) => {
+    if (v == null) return '-';
+    if (v === 0) return '없음';
+    const e = Math.floor(v / 10000), m = v % 10000;
+    if (!e) return `${m.toLocaleString('ko-KR')}만`;
+    return m ? `${e}억 ${m.toLocaleString('ko-KR')}` : `${e}억`;
+  };
+  const tel = (p) => p.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+
+  // ── 상태 ──
+  const STAGES = [
+    ['suggested', '내부 후보', 'gray'], ['interested', '고객 관심', 'blue'], ['viewingOk', '임장 가능 확인', 'yellow'],
+    ['viewing', '임장', 'orange'], ['negotiating', '협상', 'purple'], ['deal', '거래전환', 'green'], ['closed', '종료', 'gray'],
+  ];
+  const stageOf = (k) => STAGES.find((s) => s[0] === k);
+
+  const S = {
+    // 창이 좁으면 속성 패널을 접은 채로 연다 (Odoo는 1400px 아래에서 대화창을 아래로 내린다)
+    sideOpen: innerWidth >= 1360,
+    me: '이현수',
+    confirm: { last: D(2026, 11, 3), next: D(2026, 11, 17), result: 'alive' },
+    offers: [
+      {
+        id: 'sale', type: 'sale', label: '매매', tag: 'red', price: 158000, paused: false, moveIn: '27.02.25 이후', loan: 42000, fee: 32,
+        memo: '세안고 매매. 전세 만기에 맞춰 잔금 조정 가능, 남향 고층이라 뷰가 좋음', priv: '소유주 최저 15억 5,000까지 가능 (외부 공유 금지)',
+        ads: [{ ch: '이실장', price: 160000, since: D(2026, 10, 13) }],
+        naver: [
+          { ag: '고덕래미안공인', price: 155000, floor: '고/35', v: '집주인확인', rank: 1 },
+          { ag: '그라시움센트럴공인', price: 158000, floor: '34/35', v: '집주인확인', rank: 2 },
+          { ag: '고덕 에스테잇 (우리)', price: 160000, floor: '고/35', v: '집주인확인', rank: 3, ours: true },
+          { ag: '명일역공인', price: 160000, floor: '고/35', v: '홍보확인서', rank: 4 },
+          { ag: '고덕센트럴공인', price: 162000, floor: '중/35', v: '집주인확인', rank: 5 },
+          { ag: '상일동부동산', price: 163000, floor: '고/35', v: '현장확인', rank: 6 },
+          { ag: '배재공인', price: 165000, floor: '-/35', v: '홍보확인서', rank: 7 },
+        ],
+        hist: [
+          { at: D(2026, 11, 3), from: 160000, to: 158000 },
+          { at: D(2026, 10, 17), from: 162000, to: 160000 },
+        ],
+      },
+      {
+        id: 'jeonse', type: 'jeonse', label: '전세', tag: 'blue', price: 82000, paused: false, moveIn: '협의', loan: 0, fee: 32, contract: true,
+        memo: '', priv: '',
+        ads: [],
+        naver: [
+          { ag: '고덕래미안공인', price: 80000, floor: '중/35', v: '집주인확인', rank: 1 },
+          { ag: '그라시움센트럴공인', price: 83000, floor: '고/35', v: '집주인확인', rank: 2 },
+          { ag: '명일역공인', price: 85000, floor: '고/35', v: '홍보확인서', rank: 3 },
+        ],
+        hist: [],
+      },
+    ],
+    people: [
+      { id: 'p1', name: '김정훈', role: '소유주', main: true, phone: '01045278812', note: '지분 50% · 평일 저녁 7시 이후 통화' },
+      { id: 'p2', name: '박미영', role: '공동소유', phone: '01033124409', note: '지분 50% · 배우자' },
+      { id: 'p3', name: '김도윤', role: '대리인', phone: '01098761234', note: '아들 · 위임장 있음' },
+    ],
+    pastOwners: [{ id: 'po1', name: '최영수', role: '이전 소유주', phone: '01020459931', note: '2021.06 김정훈에게 매도' }],
+    tenants: [{ id: 't1', name: '이수진', status: '거주중', deposit: 78000, rent: 0, start: D(2025, 2, 25), end: D(2027, 2, 25), phone: '01077560032', note: '집 보여주기는 주말 오후 2~5시, 하루 전 연락' }],
+    pastTenants: [{ id: 't0', name: '박지훈', status: '퇴거', deposit: 72000, start: D(2023, 2, 20), end: D(2025, 2, 20), phone: '01090021188', note: '' }],
+    intake: { received: D(2026, 10, 2), memo: '매매·전세 동시 의뢰. 전세가 먼저 나가면 매매는 세안고로 진행', joint: false, owner: '이현수' },
+    pastIntakes: [{ period: '2024.12.12 ~ 2025.02.10', status: '거래 완료', offers: '전세 7억 8,000' }],
+    matches: [
+      { id: 'm1', name: '정민호', type: '전세', cond: '전세 8억 5,000 이하 · 30~36평 · 3월 입주', stage: 'deal', at: D(2026, 11, 10), note: '신혼부부' },
+      { id: 'm2', name: '최윤아', type: '매매', cond: '매매 15억~16억 5,000 · 30~36평', stage: 'viewingOk', at: D(2026, 11, 9), note: '11.15(일) 14:00 임장 예정' },
+      { id: 'm3', name: '한상우', type: '매매', cond: '매매 16억 이하 · 33평 이상', stage: 'suggested', at: D(2026, 11, 8), note: '' },
+    ],
+    deal: {
+      type: '전세', price: 82000, tenant: '정민호', landlord: '김정훈', since: D(2026, 11, 10),
+      steps: ['계약 준비', '가계약', '본계약', '중도금·잔금', '잔금 완료', '정산 종료'], cur: 1,
+      pays: [
+        { k: '가계약금', amt: 1000, at: D(2026, 11, 10), paid: true },
+        { k: '계약금', amt: 8200, at: D(2026, 11, 18), paid: false },
+        { k: '잔금', amt: 72800, at: D(2027, 2, 25), paid: false },
+      ],
+    },
+    records: [],
+    filter: 'all',
+    expanded: new Set(),
+    doneTodos: new Set(),
+    showDone: false,
+    groups: { unit: true, people: true, lease: true, intake: true, memo: true, meta: false },
+    toggles: { pastOwners: false, pastTenants: false, pastIntakes: false },
+    composer: { open: false, type: 'call', who: 'p1', confirm: true, text: '' },
+  };
+
+  let seq = 0;
+  const rec = (o) => ({ id: `r${++seq}`, pinned: false, ...o });
+  S.records = [
+    rec({ kind: 'call', at: D(2026, 11, 13), time: '11:20', who: '김정훈 · 소유주', by: '이현수', title: '전화 상담', body: '정민호 고객 가계약 의사 전달. 전세 8억 2,000 그대로 받기로 하고 가계약금 1,000만 계좌 받음. 잔금일은 세입자 만기(2월 말)에 맞추기로 함.' }),
+    rec({ kind: 'deal', at: D(2026, 11, 10), time: '17:10', who: '전세 · 정민호', by: '박서연', title: '거래 가계약' }),
+    rec({ kind: 'visit', at: D(2026, 11, 10), time: '15:00', who: '정민호 · 매수 고객', by: '박서연', title: '방문 상담', body: '전세 임장. 거실 뷰·채광 만족, 안방 붙박이장 상태 확인 요청. 가계약 검토하겠다고 함.' }),
+    rec({ kind: 'price', dir: 'down', at: D(2026, 11, 3), time: '15:02', who: '매매', by: '이현수', title: '가격 변경', sum: '16억 → 15억 8,000', body: '매수 문의가 줄어 소유주 요청으로 2,000 조정' }),
+    rec({ kind: 'confirm', at: D(2026, 11, 3), time: '14:30', who: '김정훈 · 소유주', by: '이현수', title: '매물 확인 · 전화', body: '매매 16억 → 15억 8,000 조정 동의. 전세는 8억 2,000 유지.' }),
+    rec({ kind: 'call', at: D(2026, 10, 31), time: '19:10', who: '이수진 · 세입자', by: '박서연', title: '전화 상담', body: '집 보여주기 가능 시간 문의. 주말 오후 2~5시만 가능, 하루 전 연락 부탁.', pinned: true }),
+    rec({ kind: 'call', at: D(2026, 10, 27), time: '10:45', who: '최윤아 · 매수 고객', by: '이현수', title: '전화 상담', body: '매매 문의. 대출 한도 확인 후 다시 연락 주기로.' }),
+    rec({ kind: 'ad', at: D(2026, 10, 18), who: '부동산뱅크', by: '시스템', title: '광고 종료' }),
+    rec({ kind: 'price', dir: 'down', at: D(2026, 10, 17), time: '10:05', who: '매매', by: '이현수', title: '가격 변경', sum: '16억 2,000 → 16억' }),
+    rec({ kind: 'ad', at: D(2026, 10, 13), who: '이실장', by: '시스템', title: '광고 시작', sum: '매매 16억' }),
+    rec({ kind: 'ad', at: D(2026, 10, 3), who: '부동산뱅크', by: '시스템', title: '광고 시작', sum: '매매 16억 2,000' }),
+    rec({ kind: 'call', at: D(2026, 10, 2), time: '13:00', who: '김정훈 · 소유주', by: '이현수', title: '전화 상담', body: '매매·전세 동시 의뢰 접수. 전세가 먼저 나가면 세안고 매매로 진행 원함. 소유주 최저가는 비공개 메모에 기록.\n공동명의(배우자 박미영 50%). 계약 때는 아들 김도윤이 위임장으로 대리.\n관리비 32만(난방 포함), 융자 4억 2,000은 잔금 때 상환 조건.\n집 보여주기는 세입자와 먼저 조율해 달라고 함.' }),
+    rec({ kind: 'intake', at: D(2026, 10, 2), who: '', by: '이현수', title: '의뢰 접수', sum: '매매·전세' }),
+    rec({ kind: 'intake', at: D(2025, 2, 10), who: '거래 완료', by: '시스템', title: '의뢰 종료' }),
+    rec({ kind: 'intake', at: D(2024, 12, 12), who: '', by: '박서연', title: '의뢰 접수', sum: '전세' }),
+  ];
+
+  const KIND = {
+    call: ['phone', '상담'], visit: ['walk', '상담'], text: ['textMsg', '상담'], confirm: ['calCheck', '상담'],
+    price: ['trendDown', '가격'], ad: ['megaphone', '광고'], deal: ['handshake', '거래'], intake: ['inbox', '거래'],
+  };
+  const FILTERS = [['all', '전체'], ['상담', '상담·확인'], ['가격', '가격'], ['광고', '광고'], ['거래', '거래·의뢰']];
+
+  // ── 계산 ──
+  const staleAd = (o) => o.ads.find((a) => a.price !== o.price) || null;
+  const cheaper = (o) => o.naver.filter((n) => !n.ours && n.price < o.price);
+  const naverMin = (o) => Math.min(...o.naver.map((n) => n.price));
+  const ourRank = (o) => (o.naver.find((n) => n.ours) || {}).rank || null;
+  const offerStatus = (o) => (o.contract ? ['거래중', 'blue'] : o.paused ? ['중단', 'yellow'] : ['활성', 'green']);
+  const people = () => [...S.people, ...S.tenants.map((t) => ({ id: t.id, name: t.name, role: '세입자', phone: t.phone }))];
+  const matchPeople = () => S.matches.map((m) => ({ id: m.id, name: m.name, role: '매수 고객' }));
+
+  function todos() {
+    const list = [];
+    const sale = S.offers[0];
+    const ad = staleAd(sale);
+    if (ad) list.push({ key: 'ad', text: `${ad.ch} 광고 가격이 지금 가격과 다릅니다`, sub: `광고 ${money(ad.price)} · 지금 매매가 ${money(sale.price)} · 광고를 고쳐 다시 올려야 합니다`, act: '광고 고치기' });
+    S.offers.filter((o) => !o.contract && !o.paused).forEach((o) => {
+      const c = cheaper(o);
+      if (c.length) list.push({ key: `naver-${o.id}`, text: `네이버에 같은 호실 ${o.label} 광고가 더 싸게 ${c.length}건 있습니다`, sub: `최저 ${money(naverMin(o))} · 우리 ${o.ads.length ? `${ourRank(o)}위` : '광고 없음'}`, act: '비교 보기', offer: o.id });
+    });
+    const pay = S.deal.pays.find((p) => !p.paid);
+    if (pay && diff(TODAY, pay.at) <= 14) list.push({ key: 'pay', text: `${pay.k} <b>${money(pay.amt)}</b> 입금 예정 ${md(pay.at)} (D-${diff(TODAY, pay.at)})`, sub: `${S.deal.type} 거래 · 임차 ${S.deal.tenant}`, act: '거래 보기' });
+    const n = diff(TODAY, S.confirm.next);
+    if (n <= 7) list.push({ key: 'confirm', text: n < 0 ? `재확인 기한이 ${-n}일 지났습니다` : `다음 매물 확인 ${md(S.confirm.next)} (${due(S.confirm.next)})`, sub: `마지막 확인 ${ago(S.confirm.last)} · 소유주 김정훈`, act: '확인 완료' });
+    return list;
+  }
+
+  // ── 그리기: 머리 ──
+  function renderHead() {
+    $('#head').innerHTML = `
+      <h1 class="doc-title" id="docTitle">고덕그라시움 <span class="u">103동 3401호</span></h1>
+      <div class="doc-sub"><span>아파트</span><span class="sep">·</span><span>서울 강동구 고덕로 333</span><span class="sep">·</span><span>84A 타입</span></div>
+      <div class="spec">
+        <span>${I('ruler')}공급 34.0평 <small>112.40㎡</small></span>
+        <span>${I('ruler')}전용 25.7평 <small>84.97㎡</small></span>
+        <span>${ic('layers')}34층 <small>/ 35층</small></span>
+        <span>${ic('bed')}방 3 · 욕실 2</span>
+        <span>${ic('compass')}남향</span>
+        <span>${ic('hammer')}2019년 <small>8년차</small></span>
+      </div>
+      <div class="head-actions">
+        <button class="nb" data-call="p1">${I('phone')}소유주 전화</button>
+        <button class="nb" data-side-toggle aria-pressed="${S.sideOpen}" title="속성 패널 ${S.sideOpen ? '접기' : '펼치기'}">${ic('panel')}</button>
+        <button class="nb" data-page-menu aria-label="매물 작업 메뉴">${I('more')}</button>
+      </div>`;
+  }
+
+  function priceSummary() {
+    return S.offers.map((o) => `<span>${o.label} <b>${money(o.price)}</b></span>`).join('');
+  }
+
+  function renderMini() {
+    $('#miniIn').innerHTML = `
+      <span class="t">고덕그라시움 103동 3401호</span>
+      <span class="p">${priceSummary()}<span>확인 <b>${ago(S.confirm.last)}</b></span></span>
+      <span class="sp"></span>
+      <button class="nb" data-call="p1">${I('phone')}소유주 전화</button>
+      <button class="nb line" data-confirm>${I('check')}확인 완료</button>
+      <button class="nb solid" data-focus-composer>${I('note')}상담 기록 <kbd>R</kbd></button>`;
+  }
+
+  function renderPins() {
+    const c = S.confirm;
+    const overdue = diff(TODAY, c.next) < 0;
+    const conf = c.result === 'noanswer'
+      ? `<span class="nt orange"><span class="d"></span>부재중</span><span class="t3">${ago(c.last)} 연락</span>`
+      : overdue
+        ? `<span class="nt red"><span class="d"></span>재확인 필요</span><span class="t3">${md(c.next)} 예정이었음</span>`
+        : `<span class="nt green"><span class="d"></span>확인 ${ago(c.last)}</span><span class="t3">다음 ${md(c.next)}</span>`;
+    $('#pins').innerHTML = `
+      <div class="pin" data-pin="status"><div class="k">${ic('circleDot')}매물상태</div><div class="v">${S.offers.map((o) => { const [l, t] = offerStatus(o); return `<span class="nt ${t}"><span class="d"></span>${o.label} ${l}</span>`; }).join('')}</div></div>
+      <div class="pin" data-pin="price"><div class="k">${I('won')}거래 · 가격</div><div class="v">${S.offers.map((o) => `<span class="nt ${o.tag}">${o.label}</span><b>${money(o.price)}</b>`).join('<span class="t3">·</span>')}</div></div>
+      <div class="pin" data-pin="confirm"><div class="k">${ic('calCheck')}매물 확인</div><div class="v">${conf}</div></div>
+      <div class="pin" data-pin="owner"><div class="k">${I('user')}담당</div><div class="v">${UI.av(S.intake.owner)}${S.intake.owner}</div></div>`;
+  }
+
+  // ── 상담 입력칸 ──
+  function renderComposer(focus = false) {
+    const live = $('#cmpText');
+    if (live) S.composer.text = live.value;
+    const c = S.composer;
+    const all = [...people(), ...matchPeople()];
+    const who = all.find((p) => p.id === c.who) || all[0];
+    if (!c.open) {
+      $('#composer').innerHTML = `<div class="cmp-row">${UI.av(S.me, 'md')}<div class="cmp-ph" data-open-composer>상담 기록 남기기… 누구와 무슨 이야기를 했나요?<kbd>R</kbd></div></div>`;
+      return;
+    }
+    const ownerCall = who.role === '소유주' || who.role === '공동소유' || who.role === '대리인';
+    $('#composer').innerHTML = `
+      <div class="cmp-row">${UI.av(S.me, 'md')}
+        <div class="cmp-box">
+          <div class="cmp-meta">
+            <button class="who-pick" data-pick-who>${I('user')}${esc(who.name)} <small>${who.role}</small>${I('chevDown')}</button>
+            <div class="tseg" role="radiogroup" aria-label="상담 방법">
+              ${[['call', '전화'], ['visit', '방문'], ['text', '문자']].map(([k, l]) => `<button role="radio" aria-checked="${c.type === k}" class="${c.type === k ? 'on' : ''}" data-ctype="${k}">${l}</button>`).join('')}
+            </div>
+          </div>
+          <textarea id="cmpText" placeholder="이야기한 내용을 적으세요. Enter로 기록, Shift+Enter로 줄바꿈, Esc로 닫기">${esc(c.text)}</textarea>
+          <div class="cmp-foot">
+            ${ownerCall ? `<span class="ckl" data-cmp-confirm role="checkbox" aria-checked="${c.confirm}"><span class="cb ${c.confirm ? 'on' : ''}">${I('check')}</span>매물 확인으로도 남기기 <span class="t3" style="color:var(--n-text-3)">· 다음 확인 ${md(new Date(TODAY.getTime() + 14 * 864e5))}</span></span>` : '<span class="ckl" style="color:var(--n-text-3)">매수 고객·세입자 상담은 매물 확인으로 남지 않습니다</span>'}
+            <span class="sp"></span>
+            <button class="nb" data-close-composer>취소</button>
+            <button class="nb solid" data-save-composer>기록</button>
+          </div>
+        </div>
+      </div>`;
+    if (focus) {
+      const ta = $('#cmpText');
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+  }
+
+  // ── 지금 챙길 것 ──
+  function renderTodo() {
+    const list = todos();
+    const open = list.filter((t) => !S.doneTodos.has(t.key));
+    const done = list.filter((t) => S.doneTodos.has(t.key));
+    if (!list.length) { $('#todo').innerHTML = ''; return; }
+    const row = (t, isDone) => `
+      <div class="todo ${isDone ? 'done' : ''}" data-todo="${t.key}">
+        <span class="cb ${isDone ? 'on' : ''}" role="checkbox" aria-checked="${isDone}" tabindex="0" data-todo-check="${t.key}">${I('check')}</span>
+        <div class="tx">${t.text}<small>${t.sub}</small></div>
+        ${isDone ? '' : `<button class="nb line go" data-todo-act="${t.key}">${t.act}</button>`}
+      </div>`;
+    $('#todo').innerHTML = `
+      <div class="callout">
+        <div class="ic">${ic('flag')}</div>
+        <div class="ct">
+          <div class="ttl">지금 챙길 것<span class="n">${open.length}</span></div>
+          ${open.length ? open.map((t) => row(t, false)).join('') : '<div class="todo"><div class="tx" style="color:var(--n-text-2)">모두 처리했습니다.</div></div>'}
+          ${done.length ? `<button class="togg ${S.showDone ? 'is-open' : ''}" data-toggle-done>${I('chevRight')}완료 ${done.length}</button>${S.showDone ? done.map((t) => row(t, true)).join('') : ''}` : ''}
+        </div>
+      </div>`;
+  }
+
+  // ── 거래 조건 ──
+  function renderOffers() {
+    const rows = S.offers.map((o) => {
+      const [sl, st] = offerStatus(o);
+      const h = o.hist[0];
+      const delta = h ? `<span class="delta ${h.to < h.from ? 'down' : 'up'}">${h.to < h.from ? '↓' : '↑'} ${money(Math.abs(h.to - h.from))} <small>· ${md(h.at)}</small></span>` : '';
+      const ad = o.ads[0];
+      const stale = staleAd(o);
+      const adCell = ad
+        ? `<div class="adline"><span class="nt ${stale ? 'orange' : 'green'}"><span class="d"></span>${ad.ch}</span>${stale ? `<small>광고가 ${money(ad.price)}</small>` : ''}</div>`
+        : '<span class="muted">없음</span>';
+      const ch = cheaper(o);
+      const rank = ourRank(o);
+      const nv = `<button class="nv" data-naver="${o.id}"><b>${o.naver.length}건</b> · ${rank ? `우리 ${rank}위` : '우리 미노출'}<br>최저 <b>${money(naverMin(o))}</b>${ch.length ? ` · <span class="bad">더 싼 ${ch.length}</span>` : ''}</button>`;
+      return `<tr>
+        <td><div class="ttl-cell"><span class="nt ${o.tag}">${o.label}</span><button class="rowopen" data-open-offer="${o.id}">${I('expand')}열기</button></div></td>
+        <td><button class="cellbtn" data-edit-price="${o.id}" title="눌러서 가격 수정"><span class="price">${money(o.price)}</span>${delta}</button></td>
+        <td><button class="cellbtn" data-offer-status="${o.id}"><span class="nt ${st}"><span class="d"></span>${sl}</span></button></td>
+        <td class="${o.moveIn === '확인 필요' ? 'warn' : ''}">${o.moveIn}</td>
+        <td class="r num">${money(o.loan)}</td>
+        <td class="r num">${o.fee}만</td>
+        <td>${adCell}</td>
+        <td>${nv}</td>
+      </tr>`;
+    }).join('');
+    $('#offers').innerHTML = `
+      <div class="h2">거래 조건<span class="n">${S.offers.length}</span></div>
+      <div class="db">
+        <div class="db-bar">
+          <button class="vt on">${I('table')}표</button>
+          <button class="vt" data-soon="광고 보기">${I('megaphone')}광고</button>
+          <button class="vt" data-soon="가격 이력 보기">${ic('trendDown')}가격 이력</button>
+          <span class="sp"></span>
+          <button class="nb" data-soon="정렬">${I('sort')}</button>
+          <button class="nb solid" data-new-offer>새로 만들기</button>
+        </div>
+        <div class="ntbl-wrap"><table class="ntbl">
+          <colgroup><col style="width:78px"><col style="width:128px"><col style="width:76px"><col style="width:100px"><col style="width:84px"><col style="width:62px"><col style="width:96px"><col></colgroup>
+          <thead><tr>
+            <th>${ic('aa')}거래</th><th>${ic('hash')}가격</th><th>${ic('circleDot')}상태</th><th>${I('cal')}입주</th>
+            <th class="r">${ic('hash')}융자</th><th class="r">관리비</th><th>${I('megaphone')}광고</th><th>${I('search')}네이버 비교</th>
+          </tr></thead>
+          <tbody>${rows}<tr class="newrow"><td colspan="8" data-new-offer>${I('plus')}새로 만들기</td></tr></tbody>
+        </table></div>
+      </div>`;
+  }
+
+  // ── 매칭 · 거래 ──
+  function renderProgress() {
+    const d = S.deal;
+    const rows = S.matches.map((m) => {
+      const [, sl, sc] = stageOf(m.stage);
+      return `<tr style="${m.stage === 'closed' ? 'opacity:.55' : ''}">
+        <td><div class="ttl-cell">${UI.av(m.name)}<span style="font-weight:500">${m.name}</span><button class="rowopen" data-soon="고객 원장 열기">${I('expand')}열기</button></div></td>
+        <td><span class="nt ${m.type === '매매' ? 'red' : 'blue'}">${m.type}</span></td>
+        <td style="color:var(--n-text-2);font-size:13px">${m.cond}${m.note ? `<br><span style="color:var(--n-text)">${m.note}</span>` : ''}</td>
+        <td><button class="cellbtn" data-stage="${m.id}"><span class="nt ${sc}"><span class="d"></span>${sl}</span></button></td>
+        <td class="num" style="color:var(--n-text-2)">${md(m.at)}</td>
+      </tr>`;
+    }).join('');
+    $('#progress').innerHTML = `
+      <div class="h2">매칭 · 거래<span class="n">${S.matches.filter((m) => m.stage !== 'closed').length}</span></div>
+      <div class="db">
+        <div class="db-bar">
+          <button class="vt on">${I('table')}희망 고객</button>
+          <button class="vt" data-soon="보드 보기">${I('board')}단계별 보드</button>
+          <span class="sp"></span>
+          <button class="nb" data-soon="조건이 맞는 고객 찾기">${I('userSearch')}맞는 고객 찾기</button>
+        </div>
+        <div class="ntbl-wrap"><table class="ntbl" style="min-width:680px">
+          <colgroup><col style="width:150px"><col style="width:64px"><col><col style="width:150px"><col style="width:64px"></colgroup>
+          <thead><tr><th>${ic('aa')}고객</th><th>${ic('circleDot')}거래</th><th>${I('list')}조건</th><th>${ic('circleDot')}단계</th><th>${I('cal')}최근</th></tr></thead>
+          <tbody>${rows}<tr class="newrow"><td colspan="5" data-soon="매칭 추가">${I('plus')}매칭 추가</td></tr></tbody>
+        </table></div>
+      </div>
+      <div class="deal" id="dealBlock">
+        <div class="deal-h">
+          <span class="pg" data-soon="거래관리에서 열기">${I('file')}${d.type} 거래 — 임차 ${d.tenant} · 임대 ${d.landlord}</span>
+          <span class="nt blue"><span class="d"></span>${d.steps[d.cur]}</span>
+          <span class="meta">${md(d.since)}부터 · ${diff(d.since, TODAY)}일째 · ${money(d.price)}</span>
+          <span class="sp"></span>
+          <button class="nb" data-soon="거래관리에서 열기">${I('arrowUpRight')}거래 보기</button>
+        </div>
+        <div class="steps">${d.steps.map((s, i) => `${i ? '<span class="ln"></span>' : ''}<span class="step ${i < d.cur ? 'done' : i === d.cur ? 'cur' : ''}"><span class="m">${i < d.cur ? I('check') : ''}</span>${s}</span>`).join('')}</div>
+        <div class="pays">${d.pays.map((p) => { const n = diff(TODAY, p.at); return `<div class="pay"><div class="k">${p.paid ? `<span class="nt green" style="height:18px;font-size:12px">입금</span>` : ''}${p.k}</div><div class="a">${money(p.amt)}</div><div class="w ${!p.paid && n <= 14 ? 'soon' : ''}">${sd(p.at)} ${p.paid ? '입금 확인' : `예정 · D-${n}`}</div></div>`; }).join('')}</div>
+      </div>`;
+  }
+
+  // ── 기록 ──
+  function recHtml(r, isNew, withDate) {
+    const [icn] = KIND[r.kind];
+    const iconName = r.kind === 'price' && r.dir === 'up' ? 'trendUp' : icn;
+    const long = r.body && (r.body.length > 120 || r.body.split('\n').length > 3);
+    const open = S.expanded.has(r.id);
+    return `<div class="rec ${isNew ? 'new' : ''} ${r.pinned ? 'is-pinned' : ''}" data-rec="${r.id}">
+      <span class="ri ${r.kind} ${r.dir || ''}">${ic(iconName)}</span>
+      <div class="rb">
+        <div class="l1"><span class="tt">${r.title}</span>${r.who ? `<span class="mt">${esc(r.who)}</span>` : ''}${r.sum ? `<span class="sm">${r.sum}</span>` : ''}<span class="tm">${withDate ? `${sd(r.at)} ` : ''}${r.time || ''}</span></div>
+        ${r.body ? `<p class="body ${long && !open ? 'clamp' : ''}">${esc(r.body)}</p>${long ? `<button class="more" data-expand="${r.id}">${open ? '접기' : '더 보기'}</button>` : ''}` : ''}
+        <div class="by">${r.by === '시스템' ? '자동 기록' : `${UI.av(r.by)}${r.by}`}</div>
+      </div>
+      <div class="tools">
+        <button class="nb" data-pin-rec="${r.id}">${ic('pinOn')}${r.pinned ? '고정 해제' : '고정'}</button>
+        ${['call', 'visit', 'text', 'confirm'].includes(r.kind) ? `<button class="nb" data-soon="상담 수정">${I('note')}수정</button>` : ''}
+      </div>
+    </div>`;
+  }
+
+  let lastNew = null;
+  function renderRecords() {
+    const counts = { all: S.records.length };
+    S.records.forEach((r) => { const g = KIND[r.kind][1]; counts[g] = (counts[g] || 0) + 1; });
+    const pinned = S.records.filter((r) => r.pinned);
+    const list = S.records.filter((r) => S.filter === 'all' || KIND[r.kind][1] === S.filter);
+    const groups = [];
+    list.forEach((r) => {
+      const key = day0(r.at);
+      let g = groups[groups.length - 1];
+      if (!g || g.key !== key) { g = { key, at: r.at, items: [] }; groups.push(g); }
+      g.items.push(r);
+    });
+    $('#records').innerHTML = `
+      <div class="h2">기록<span class="n">${S.records.length}</span><span class="act"><button class="nb" data-focus-composer>${I('plus')}상담 기록</button></span></div>
+      <div class="rtabs" role="tablist" aria-label="기록 종류">${FILTERS.map(([k, l]) => `<button class="vt ${S.filter === k ? 'on' : ''}" role="tab" aria-selected="${S.filter === k}" data-filter="${k}">${l}<span style="color:var(--n-text-3);font-weight:400">${counts[k] || 0}</span></button>`).join('')}</div>
+      ${pinned.length && S.filter === 'all' ? `<div class="pinned"><div class="pinned-h">${ic('pinOn')}고정한 기록 ${pinned.length}</div>${pinned.map((r) => recHtml(r, false, true)).join('')}</div>` : ''}
+      ${groups.map((g) => `<div class="dgrp"><div class="dgrp-h">${dayLabel(g.at)}</div>${g.items.map((r) => recHtml(r, r.id === lastNew)).join('')}</div>`).join('') || '<p style="color:var(--n-text-3);font-size:14px;margin-top:16px">이 종류의 기록이 없습니다.</p>'}`;
+    lastNew = null;
+  }
+
+  // ── 오른쪽 속성 패널 ──
+  function grp(key, title, body, extra = '') {
+    return `<div class="grp ${S.groups[key] ? 'is-open' : ''}"><button class="grp-h" data-grp="${key}" aria-expanded="${S.groups[key]}">${I('chevRight')}${title}${extra}</button><div class="grp-b">${body}</div></div>`;
+  }
+  const prop = (icon, k, v, cls = '') => `<div class="prop"><div class="k">${icon}${k}</div><div class="v ${cls}">${v}</div></div>`;
+  function personRow(p, past) {
+    return `<div class="person ${past ? 'past' : ''}">
+      ${UI.av(p.name, 'md')}
+      <div class="pb">
+        <div class="pn"><b>${p.name}</b><span class="nt ${past ? 'gray' : p.role === '소유주' ? 'brown' : 'gray'}">${p.role}</span>${p.main ? '<span class="nt gray" style="font-size:12px">주 연락처</span>' : ''}</div>
+        ${p.terms ? `<div class="terms">${p.terms}</div>` : ''}
+        <div class="pd2"><span class="phn" data-copy="${p.phone}" title="눌러서 번호 복사">${tel(p.phone)}</span>${p.note ? ` · ${p.note}` : ''}</div>
+      </div>
+      ${past ? '' : `<button class="nb call" data-call="${p.id}" aria-label="${p.name}에게 전화">${I('phone')}</button>`}
+    </div>`;
+  }
+  function memoField(key, label, value, priv) {
+    return `<div class="prop" style="grid-template-columns:1fr"><div class="k">${I('note')}${label}</div>
+      <div class="v ${value ? '' : 'is-empty'}" data-memo="${key}" style="margin-top:-4px">${value ? `<span class="memo-v">${esc(value)}</span>` : '메모 추가'}</div></div>
+      ${priv ? `<div class="privnote">${ic('lock')}<span><b style="font-weight:600">비공개</b> ${esc(priv)}</span></div>` : ''}`;
+  }
+  function renderSide() {
+    const t = S.tenants[0];
+    const tTerms = (x) => `보증금 ${money(x.deposit)}${x.rent ? ` · 월 ${money(x.rent)}` : ''}`;
+    const tLine = (x, past) => personRow({ ...x, role: past ? '지난 세입자' : `세입자 · ${x.status}`, terms: tTerms(x), note: `${sd(x.start)} ~ ${sd(x.end)}${past ? '' : ` · 만기 D-${diff(TODAY, x.end)}`}${x.note ? ` · ${x.note}` : ''}` }, past);
+    $('#sideIn').innerHTML = `
+      <div class="side-h">속성<span class="sp"></span><button class="nb" data-side-toggle title="속성 패널 접기">${I('chevsRight')}</button></div>
+      ${grp('unit', '호실', [
+        prop(I('building'), '단지', '<span style="text-decoration:underline;text-decoration-color:rgba(55,53,47,.25);text-underline-offset:3px">고덕그라시움</span>'),
+        prop(ic('door'), '동 · 호', '103동 3401호'),
+        prop(I('tag'), '유형', '<span class="nt gray">아파트</span><span class="nt gray">84A</span>'),
+        prop(I('ruler'), '공급', '112.40㎡ <small>34.0평</small>'),
+        prop(I('ruler'), '전용', '84.97㎡ <small>25.7평</small>'),
+        prop(ic('layers'), '층', '34층 <small>/ 35층</small>'),
+        prop(ic('bed'), '방 · 욕실', '3 · 2'),
+        prop(ic('compass'), '향', '남향'),
+        prop(ic('hammer'), '준공', '2019년 <small>4,932세대 · 51개 동</small>'),
+      ].join(''))}
+      <div class="side-sep"></div>
+      ${grp('people', '소유주 · 관련인', `${S.people.map((p) => personRow(p)).join('')}
+        <button class="togg ${S.toggles.pastOwners ? 'is-open' : ''}" data-toggle="pastOwners">${I('chevRight')}이전 소유주 ${S.pastOwners.length}</button>
+        ${S.toggles.pastOwners ? S.pastOwners.map((p) => personRow(p, true)).join('') : ''}`, `<span class="n">${S.people.length}</span><span class="add nb" data-soon="소유주·관련인 추가" style="height:24px;padding:0 4px">${I('plus')}</span>`)}
+      <div class="side-sep"></div>
+      ${grp('lease', '임대 현황', `${S.tenants.map((x) => tLine(x)).join('')}
+        <button class="togg ${S.toggles.pastTenants ? 'is-open' : ''}" data-toggle="pastTenants">${I('chevRight')}지난 세입자 ${S.pastTenants.length}</button>
+        ${S.toggles.pastTenants ? S.pastTenants.map((x) => tLine(x, true)).join('') : ''}`, `<span class="add nb" data-soon="세입자 추가" style="height:24px;padding:0 4px">${I('plus')}</span>`)}
+      <div class="side-sep"></div>
+      ${grp('intake', '의뢰', [
+        prop(I('cal'), '접수', `${fd(S.intake.received)} <small>${diff(S.intake.received, TODAY)}일째</small>`),
+        prop(ic('calCheck'), '다음 확인', `${md(S.confirm.next)} <small>${due(S.confirm.next)}</small>`),
+        prop(I('users'), '공동중개', S.intake.joint ? '필수' : '<span style="color:var(--n-text-3)">없음</span>'),
+        memoField('intake', '의뢰 메모', S.intake.memo),
+        `<button class="togg ${S.toggles.pastIntakes ? 'is-open' : ''}" data-toggle="pastIntakes">${I('chevRight')}지난 의뢰 ${S.pastIntakes.length}</button>`,
+        S.toggles.pastIntakes ? S.pastIntakes.map((x) => prop(I('clock'), '기간', `${x.period}<br><span class="nt gray">${x.status}</span> ${x.offers}`)).join('') : '',
+      ].join(''))}
+      <div class="side-sep"></div>
+      ${grp('memo', '거래 조건 메모', S.offers.map((o) => memoField(o.id, `${o.label} 메모`, o.memo, o.priv)).join(''))}
+      <div class="side-sep"></div>
+      ${grp('meta', '기타', [
+        prop(ic('hash'), '매물번호', 'P-2026-01842'),
+        prop(I('user'), '만든 사람', `${UI.av('이현수')}이현수 <small>10.02</small>`),
+        prop(I('clock'), '수정', `${UI.av('박서연')}박서연 <small>11.10 17:10</small>`),
+      ].join(''))}`;
+  }
+
+  function renderAll() {
+    renderHead(); renderMini(); renderPins(); renderComposer(); renderTodo(); renderOffers(); renderProgress(); renderRecords(); renderSide();
+    $('#pd').classList.toggle('side-closed', !S.sideOpen);
+  }
+
+  // ── 실행 취소 판 번호 ──
+  // 값을 바꿀 때마다 그 값의 판 번호를 올린다. 실행 취소는 자기가 만든 판이 아직 마지막일 때만
+  // 되돌린다. 그 사이 같은 값이 또 바뀌었으면 나중 변경을 덮어쓰지 않는다.
+  const REV = {};
+  const bump = (key) => (REV[key] = (REV[key] || 0) + 1);
+  const fresh = (key, v) => {
+    if (REV[key] === v) return true;
+    UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다');
+    return false;
+  };
+
+  // ── 동작 ──
+  function addRecord(r) {
+    const nr = rec(r);
+    S.records.unshift(nr);
+    lastNew = nr.id;
+    return nr;
+  }
+  function removeRecord(id) { S.records = S.records.filter((r) => r.id !== id); }
+  const nowTime = () => { const n = new Date(); return `${pad(n.getHours())}:${pad(n.getMinutes())}`; };
+
+  function confirmNow(via) {
+    const prev = { ...S.confirm };
+    S.confirm = { last: new Date(TODAY), next: new Date(TODAY.getTime() + 14 * 864e5), result: 'alive' };
+    const v = bump('confirm');
+    const r = via ? null : addRecord({ kind: 'confirm', at: new Date(TODAY), time: nowTime(), who: '김정훈 · 소유주', by: S.me, title: '매물 확인', body: '가격·거래 가능 여부 변동 없음' });
+    renderAll();
+    if (!via) UI.toast(`매물 확인을 기록했습니다 · 다음 확인 ${md(S.confirm.next)}`, () => { if (!fresh('confirm', v)) return; S.confirm = prev; if (r) removeRecord(r.id); renderAll(); });
+    return prev;
+  }
+
+  function saveComposer() {
+    const c = S.composer;
+    const text = ($('#cmpText')?.value || '').trim();
+    if (!text) { UI.toast('내용을 적어야 기록할 수 있습니다'); $('#cmpText')?.focus(); return; }
+    const all = [...people(), ...matchPeople()];
+    const who = all.find((p) => p.id === c.who) || all[0];
+    const ownerSide = ['소유주', '공동소유', '대리인'].includes(who.role);
+    const asConfirm = ownerSide && c.confirm;
+    const titles = { call: '전화 상담', visit: '방문 상담', text: '문자 상담' };
+    const r = addRecord({ kind: asConfirm ? 'confirm' : c.type, at: new Date(TODAY), time: nowTime(), who: `${who.name} · ${who.role}`, by: S.me, title: asConfirm ? `매물 확인 · ${titles[c.type].replace(' 상담', '')}` : titles[c.type], body: text });
+    const prevConfirm = asConfirm ? { ...S.confirm } : null;
+    const cv = asConfirm ? bump('confirm') : null;
+    if (asConfirm) S.confirm = { last: new Date(TODAY), next: new Date(TODAY.getTime() + 14 * 864e5), result: 'alive' };
+    $('#cmpText').value = '';
+    S.composer = { ...S.composer, open: false, text: '' };
+    S.filter = 'all';
+    renderAll();
+    document.querySelector(`[data-rec="${r.id}"]`)?.scrollIntoView({ block: 'center' });
+    UI.toast(asConfirm ? '상담을 기록하고 매물 확인도 남겼습니다' : '상담을 기록했습니다', () => {
+      if (asConfirm && !fresh('confirm', cv)) return;
+      removeRecord(r.id);
+      if (prevConfirm) S.confirm = prevConfirm;
+      renderAll();
+    });
+  }
+
+  // 떠 있는 편집 창
+  let pop = null;
+  const closePop = () => { if (pop) { pop.remove(); pop = null; } };
+  function openPop(anchor, html, wide) {
+    closePop();
+    pop = document.createElement('div');
+    pop.className = `npop ${wide ? 'wide' : ''}`;
+    pop.innerHTML = html;
+    document.body.append(pop);
+    const r = anchor.getBoundingClientRect();
+    const x = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8));
+    let y = r.bottom + 6;
+    if (y + pop.offsetHeight > innerHeight - 8) y = Math.max(8, r.top - pop.offsetHeight - 6);
+    pop.style.left = `${x}px`; pop.style.top = `${y}px`;
+    return pop;
+  }
+  document.addEventListener('mousedown', (e) => { if (pop && !pop.contains(e.target)) closePop(); }, true);
+
+  function editPrice(btn, id) {
+    const o = S.offers.find((x) => x.id === id);
+    const p = openPop(btn, `
+      <h4>${o.label}가 · 만원 단위</h4>
+      <div class="inp"><input id="pv" inputmode="numeric" value="${o.price}" aria-label="${o.label}가"><span class="unit">만원</span></div>
+      <div class="hint" id="pvh">= ${money(o.price)}</div>
+      <div class="inp"><input id="pr" placeholder="바꾼 이유 (기록에 남습니다)" aria-label="바꾼 이유"></div>
+      <div class="row"><button class="nb" data-pop-cancel>취소</button><button class="nb solid" data-pop-save>저장 <kbd>↵</kbd></button></div>`);
+    const input = $('#pv', p), reason = $('#pr', p);
+    input.select();
+    input.addEventListener('input', () => { const v = parseInt(input.value.replace(/\D/g, ''), 10); $('#pvh', p).textContent = v ? `= ${money(v)}${v !== o.price ? ` · ${v < o.price ? '↓' : '↑'} ${money(Math.abs(v - o.price))}` : ''}` : '숫자를 입력하세요'; });
+    const save = () => {
+      const v = parseInt(input.value.replace(/\D/g, ''), 10);
+      if (!v) return input.focus();
+      closePop();
+      if (v === o.price) return;
+      const prev = { price: o.price, hist: o.hist.slice() };
+      const wasStale = !!staleAd(o);
+      o.hist.unshift({ at: new Date(TODAY), from: o.price, to: v });
+      const pv = bump(`price:${o.id}`);
+      const r = addRecord({ kind: 'price', dir: v < o.price ? 'down' : 'up', at: new Date(TODAY), time: nowTime(), who: o.label, by: S.me, title: '가격 변경', sum: `${money(o.price)} → ${money(v)}`, body: reason.value.trim() || null });
+      o.price = v;
+      renderAll();
+      const base = `${o.label}가 변경: ${money(prev.price)} → ${money(v)}`;
+      const msg = staleAd(o) ? `${base} · 광고 가격과 다릅니다` : wasStale ? `${base} · 광고 가격과 같아졌습니다` : base;
+      UI.toast(msg, () => { if (!fresh(`price:${o.id}`, pv)) return; o.price = prev.price; o.hist = prev.hist; removeRecord(r.id); renderAll(); });
+    };
+    p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); save(); } if (e.key === 'Escape') { e.preventDefault(); closePop(); btn.focus(); } });
+    $('[data-pop-save]', p).onclick = save;
+    $('[data-pop-cancel]', p).onclick = closePop;
+  }
+
+  function naverPop(btn, id) {
+    const o = S.offers.find((x) => x.id === id);
+    const list = o.naver.slice().sort((a, b) => a.price - b.price);
+    openPop(btn, `
+      <h4>네이버 같은 호실 ${o.label} 광고 ${o.naver.length}건 · 11.13 08:00 수집</h4>
+      <table class="cmp-tbl"><thead><tr><th>중개사</th><th class="r">가격</th><th>층 노출</th><th>확인</th><th class="r">순위</th></tr></thead>
+      <tbody>${list.map((n) => `<tr class="${n.ours ? 'ours' : ''}"><td>${esc(n.ag)}</td><td class="r ${!n.ours && n.price < o.price ? 'cheap' : ''}">${money(n.price)}</td><td>${n.floor}</td><td>${n.v}</td><td class="r">${n.rank}위</td></tr>`).join('')}</tbody></table>
+      <p class="hint" style="margin:10px 2px 0">우리 매물가 ${money(o.price)} 기준. ${o.ads.length ? '' : '우리 광고는 지금 올라가 있지 않습니다.'}</p>`, true);
+  }
+
+  function pageMenu(btn) {
+    const open = S.sideOpen;
+    UI.menu(btn, [
+      { label: '거래 조건 추가', icon: 'plus', run: () => UI.toast('거래 조건 추가 창을 엽니다 (데모)') },
+      { label: '소유주·관련인 추가', icon: 'user', run: () => UI.toast('관련인 추가 창을 엽니다 (데모)') },
+      { label: '세입자 추가', icon: 'users', run: () => UI.toast('세입자 추가 창을 엽니다 (데모)') },
+      { label: '거래 바로 만들기', icon: 'handshake', run: () => UI.toast('거래 만들기 창을 엽니다 (데모)') },
+      '-', { head: '의뢰 · 접수 10.02' },
+      { label: '확인 결과 기록…', icon: 'phone', run: () => confirmOther(btn) },
+      { label: '의뢰 보류', icon: 'clock', run: () => UI.toast('의뢰를 보류했습니다 (데모)') },
+      '-',
+      { label: open ? '속성 패널 접기' : '속성 패널 펼치기', icon: 'board', run: toggleSide },
+      { label: '새 창으로 열기', icon: 'arrowUpRight', run: () => UI.toast('새 창으로 엽니다 (데모)') },
+      { label: '링크 복사', icon: 'copy', run: () => UI.toast('매물 링크를 복사했습니다') },
+    ], { right: true });
+  }
+
+  function confirmOther(anchor) {
+    UI.menu(anchor, [
+      { head: '확인 결과' },
+      { label: '이상 없음 (확인 완료)', icon: 'check', run: () => confirmNow() },
+      { label: '가격이 바뀌었음', icon: 'won', run: () => { const b = document.querySelector('[data-edit-price="sale"]'); b.scrollIntoView({ block: 'center' }); setTimeout(() => editPrice(b, 'sale'), 250); } },
+      { label: '부재중', icon: 'phone', run: () => { const prev = { ...S.confirm }; S.confirm = { ...S.confirm, result: 'noanswer', last: new Date(TODAY) }; const v = bump('confirm'); renderAll(); UI.toast('부재중으로 기록했습니다', () => { if (!fresh('confirm', v)) return; S.confirm = prev; renderAll(); }); } },
+      { label: '의뢰 종료 (다른 곳에서 계약 등)…', icon: 'x', danger: true, run: () => UI.toast('의뢰 종료 사유를 고르는 창을 엽니다 (데모)') },
+    ], { right: true });
+  }
+
+  function toggleSide() { S.sideOpen = !S.sideOpen; renderHead(); $('#pd').classList.toggle('side-closed', !S.sideOpen); }
+
+  function setTodoDone(key, done) {
+    if (done) S.doneTodos.add(key); else S.doneTodos.delete(key);
+    renderTodo();
+    return bump(`todo:${key}`);
+  }
+  const undoTodo = (key, v) => () => { if (fresh(`todo:${key}`, v)) setTodoDone(key, false); };
+
+  function todoAction(key, btn) {
+    if (key === 'confirm') return confirmNow();
+    if (key === 'pay') {
+      const b = $('#dealBlock'); b.scrollIntoView({ block: 'center' }); b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash'); return;
+    }
+    if (key.startsWith('naver-')) { const id = key.slice(6); const b = document.querySelector(`[data-naver="${id}"]`); b.scrollIntoView({ block: 'center' }); setTimeout(() => naverPop(b, id), 250); return; }
+    if (key === 'ad') {
+      UI.menu(btn, [
+        { head: '이실장 광고 가격 맞추기' },
+        { label: `광고 가격 수정 요청 (→ ${money(S.offers[0].price)})`, icon: 'megaphone', hint: '에이전트 업무', run: () => { const v = setTodoDone('ad', true); UI.toast('광고 수정 업무를 만들었습니다. 에이전트가 처리하면 기록에 남습니다', undoTodo('ad', v)); } },
+        { label: '이실장에서 직접 고치기', icon: 'arrowUpRight', run: () => UI.toast('이실장 광고 관리 화면을 엽니다 (데모)') },
+      ], { right: true });
+    }
+  }
+
+  function memoEdit(el, key) {
+    const target = key === 'intake' ? S.intake : S.offers.find((o) => o.id === key);
+    const prev = target.memo;
+    el.innerHTML = `<textarea class="memo-edit" aria-label="메모">${esc(prev)}</textarea>`;
+    const ta = el.querySelector('textarea');
+    ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+    let done = false;
+    const finish = (save) => {
+      if (done) return; done = true;
+      const next = ta.value.trim();
+      if (save && next !== prev) {
+        target.memo = next;
+        const v = bump(`memo:${key}`);
+        renderSide();
+        UI.toast('메모를 저장했습니다', () => { if (!fresh(`memo:${key}`, v)) return; target.memo = prev; renderSide(); });
+      } else renderSide();
+    };
+    ta.addEventListener('blur', () => finish(true));
+    ta.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    const q = (s) => t.closest(s);
+    let el;
+    if (q('[data-open-composer]') || q('[data-focus-composer]')) {
+      S.composer.open = true; renderComposer(true); $('#composer').scrollIntoView({ block: 'center' }); return;
+    }
+    if (q('[data-close-composer]')) { $('#cmpText').value = ''; S.composer = { ...S.composer, open: false, text: '' }; renderComposer(); return; }
+    if (q('[data-save-composer]')) return saveComposer();
+    if ((el = q('[data-ctype]'))) { S.composer.type = el.dataset.ctype; renderComposer(true); return; }
+    if (q('[data-cmp-confirm]')) { S.composer.confirm = !S.composer.confirm; renderComposer(true); return; }
+    if ((el = q('[data-pick-who]'))) {
+      const pick = (id) => { S.composer.who = id; renderComposer(true); };
+      UI.menu(el, [
+        { head: '이 매물의 사람' },
+        ...people().map((p) => ({ label: `${p.name}`, hint: p.role, html: UI.av(p.name, 'md'), on: S.composer.who === p.id, run: () => pick(p.id) })),
+        { head: '매칭된 고객' },
+        ...matchPeople().map((p) => ({ label: p.name, hint: p.role, html: UI.av(p.name, 'md'), on: S.composer.who === p.id, run: () => pick(p.id) })),
+        '-', { label: '새 연락처로 기록…', icon: 'plus', run: () => UI.toast('새 연락처 입력 창을 엽니다 (데모)') },
+      ], { wide: true });
+      return;
+    }
+    if ((el = q('[data-todo-check]'))) { const k = el.dataset.todoCheck; const was = S.doneTodos.has(k); const v = setTodoDone(k, !was); if (!was) UI.toast('완료로 표시했습니다', undoTodo(k, v)); return; }
+    if ((el = q('[data-todo-act]'))) return todoAction(el.dataset.todoAct, el);
+    if (q('[data-toggle-done]')) { S.showDone = !S.showDone; renderTodo(); return; }
+    if (q('[data-confirm]')) return confirmNow();
+    if ((el = q('[data-edit-price]'))) return editPrice(el, el.dataset.editPrice);
+    if ((el = q('[data-naver]'))) return naverPop(el, el.dataset.naver);
+    if ((el = q('[data-offer-status]'))) {
+      const o = S.offers.find((x) => x.id === el.dataset.offerStatus);
+      if (o.contract) { UI.menu(el, [{ note: '거래가 진행 중입니다', sub: '이 조건의 상태는 거래관리의 단계에 따라 바뀝니다' }, { label: '거래 보기', icon: 'arrowUpRight', run: () => todoAction('pay') }]); return; }
+      const set = (paused) => { if (o.paused === paused) return; o.paused = paused; const v = bump(`paused:${o.id}`); renderAll(); UI.toast(paused ? `${o.label}만 중단했습니다` : `${o.label}를 다시 진행합니다`, () => { if (!fresh(`paused:${o.id}`, v)) return; o.paused = !paused; renderAll(); }); };
+      UI.menu(el, [{ head: `${o.label} 상태` }, { label: '활성', html: '<span class="nt green" style="height:18px"><span class="d"></span>활성</span>', on: !o.paused, run: () => set(false) }, { label: '이 조건만 중단', html: '<span class="nt yellow" style="height:18px"><span class="d"></span>중단</span>', on: o.paused, run: () => set(true) }]);
+      return;
+    }
+    if ((el = q('[data-stage]'))) {
+      const m = S.matches.find((x) => x.id === el.dataset.stage);
+      UI.menu(el, [{ head: `${m.name} · 단계` }, ...STAGES.map(([k, l, c]) => ({ label: l, html: `<span class="nt ${c}" style="height:18px;padding:0 4px"><span class="d"></span></span>`, on: m.stage === k, run: () => { if (m.stage === k) return; const prev = m.stage; const prevAt = m.at; m.stage = k; m.at = new Date(TODAY); const v = bump(`stage:${m.id}`); renderAll(); UI.toast(`${m.name} 매칭 단계: ${stageOf(prev)[1]} → ${l}`, () => { if (!fresh(`stage:${m.id}`, v)) return; m.stage = prev; m.at = prevAt; renderAll(); }); } }))]);
+      return;
+    }
+    if ((el = q('[data-filter]'))) { S.filter = el.dataset.filter; renderRecords(); return; }
+    if ((el = q('[data-expand]'))) { const id = el.dataset.expand; S.expanded.has(id) ? S.expanded.delete(id) : S.expanded.add(id); renderRecords(); return; }
+    if ((el = q('[data-pin-rec]'))) { const r = S.records.find((x) => x.id === el.dataset.pinRec); r.pinned = !r.pinned; const v = bump(`pin:${r.id}`); renderRecords(); UI.toast(r.pinned ? '기록을 맨 위에 고정했습니다' : '고정을 풀었습니다', () => { if (!fresh(`pin:${r.id}`, v)) return; r.pinned = !r.pinned; renderRecords(); }); return; }
+    if ((el = q('[data-grp]'))) { const add = t.closest('.add'); if (add) { UI.toast(`${add.dataset.soon} 창을 엽니다 (데모)`); return; } const k = el.dataset.grp; S.groups[k] = !S.groups[k]; renderSide(); return; }
+    if ((el = q('[data-toggle]'))) { const k = el.dataset.toggle; S.toggles[k] = !S.toggles[k]; renderSide(); return; }
+    if ((el = q('[data-memo]')) && !t.closest('textarea')) return memoEdit(el, el.dataset.memo);
+    if ((el = q('[data-copy]'))) { UI.toast(`${tel(el.dataset.copy)} 번호를 복사했습니다`); return; }
+    if ((el = q('[data-call]'))) { const p = [...S.people, ...S.tenants].find((x) => x.id === el.dataset.call); UI.toast(`${p.name}님에게 전화를 겁니다 · 끝나면 상담 입력칸이 열립니다`); S.composer = { ...S.composer, open: true, who: p.id, type: 'call' }; setTimeout(() => { renderComposer(true); $('#composer').scrollIntoView({ block: 'center' }); }, 0); return; }
+    if ((el = q('[data-side-toggle]'))) return toggleSide();
+    if ((el = q('[data-page-menu]'))) return pageMenu(el);
+    if ((el = q('[data-new-offer]'))) { UI.toast('거래 조건 추가 창을 엽니다 (데모)'); return; }
+    if ((el = q('[data-open-offer]'))) { UI.toast('거래 조건을 옆에서 엽니다 (데모)'); return; }
+    if ((el = q('[data-pin]'))) {
+      const k = el.dataset.pin;
+      if (k === 'confirm') return confirmOther(el);
+      if (k === 'price') { const b = document.querySelector('[data-edit-price="sale"]'); b.scrollIntoView({ block: 'center' }); return; }
+      if (k === 'status') { document.querySelector('[data-offer-status="sale"]').scrollIntoView({ block: 'center' }); return; }
+      if (k === 'owner') { UI.menu(el, ['이현수', '박서연', '최민준', '정다은'].map((n) => ({ label: n, html: UI.av(n, 'md'), on: S.intake.owner === n, run: () => { const prev = S.intake.owner; S.intake.owner = n; const v = bump('owner'); renderPins(); UI.toast(`담당 변경: ${prev} → ${n}`, () => { if (!fresh('owner', v)) return; S.intake.owner = prev; renderPins(); }); } }))); return; }
+    }
+    if ((el = q('[data-soon]'))) { UI.toast(`${el.dataset.soon}는 데모에 들어 있지 않습니다`); }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    const ta = e.target.closest && e.target.closest('#cmpText');
+    if (ta) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveComposer(); }
+      else if (e.key === 'Escape') { e.preventDefault(); S.composer.open = false; renderComposer(); }
+      return;
+    }
+    if (e.target.matches && e.target.matches('[data-todo-check]') && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); e.target.click(); return; }
+    const typing = e.target.matches && e.target.matches('input, textarea, [contenteditable]');
+    if (typing || e.metaKey || e.ctrlKey || e.altKey || document.querySelector('.menu, .npop')) return;
+    if (e.key.toLowerCase() === 'r') { e.preventDefault(); S.composer.open = true; renderComposer(true); $('#composer').scrollIntoView({ block: 'center' }); }
+  });
+
+  // 제목이 가려지면 고정 머리를 보여 준다
+  renderAll();
+  const io = new IntersectionObserver(([en]) => $('#mini').classList.toggle('show', !en.isIntersecting), { root: $('#main'), rootMargin: '-8px 0px 0px 0px' });
+  const watchTitle = () => { const h = $('#docTitle'); if (h) io.observe(h); };
+  watchTitle();
+  // 머리를 다시 그리면 제목 요소가 바뀌므로 다시 지켜본다
+  new MutationObserver(() => { io.disconnect(); watchTitle(); }).observe($('#head'), { childList: true });
+
+  // 상단 경로: 매물관리 › 호실
+  const crumbs = document.querySelector('.crumbs');
+  if (crumbs) crumbs.innerHTML = `<a href="properties.html" style="color:inherit">매물관리</a>${I('chevRight')}<b>고덕그라시움 103동 3401호</b>`;
+
+  UI.notes([
+    '<b>Notion 데이터베이스 페이지 문법</b>: 아이콘·큰 제목 → 고정 속성 4개(매물상태·거래·가격·매물 확인·담당) → 본문, 오른쪽은 접히는 속성 패널(Notion Layouts의 details panel).',
+    '<b>제목 아래 상담 입력칸</b>: 대화상자 없이 바로 기록합니다. 소유주와 통화하면 "매물 확인으로도 남기기"로 확인까지 한 번에 끝납니다. R 키로 엽니다. (HubSpot·Odoo·Copper)',
+    '<b>지금 챙길 것</b>: 광고가 불일치·더 싼 경쟁 광고·입금 예정·재확인 기한을 체크리스트로 모았습니다. 오른쪽 버튼으로 그 자리에서 처리합니다. (Salesforce·HubSpot·Pipedrive)',
+    '<b>고정 머리</b>: 스크롤하면 위에 제목·가격·확인 완료·상담 기록이 남습니다. (Salesforce·SAP)',
+    '<b>네이버 비교</b>: 같은 호실 광고 수·우리 순위·최저가·더 싼 광고를 거래 조건 표에서 바로 봅니다. 눌러서 목록을 엽니다. (네이버 "중개사 N곳"·이실장)',
+    '<b>가격 칸을 눌러 바로 수정</b>: 바꾼 이유가 기록에 남고, 광고가와 같아지면 할 일이 사라집니다. (Rex 가격 변경 사건)',
+    '<b>기록</b>: 고정, 긴 상담 3줄 접기, 종류별 거르기, 날짜 묶음. (Alto·HubSpot·Linear)',
+    '<b>이전 소유주·지난 세입자·지난 의뢰</b>는 속성 패널에 접어 둡니다. (Rex·VaultRE)',
+  ], '조사 문서: docs/ui-reference-research/property-detail-benchmark.md');
+})();
+</script>
+</body>
+</html>

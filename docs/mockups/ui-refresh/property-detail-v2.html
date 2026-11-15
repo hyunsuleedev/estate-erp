@@ -1,0 +1,1857 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>매물 상세 2판 · 중개사 업무 순서</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="ui.css">
+<style>
+  /*
+   * 매물 상세 — Notion 데이터베이스 페이지 레이아웃(아이콘·제목 → 고정 속성 → 본문 / 접히는 속성 패널)
+   * Notion 값: 글자 rgb(55,53,47), 보조 rgba(55,53,47,.65), 선 rgb(233,233,231), 모서리 4px,
+   * 선택 태그 색은 Notion 밝은 테마의 select 색.
+   */
+  :root {
+    --n-text: rgb(55, 53, 47);
+    --n-text-2: rgba(55, 53, 47, 0.65);
+    --n-text-3: rgba(55, 53, 47, 0.45);
+    --n-line: rgb(233, 233, 231);
+    --n-hover: rgba(55, 53, 47, 0.06);
+    --n-press: rgba(55, 53, 47, 0.1);
+    --n-callout: rgb(247, 246, 243);
+    --n-blue: rgb(35, 131, 226);
+    --n-r: 4px;
+  }
+  .pd { flex: 1; min-height: 0; display: flex; color: var(--n-text); }
+  .pd .i { width: 16px; height: 16px; }
+
+  /* 선택·상태 태그 (Notion select 색) */
+  .nt { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 6px; border-radius: 3px; font-size: 13px; line-height: 20px; white-space: nowrap; background: rgba(227, 226, 224, 0.6); color: rgb(50, 48, 44); }
+  .nt .d { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.6; }
+  .nt.gray { background: rgba(227, 226, 224, 0.6); color: rgb(50, 48, 44); }
+  .nt.brown { background: rgb(238, 224, 218); color: rgb(68, 42, 30); }
+  .nt.orange { background: rgb(250, 222, 201); color: rgb(73, 41, 14); }
+  .nt.yellow { background: rgb(253, 236, 200); color: rgb(64, 44, 27); }
+  .nt.green { background: rgb(219, 237, 219); color: rgb(28, 56, 41); }
+  .nt.blue { background: rgb(211, 229, 239); color: rgb(24, 51, 71); }
+  .nt.purple { background: rgb(232, 222, 238); color: rgb(65, 36, 84); }
+  .nt.pink { background: rgb(245, 224, 233); color: rgb(76, 35, 55); }
+  .nt.red { background: rgb(255, 226, 221); color: rgb(93, 23, 21); }
+  .nt.click { cursor: default; }
+  .nt.click:hover { filter: brightness(0.96); }
+
+  /* ── 본문 ── */
+  .pd-main { flex: 1; min-width: 0; overflow: auto; position: relative; scroll-behavior: smooth; }
+  .doc { max-width: 940px; margin: 0 auto; padding: 22px 40px 140px; }
+
+  /* 고정 머리: 제목이 가려지면 나타난다 */
+  .stick {
+    position: sticky; top: 0; z-index: 6; height: 0; overflow: visible;
+  }
+  .stick-in {
+    display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 20px 0 24px;
+    background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(6px);
+    box-shadow: 0 1px 0 var(--n-line);
+    transform: translateY(-48px); opacity: 0; transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.14s;
+  }
+  .stick.show .stick-in { transform: none; opacity: 1; }
+  .stick .t { font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .stick .p { display: flex; gap: 12px; font-size: 13px; color: var(--n-text-2); white-space: nowrap; overflow: hidden; }
+  .stick .p b { color: var(--n-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stick .sp { flex: 1; }
+
+  /* 아이콘·제목 */
+  .doc-head { position: relative; padding-top: 28px; }
+  .doc-title { margin: 0; padding-right: 200px; font-size: 34px; line-height: 1.22; font-weight: 700; letter-spacing: -0.025em; }
+  .doc-title .u { font-variant-numeric: tabular-nums; }
+  .doc-sub { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 14px; color: var(--n-text-2); }
+  .doc-sub .sep { color: rgba(55, 53, 47, 0.25); }
+  .spec { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; }
+  .spec span { display: inline-flex; align-items: center; gap: 6px; }
+  .spec .i { width: 15px; height: 15px; color: var(--n-text-3); }
+  .spec small { font-size: 13px; color: var(--n-text-3); }
+  .head-actions { position: absolute; right: 0; top: 32px; display: flex; gap: 4px; }
+
+  /* Notion 버튼(글자형) */
+  .nb { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: var(--n-r); background: transparent; color: var(--n-text-2); font-size: 14px; cursor: default; white-space: nowrap; transition: background-color 0.1s, color 0.1s; }
+  .nb:hover { background: var(--n-hover); color: var(--n-text); }
+  .nb:active { background: var(--n-press); }
+  .nb.on { background: var(--n-hover); color: var(--n-text); }
+  .nb .i { width: 15px; height: 15px; }
+  .nb.solid { background: var(--n-blue); color: #fff; padding: 0 10px; font-weight: 500; }
+  .nb.solid:hover { background: rgb(5, 112, 222); color: #fff; }
+  .nb.line { box-shadow: inset 0 0 0 1px rgba(55, 53, 47, 0.16); color: var(--n-text); }
+  .nb.line:hover { background: var(--n-hover); }
+  .nb kbd { font: inherit; font-size: 11px; color: var(--n-text-3); margin-left: 2px; }
+  .nb.solid kbd { color: rgba(255, 255, 255, 0.7); }
+
+  /* 고정 속성(Notion Layouts의 pinned properties) */
+  .pins { display: grid; grid-template-columns: repeat(4, minmax(0, auto)); justify-content: start; gap: 0 4px; margin: 20px 0 6px -8px; }
+  .pin { min-width: 0; padding: 6px 8px 7px; border-radius: var(--n-r); cursor: default; }
+  .pin:hover { background: var(--n-hover); }
+  .pin .k { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--n-text-2); white-space: nowrap; }
+  .pin .k .i { width: 14px; height: 14px; color: var(--n-text-3); }
+  .pin .v { margin-top: 3px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 14px; min-height: 22px; }
+  .pin .v b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pin .v .t3 { color: var(--n-text-3); }
+  .pin + .pin { margin-left: 12px; }
+
+  /* 상담 입력칸 (Notion 댓글 상자 문법) */
+  .cmp { margin: 12px 0 0; padding: 10px 0 14px; border-bottom: 1px solid var(--n-line); }
+  .cmp-row { display: flex; align-items: flex-start; gap: 10px; }
+  .cmp-row .av { margin-top: 3px; }
+  .cmp-ph { flex: 1; height: 30px; display: flex; align-items: center; padding: 0 8px; margin-left: -8px; border-radius: var(--n-r); color: var(--n-text-3); font-size: 14px; cursor: text; }
+  .cmp-ph:hover { background: var(--n-hover); }
+  .cmp-ph kbd { margin-left: auto; font: inherit; font-size: 12px; color: var(--n-text-3); }
+  .cmp-box { flex: 1; min-width: 0; }
+  .cmp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .who-pick { height: 26px; display: inline-flex; align-items: center; gap: 6px; padding: 0 6px 0 4px; border: 0; border-radius: var(--n-r); background: rgba(35, 131, 226, 0.08); color: rgb(29, 109, 191); font-size: 13px; cursor: default; }
+  .who-pick:hover { background: rgba(35, 131, 226, 0.14); }
+  .who-pick small { color: rgba(29, 109, 191, 0.7); }
+  .who-pick .i { width: 13px; height: 13px; }
+  .tseg { display: inline-flex; padding: 2px; border-radius: 6px; background: rgba(55, 53, 47, 0.06); }
+  .tseg button { height: 22px; padding: 0 9px; border: 0; border-radius: 4px; background: transparent; color: var(--n-text-2); font-size: 13px; cursor: default; }
+  .tseg button.on { background: #fff; color: var(--n-text); box-shadow: 0 1px 2px rgba(15, 15, 15, 0.1); }
+  .cmp textarea { display: block; width: 100%; min-height: 64px; resize: none; border: 0; outline: 0; padding: 6px 0; font: inherit; font-size: 14px; line-height: 1.6; color: var(--n-text); background: transparent; field-sizing: content; }
+  .cmp textarea::placeholder { color: var(--n-text-3); }
+  .cmp-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .cmp-foot .sp { flex: 1; }
+  .ckl { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--n-text-2); cursor: default; user-select: none; }
+  .ckl:hover { color: var(--n-text); }
+
+  /* 체크 칸 (Notion to-do) */
+  .cb { width: 16px; height: 16px; flex: none; display: inline-grid; place-items: center; border-radius: 3px; box-shadow: inset 0 0 0 1.5px rgba(55, 53, 47, 0.85); background: #fff; color: #fff; cursor: default; transition: background-color 0.12s, box-shadow 0.12s; }
+  .cb .i { width: 12px; height: 12px; stroke-width: 3; opacity: 0; }
+  .cb:hover { background: var(--n-hover); }
+  .cb.on { background: var(--n-blue); box-shadow: none; }
+  .cb.on .i { opacity: 1; }
+
+  /* 구역 제목 (Notion 제목 2) */
+  .h2 { display: flex; align-items: center; gap: 8px; margin: 40px 0 8px; font-size: 20px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
+  .h2 .n { font-size: 15px; font-weight: 500; color: var(--n-text-3); }
+  .h2 .act { margin-left: auto; display: flex; gap: 2px; }
+
+  /* 콜아웃 (지금 챙길 것) */
+  .callout { display: flex; gap: 10px; margin-top: 18px; padding: 14px 16px 12px 12px; border-radius: var(--n-r); background: var(--n-callout); }
+  .callout > .ic { width: 24px; height: 24px; display: grid; place-items: center; flex: none; color: rgb(203, 145, 47); }
+  .callout > .ic .i { width: 20px; height: 20px; }
+  .callout .ct { flex: 1; min-width: 0; }
+  .callout .ttl { font-size: 14px; font-weight: 600; line-height: 24px; }
+  .callout .ttl .n { color: var(--n-text-3); font-weight: 500; margin-left: 4px; }
+  .todo { display: flex; align-items: flex-start; gap: 10px; padding: 5px 4px 5px 2px; margin: 0 -4px 0 -2px; border-radius: var(--n-r); }
+  .todo:hover { background: rgba(55, 53, 47, 0.04); }
+  .todo .cb { margin-top: 3px; }
+  .todo .tx { flex: 1; min-width: 0; font-size: 14px; line-height: 22px; }
+  .todo .tx small { display: block; font-size: 13px; line-height: 19px; color: var(--n-text-2); }
+  .todo .tx b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .todo .go { flex: none; height: 26px; font-size: 13px; }
+  .todo.done .tx { color: var(--n-text-3); text-decoration: line-through; text-decoration-color: rgba(55, 53, 47, 0.3); }
+  .todo.done .tx small { color: var(--n-text-3); }
+  .todo.flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { 0% { background: rgba(35, 131, 226, 0.14); } 100% { background: transparent; } }
+  .togg { display: inline-flex; align-items: center; gap: 4px; height: 26px; margin-top: 2px; padding: 0 6px 0 2px; border: 0; border-radius: var(--n-r); background: transparent; color: var(--n-text-2); font-size: 13px; cursor: default; }
+  .togg:hover { background: var(--n-hover); }
+  .togg .i { width: 14px; height: 14px; transition: transform 0.15s; }
+  .togg.is-open .i { transform: rotate(90deg); }
+
+  /* 인라인 데이터베이스 (Notion 표) */
+  .db { margin-top: 8px; }
+  .db-bar { display: flex; align-items: center; gap: 2px; height: 34px; border-bottom: 1px solid var(--n-line); }
+  .vt { height: 34px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 0; background: transparent; font-size: 14px; color: var(--n-text-2); cursor: default; position: relative; }
+  .vt .i { width: 15px; height: 15px; }
+  .vt:hover { color: var(--n-text); }
+  .vt.on { color: var(--n-text); font-weight: 500; }
+  .vt.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--n-text); border-radius: 1px; }
+  .db-bar .sp { flex: 1; }
+  .ntbl-wrap { overflow-x: auto; }
+  .ntbl { width: 100%; min-width: 780px; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
+  .ntbl th { height: 33px; padding: 0 8px; text-align: left; font-weight: 400; font-size: 14px; color: var(--n-text-2); border-bottom: 1px solid var(--n-line); border-right: 1px solid var(--n-line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+  .ntbl th:hover { background: var(--n-hover); }
+  .ntbl th .i { width: 14px; height: 14px; color: var(--n-text-3); margin-right: 6px; vertical-align: -2px; }
+  .ntbl td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid var(--n-line); border-right: 1px solid var(--n-line); line-height: 21px; }
+  .ntbl th:last-child, .ntbl td:last-child { border-right: 0; }
+  .ntbl tbody tr:hover td { background: rgba(55, 53, 47, 0.025); }
+  .ntbl td.r, .ntbl th.r { text-align: right; }
+  .ntbl .num { font-variant-numeric: tabular-nums; }
+  .ntbl .muted { color: var(--n-text-3); }
+  .ntbl .warn { color: rgb(203, 107, 31); }
+  .cellbtn { display: block; width: calc(100% + 8px); margin: -3px -4px; padding: 3px 4px; border: 0; border-radius: var(--n-r); background: transparent; text-align: left; font: inherit; color: inherit; cursor: default; }
+  .cellbtn:hover { background: var(--n-hover); }
+  .price { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .delta { display: block; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .delta.down { color: rgb(68, 131, 97); }
+  .delta.up { color: rgb(212, 76, 71); }
+  .delta small { color: var(--n-text-3); font-size: 12px; }
+  .ttl-cell { position: relative; display: flex; align-items: center; gap: 6px; min-height: 21px; }
+  .ttl-cell .rowopen { position: absolute; right: -4px; top: 50%; transform: translateY(-50%); white-space: nowrap; height: 22px; display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; border: 0; border-radius: var(--n-r); background: #fff; box-shadow: 0 0 0 1px rgba(15, 15, 15, 0.1), 0 2px 4px rgba(15, 15, 15, 0.1); font-size: 12px; color: var(--n-text-2); opacity: 0; cursor: default; }
+  .ttl-cell .rowopen .i { width: 12px; height: 12px; }
+  tr:hover .ttl-cell .rowopen { opacity: 1; }
+  .newrow td { color: var(--n-text-3); border-right: 0; cursor: default; }
+  .newrow td:hover { background: var(--n-hover) !important; color: var(--n-text-2); }
+  .newrow .i { width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; }
+  .nv { display: block; width: calc(100% + 8px); margin: -3px -4px; padding: 3px 4px; border: 0; border-radius: var(--n-r); background: transparent; text-align: left; font: inherit; font-size: 13px; color: var(--n-text-2); cursor: default; line-height: 19px; }
+  .nv:hover { background: var(--n-hover); }
+  .nv b { color: var(--n-text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .nv .bad { color: rgb(212, 76, 71); }
+  .adline { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+  .adline small { font-size: 12px; color: rgb(203, 107, 31); font-variant-numeric: tabular-nums; }
+
+  /* 거래 블록 (Notion 하위 페이지 링크 + 단계) */
+  .deal { margin-top: 14px; border-radius: var(--n-r); box-shadow: 0 0 0 1px var(--n-line); }
+  .deal.flash { animation: flash 1.4s ease-out; }
+  .deal-h { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--n-line); }
+  .deal-h .pg { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; text-decoration: underline; text-decoration-color: rgba(55, 53, 47, 0.25); text-underline-offset: 3px; cursor: default; }
+  .deal-h .pg:hover { background: var(--n-hover); border-radius: 3px; }
+  .deal-h .pg .i { width: 15px; height: 15px; color: var(--n-text-3); }
+  .deal-h .meta { font-size: 13px; color: var(--n-text-2); }
+  .deal-h .sp { flex: 1; }
+  .steps { display: flex; align-items: center; gap: 0; padding: 12px 12px 4px; overflow-x: auto; }
+  .step { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--n-text-3); white-space: nowrap; }
+  .step .m { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px rgba(55, 53, 47, 0.2); }
+  .step .m .i { width: 10px; height: 10px; stroke-width: 3; }
+  .step.done { color: var(--n-text-2); }
+  .step.done .m { background: rgb(68, 131, 97); box-shadow: none; color: #fff; }
+  .step.cur { color: var(--n-text); font-weight: 600; }
+  .step.cur .m { box-shadow: inset 0 0 0 5px var(--n-text); }
+  .steps .ln { width: 24px; height: 1px; flex: none; background: rgba(55, 53, 47, 0.16); margin: 0 10px; }
+  .pays { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 8px 4px 10px; }
+  .pay { padding: 6px 8px; border-radius: var(--n-r); }
+  .pay .k { font-size: 12px; color: var(--n-text-2); display: flex; align-items: center; gap: 6px; }
+  .pay .a { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pay .w { font-size: 12px; color: var(--n-text-2); font-variant-numeric: tabular-nums; }
+  .pay .w.soon { color: rgb(203, 107, 31); font-weight: 500; }
+
+  /* 기록 (Notion 댓글·변경 기록 문법) */
+  .rtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--n-line); margin-top: 4px; }
+  .pinned { margin-top: 12px; padding: 4px 0; }
+  .pinned-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--n-text-2); padding: 4px 0; }
+  .pinned-h .i { width: 13px; height: 13px; }
+  .dgrp { margin-top: 14px; }
+  .dgrp-h { font-size: 12px; font-weight: 600; color: var(--n-text-2); padding: 4px 0 2px; }
+  .rec { position: relative; display: flex; gap: 10px; padding: 8px 6px; margin: 0 -6px; border-radius: var(--n-r); }
+  .rec:hover { background: rgba(55, 53, 47, 0.03); }
+  .rec.new { animation: flash 1.6s ease-out; }
+  .rec .ri { width: 26px; height: 26px; flex: none; border-radius: 50%; display: grid; place-items: center; background: rgb(241, 240, 236); color: rgb(120, 117, 110); }
+  .rec .ri .i { width: 14px; height: 14px; }
+  .rec .ri.call { background: rgb(231, 243, 248); color: rgb(51, 126, 169); }
+  .rec .ri.visit { background: rgb(244, 240, 247); color: rgb(144, 101, 176); }
+  .rec .ri.text { background: rgb(241, 240, 236); color: rgb(120, 117, 110); }
+  .rec .ri.confirm { background: rgb(237, 243, 236); color: rgb(68, 131, 97); }
+  .rec .ri.price { background: rgb(253, 235, 236); color: rgb(205, 60, 58); }
+  .rec .ri.price.down { background: rgb(237, 243, 236); color: rgb(68, 131, 97); }
+  .rec .ri.ad { background: rgb(251, 243, 219); color: rgb(203, 145, 47); }
+  .rec .ri.deal { background: rgb(231, 243, 248); color: rgb(51, 126, 169); }
+  .rec .ri.intake { background: rgb(241, 240, 236); color: rgb(120, 117, 110); }
+  .rec .rb { flex: 1; min-width: 0; }
+  .rec .l1 { display: flex; align-items: baseline; gap: 6px; font-size: 14px; line-height: 22px; min-width: 0; }
+  .rec .l1 .tt { font-weight: 600; white-space: nowrap; }
+  .rec .l1 .mt { color: var(--n-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rec .l1 .sm { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rec .l1 .tm { margin-left: auto; padding-left: 8px; font-size: 12px; color: var(--n-text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .rec .by { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--n-text-3); }
+  .rec .by .av { width: 16px; height: 16px; font-size: 9px; }
+  .rec .body { margin: 2px 0 0; font-size: 14px; line-height: 1.65; color: rgba(55, 53, 47, 0.9); white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+  .rec .body.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .rec .more { border: 0; background: transparent; padding: 0; margin-top: 2px; font-size: 13px; color: var(--n-text-2); cursor: default; }
+  .rec .more:hover { color: var(--n-text); text-decoration: underline; }
+  .rec .tools { position: absolute; right: 6px; top: 6px; display: flex; gap: 2px; padding: 2px; border-radius: 6px; background: #fff; box-shadow: 0 0 0 1px rgba(15, 15, 15, 0.08), 0 3px 8px rgba(15, 15, 15, 0.08); opacity: 0; pointer-events: none; transition: opacity 0.1s; }
+  .rec:hover .tools { opacity: 1; pointer-events: auto; }
+  .rec:hover .l1 .tm { visibility: hidden; }
+  .rec .tools .nb { height: 24px; padding: 0 6px; font-size: 12px; }
+  .rec .tools .nb .i { width: 13px; height: 13px; }
+  .rec.is-pinned .ri { box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px rgb(203, 145, 47); }
+
+  /* ── 오른쪽 속성 패널 (Notion details panel) ── */
+  .pd-side { width: 320px; flex: none; border-left: 1px solid var(--n-line); overflow-y: auto; overflow-x: hidden; background: #fff; transition: width 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .pd-side .in { width: 320px; padding: 14px 16px 96px 20px; }
+  .pd.side-closed .pd-side { width: 0; border-left-color: transparent; }
+  .side-h { display: flex; align-items: center; gap: 4px; height: 30px; margin-bottom: 4px; font-size: 13px; font-weight: 600; color: var(--n-text-2); }
+  .side-h .sp { flex: 1; }
+  .grp { margin-top: 6px; }
+  .grp-h { display: flex; align-items: center; gap: 4px; width: 100%; height: 30px; padding: 0 4px 0 0; margin-left: -4px; border: 0; background: transparent; border-radius: var(--n-r); font-size: 13px; font-weight: 600; color: var(--n-text); cursor: default; }
+  .grp-h:hover { background: var(--n-hover); }
+  .grp-h .i { width: 14px; height: 14px; color: var(--n-text-3); transition: transform 0.15s; }
+  .grp.is-open > .grp-h .i { transform: rotate(90deg); }
+  .grp-h .n { color: var(--n-text-3); font-weight: 500; }
+  .grp-h .add { margin-left: auto; opacity: 0; }
+  .grp-h:hover .add { opacity: 1; }
+  .grp-b { padding: 2px 0 8px; }
+  .grp:not(.is-open) > .grp-b { display: none; }
+  .prop { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: start; min-height: 32px; }
+  .prop .k { display: flex; align-items: center; gap: 7px; height: 32px; font-size: 13px; color: var(--n-text-2); white-space: nowrap; }
+  .prop .k .i { width: 14px; height: 14px; color: var(--n-text-3); }
+  .prop .v { min-height: 32px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 6px; margin-left: -6px; border-radius: var(--n-r); font-size: 14px; line-height: 22px; cursor: default; }
+  .prop .v:hover { background: var(--n-hover); }
+  .prop .v small { font-size: 13px; color: var(--n-text-3); }
+  .prop .v.is-empty { color: var(--n-text-3); }
+  .person { display: flex; align-items: flex-start; gap: 9px; padding: 6px 6px; margin: 0 -6px; border-radius: var(--n-r); }
+  .person:hover { background: var(--n-hover); }
+  .person .av { margin-top: 2px; }
+  .person .pb { flex: 1; min-width: 0; }
+  .person .pn { display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 22px; }
+  .person .pn b { font-weight: 600; }
+  .person .pd2 { font-size: 13px; line-height: 19px; color: var(--n-text-2); }
+  .person .pd2 .phn { font-variant-numeric: tabular-nums; border-radius: 3px; cursor: default; }
+  .person .pd2 .phn:hover { background: var(--n-hover); color: var(--n-text); }
+  .person .terms { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 21px; }
+  .person .call { opacity: 0; }
+  .person:hover .call { opacity: 1; }
+  .person.past { opacity: 0.72; }
+  .memo-v { width: 100%; white-space: pre-wrap; word-break: keep-all; }
+  .memo-edit { width: 100%; min-height: 54px; resize: none; border: 0; outline: 0; padding: 4px 6px; margin: -4px -6px; border-radius: var(--n-r); box-shadow: inset 0 0 0 1px rgba(35, 131, 226, 0.6), 0 0 0 3px rgba(35, 131, 226, 0.15); font: inherit; font-size: 14px; line-height: 22px; color: var(--n-text); background: #fff; field-sizing: content; }
+  .privnote { display: flex; gap: 6px; margin: 2px 0 6px; padding: 6px 8px; border-radius: var(--n-r); background: rgb(251, 243, 219); font-size: 13px; line-height: 19px; color: rgb(64, 44, 27); }
+  .privnote .i { width: 13px; height: 13px; margin-top: 3px; color: rgb(203, 145, 47); }
+  .side-sep { height: 1px; background: var(--n-line); margin: 10px 0; }
+
+  /* 떠 있는 편집 창 */
+  .npop { position: fixed; z-index: 60; width: 300px; padding: 12px; border-radius: 6px; background: #fff; box-shadow: 0 0 0 1px rgba(15, 15, 15, 0.05), 0 3px 6px rgba(15, 15, 15, 0.1), 0 9px 24px rgba(15, 15, 15, 0.2); animation: pop-in 0.12s ease-out; font-size: 14px; color: var(--n-text); }
+  @keyframes pop-in { from { opacity: 0; transform: translateY(-4px); } }
+  .npop.wide { width: 460px; }
+  .npop h4 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--n-text-2); }
+  .npop .inp { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px; border-radius: var(--n-r); background: rgba(242, 241, 238, 0.6); box-shadow: inset 0 0 0 1px rgba(15, 15, 15, 0.1); }
+  .npop .inp:focus-within { box-shadow: inset 0 0 0 1px rgba(35, 131, 226, 0.6), 0 0 0 3px rgba(35, 131, 226, 0.15); background: #fff; }
+  .npop input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; color: inherit; font-variant-numeric: tabular-nums; }
+  .npop .unit { color: var(--n-text-3); font-size: 13px; }
+  .npop .hint { margin: 6px 2px 10px; font-size: 13px; color: var(--n-text-2); font-variant-numeric: tabular-nums; }
+  .npop .row { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; }
+  .cmp-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .cmp-tbl th { text-align: left; font-weight: 400; color: var(--n-text-2); padding: 4px 6px; border-bottom: 1px solid var(--n-line); }
+  .cmp-tbl td { padding: 6px; border-bottom: 1px solid var(--n-line); font-variant-numeric: tabular-nums; }
+  .cmp-tbl tr.ours td { background: rgba(35, 131, 226, 0.06); }
+  .cmp-tbl td.r, .cmp-tbl th.r { text-align: right; }
+  .cmp-tbl .cheap { color: rgb(212, 76, 71); font-weight: 600; }
+
+  /* ───────── 2판: 중개사 업무 순서로 다시 짠 배치 ───────── */
+  .pdv2 { flex: 1; min-height: 0; display: flex; flex-direction: column; color: var(--n-text); }
+  .pdv2 .i { width: 16px; height: 16px; }
+
+  /* 고정 머리: 늘 보인다 */
+  .top { flex: none; padding: 14px 28px 12px; border-bottom: 1px solid var(--n-line); background: #fff; }
+  .top-r1 { display: flex; align-items: flex-start; gap: 16px; }
+  .top-r1 .ttl { flex: 1; min-width: 0; }
+  .top h1 { margin: 0; font-size: 24px; line-height: 1.3; font-weight: 700; letter-spacing: -0.022em; }
+  .top h1 .u { font-variant-numeric: tabular-nums; }
+  .top .sub { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; color: var(--n-text-2); }
+  .top .sub span { display: inline-flex; align-items: center; gap: 5px; }
+  .top .sub .i { width: 14px; height: 14px; color: var(--n-text-3); }
+  .top-act { display: flex; align-items: center; gap: 4px; flex: none; }
+  .top-r2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; }
+  .pchip { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 8px 0 4px; margin-left: -4px; border: 0; border-radius: var(--n-r); background: transparent; font: inherit; color: inherit; cursor: default; }
+  .pchip:hover { background: var(--n-hover); }
+  .pchip b { font-size: 17px; font-weight: 700; letter-spacing: -0.015em; font-variant-numeric: tabular-nums; }
+  .top-r2 .vsep { width: 1px; height: 18px; background: var(--n-line); }
+  .top-r2 .sp { flex: 1; }
+
+  /* 손님에게 보여주는 중 */
+  .guest-bar { display: none; align-items: center; gap: 10px; padding: 8px 28px; background: rgb(231, 243, 248); color: rgb(24, 51, 71); font-size: 13px; }
+  .guest-bar .i { width: 15px; height: 15px; }
+  .pdv2.guest .guest-bar { display: flex; }
+
+  .cols { flex: 1; min-height: 0; display: flex; }
+  .main { flex: 1; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
+  .main .doc { width: 100%; max-width: 900px; margin: 0 auto; padding: 4px 36px 24px; flex: 1; }
+  .main .h2 { margin-top: 30px; }
+  .main .h2 small { font-size: 13px; font-weight: 400; color: var(--n-text-2); }
+
+  /* 브리핑: 거래 조건마다 한 장 */
+  .ocards { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; margin-top: 10px; }
+  .ocard { border-radius: 6px; box-shadow: 0 0 0 1px var(--n-line); padding: 12px 14px 10px; background: #fff; }
+  .ocard.busy { background: rgb(251, 251, 250); }
+  /* 거래 조건이 하나: 왼쪽에 거래·가격, 오른쪽에 조건을 두 줄로 */
+  .ocards.single { grid-template-columns: minmax(0, 1fr); }
+  .ocards.single .ocard { display: grid; grid-template-columns: 228px minmax(0, 1fr); column-gap: 20px; padding: 12px 16px 12px 14px; }
+  .ocards.single .oc-rows { margin-top: 0; padding: 0 0 0 20px; border-top: 0; border-left: 1px solid var(--n-line); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; align-content: start; }
+  .ocards.single .oc-row { grid-template-columns: 64px minmax(0, 1fr); }
+  .ocards.single .oc-price { flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 10px; }
+  .oc-h { display: flex; align-items: center; gap: 6px; }
+  .oc-h .sp { flex: 1; }
+  .oc-price { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 2px; }
+  .oc-price .pb { border: 0; background: transparent; padding: 0 4px; margin-left: -4px; border-radius: var(--n-r); font: inherit; color: inherit; cursor: default; }
+  .oc-price .pb:hover { background: var(--n-hover); }
+  .oc-price .big { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .oc-price .per { font-size: 13px; color: var(--n-text-2); font-variant-numeric: tabular-nums; }
+  .oc-rows { margin-top: 6px; border-top: 1px solid var(--n-line); padding-top: 6px; }
+  .oc-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 8px; padding: 3px 0; font-size: 14px; line-height: 21px; }
+  .oc-row .k { color: var(--n-text-2); font-size: 13px; }
+  .oc-row .v { font-variant-numeric: tabular-nums; }
+  .oc-row .v small { color: var(--n-text-3); font-size: 12.5px; }
+  .oc-row .v b { font-weight: 600; }
+  .oc-row.hl .v { color: rgb(24, 51, 71); }
+  .talk { margin-top: 12px; display: grid; gap: 6px; }
+  .talk-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 8px; align-items: start; }
+  .talk-row .k { font-size: 13px; color: var(--n-text-2); padding-top: 5px; display: flex; align-items: center; gap: 5px; }
+  .talk-row .k .i { width: 13px; height: 13px; }
+  .talk-row .v { padding: 4px 6px; margin-left: -6px; border-radius: var(--n-r); font-size: 14px; line-height: 22px; word-break: keep-all; cursor: default; }
+  .talk-row .v:hover { background: var(--n-hover); }
+  .talk-row.priv .v { background: rgb(251, 243, 219); color: rgb(64, 44, 27); }
+  .talk-row.priv .v:hover { background: rgb(248, 236, 200); }
+
+  /* 집 보기 */
+  .visit { margin-top: 10px; border-radius: 6px; box-shadow: 0 0 0 1px var(--n-line); }
+  .visit-rows { padding: 6px 14px 4px; }
+  .vrow { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 34px; font-size: 14px; }
+  .vrow .k { font-size: 13px; color: var(--n-text-2); }
+  .vrow + .vrow { border-top: 1px solid rgba(55, 53, 47, 0.06); }
+  .vsched { border-top: 1px solid var(--n-line); padding: 8px 10px 10px 14px; }
+  .vsched-h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--n-text-2); }
+  .vsched-h .sp { flex: 1; }
+  .vitem { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 14px; }
+  .vitem .when { width: 128px; flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .vitem .vwho { color: var(--n-text); }
+  .vitem .t3 { color: var(--n-text-3); font-size: 13px; }
+  .vitem.new { animation: flash 1.4s ease-out; border-radius: 4px; }
+
+  /* 손님: 다음 할 일 열 */
+  .next { font-size: 13px; line-height: 19px; }
+  .next b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .next.soon { color: rgb(203, 107, 31); }
+  .ntbl td .nb.line { height: 26px; font-size: 13px; }
+
+  /* 아래에 붙은 상담 입력칸 */
+  .dock { position: sticky; bottom: 0; z-index: 5; padding: 18px 36px 14px; background: linear-gradient(rgba(255, 255, 255, 0), #fff 40%); pointer-events: none; }
+  .dock-in { pointer-events: auto; max-width: 828px; margin: 0 auto; border-radius: 10px; background: #fff; box-shadow: 0 0 0 1px rgba(15, 15, 15, 0.08), 0 6px 18px rgba(15, 15, 15, 0.08); padding: 6px 12px; }
+  .dock-in .cmp { margin: 0; padding: 4px 0; border: 0; }
+  .dock-in .cmp-ph { height: 34px; }
+  .dock-in .cmp textarea { min-height: 52px; max-height: 200px; }
+
+  /* 오른쪽 고정 열 */
+  .rail { width: 344px; flex: none; border-left: 1px solid var(--n-line); overflow-y: auto; overflow-x: hidden; background: #fff; }
+  .rail .in { padding: 12px 18px 60px; }
+  .rsec { padding: 10px 0 12px; }
+  .rsec + .rsec { border-top: 1px solid var(--n-line); }
+  .rsec-h { display: flex; align-items: center; gap: 6px; height: 28px; font-size: 13px; font-weight: 600; }
+  .rsec-h .n { color: var(--n-text-3); font-weight: 500; }
+  .rsec-h .sp { flex: 1; }
+  .rail .callout { margin-top: 4px; padding: 10px 12px 8px 10px; }
+  .rail .callout > .ic { width: 20px; height: 22px; }
+  .rail .callout > .ic .i { width: 17px; height: 17px; }
+  .rail .todo .tx { font-size: 13.5px; line-height: 20px; }
+  .rail .todo .tx small { font-size: 12.5px; line-height: 18px; }
+  .golink { border: 0; background: transparent; padding: 0 2px; margin-left: 2px; border-radius: 3px; font: inherit; font-size: 12.5px; font-weight: 500; color: rgb(35, 131, 226); cursor: default; white-space: nowrap; }
+  .golink:hover { background: rgba(35, 131, 226, 0.08); text-decoration: underline; }
+  .rail .person .pd2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .callwin { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; font-size: 12.5px; line-height: 18px; }
+  .callwin .i { width: 12px; height: 12px; }
+  .callwin.ok { color: rgb(68, 131, 97); }
+  .callwin.no { color: rgb(203, 107, 31); }
+  .callwin.na { color: var(--n-text-3); }
+  .person .acts { display: flex; gap: 2px; flex: none; }
+  .confbox { display: flex; align-items: center; gap: 10px; }
+  .confbox .cst { flex: 1; min-width: 0; }
+  .confbox .big { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+  .confbox .big .d { width: 8px; height: 8px; border-radius: 50%; }
+  .confbox small { display: block; font-size: 12.5px; color: var(--n-text-2); margin-top: 1px; }
+  .adrow { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; font-size: 13.5px; line-height: 20px; }
+  .adrow + .adrow { border-top: 1px solid rgba(55, 53, 47, 0.06); }
+  .adrow .tg { flex: none; margin-top: 1px; }
+  .adrow .bd { flex: 1; min-width: 0; }
+  .adrow .bd small { display: block; font-size: 12.5px; color: var(--n-text-2); }
+  .adrow .bd .bad { color: rgb(212, 76, 71); }
+  .adrow .bd .warn { color: rgb(203, 107, 31); }
+
+  /* 브리핑 복사 */
+  .brief-pre { width: 100%; min-height: 220px; resize: vertical; border: 0; outline: 0; padding: 10px 12px; border-radius: 6px; background: rgb(247, 246, 243); font: inherit; font-size: 13.5px; line-height: 1.6; color: var(--n-text); white-space: pre-wrap; }
+  .opt { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 10px; }
+  .time-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+  .time-chips button { height: 28px; padding: 0 10px; border: 0; border-radius: var(--n-r); box-shadow: inset 0 0 0 1px rgba(55, 53, 47, 0.16); background: #fff; font: inherit; font-size: 13px; cursor: default; }
+  .time-chips button.on { background: rgb(35, 131, 226); color: #fff; box-shadow: none; }
+  .time-chips button.out { color: var(--n-text-3); }
+  .npop label.f { display: block; font-size: 12px; color: var(--n-text-2); margin: 10px 0 4px; }
+  .npop .warnline { font-size: 12.5px; color: rgb(203, 107, 31); margin-top: 6px; }
+
+  .visit.flash { animation: flash 1.4s ease-out; }
+  .pdv2.guest .internal { display: none !important; }
+  /* 손님에게 보여주는 동안 창 틀의 도구(오늘·저장 상태·동료·공유·알림·도움말)와 사이드바를 가린다 */
+  body.guest-mode .topbar > :not(.crumbs) { visibility: hidden; }
+  body.guest-mode .side { visibility: hidden; }
+  body.guest-mode .tabs .tab:not(.on), body.guest-mode .tab-add, body.guest-mode .dn-btn, body.guest-mode .theme-sw { visibility: hidden; }
+
+
+  /* ───────── 사진 ───────── */
+  .main .doc { display: flex; flex-direction: column; }
+  .pdv2.guest #photos { order: -1; }
+  .phbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }
+  .phbar .sp { flex: 1; }
+  .phchip { height: 26px; display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; border: 0; border-radius: 13px; background: transparent; box-shadow: inset 0 0 0 1px rgba(55, 53, 47, 0.14); font: inherit; font-size: 13px; color: var(--n-text-2); cursor: default; }
+  .phchip:hover { background: var(--n-hover); color: var(--n-text); }
+  .phchip.on { background: var(--n-text); color: #fff; box-shadow: none; }
+  .phchip span { color: inherit; opacity: 0.6; font-variant-numeric: tabular-nums; }
+  .gal { position: relative; display: grid; gap: 6px; margin-top: 10px; border-radius: 8px; overflow: hidden; grid-template-columns: 2fr 1fr 1fr; grid-template-rows: 128px 128px; }
+  .gal.n1 { grid-template-columns: 1fr; grid-template-rows: 262px; }
+  .gal.n2 { grid-template-columns: 1fr 1fr; grid-template-rows: 262px; }
+  .gal.n3 { grid-template-columns: 2fr 1fr; }
+  .gal.n4 .ph:nth-child(4) { grid-column: span 2; }
+  .pdv2.guest .gal { grid-template-rows: 190px 190px; }
+  .pdv2.guest .gal.n1, .pdv2.guest .gal.n2 { grid-template-rows: 386px; }
+  .gal .ph { position: relative; min-width: 0; background: rgb(241, 240, 236); cursor: zoom-in; overflow: hidden; border: 0; padding: 0; }
+  .gal .ph.big { grid-row: span 2; }
+  .gal .ph img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .gal .ph.plan img { object-fit: contain; background: #fff; padding: 6px; }
+  .gal .ph:hover img { transform: scale(1.025); }
+  .gal .ph .cap { position: absolute; left: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 7px; border-radius: 4px; background: rgba(15, 15, 15, 0.55); color: #fff; font-size: 12px; backdrop-filter: blur(4px); }
+  .gal .ph .cap .star { color: rgb(255, 214, 102); }
+  .gal .ph .more { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(15, 15, 15, 0.48); color: #fff; font-size: 15px; font-weight: 600; }
+  .gal .ph .pick { position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.9); box-shadow: inset 0 0 0 1.5px rgba(55, 53, 47, 0.45); color: #fff; }
+  .gal .ph .pick .i { width: 13px; height: 13px; stroke-width: 3; opacity: 0; }
+  .gal .ph.picked .pick { background: rgb(35, 131, 226); box-shadow: none; }
+  .gal .ph.picked .pick .i { opacity: 1; }
+  .gal .ph.picked::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 3px rgb(35, 131, 226); pointer-events: none; }
+  .gal.selecting .ph { cursor: default; }
+  .gal-empty { margin-top: 10px; padding: 26px 16px; border-radius: 8px; text-align: center; font-size: 13px; color: var(--n-text-2); background: rgb(251, 251, 250); border: 1.5px dashed rgba(55, 53, 47, 0.18); }
+  .drop-hint { position: absolute; inset: 0; z-index: 3; display: none; place-items: center; border-radius: 8px; background: rgba(35, 131, 226, 0.12); box-shadow: inset 0 0 0 2px rgb(35, 131, 226); color: rgb(29, 109, 191); font-weight: 600; font-size: 14px; }
+  #photos.dragging .drop-hint { display: grid; }
+  .phsel { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 8px 6px 12px; border-radius: 8px; background: rgb(35, 131, 226); color: #fff; font-size: 13px; }
+  .phsel .sp { flex: 1; }
+  .phsel .nb { color: #fff; }
+  .phsel .nb:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
+  .phmeta { margin-top: 6px; font-size: 12.5px; color: var(--n-text-3); }
+
+  /* 크게 보기 */
+  .lb { position: fixed; inset: 0; z-index: 150; display: flex; flex-direction: column; background: rgba(15, 15, 15, 0.94); color: #fff; animation: lb-in 0.16s ease-out; }
+  @keyframes lb-in { from { opacity: 0; } }
+  .lb-top { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 14px 0 20px; flex: none; font-size: 14px; }
+  .lb-top .cnt { font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.7); }
+  .lb-top .sp { flex: 1; }
+  .lb .nb { color: rgba(255, 255, 255, 0.85); }
+  .lb .nb:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+  .lb .nb.on { background: rgba(255, 255, 255, 0.16); color: #fff; }
+  .lb-tag { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border: 0; border-radius: 4px; background: rgba(255, 255, 255, 0.14); color: #fff; font: inherit; font-size: 13px; cursor: default; }
+  .lb-tag:hover { background: rgba(255, 255, 255, 0.22); }
+  .lb-stage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; padding: 0 72px; overflow: hidden; }
+  .lb-stage img { max-width: calc(100vw - 160px); max-height: calc(100vh - 210px); object-fit: contain; border-radius: 4px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4); }
+  .lb-stage img.plan { background: #fff; padding: 16px; }
+  .lb-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.12); color: #fff; display: grid; place-items: center; cursor: default; }
+  .lb-nav:hover { background: rgba(255, 255, 255, 0.22); }
+  .lb-nav .i { width: 22px; height: 22px; }
+  .lb-nav.prev { left: 16px; }
+  .lb-nav.next { right: 16px; }
+  .lb-cap { flex: none; text-align: center; padding: 10px 20px 4px; font-size: 14px; color: rgba(255, 255, 255, 0.92); }
+  .lb-cap small { display: block; margin-top: 2px; font-size: 12.5px; color: rgba(255, 255, 255, 0.55); }
+  .lb-cap .old { color: rgb(255, 196, 120); }
+  .lb-strip { flex: none; display: flex; justify-content: center; gap: 6px; padding: 10px 20px 16px; overflow-x: auto; }
+  .lb-strip button { width: 72px; height: 48px; flex: none; padding: 0; border: 0; border-radius: 4px; overflow: hidden; opacity: 0.5; cursor: default; background: #333; }
+  .lb-strip button.on { opacity: 1; box-shadow: 0 0 0 2px #fff; }
+  .lb-strip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lb-strip button.plan img { object-fit: contain; background: #fff; }
+</style>
+</head>
+<body data-active="properties">
+<main id="page">
+  <div class="pdv2" id="pd">
+    <header class="top" id="top"></header>
+    <div class="guest-bar" id="guestBar"></div>
+    <div class="cols">
+      <div class="main" id="main">
+        <div class="doc">
+          <section id="brief"></section>
+          <section id="photos" aria-label="매물 사진"></section>
+          <section id="visit"></section>
+          <section id="buyers" class="internal"></section>
+          <section id="dealSec" class="internal"></section>
+          <section id="records" class="internal"></section>
+        </div>
+        <div class="dock internal" id="dock"><div class="dock-in"><section class="cmp" id="composer" aria-label="상담 기록 남기기"></section></div></div>
+      </div>
+      <aside class="rail internal" id="rail" aria-label="할 일과 연락처"><div class="in" id="railIn"></div></aside>
+    </div>
+  </div>
+</main>
+<script src="shell.js"></script>
+<script>
+(() => {
+  const I = UI.icon;
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // 이 데모에만 쓰는 아이콘 (lucide)
+  const EXTRA = {
+    layers: '<path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>',
+    bed: '<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v9"/>',
+    compass: '<circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z"/>',
+    hammer: '<path d="m15 12-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9"/><path d="M17.64 15 22 10.64"/><path d="m20.91 11.7-1.25-1.25c-.6-.6-.93-1.4-.93-2.25v-.86L16.01 4.6a5.56 5.56 0 0 0-3.94-1.64H9l.92.82A6.18 6.18 0 0 1 12 8.4v1.56l2 2h2.47l2.26 1.91"/>',
+    flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>',
+    lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    pinOn: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+    panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+    trendDown: '<path d="M22 17 13.5 8.5 8.5 13.5 2 7"/><path d="M16 17h6v-6"/>',
+    trendUp: '<path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/>',
+    door: '<path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z"/>',
+    hash: '<path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/>',
+    aa: '<path d="M3 20 8 4l5 16"/><path d="M4.5 15h7"/><circle cx="17.5" cy="16.5" r="3.5"/><path d="M21 13v7"/>',
+    circleDot: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>',
+    textMsg: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
+    walk: '<circle cx="13" cy="4" r="2"/><path d="m11 21 1-6-3-3 1-5 4 3h4"/><path d="m8 21 2-5"/>',
+    inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+    calCheck: '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>',
+    alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  };
+  const ic = (n, cls = '') => EXTRA[n]
+    ? `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${EXTRA[n]}</svg>`
+    : I(n, cls);
+
+  // ── 날짜·금액 ──
+  const TODAY = new Date(2026, 10, 13);
+  const D = (y, m, d) => new Date(y, m - 1, d);
+  const pad = (n) => String(n).padStart(2, '0');
+  const day0 = (dt) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
+  const diff = (a, b) => Math.round((day0(b) - day0(a)) / 864e5);
+  const md = (dt) => `${pad(dt.getMonth() + 1)}.${pad(dt.getDate())}`;
+  const sd = (dt) => (dt.getFullYear() === TODAY.getFullYear() ? md(dt) : `${String(dt.getFullYear()).slice(2)}.${md(dt)}`);
+  const fd = (dt) => `${dt.getFullYear()}.${md(dt)}`;
+  const ago = (dt) => { const n = diff(dt, TODAY); return n === 0 ? '오늘' : n === 1 ? '어제' : `${n}일 전`; };
+  const due = (dt) => { const n = diff(TODAY, dt); return n === 0 ? '오늘' : n === 1 ? '내일' : n > 0 ? `${n}일 후` : `${-n}일 지남`; };
+  const WD = ['일', '월', '화', '수', '목', '금', '토'];
+  const dayLabel = (dt) => { const n = diff(dt, TODAY); if (n === 0) return '오늘'; if (n === 1) return '어제'; return `${dt.getFullYear() === TODAY.getFullYear() ? '' : dt.getFullYear() + '년 '}${dt.getMonth() + 1}월 ${dt.getDate()}일 (${WD[dt.getDay()]})`; };
+  const money = (v) => {
+    if (v == null) return '-';
+    if (v === 0) return '없음';
+    const e = Math.floor(v / 10000), m = v % 10000;
+    if (!e) return `${m.toLocaleString('ko-KR')}만`;
+    return m ? `${e}억 ${m.toLocaleString('ko-KR')}` : `${e}억`;
+  };
+  const tel = (p) => p.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+
+  Object.assign(EXTRA, {
+    eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+    eyeOff: '<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>',
+    send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
+    key: '<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>',
+    clipboard: '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
+    bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+    calPlus: '<path d="M8 2v4"/><path d="M16 2v4"/><path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/><path d="M3 10h18"/><path d="M16 19h6"/><path d="M19 16v6"/>',
+  });
+
+  // 데모의 지금: 2026.11.13(금) 오후 2:20
+  const NOW = new Date(2026, 10, 13, 14, 20);
+  const hm = (dt) => `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  const nowTime = () => hm(NOW);
+  const dayFmt = (dt) => `${md(dt)}(${WD[dt.getDay()]})`;
+  const SUPPLY_PY = 34.0;
+  const perPy = (price) => Math.round(price / SUPPLY_PY);
+
+  // ── 상태 ──
+  const STAGES = [
+    ['suggested', '내부 후보', 'gray'], ['interested', '고객 관심', 'blue'], ['viewingOk', '임장 가능 확인', 'yellow'],
+    ['viewing', '임장', 'orange'], ['negotiating', '협상', 'purple'], ['deal', '거래전환', 'green'], ['closed', '종료', 'gray'],
+  ];
+  const stageOf = (k) => STAGES.find((s) => s[0] === k);
+  const stageIdx = (k) => STAGES.findIndex((s) => s[0] === k);
+
+  const S = {
+    me: '이현수',
+    guest: false,
+    confirm: { last: D(2026, 11, 3), next: D(2026, 11, 17), result: 'alive' },
+    offers: [
+      {
+        id: 'sale', label: '매매', tag: 'red', price: 158000, paused: false, loan: 42000, loanNote: '잔금 때 상환 조건', fee: 32, includes: '난방·수도 포함',
+        memo: '세안고 매매. 전세 만기에 맞춰 잔금 조정 가능, 남향 고층이라 뷰가 좋음', priv: '소유주 최저 15억 5,000까지 가능 (외부 공유 금지)',
+        ads: [{ ch: '이실장', price: 160000, since: D(2026, 10, 13) }],
+        naver: [
+          { ag: '고덕래미안공인', price: 155000, floor: '고/35', v: '집주인확인', rank: 1 },
+          { ag: '그라시움센트럴공인', price: 158000, floor: '34/35', v: '집주인확인', rank: 2 },
+          { ag: '고덕 에스테잇 (우리)', price: 160000, floor: '고/35', v: '집주인확인', rank: 3, ours: true },
+          { ag: '명일역공인', price: 160000, floor: '고/35', v: '홍보확인서', rank: 4 },
+          { ag: '고덕센트럴공인', price: 162000, floor: '중/35', v: '집주인확인', rank: 5 },
+          { ag: '상일동부동산', price: 163000, floor: '고/35', v: '현장확인', rank: 6 },
+          { ag: '배재공인', price: 165000, floor: '-/35', v: '홍보확인서', rank: 7 },
+        ],
+        hist: [{ at: D(2026, 11, 3), from: 160000, to: 158000 }, { at: D(2026, 10, 17), from: 162000, to: 160000 }],
+      },
+      {
+        id: 'jeonse', label: '전세', tag: 'blue', price: 82000, paused: false, contract: true, moveIn: '27.02.25 이후', moveInNote: '현 세입자 만기 뒤', loan: 0, fee: 32, includes: '난방·수도 포함',
+        memo: '', priv: '', ads: [],
+        naver: [
+          { ag: '고덕래미안공인', price: 80000, floor: '중/35', v: '집주인확인', rank: 1 },
+          { ag: '그라시움센트럴공인', price: 83000, floor: '고/35', v: '집주인확인', rank: 2 },
+          { ag: '명일역공인', price: 85000, floor: '고/35', v: '홍보확인서', rank: 3 },
+        ],
+        hist: [],
+      },
+    ],
+    // 통화 가능 시간·집 보기 조건은 지금 앱에서는 메모 글로만 저장된다 (칸 추가 필요)
+    people: [
+      { id: 'p1', name: '김정훈', role: '소유주', main: true, phone: '01045278812', note: '지분 50%', hours: { days: 'weekday', from: 19, to: 22, label: '평일 19시 이후' } },
+      { id: 'p2', name: '박미영', role: '공동소유', phone: '01033124409', note: '지분 50% · 배우자' },
+      { id: 'p3', name: '김도윤', role: '대리인', phone: '01098761234', note: '아들 · 위임장 있음', hours: { days: 'weekday', from: 9, to: 18, label: '평일 9–18시' } },
+    ],
+    pastOwners: [{ id: 'po1', name: '최영수', role: '이전 소유주', phone: '01020459931', note: '2021.06 김정훈에게 매도' }],
+    tenants: [{ id: 't1', name: '이수진', role: '세입자', status: '거주중', deposit: 78000, rent: 0, start: D(2025, 2, 25), end: D(2027, 2, 25), phone: '01077560032', hours: { days: 'weekend', from: 14, to: 17, label: '주말 14–17시' } }],
+    pastTenants: [{ id: 't0', name: '박지훈', role: '지난 세입자', deposit: 72000, start: D(2023, 2, 20), end: D(2025, 2, 20), phone: '01090021188' }],
+    intake: { received: D(2026, 10, 2), memo: '매매·전세 동시 의뢰. 전세가 먼저 나가면 매매는 세안고로 진행', joint: false, owner: '이현수' },
+    pastIntakes: [{ period: '2024.12.12 ~ 2025.02.10', status: '거래 완료', offers: '전세 7억 8,000' }],
+    visit: {
+      rule: '주말 오후 2~5시만 · 하루 전 세입자에게 연락',
+      access: '세입자가 문 열어 줌 · 공동현관 호출 3401',
+      list: [{ id: 'v1', at: new Date(2026, 10, 15, 14, 0), who: '최윤아', match: 'm2', type: '매매' }],
+    },
+    matches: [
+      { id: 'm1', name: '정민호', type: '전세', cond: '전세 8억 5,000 이하 · 30~36평 · 3월 입주', stage: 'deal', at: D(2026, 11, 10), note: '신혼부부' },
+      { id: 'm2', name: '최윤아', type: '매매', cond: '매매 15억~16억 5,000 · 30~36평', stage: 'viewingOk', at: D(2026, 11, 9), note: '대출 한도 확인됨' },
+      { id: 'm3', name: '한상우', type: '매매', cond: '매매 16억 이하 · 33평 이상 · 세안고 가능', stage: 'suggested', at: D(2026, 11, 8), note: '' },
+    ],
+    deal: {
+      type: '전세', price: 82000, tenant: '정민호', landlord: '김정훈', since: D(2026, 11, 10),
+      steps: ['계약 준비', '가계약', '본계약', '중도금·잔금', '잔금 완료', '정산 종료'], cur: 1,
+      pays: [
+        { k: '가계약금', amt: 1000, at: D(2026, 11, 10), paid: true },
+        { k: '계약금', amt: 8200, at: D(2026, 11, 18), paid: false },
+        { k: '잔금', amt: 72800, at: D(2027, 2, 25), paid: false },
+      ],
+    },
+    records: [],
+    filter: 'all',
+    expanded: new Set(),
+    doneTodos: new Set(),
+    showDone: false,
+    toggles: { pastOwners: false, pastTenants: false, pastIntakes: false, info: false },
+    composer: { open: false, type: 'call', who: 'p1', confirm: true, text: '' },
+    brief: { hideHo: true, skipBusy: true, per: false },
+  };
+
+  let seq = 0;
+  const rec = (o) => ({ id: `r${++seq}`, pinned: false, ...o });
+  S.records = [
+    rec({ kind: 'call', at: D(2026, 11, 13), time: '11:20', who: '김정훈 · 소유주', by: '이현수', title: '전화 상담', body: '정민호 고객 가계약 의사 전달. 전세 8억 2,000 그대로 받기로 하고 가계약금 1,000만 계좌 받음. 잔금일은 세입자 만기(2월 말)에 맞추기로 함.' }),
+    rec({ kind: 'deal', at: D(2026, 11, 10), time: '17:10', who: '전세 · 정민호', by: '박서연', title: '거래 가계약' }),
+    rec({ kind: 'visit', at: D(2026, 11, 10), time: '15:00', who: '정민호 · 매수 고객', by: '박서연', title: '방문 상담', body: '전세 임장. 거실 뷰·채광 만족, 안방 붙박이장 상태 확인 요청. 가계약 검토하겠다고 함.' }),
+    rec({ kind: 'call', at: D(2026, 11, 9), time: '16:40', who: '최윤아 · 매수 고객', by: '이현수', title: '전화 상담', body: '대출 한도 확인됨. 이번 주말 임장 희망, 일요일 오후 2시로 잡음.' }),
+    rec({ kind: 'price', dir: 'down', at: D(2026, 11, 3), time: '15:02', who: '매매', by: '이현수', title: '가격 변경', sum: '16억 → 15억 8,000', body: '매수 문의가 줄어 소유주 요청으로 2,000 조정' }),
+    rec({ kind: 'confirm', at: D(2026, 11, 3), time: '14:30', who: '김정훈 · 소유주', by: '이현수', title: '매물 확인 · 전화', body: '매매 16억 → 15억 8,000 조정 동의. 전세는 8억 2,000 유지.' }),
+    rec({ kind: 'call', at: D(2026, 10, 31), time: '19:10', who: '이수진 · 세입자', by: '박서연', title: '전화 상담', body: '집 보여주기 가능 시간 문의. 주말 오후 2~5시만 가능, 하루 전 연락 부탁.', pinned: true }),
+    rec({ kind: 'ad', at: D(2026, 10, 18), who: '부동산뱅크', by: '시스템', title: '광고 종료' }),
+    rec({ kind: 'price', dir: 'down', at: D(2026, 10, 17), time: '10:05', who: '매매', by: '이현수', title: '가격 변경', sum: '16억 2,000 → 16억' }),
+    rec({ kind: 'ad', at: D(2026, 10, 13), who: '이실장', by: '시스템', title: '광고 시작', sum: '매매 16억' }),
+    rec({ kind: 'ad', at: D(2026, 10, 3), who: '부동산뱅크', by: '시스템', title: '광고 시작', sum: '매매 16억 2,000' }),
+    rec({ kind: 'call', at: D(2026, 10, 2), time: '13:00', who: '김정훈 · 소유주', by: '이현수', title: '전화 상담', body: '매매·전세 동시 의뢰 접수. 전세가 먼저 나가면 세안고 매매로 진행 원함. 소유주 최저가는 비공개 메모에 기록.\n공동명의(배우자 박미영 50%). 계약 때는 아들 김도윤이 위임장으로 대리.\n관리비 32만(난방 포함), 융자 4억 2,000은 잔금 때 상환 조건.\n집 보여주기는 세입자와 먼저 조율해 달라고 함.' }),
+    rec({ kind: 'intake', at: D(2026, 10, 2), who: '', by: '이현수', title: '의뢰 접수', sum: '매매·전세' }),
+    rec({ kind: 'intake', at: D(2025, 2, 10), who: '거래 완료', by: '시스템', title: '의뢰 종료' }),
+    rec({ kind: 'intake', at: D(2024, 12, 12), who: '', by: '박서연', title: '의뢰 접수', sum: '전세' }),
+  ];
+
+
+  // ── 사진 ──
+  // 84A 평면도: 이미지 생성은 글자·치수를 엉터리로 그리기 쉬워 직접 그린 단순 도면을 쓴다
+  const PLAN_SVG = (() => {
+    const room = (x, y, w, h, label, sub) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fbfaf8" stroke="#3a3936" stroke-width="3"/><text x="${x + w / 2}" y="${y + h / 2 - (sub ? 4 : -5)}" text-anchor="middle" font-size="15" font-weight="600" fill="#3a3936">${label}</text>${sub ? `<text x="${x + w / 2}" y="${y + h / 2 + 14}" text-anchor="middle" font-size="11.5" fill="#8a8983">${sub}</text>` : ''}`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 430" font-family="Pretendard, Apple SD Gothic Neo, sans-serif">
+      <rect width="640" height="430" fill="#fff"/>
+      ${room(30, 30, 150, 170, '침실 3', '2.7 × 3.0m')}
+      ${room(180, 30, 80, 100, '욕실 2', '')}
+      ${room(180, 130, 80, 70, '현관', '')}
+      ${room(260, 30, 190, 170, '주방 · 식당', '')}
+      ${room(450, 30, 160, 80, '드레스룸', '')}
+      ${room(450, 110, 160, 90, '욕실 1', '')}
+      ${room(30, 200, 150, 170, '침실 2', '2.7 × 3.1m')}
+      ${room(180, 200, 270, 170, '거실', '4.2 × 5.4m')}
+      ${room(450, 200, 160, 170, '안방', '3.4 × 3.8m')}
+      <rect x="30" y="370" width="580" height="30" fill="#f3f1ec" stroke="#3a3936" stroke-width="2"/>
+      <text x="320" y="390" text-anchor="middle" font-size="12" fill="#8a8983">발코니 (확장 · 남향)</text>
+      <text x="610" y="20" text-anchor="end" font-size="12" fill="#8a8983">84A · 전용 84.97㎡ · 3룸 2욕실 · 판상형 4베이</text>
+      <path d="M600 418 l0 -14 m-5 5 l5 -5 l5 5" stroke="#8a8983" stroke-width="1.5" fill="none"/><text x="588" y="420" text-anchor="end" font-size="11" fill="#8a8983">남</text>
+    </svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  })();
+
+  const PHOTO_CATS = ['거실', '주방', '방', '욕실', '전망', '외관', '평면도', '분류 전'];
+  S.photos = [
+    { id: 'pf1', src: 'photos/living.jpg', cat: '거실', memo: '남향 거실, 확장형', at: D(2025, 2, 18), by: '박서연', cover: true, ad: true },
+    { id: 'pf2', src: 'photos/view.jpg', cat: '전망', memo: '거실 창에서 본 단지·일자산 전망 (34층)', at: D(2025, 2, 18), by: '박서연', ad: true },
+    { id: 'pf3', src: 'photos/kitchen.jpg', cat: '주방', memo: '주방·식당', at: D(2025, 2, 18), by: '박서연', ad: true },
+    { id: 'pf4', src: 'photos/bedroom.jpg', cat: '방', memo: '안방 · 붙박이장', at: D(2025, 2, 18), by: '박서연' },
+    { id: 'pf5', src: 'photos/bath.jpg', cat: '욕실', memo: '욕실 1', at: D(2025, 2, 18), by: '박서연' },
+    { id: 'pf6', src: 'photos/exterior.jpg', cat: '외관', memo: '103동 앞 조경', at: D(2026, 10, 4), by: '이현수', ad: true },
+    { id: 'pf7', src: PLAN_SVG, cat: '평면도', memo: '84A 타입 평면도', at: D(2026, 10, 2), by: '이현수', plan: true },
+  ];
+  S.photoCat = '전체';
+  S.photoPick = null; // 보낼 사진 고르는 중이면 Set
+  let lbIndex = -1;
+  let lbList = [];
+  // 공실일 때 찍은 사진은 지금 상태와 다를 수 있다 (세입자 입주 2025.02.25)
+  const photoAgeNote = (p) => (p.plan ? '' : p.at < S.tenants[0].start ? '세입자 입주 전(공실) 촬영 · 지금 상태와 다를 수 있음' : '');
+  // 사진이 한 장이라도 있으면 대표는 반드시 하나다. 사진을 바꾼 뒤마다 맞춘다.
+  function ensureCover(prefer) {
+    if (!S.photos.length) return;
+    const covers = S.photos.filter((x) => x.cover);
+    if (covers.length === 1) return;
+    const keep = covers.length > 1
+      ? (prefer && covers.includes(prefer) ? prefer : covers[0])
+      : (prefer && S.photos.includes(prefer) ? prefer : S.photos[0]);
+    S.photos.forEach((x) => { x.cover = x === keep; });
+    bump('cover');
+  }
+
+  // 손님에게 보여주는 동안의 사진 설명: 정확한 층·호수를 가리고, 직접 올린 사진은 파일 이름 대신 분류만
+  const photoText = (p) => {
+    if (!S.guest) return p.memo || p.cat;
+    if (p.local) return p.cat;
+    return (p.memo || p.cat).replace(/\d+\s*층/g, '고층').replace(/\d{3,4}\s*호/g, '').replace(/\(\s*\)/g, '').trim() || p.cat;
+  };
+  const shownPhotos = () => {
+    const list = S.photos.slice().sort((a, b) => Number(!!b.cover) - Number(!!a.cover));
+    return S.photoCat === '전체' ? list : list.filter((p) => p.cat === S.photoCat);
+  };
+
+  function renderPhotos() {
+    const g = S.guest;
+    const list = shownPhotos();
+    const counts = { 전체: S.photos.length };
+    S.photos.forEach((p) => { counts[p.cat] = (counts[p.cat] || 0) + 1; });
+    const cats = ['전체', ...PHOTO_CATS.filter((c) => counts[c])];
+    const visible = list.slice(0, 5);
+    const n = visible.length;
+    const pick = S.photoPick;
+    const tile = (p, i) => {
+      const extra = i === 4 && list.length > 5 ? `<span class="more">+${list.length - 5} 모두 보기</span>` : '';
+      return `<button class="ph ${i === 0 && n >= 3 ? 'big' : ''} ${p.plan ? 'plan' : ''} ${pick && pick.has(p.id) ? 'picked' : ''}" data-photo="${p.id}" aria-label="${p.cat} 사진 ${pick ? '고르기' : '크게 보기'}">
+        <img src="${p.src}" alt="${esc(photoText(p))}" loading="lazy">
+        ${extra || `<span class="cap">${p.cover ? `<span class="star">★</span>` : ''}${p.cat}</span>`}
+        ${pick ? `<span class="pick">${I('check')}</span>` : ''}
+      </button>`;
+    };
+    const old = S.photos.filter((p) => photoAgeNote(p)).length;
+    $('#photos').innerHTML = `
+      <div class="h2">사진<span class="n">${S.photos.length}</span> <small>${g ? '' : '손님에게 보여주고 보낼 때'}</small>
+        <span class="act">${g ? '' : `${pick ? '' : `<button class="nb" data-photo-pick>${I('check')}보낼 사진 고르기</button>`}<button class="nb line" data-photo-add>${I('plus')}사진 추가</button>`}</span></div>
+      <div class="phbar">${cats.map((c) => `<button class="phchip ${S.photoCat === c ? 'on' : ''}" data-photo-cat="${c}">${c} <span>${counts[c]}</span></button>`).join('')}</div>
+      <div style="position:relative">
+        ${n ? `<div class="gal n${Math.min(n, 5)} ${pick ? 'selecting' : ''}">${visible.map(tile).join('')}</div>` : `<div class="gal-empty">${S.photoCat === '전체' ? '사진이 없습니다. 끌어다 놓거나 "사진 추가"로 올리세요.' : '이 분류의 사진이 없습니다.'}</div>`}
+        <div class="drop-hint">여기에 놓으면 사진이 추가됩니다</div>
+      </div>
+      ${pick ? `<div class="phsel"><b>${pick.size}장 선택</b><span style="opacity:.8">사진을 눌러 고르세요</span><span class="sp"></span>
+        <button class="nb" data-photo-send ${pick.size ? '' : 'disabled'}>${ic('send')}카톡으로 보내기</button>
+        <button class="nb" data-photo-down ${pick.size ? '' : 'disabled'}>${I('arrowUpRight')}내려받기</button>
+        <button class="nb" data-photo-pick-end>${I('x')}그만 고르기</button></div>` : ''}
+      ${!g && old ? `<div class="phmeta">${I('clock')} ${old}장은 세입자 입주 전(2025.02 공실) 촬영입니다. 임장 때 새로 찍어 두면 좋습니다.</div>` : ''}
+      <input type="file" id="photoFile" accept="image/*" multiple hidden>`;
+  }
+
+  // 크게 보기
+  function openLightbox(id) {
+    lbList = shownPhotos();
+    lbIndex = Math.max(0, lbList.findIndex((p) => p.id === id));
+    drawLightbox();
+  }
+  function closeLightbox() { document.querySelector('.lb')?.remove(); lbIndex = -1; }
+  function drawLightbox() {
+    const g = S.guest;
+    const p = lbList[lbIndex];
+    if (!p) return closeLightbox();
+    let lb = document.querySelector('.lb');
+    if (!lb) { lb = document.createElement('div'); lb.className = 'lb'; lb.setAttribute('role', 'dialog'); lb.setAttribute('aria-label', '사진 크게 보기'); document.body.append(lb); }
+    const age = photoAgeNote(p);
+    lb.innerHTML = `
+      <div class="lb-top">
+        <span class="cnt">${lbIndex + 1} / ${lbList.length}</span>
+        ${g ? `<span class="lb-tag">${p.cat}</span>` : `<button class="lb-tag" data-lb-cat>${p.cat} ${I('chevDown')}</button>`}
+        ${p.cover ? '<span style="color:rgb(255,214,102);font-size:13px">★ 대표 사진</span>' : ''}
+        <span class="sp"></span>
+        ${g ? '' : `
+          ${p.cover ? '' : `<button class="nb" data-lb-cover>★ 대표 사진으로</button>`}
+          <button class="nb ${p.ad ? 'on' : ''}" data-lb-ad aria-pressed="${!!p.ad}">${I('megaphone')}${p.ad ? '광고에 씀' : '광고에 쓰기'}</button>
+          <button class="nb" data-lb-down>${I('arrowUpRight')}내려받기</button>
+          <button class="nb" data-lb-del>${I('x')}삭제</button>`}
+        <button class="nb" data-lb-close aria-label="닫기">${I('x')}<kbd style="color:rgba(255,255,255,.5)">Esc</kbd></button>
+      </div>
+      <div class="lb-stage">
+        <img src="${p.src}" alt="${esc(photoText(p))}" class="${p.plan ? 'plan' : ''}">
+        ${lbList.length > 1 ? `<button class="lb-nav prev" data-lb-go="-1" aria-label="이전 사진">${I('chevLeft')}</button><button class="lb-nav next" data-lb-go="1" aria-label="다음 사진">${I('chevRight')}</button>` : ''}
+      </div>
+      <div class="lb-cap">${esc(photoText(p))}${g ? '' : `<small>${fd(p.at)} 촬영 · ${p.by}${age ? ` · <span class="old">${age}</span>` : ''}</small>`}</div>
+      <div class="lb-strip">${lbList.map((x, i) => `<button class="${i === lbIndex ? 'on' : ''} ${x.plan ? 'plan' : ''}" data-lb-to="${i}" aria-label="${x.cat} 사진"><img src="${x.src}" alt=""></button>`).join('')}</div>`;
+  }
+
+  function addPhotoFiles(files) {
+    const imgs = [...files].filter((f) => f.type.startsWith('image/'));
+    if (!imgs.length) { UI.toast('사진 파일만 올릴 수 있습니다'); return; }
+    const added = imgs.map((f) => ({ id: `pu${Date.now()}${Math.random().toString(36).slice(2, 6)}`, src: URL.createObjectURL(f), cat: '분류 전', memo: f.name, at: new Date(TODAY), by: S.me, local: true }));
+    S.photos.push(...added);
+    ensureCover(added[0]);
+    S.photoCat = '전체';
+    renderPhotos();
+    UI.toast(`사진 ${added.length}장을 올렸습니다 · 크게 보기에서 분류를 정하세요`, () => {
+      const ids = new Set(added.map((p) => p.id));
+      S.photos = S.photos.filter((p) => !ids.has(p.id));
+      ensureCover();
+      if (lbIndex >= 0 && lbList.some((p) => ids.has(p.id))) closeLightbox();
+      added.forEach((p) => URL.revokeObjectURL(p.src));
+      renderPhotos();
+    });
+  }
+
+  function photoClick(t) {
+    let el;
+    if ((el = t.closest('[data-photo-cat]'))) { S.photoCat = el.dataset.photoCat; renderPhotos(); return true; }
+    if (t.closest('[data-photo-add]')) { $('#photoFile').click(); return true; }
+    if (t.closest('[data-photo-pick]')) { S.photoPick = new Set(); renderPhotos(); return true; }
+    if (t.closest('[data-photo-pick-end]')) { S.photoPick = null; renderPhotos(); return true; }
+    if (t.closest('[data-photo-send]')) {
+      const n = S.photoPick.size;
+      S.photoPick = null; renderPhotos();
+      UI.toast(`사진 ${n}장을 카카오톡 보내기 창으로 넘깁니다 (데모) · 브리핑 글은 "카톡용 브리핑 복사"로 함께 붙여 넣으세요`);
+      return true;
+    }
+    if (t.closest('[data-photo-down]')) { UI.toast(`사진 ${S.photoPick.size}장을 내려받습니다 (데모)`); return true; }
+    if ((el = t.closest('[data-photo]'))) {
+      const id = el.dataset.photo;
+      if (S.photoPick) { S.photoPick.has(id) ? S.photoPick.delete(id) : S.photoPick.add(id); renderPhotos(); return true; }
+      if (el.querySelector('.more')) { S.photoCat = '전체'; openLightbox(shownPhotos()[4].id); return true; }
+      openLightbox(id); return true;
+    }
+    // 크게 보기 안
+    if (t.closest('[data-lb-close]') || t.classList.contains('lb-stage')) { closeLightbox(); return true; }
+    if ((el = t.closest('[data-lb-go]'))) { lbIndex = (lbIndex + Number(el.dataset.lbGo) + lbList.length) % lbList.length; drawLightbox(); return true; }
+    if ((el = t.closest('[data-lb-to]'))) { lbIndex = Number(el.dataset.lbTo); drawLightbox(); return true; }
+    if (t.closest('[data-lb-cover]')) {
+      const p = lbList[lbIndex];
+      const prev = S.photos.find((x) => x.cover);
+      S.photos.forEach((x) => { x.cover = x === p; });
+      const cv = bump('cover');
+      drawLightbox(); renderPhotos();
+      UI.toast('대표 사진을 바꿨습니다 · 광고·브리핑에 이 사진이 먼저 나갑니다', () => {
+        if (!fresh('cover', cv)) return;
+        if (!prev || !S.photos.includes(prev)) { UI.toast('예전 대표 사진이 지워져서 되돌리지 않았습니다'); return; }
+        S.photos.forEach((x) => { x.cover = x === prev; });
+        bump('cover');
+        if (lbIndex >= 0) drawLightbox();
+        renderPhotos();
+      });
+      return true;
+    }
+    if (t.closest('[data-lb-ad]')) { const p = lbList[lbIndex]; p.ad = !p.ad; drawLightbox(); UI.toast(p.ad ? '다음 광고 등록에 이 사진을 씁니다' : '광고 사진에서 뺐습니다'); return true; }
+    if (t.closest('[data-lb-down]')) { UI.toast('사진을 내려받습니다 (데모)'); return true; }
+    if (t.closest('[data-lb-del]')) {
+      const p = lbList[lbIndex];
+      const at = S.photos.indexOf(p);
+      const wasCover = !!p.cover;
+      S.photos = S.photos.filter((x) => x !== p);
+      let cv = null;
+      if (wasCover) {
+        p.cover = false;
+        ensureCover();
+        cv = REV.cover;
+      }
+      lbList = lbList.filter((x) => x !== p);
+      if (!lbList.length) closeLightbox(); else { lbIndex = Math.min(lbIndex, lbList.length - 1); drawLightbox(); }
+      renderPhotos();
+      UI.toast(`${p.cat} 사진을 지웠습니다`, () => {
+        if (S.photos.includes(p)) return;
+        S.photos.splice(Math.min(at, S.photos.length), 0, p);
+        // 지운 뒤 대표를 따로 바꾸지 않았을 때만 이 사진을 다시 대표로 둔다
+        if (wasCover && REV.cover === cv) { S.photos.forEach((x) => { x.cover = x === p; }); bump('cover'); }
+        else p.cover = false;
+        ensureCover(p);
+        if (lbIndex >= 0) closeLightbox();
+        renderPhotos();
+      });
+      return true;
+    }
+    if ((el = t.closest('[data-lb-cat]'))) {
+      const p = lbList[lbIndex];
+      UI.menu(el, PHOTO_CATS.map((c) => ({ label: c, on: p.cat === c, run: () => { p.cat = c; drawLightbox(); renderPhotos(); } })));
+      return true;
+    }
+    return false;
+  }
+
+  // 끌어다 놓기·파일 고르기
+  document.addEventListener('change', (e) => { if (e.target.id === 'photoFile' && e.target.files.length) { addPhotoFiles(e.target.files); e.target.value = ''; } });
+  let dragDepth = 0;
+  document.addEventListener('dragenter', (e) => { if (S.guest || !e.dataTransfer?.types?.includes('Files')) return; if (e.target.closest && e.target.closest('#photos')) { dragDepth++; $('#photos').classList.add('dragging'); } });
+  document.addEventListener('dragleave', (e) => { if (e.target.closest && e.target.closest('#photos')) { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('#photos').classList.remove('dragging'); } });
+  document.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
+  document.addEventListener('drop', (e) => {
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    dragDepth = 0;
+    $('#photos').classList.remove('dragging');
+    if (S.guest) return;
+    if (e.target.closest && e.target.closest('#photos')) addPhotoFiles(e.dataTransfer.files);
+    else UI.toast('사진 구역에 놓아야 추가됩니다');
+  });
+
+  const ONE_OFFER = new URLSearchParams(location.search).get('offers') === '1';
+  if (ONE_OFFER) {
+    S.offers = S.offers.filter((o) => o.id === 'sale');
+    S.matches = S.matches.filter((m) => m.type === '매매');
+    S.deal = null;
+    S.records = S.records.filter((r) => !/정민호|가계약/.test(`${r.who || ''} ${r.title || ''} ${r.body || ''}`));
+  }
+
+  const KIND = {
+    call: ['phone', '상담'], visit: ['walk', '상담'], text: ['textMsg', '상담'], confirm: ['calCheck', '상담'],
+    price: ['trendDown', '가격'], ad: ['megaphone', '광고'], deal: ['handshake', '거래'], intake: ['inbox', '거래'],
+  };
+  const FILTERS = [['all', '전체'], ['상담', '상담·확인'], ['가격', '가격'], ['광고', '광고'], ['거래', '거래·의뢰']];
+
+  // ── 계산 ──
+  const sale = () => S.offers.find((o) => o.id === 'sale');
+  const jeonse = () => S.offers.find((o) => o.id === 'jeonse');
+  const staleAd = (o) => o.ads.find((a) => a.price !== o.price) || null;
+  const cheaper = (o) => o.naver.filter((n) => !n.ours && n.price < o.price);
+  const naverMin = (o) => Math.min(...o.naver.map((n) => n.price));
+  const ourRank = (o) => (o.naver.find((n) => n.ours) || {}).rank || null;
+  const offerStatus = (o) => (o.contract ? ['가계약 중', 'blue'] : o.paused ? ['중단', 'yellow'] : ['활성', 'green']);
+  const contacts = () => [...S.people, ...S.tenants];
+  const people = () => [...S.people, ...S.tenants.map((t) => ({ id: t.id, name: t.name, role: '세입자', phone: t.phone }))];
+  const matchPeople = () => S.matches.filter((m) => m.stage !== 'closed').map((m) => ({ id: m.id, name: m.name, role: '매수 고객' }));
+  // 세안고 매매가 떠안는 전세: 전세 거래가 진행 중이면 새 전세, 아니면 지금 세입자
+  function leaseForSale() {
+    const j = jeonse();
+    if (j && j.contract) return { deposit: j.price, label: `새 전세 ${money(j.price)}`, note: `${S.guest ? '계약 진행 중' : '가계약 중'} · 27.02.25부터` };
+    const t = S.tenants[0];
+    return { deposit: t.deposit, label: `현 전세 ${money(t.deposit)}`, note: `${sd(t.end)} 만기` };
+  }
+  function callWin(h) {
+    if (!h) return { cls: 'na', text: '통화 가능 시간 미등록' };
+    const d = NOW.getDay();
+    const weekday = d >= 1 && d <= 5;
+    const dayOk = h.days === 'any' || (h.days === 'weekday' ? weekday : !weekday);
+    const t = NOW.getHours() + NOW.getMinutes() / 60;
+    return dayOk && t >= h.from && t < h.to
+      ? { cls: 'ok', ok: true, text: `지금 통화 가능 · ${h.label}` }
+      : { cls: 'no', ok: false, text: `지금은 피하기 · ${h.label}` };
+  }
+  const upcoming = () => S.visit.list.filter((v) => v.at >= NOW).sort((a, b) => a.at - b.at);
+
+  function nextOf(m) {
+    if (m.stage === 'closed') return { html: '종료', at: Infinity };
+    if (m.stage === 'deal') {
+      if (!S.deal) return { at: Infinity - 4, html: '거래 만들기 전', act: null };
+      const p = S.deal.pays.find((x) => !x.paid);
+      if (!p) return { at: Infinity - 4, html: '지급 모두 완료', act: '거래 보기', key: 'deal' };
+      const n = diff(TODAY, p.at);
+      return { at: p.at.getTime(), html: `${p.k} <b>${money(p.amt)}</b> 입금 ${md(p.at)} · D-${n}`, soon: n <= 7, act: '거래 보기', key: 'deal' };
+    }
+    const v = upcoming().find((x) => x.match === m.id);
+    if (v) return { at: v.at.getTime(), html: `임장 <b>${dayFmt(v.at)} ${hm(v.at)}</b> · D-${diff(TODAY, v.at)}`, soon: diff(TODAY, v.at) <= 2, act: '임장 정보', key: 'visit' };
+    if (m.stage === 'suggested') return { at: Infinity - 1, html: '아직 소개 안 함', act: '브리핑 보내기', key: 'send' };
+    if (m.stage === 'negotiating') return { at: Infinity - 2, html: '가격 협상 중', act: '상담 기록', key: 'log' };
+    return { at: Infinity - 3, html: '임장 일정 잡기 전', act: '임장 잡기', key: 'book' };
+  }
+
+  function todos() {
+    const list = [];
+    const s = sale();
+    const ad = staleAd(s);
+    if (ad) list.push({ key: 'ad', text: `${ad.ch} 광고 가격이 지금 가격과 다릅니다`, sub: `광고 ${money(ad.price)} · 지금 ${money(s.price)}`, act: '광고 고치기' });
+    S.offers.filter((o) => !o.contract && !o.paused).forEach((o) => {
+      const c = cheaper(o);
+      if (c.length) list.push({ key: `naver-${o.id}`, text: `네이버에 더 싼 ${o.label} 광고 ${c.length}건`, sub: `최저 ${money(naverMin(o))} · 우리 ${o.ads.length ? `${ourRank(o)}위` : '광고 없음'}`, act: '비교 보기', offer: o.id });
+    });
+    upcoming().filter((v) => diff(TODAY, v.at) <= 2).forEach((v) => {
+      const t = S.tenants[0];
+      list.push({ key: `visit-${v.id}`, text: `${dayFmt(v.at)} ${hm(v.at)} 임장 · ${v.who}`, sub: `세입자 ${t.name}에게 하루 전까지 알리기`, act: '세입자에게 문자' });
+    });
+    const pay = S.deal && S.deal.pays.find((p) => !p.paid);
+    if (pay && diff(TODAY, pay.at) <= 14) list.push({ key: 'pay', text: `${pay.k} ${money(pay.amt)} 입금 ${md(pay.at)} (D-${diff(TODAY, pay.at)})`, sub: `${S.deal.type} 거래 · ${S.deal.tenant}`, act: '거래 보기' });
+    const n = diff(TODAY, S.confirm.next);
+    if (n <= 7) list.push({ key: 'confirm', text: n < 0 ? `재확인 기한 ${-n}일 지남` : `매물 확인 ${md(S.confirm.next)} (${due(S.confirm.next)})`, sub: `마지막 확인 ${ago(S.confirm.last)}`, act: '확인 완료' });
+    return list;
+  }
+
+  // ── 그리기: 고정 머리 ──
+  function renderTop() {
+    const g = S.guest;
+    const c = S.confirm;
+    const overdue = diff(TODAY, c.next) < 0;
+    const conf = c.result === 'noanswer'
+      ? `<span class="nt orange"><span class="d"></span>부재중</span><span style="color:var(--n-text-3);font-size:13px">${ago(c.last)} 연락</span>`
+      : overdue
+        ? `<span class="nt red"><span class="d"></span>재확인 필요</span>`
+        : `<span class="nt green"><span class="d"></span>확인 ${ago(c.last)}</span><span style="color:var(--n-text-3);font-size:13px">다음 ${md(c.next)}</span>`;
+    $('#top').innerHTML = `
+      <div class="top-r1">
+        <div class="ttl">
+          <h1>고덕그라시움 <span class="u">${g ? '103동 고층' : '103동 3401호'}</span></h1>
+          <div class="sub">
+            <span>84A · 아파트</span><span>${I('ruler')}공급 34.0평 · 전용 25.7평</span><span>${ic('layers')}${g ? '고층' : '34층'} / 35층</span>
+            <span>${ic('compass')}남향</span><span>${ic('bed')}방 3 · 욕실 2</span><span>${ic('hammer')}2019년 · 4,932세대</span>
+          </div>
+        </div>
+        <div class="top-act">
+          ${g
+            ? `<button class="nb line" data-guest>${ic('eyeOff')}보여주기 끄기</button>`
+            : `<button class="nb" data-guest title="연락처·비공개 메모·다른 손님·기록을 가립니다">${ic('eye')}손님에게 보여주기</button>
+               <button class="nb" data-page-menu aria-label="매물 작업 메뉴">${I('more')}</button>`}
+        </div>
+      </div>
+      <div class="top-r2">
+        ${S.offers.map((o) => { const [sl, st] = offerStatus(o); return `<button class="pchip" data-edit-price="${o.id}" ${g ? 'disabled' : ''} title="눌러서 가격 수정"><span class="nt ${o.tag}">${o.label}</span><b>${money(o.price)}</b>${o.contract || o.paused ? `<span class="nt ${st}"><span class="d"></span>${g && o.contract ? '계약 진행 중' : sl}</span>` : ''}</button>`; }).join('<span class="vsep"></span>')}
+        ${g ? '' : `<span class="vsep"></span><button class="pchip" data-conf-menu style="gap:6px">${conf}</button>
+        <span class="sp"></span>
+        <button class="nb" data-owner-call>${I('phone')}소유주 전화</button>
+        <button class="nb line" data-confirm>${I('check')}확인 완료</button>
+        <button class="nb solid" data-focus-composer>${I('note')}상담 기록 <kbd>R</kbd></button>`}
+      </div>`;
+    $('#guestBar').innerHTML = `${ic('eye')}<span><b>손님에게 보여주는 중</b> · 연락처, 협상 메모, 다른 손님, 기록, 정확한 호수와 층을 가렸습니다.</span><span style="flex:1"></span><button class="nb line" data-guest style="background:#fff">끄기 <kbd>Esc</kbd></button>`;
+  }
+
+  // ── 브리핑 ──
+  function renderBrief() {
+    const g = S.guest;
+    const s = sale();
+    const j = jeonse();
+    const lease = leaseForSale();
+    const card = (o) => {
+      const [sl, st] = offerStatus(o);
+      const h = o.hist[0];
+      const delta = h && !g ? `<span class="delta ${h.to < h.from ? 'down' : 'up'}" style="display:inline">${h.to < h.from ? '↓' : '↑'} ${money(Math.abs(h.to - h.from))} <small>· ${md(h.at)}</small></span>` : '';
+      const ad = o.ads[0];
+      const stale = staleAd(o);
+      let rows = '';
+      if (o.id === 'sale') {
+        rows = `
+          <div class="oc-row"><span class="k">입주</span><span class="v">세안고 · 전세 승계</span></div>
+          <div class="oc-row"><span class="k">승계 전세</span><span class="v">${lease.label} <small>${lease.note}</small></span></div>
+          <div class="oc-row hl"><span class="k">실투자금</span><span class="v"><b>${money(o.price - lease.deposit)}</b> <small>매매가 − 승계 보증금</small></span></div>
+          <div class="oc-row"><span class="k">융자</span><span class="v">${money(o.loan)} <small>${o.loanNote}</small></span></div>`;
+      } else {
+        const ratio = Math.round((o.price / s.price) * 1000) / 10;
+        rows = `
+          <div class="oc-row"><span class="k">입주</span><span class="v">${o.moveIn} <small>${o.moveInNote}</small></span></div>
+          <div class="oc-row hl"><span class="k">전세가율</span><span class="v"><b>${ratio}%</b> <small>매매 ${money(s.price)} 기준</small></span></div>
+          <div class="oc-row"><span class="k">융자</span><span class="v">${money(o.loan)}</span></div>
+          ${o.contract && !g ? `<div class="oc-row"><span class="k">진행</span><span class="v">가계약 · 정민호 <small>계약금 ${md(S.deal.pays[1].at)}</small></span></div>` : ''}`;
+      }
+      rows += `<div class="oc-row"><span class="k">관리비</span><span class="v">${o.fee}만 <small>${o.includes}</small></span></div>`;
+      if (!g) rows += `<div class="oc-row"><span class="k">광고</span><span class="v">${ad ? `<span class="nt ${stale ? 'orange' : 'green'}" style="height:19px"><span class="d"></span>${ad.ch}</span>${stale ? ` <small style="color:rgb(203,107,31)">광고가 ${money(ad.price)}</small>` : ''}` : '<span style="color:var(--n-text-3)">없음</span>'}</span></div>`;
+      return `<div class="ocard ${o.contract ? 'busy' : ''}">
+        <div class="oc-head"><div class="oc-h"><span class="nt ${o.tag}">${o.label}</span>
+          ${g ? (o.contract ? '<span class="nt blue"><span class="d"></span>계약 진행 중</span>' : '') : `<button class="cellbtn" style="width:auto;margin:0" data-offer-status="${o.id}"><span class="nt ${st}"><span class="d"></span>${sl}</span></button>`}
+          <span class="sp"></span>${g ? '' : `<button class="nb" data-offer-menu="${o.id}" aria-label="${o.label} 작업">${I('more')}</button>`}</div>
+        <div class="oc-price">
+          <button class="pb" data-edit-price="${o.id}" ${g ? 'disabled' : ''} title="눌러서 가격 수정"><span class="big">${money(o.price)}</span></button>
+          <span class="per">평당 ${money(perPy(o.price))}</span>${delta}
+        </div></div>
+        <div class="oc-rows">${rows}</div>
+      </div>`;
+    };
+    $('#brief').innerHTML = `
+      <div class="h2">브리핑 <small>손님 전화 받을 때</small><span class="act">${g ? '' : `<button class="nb line" data-brief-copy>${ic('clipboard')}카톡용 브리핑 복사</button>`}</span></div>
+      <div class="ocards ${S.offers.length === 1 ? 'single' : ''}">${S.offers.map(card).join('')}</div>
+      <div class="talk">
+        <div class="talk-row"><span class="k">매물 특징</span><div class="v" ${g ? '' : 'data-memo="sale"'}>${esc(s.memo) || '<span style="color:var(--n-text-3)">특징 추가</span>'}</div></div>
+        ${g || !s.priv ? '' : `<div class="talk-row priv"><span class="k">${ic('lock')}협상 메모</span><div class="v" data-memo="sale-priv">${esc(s.priv)}</div></div>`}
+      </div>`;
+  }
+
+  // ── 집 보기 ──
+  function renderVisit() {
+    const g = S.guest;
+    const t = S.tenants[0];
+    const cw = callWin(t.hours);
+    const list = upcoming();
+    $('#visit').innerHTML = `
+      <div class="h2">집 보기 <small>임장 잡을 때</small><span class="act">${g ? '' : `<button class="nb line" data-book>${ic('calPlus')}임장 잡기</button>`}</span></div>
+      <div class="visit">
+        <div class="visit-rows">
+          <div class="vrow"><span class="k">지금</span><span><span class="nt yellow"><span class="d"></span>세입자 거주 중</span> ${g ? '' : `<span style="color:var(--n-text-2);font-size:13px">${t.name} · ${sd(t.start)} ~ ${sd(t.end)}</span>`}</span><span></span></div>
+          <div class="vrow"><span class="k">보여주기</span><span>${S.visit.rule}</span><span></span></div>
+          ${g ? '' : `<div class="vrow"><span class="k">출입</span><span>${S.visit.access}</span><span></span></div>
+          <div class="vrow"><span class="k">세입자 연락</span><span>${t.name} <span class="phn" data-copy="${t.phone}" style="color:var(--n-text-2);font-variant-numeric:tabular-nums">${tel(t.phone)}</span> <span class="callwin ${cw.cls}">${I('clock')}${cw.text}</span></span>
+            <span style="display:flex;gap:2px"><button class="nb" data-sms="t1">${ic('send')}문자</button><button class="nb" data-call="t1" aria-label="${t.name}에게 전화">${I('phone')}</button></span></div>`}
+        </div>
+        ${g ? '' : `<div class="vsched">
+          <div class="vsched-h">다가오는 임장 ${list.length}<span class="sp"></span></div>
+          ${list.length ? list.map((v) => `<div class="vitem ${v.id === lastVisit ? 'new' : ''}"><span class="when">${dayFmt(v.at)} ${hm(v.at)}</span><span class="vwho">${v.who}</span><span class="nt ${v.type === '매매' ? 'red' : 'blue'}">${v.type}</span><span class="t3">D-${diff(TODAY, v.at)}</span><span style="flex:1"></span><button class="nb" data-visit-cancel="${v.id}">취소</button></div>`).join('') : '<div class="vitem"><span class="t3">잡힌 임장이 없습니다</span></div>'}
+        </div>`}
+      </div>`;
+  }
+  let lastVisit = null;
+
+  // ── 손님 ──
+  function renderBuyers() {
+    const rows = S.matches.slice().sort((a, b) => nextOf(a).at - nextOf(b).at).map((m) => {
+      const [, sl, sc] = stageOf(m.stage);
+      const nx = nextOf(m);
+      return `<tr style="${m.stage === 'closed' ? 'opacity:.55' : ''}">
+        <td><div class="ttl-cell">${UI.av(m.name)}<span style="font-weight:500">${m.name}</span><span class="nt ${m.type === '매매' ? 'red' : 'blue'}" style="margin-left:2px">${m.type}</span></div></td>
+        <td style="color:var(--n-text-2);font-size:13px">${m.cond}${m.note ? `<br><span style="color:var(--n-text)">${m.note}</span>` : ''}</td>
+        <td><button class="cellbtn" data-stage="${m.id}"><span class="nt ${sc}"><span class="d"></span>${sl}</span></button></td>
+        <td><div class="next ${nx.soon ? 'soon' : ''}">${nx.html}</div></td>
+        <td style="text-align:right">${nx.act ? `<button class="nb line" data-next="${m.id}" data-next-key="${nx.key}">${nx.act}</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+    $('#buyers').innerHTML = `
+      <div class="h2">손님<span class="n">${S.matches.filter((m) => m.stage !== 'closed').length}</span> <small>다음 할 일이 가까운 순</small><span class="act"><button class="nb" data-soon="조건이 맞는 손님 찾기">${I('userSearch')}맞는 손님 찾기</button></span></div>
+      <div class="ntbl-wrap"><table class="ntbl" style="min-width:640px">
+        <colgroup><col style="width:150px"><col><col style="width:126px"><col style="width:172px"><col style="width:112px"></colgroup>
+        <thead><tr><th>${ic('aa')}손님</th><th>${I('list')}원하는 조건</th><th>${ic('circleDot')}단계</th><th>${I('cal')}다음 할 일</th><th></th></tr></thead>
+        <tbody>${rows}<tr class="newrow"><td colspan="5" data-soon="매칭 추가">${I('plus')}손님 연결</td></tr></tbody>
+      </table></div>`;
+  }
+
+  // ── 거래 ──
+  function renderDeal() {
+    const d = S.deal;
+    if (!d) { $('#dealSec').innerHTML = ''; return; }
+    $('#dealSec').innerHTML = `
+      <div class="h2">거래 진행<span class="n">1</span></div>
+      <div class="deal" id="dealBlock" style="margin-top:10px">
+        <div class="deal-h">
+          <span class="pg" data-soon="거래관리에서 열기">${I('file')}${d.type} — 임차 ${d.tenant} · 임대 ${d.landlord}</span>
+          <span class="nt blue"><span class="d"></span>${d.steps[d.cur]}</span>
+          <span class="meta">${md(d.since)}부터 · ${diff(d.since, TODAY)}일째 · ${money(d.price)}</span>
+          <span class="sp"></span>
+          <button class="nb" data-soon="거래관리에서 열기">${I('arrowUpRight')}거래 보기</button>
+        </div>
+        <div class="steps">${d.steps.map((s, i) => `${i ? '<span class="ln"></span>' : ''}<span class="step ${i < d.cur ? 'done' : i === d.cur ? 'cur' : ''}"><span class="m">${i < d.cur ? I('check') : ''}</span>${s}</span>`).join('')}</div>
+        <div class="pays">${d.pays.map((p) => { const n = diff(TODAY, p.at); return `<div class="pay"><div class="k">${p.paid ? '<span class="nt green" style="height:18px;font-size:12px">입금</span>' : ''}${p.k}</div><div class="a">${money(p.amt)}</div><div class="w ${!p.paid && n <= 14 ? 'soon' : ''}">${sd(p.at)} ${p.paid ? '입금 확인' : `예정 · D-${n}`}</div></div>`; }).join('')}</div>
+      </div>`;
+  }
+
+  // ── 기록 ──
+  function recHtml(r, isNew, withDate) {
+    const [icn] = KIND[r.kind];
+    const iconName = r.kind === 'price' && r.dir === 'up' ? 'trendUp' : icn;
+    const long = r.body && (r.body.length > 120 || r.body.split('\n').length > 3);
+    const open = S.expanded.has(r.id);
+    return `<div class="rec ${isNew ? 'new' : ''} ${r.pinned ? 'is-pinned' : ''}" data-rec="${r.id}">
+      <span class="ri ${r.kind} ${r.dir || ''}">${ic(iconName)}</span>
+      <div class="rb">
+        <div class="l1"><span class="tt">${r.title}</span>${r.who ? `<span class="mt">${esc(r.who)}</span>` : ''}${r.sum ? `<span class="sm">${r.sum}</span>` : ''}<span class="tm">${withDate ? `${sd(r.at)} ` : ''}${r.time || ''}</span></div>
+        ${r.body ? `<p class="body ${long && !open ? 'clamp' : ''}">${esc(r.body)}</p>${long ? `<button class="more" data-expand="${r.id}">${open ? '접기' : '더 보기'}</button>` : ''}` : ''}
+        <div class="by">${r.by === '시스템' ? '자동 기록' : `${UI.av(r.by)}${r.by}`}</div>
+      </div>
+      <div class="tools"><button class="nb" data-pin-rec="${r.id}">${ic('pinOn')}${r.pinned ? '고정 해제' : '고정'}</button></div>
+    </div>`;
+  }
+  let lastNew = null;
+  function renderRecords() {
+    const counts = { all: S.records.length };
+    S.records.forEach((r) => { const g = KIND[r.kind][1]; counts[g] = (counts[g] || 0) + 1; });
+    const pinned = S.records.filter((r) => r.pinned);
+    const list = S.records.filter((r) => S.filter === 'all' || KIND[r.kind][1] === S.filter);
+    const groups = [];
+    list.forEach((r) => {
+      const key = day0(r.at);
+      let g = groups[groups.length - 1];
+      if (!g || g.key !== key) { g = { key, at: r.at, items: [] }; groups.push(g); }
+      g.items.push(r);
+    });
+    $('#records').innerHTML = `
+      <div class="h2">기록<span class="n">${S.records.length}</span></div>
+      <div class="rtabs" role="tablist" aria-label="기록 종류">${FILTERS.map(([k, l]) => `<button class="vt ${S.filter === k ? 'on' : ''}" role="tab" aria-selected="${S.filter === k}" data-filter="${k}">${l}<span style="color:var(--n-text-3);font-weight:400">${counts[k] || 0}</span></button>`).join('')}</div>
+      ${pinned.length && S.filter === 'all' ? `<div class="pinned"><div class="pinned-h">${ic('pinOn')}고정한 기록 ${pinned.length}</div>${pinned.map((r) => recHtml(r, false, true)).join('')}</div>` : ''}
+      ${groups.map((g) => `<div class="dgrp"><div class="dgrp-h">${dayLabel(g.at)}</div>${g.items.map((r) => recHtml(r, r.id === lastNew)).join('')}</div>`).join('') || '<p style="color:var(--n-text-3);font-size:14px;margin-top:16px">이 종류의 기록이 없습니다.</p>'}`;
+    lastNew = null;
+  }
+
+  // ── 상담 입력칸 (아래에 붙어 있음) ──
+  function renderComposer(focus = false) {
+    const live = $('#cmpText');
+    if (live) S.composer.text = live.value;
+    const c = S.composer;
+    const all = [...people(), ...matchPeople()];
+    const who = all.find((p) => p.id === c.who) || all[0];
+    if (!c.open) {
+      $('#composer').innerHTML = `<div class="cmp-row">${UI.av(S.me, 'md')}<div class="cmp-ph" data-open-composer>상담 기록 남기기… 누구와 무슨 이야기를 했나요?<kbd>R</kbd></div></div>`;
+      return;
+    }
+    const ownerSide = ['소유주', '공동소유', '대리인'].includes(who.role);
+    $('#composer').innerHTML = `
+      <div class="cmp-row">${UI.av(S.me, 'md')}
+        <div class="cmp-box">
+          <div class="cmp-meta">
+            <button class="who-pick" data-pick-who>${I('user')}${esc(who.name)} <small>${who.role}</small>${I('chevDown')}</button>
+            <div class="tseg" role="radiogroup" aria-label="상담 방법">
+              ${[['call', '전화'], ['visit', '방문'], ['text', '문자']].map(([k, l]) => `<button role="radio" aria-checked="${c.type === k}" class="${c.type === k ? 'on' : ''}" data-ctype="${k}">${l}</button>`).join('')}
+            </div>
+          </div>
+          <textarea id="cmpText" placeholder="이야기한 내용을 적으세요. Enter로 기록, Shift+Enter로 줄바꿈, Esc로 닫기">${esc(c.text)}</textarea>
+          <div class="cmp-foot">
+            ${ownerSide ? `<span class="ckl" data-cmp-confirm role="checkbox" aria-checked="${c.confirm}"><span class="cb ${c.confirm ? 'on' : ''}">${I('check')}</span>매물 확인으로도 남기기 <span style="color:var(--n-text-3)">· 다음 확인 ${md(new Date(TODAY.getTime() + 14 * 864e5))}</span></span>` : '<span class="ckl" style="color:var(--n-text-3)">매수 고객·세입자 상담은 매물 확인으로 남지 않습니다</span>'}
+            <span class="sp"></span>
+            <button class="nb" data-close-composer>취소</button>
+            <button class="nb solid" data-save-composer>기록</button>
+          </div>
+        </div>
+      </div>`;
+    if (focus) { const ta = $('#cmpText'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
+
+  // ── 오른쪽 고정 열 ──
+  const prop = (icon, k, v) => `<div class="prop"><div class="k">${icon}${k}</div><div class="v">${v}</div></div>`;
+  function personRow(p, past) {
+    const cw = past ? null : callWin(p.hours);
+    return `<div class="person ${past ? 'past' : ''}">
+      ${UI.av(p.name, 'md')}
+      <div class="pb">
+        <div class="pn"><b>${p.name}</b><span class="nt ${past ? 'gray' : p.role === '소유주' ? 'brown' : 'gray'}">${p.role}</span>${p.main ? '<span class="nt gray" style="font-size:12px">주 연락처</span>' : ''}</div>
+        ${p.terms ? `<div class="terms">${p.terms}</div>` : ''}
+        <div class="pd2" title="${esc(p.note || '')}"><span class="phn" data-copy="${p.phone}" title="눌러서 번호 복사">${tel(p.phone)}</span>${p.note ? ` · ${p.note}` : ''}</div>
+        ${cw ? `<div class="callwin ${cw.cls}">${I('clock')}${cw.text}</div>` : ''}
+      </div>
+      ${past ? '' : `<div class="acts"><button class="nb" data-sms="${p.id}" aria-label="${p.name}에게 문자" style="padding:0 6px">${ic('send')}</button><button class="nb" data-call="${p.id}" aria-label="${p.name}에게 전화" style="padding:0 6px">${I('phone')}</button></div>`}
+    </div>`;
+  }
+  function renderRail() {
+    const list = todos();
+    const open = list.filter((t) => !S.doneTodos.has(t.key));
+    const done = list.filter((t) => S.doneTodos.has(t.key));
+    const row = (t, isDone) => `
+      <div class="todo ${isDone ? 'done' : ''}" data-todo="${t.key}">
+        <span class="cb ${isDone ? 'on' : ''}" role="checkbox" aria-checked="${isDone}" tabindex="0" data-todo-check="${t.key}">${I('check')}</span>
+        <div class="tx">${t.text}<small>${t.sub}${isDone ? '' : ` · <button class="golink" data-todo-act="${t.key}">${t.act}</button>`}</small></div>
+      </div>`;
+    const c = S.confirm;
+    const overdue = diff(TODAY, c.next) < 0;
+    const [cTitle, cColor] = c.result === 'noanswer' ? ['부재중', 'rgb(203,107,31)'] : overdue ? ['재확인 필요', 'rgb(212,76,71)'] : ['확인됨', 'rgb(68,131,97)'];
+    const t = S.tenants[0];
+    $('#railIn').innerHTML = `
+      <div class="rsec" style="padding-top:2px">
+        <div class="callout">
+          <div class="ic">${ic('flag')}</div>
+          <div class="ct">
+            <div class="ttl">지금 챙길 것<span class="n">${open.length}</span></div>
+            ${open.length ? open.map((x) => row(x, false)).join('') : '<div class="todo"><div class="tx" style="color:var(--n-text-2)">모두 처리했습니다.</div></div>'}
+            ${done.length ? `<button class="togg ${S.showDone ? 'is-open' : ''}" data-toggle-done>${I('chevRight')}완료 ${done.length}</button>${S.showDone ? done.map((x) => row(x, true)).join('') : ''}` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="rsec">
+        <div class="rsec-h">연락처<span class="n">${S.people.length + S.tenants.length}</span><span class="sp"></span><button class="nb" data-soon="연락처 추가" style="height:24px;padding:0 4px">${I('plus')}</button></div>
+        ${S.people.map((p) => personRow(p)).join('')}
+        ${S.tenants.map((x) => personRow({ ...x, role: '세입자', terms: `보증금 ${money(x.deposit)} · 만기 ${sd(x.end)} (D-${diff(TODAY, x.end)})` })).join('')}
+        <button class="togg ${S.toggles.pastOwners ? 'is-open' : ''}" data-toggle="pastOwners">${I('chevRight')}이전 소유주 ${S.pastOwners.length} · 지난 세입자 ${S.pastTenants.length}</button>
+        ${S.toggles.pastOwners ? [...S.pastOwners.map((p) => personRow(p, true)), ...S.pastTenants.map((x) => personRow({ ...x, terms: `보증금 ${money(x.deposit)} · ${sd(x.start)} ~ ${sd(x.end)}` }, true))].join('') : ''}
+      </div>
+      <div class="rsec">
+        <div class="rsec-h">매물 확인</div>
+        <div class="confbox">
+          <div class="cst"><div class="big" style="color:${cColor}"><span class="d" style="background:${cColor}"></span>${cTitle}</div><small>마지막 ${fd(c.last)} (${ago(c.last)}) · 다음 ${md(c.next)} (${due(c.next)})</small></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:10px"><button class="nb solid" data-confirm style="flex:1;justify-content:center">${I('check')}확인 완료</button><button class="nb line" data-conf-menu>다른 결과…</button></div>
+      </div>
+      <div class="rsec">
+        <div class="rsec-h">광고 · 네이버</div>
+        ${S.offers.map((o) => {
+          const ad = o.ads[0];
+          const stale = staleAd(o);
+          const ch = cheaper(o);
+          const rank = ourRank(o);
+          return `<div class="adrow"><span class="nt ${o.tag} tg">${o.label}</span><div class="bd">
+            ${ad ? `${ad.ch} 게재중${stale ? ` · <span class="warn">광고가 ${money(ad.price)}</span>` : ''}` : '<span style="color:var(--n-text-3)">CP 광고 없음</span>'}
+            <small>네이버 ${o.naver.length}건 · ${rank ? `우리 ${rank}위` : '우리 미노출'} · 최저 ${money(naverMin(o))}${ch.length ? ` · <span class="bad">더 싼 ${ch.length}</span>` : ''}</small>
+          </div><button class="nb" data-naver="${o.id}" style="height:24px;padding:0 6px;font-size:12.5px">비교</button></div>`;
+        }).join('')}
+      </div>
+      <div class="rsec">
+        <button class="togg ${S.toggles.info ? 'is-open' : ''}" data-toggle="info" style="font-weight:600;color:var(--n-text)">${I('chevRight')}호실 · 의뢰 정보</button>
+        ${S.toggles.info ? `<div style="margin-top:4px">
+          ${prop(I('building'), '단지', '고덕그라시움 <small>4,932세대 · 51개 동</small>')}
+          ${prop(ic('door'), '동 · 호', '103동 3401호')}
+          ${prop(I('ruler'), '공급', '112.40㎡ <small>34.0평</small>')}
+          ${prop(I('ruler'), '전용', '84.97㎡ <small>25.7평</small>')}
+          ${prop(I('cal'), '접수', `${fd(S.intake.received)} <small>${diff(S.intake.received, TODAY)}일째</small>`)}
+          ${prop(I('users'), '공동중개', S.intake.joint ? '필수' : '<span style="color:var(--n-text-3)">없음</span>')}
+          ${prop(I('user'), '담당', `${UI.av(S.intake.owner)}${S.intake.owner}`)}
+          <div class="prop" style="grid-template-columns:1fr"><div class="k">${I('note')}의뢰 메모</div><div class="v" data-memo="intake" style="margin-top:-4px"><span class="memo-v">${esc(S.intake.memo)}</span></div></div>
+          ${prop(I('clock'), '지난 의뢰', `${S.pastIntakes[0].period}<br><span class="nt gray">${S.pastIntakes[0].status}</span> ${S.pastIntakes[0].offers}`)}
+          ${prop(ic('hash'), '매물번호', 'P-2026-01842')}
+        </div>` : ''}
+      </div>`;
+  }
+
+  function renderCrumb() {
+    const crumbs = document.querySelector('.crumbs');
+    if (!crumbs) return;
+    crumbs.innerHTML = `<a href="properties.html" style="color:inherit">매물관리</a>${I('chevRight')}<b>고덕그라시움 ${S.guest ? '103동 고층' : '103동 3401호'}</b>${S.guest ? '' : `<span style="margin-left:8px;font-size:12px;color:var(--n-text-3)">2판 · <a href="property-detail.html" style="color:inherit;text-decoration:underline">1판 보기</a> · <a href="property-detail-v2.html${ONE_OFFER ? '' : '?offers=1'}" style="color:inherit;text-decoration:underline">${ONE_OFFER ? '거래 조건 2개로 보기' : '거래 조건 1개로 보기'}</a></span>`}`;
+  }
+  function renderAll() {
+    $('#pd').classList.toggle('guest', S.guest);
+    renderCrumb();
+    renderTop(); renderBrief(); renderPhotos(); renderVisit(); renderBuyers(); renderDeal(); renderRecords(); renderRail(); renderComposer();
+  }
+
+  // ── 실행 취소 판 번호 ──
+  const REV = {};
+  const bump = (key) => (REV[key] = (REV[key] || 0) + 1);
+  const fresh = (key, v) => {
+    if (REV[key] === v) return true;
+    UI.toast('그 뒤에 다시 바뀌어서 되돌리지 않았습니다');
+    return false;
+  };
+
+  // ── 동작 ──
+  function addRecord(r) { const nr = rec(r); S.records.unshift(nr); lastNew = nr.id; return nr; }
+  function removeRecord(id) { S.records = S.records.filter((r) => r.id !== id); }
+  const plus14 = () => new Date(TODAY.getTime() + 14 * 864e5);
+
+  function confirmNow() {
+    const prev = { ...S.confirm };
+    S.confirm = { last: new Date(TODAY), next: plus14(), result: 'alive' };
+    const v = bump('confirm');
+    const r = addRecord({ kind: 'confirm', at: new Date(TODAY), time: nowTime(), who: '김정훈 · 소유주', by: S.me, title: '매물 확인', body: '가격·거래 가능 여부 변동 없음' });
+    renderAll();
+    UI.toast(`매물 확인을 기록했습니다 · 다음 확인 ${md(S.confirm.next)}`, () => { if (!fresh('confirm', v)) return; S.confirm = prev; removeRecord(r.id); renderAll(); });
+  }
+
+  function openComposer(who, type) {
+    S.composer.open = true;
+    if (who) S.composer.who = who;
+    if (type) S.composer.type = type;
+    renderComposer(true);
+  }
+
+  function saveComposer() {
+    const c = S.composer;
+    const text = ($('#cmpText')?.value || '').trim();
+    if (!text) { UI.toast('내용을 적어야 기록할 수 있습니다'); $('#cmpText')?.focus(); return; }
+    const all = [...people(), ...matchPeople()];
+    const who = all.find((p) => p.id === c.who) || all[0];
+    const asConfirm = ['소유주', '공동소유', '대리인'].includes(who.role) && c.confirm;
+    const titles = { call: '전화 상담', visit: '방문 상담', text: '문자 상담' };
+    const r = addRecord({ kind: asConfirm ? 'confirm' : c.type, at: new Date(TODAY), time: nowTime(), who: `${who.name} · ${who.role}`, by: S.me, title: asConfirm ? `매물 확인 · ${titles[c.type].replace(' 상담', '')}` : titles[c.type], body: text });
+    const prevConfirm = asConfirm ? { ...S.confirm } : null;
+    const cv = asConfirm ? bump('confirm') : null;
+    if (asConfirm) S.confirm = { last: new Date(TODAY), next: plus14(), result: 'alive' };
+    $('#cmpText').value = '';
+    S.composer = { ...S.composer, open: false, text: '' };
+    S.filter = 'all';
+    renderAll();
+    UI.toast(asConfirm ? '상담을 기록하고 매물 확인도 남겼습니다' : '상담을 기록했습니다', () => {
+      if (asConfirm && !fresh('confirm', cv)) return;
+      removeRecord(r.id);
+      if (prevConfirm) S.confirm = prevConfirm;
+      renderAll();
+    });
+  }
+
+  // 떠 있는 창
+  let pop = null;
+  const closePop = () => { if (pop) { pop.remove(); pop = null; } };
+  function openPop(anchor, html, wide) {
+    closePop();
+    pop = document.createElement('div');
+    pop.className = `npop ${wide ? 'wide' : ''}`;
+    pop.innerHTML = html;
+    document.body.append(pop);
+    const r = anchor.getBoundingClientRect();
+    const x = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8));
+    let y = r.bottom + 6;
+    if (y + pop.offsetHeight > innerHeight - 8) y = Math.max(8, r.top - pop.offsetHeight - 6);
+    pop.style.left = `${x}px`; pop.style.top = `${y}px`;
+    return pop;
+  }
+  document.addEventListener('mousedown', (e) => { if (pop && !pop.contains(e.target)) closePop(); }, true);
+
+  function editPrice(btn, id) {
+    const o = S.offers.find((x) => x.id === id);
+    const p = openPop(btn, `
+      <h4>${o.label}가 · 만원 단위</h4>
+      <div class="inp"><input id="pv" inputmode="numeric" value="${o.price}" aria-label="${o.label}가"><span class="unit">만원</span></div>
+      <div class="hint" id="pvh">= ${money(o.price)}</div>
+      <div class="inp"><input id="pr" placeholder="바꾼 이유 (기록에 남습니다)" aria-label="바꾼 이유"></div>
+      <div class="row"><button class="nb" data-pop-cancel>취소</button><button class="nb solid" data-pop-save>저장 <kbd>↵</kbd></button></div>`);
+    const input = $('#pv', p), reason = $('#pr', p);
+    input.select();
+    input.addEventListener('input', () => { const v = parseInt(input.value.replace(/\D/g, ''), 10); $('#pvh', p).textContent = v ? `= ${money(v)}${v !== o.price ? ` · ${v < o.price ? '↓' : '↑'} ${money(Math.abs(v - o.price))}` : ''}` : '숫자를 입력하세요'; });
+    const save = () => {
+      const v = parseInt(input.value.replace(/\D/g, ''), 10);
+      if (!v) return input.focus();
+      closePop();
+      if (v === o.price) return;
+      const prev = { price: o.price, hist: o.hist.slice() };
+      const wasStale = !!staleAd(o);
+      o.hist.unshift({ at: new Date(TODAY), from: o.price, to: v });
+      const pv = bump(`price:${o.id}`);
+      const r = addRecord({ kind: 'price', dir: v < o.price ? 'down' : 'up', at: new Date(TODAY), time: nowTime(), who: o.label, by: S.me, title: '가격 변경', sum: `${money(o.price)} → ${money(v)}`, body: reason.value.trim() || null });
+      o.price = v;
+      renderAll();
+      const base = `${o.label}가 변경: ${money(prev.price)} → ${money(v)}`;
+      UI.toast(staleAd(o) ? `${base} · 광고 가격과 다릅니다` : wasStale ? `${base} · 광고 가격과 같아졌습니다` : base, () => { if (!fresh(`price:${o.id}`, pv)) return; o.price = prev.price; o.hist = prev.hist; removeRecord(r.id); renderAll(); });
+    };
+    p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); save(); } if (e.key === 'Escape') { e.preventDefault(); closePop(); } });
+    $('[data-pop-save]', p).onclick = save;
+    $('[data-pop-cancel]', p).onclick = closePop;
+  }
+
+  function naverPop(btn, id) {
+    const o = S.offers.find((x) => x.id === id);
+    const list = o.naver.slice().sort((a, b) => a.price - b.price);
+    openPop(btn, `
+      <h4>네이버 같은 호실 ${o.label} 광고 ${o.naver.length}건 · 11.13 08:00 수집</h4>
+      <table class="cmp-tbl"><thead><tr><th>중개사</th><th class="r">가격</th><th>층 노출</th><th>확인</th><th class="r">순위</th></tr></thead>
+      <tbody>${list.map((n) => `<tr class="${n.ours ? 'ours' : ''}"><td>${esc(n.ag)}</td><td class="r ${!n.ours && n.price < o.price ? 'cheap' : ''}">${money(n.price)}</td><td>${n.floor}</td><td>${n.v}</td><td class="r">${n.rank}위</td></tr>`).join('')}</tbody></table>
+      <p class="hint" style="margin:10px 2px 0">우리 매물가 ${money(o.price)} 기준. ${o.ads.length ? '' : '우리 광고는 지금 올라가 있지 않습니다.'}</p>`, true);
+  }
+
+  // 카톡용 브리핑
+  function briefText() {
+    const b = S.brief;
+    const s = sale();
+    const lease = leaseForSale();
+    const L = [`[고덕그라시움 ${b.hideHo ? '103동 고층' : '103동 3401호'} · 84A · 남향]`];
+    S.offers.filter((o) => !o.paused && !(b.skipBusy && o.contract)).forEach((o) => {
+      if (o.id === 'sale') {
+        L.push(`매매 ${money(o.price)}${b.per ? ` (평당 ${money(perPy(o.price))})` : ''}`);
+        L.push(` · 세안고: ${lease.label} 승계 → 실투자 ${money(o.price - lease.deposit)}`);
+        L.push(` · 융자 ${money(o.loan)} (${o.loanNote})`);
+      } else {
+        L.push(`전세 ${money(o.price)}${b.per ? ` (평당 ${money(perPy(o.price))})` : ''} · 입주 ${o.moveIn}`);
+      }
+    });
+    L.push(`공급 34평(112㎡) · 전용 25.7평 · 방3 욕실2 · ${b.hideHo ? '고층' : '34층'}/35층 · 2019년 준공`);
+    L.push(`관리비 약 ${s.fee}만 (${s.includes})`);
+    L.push(`집 보기: 주말 오후 2~5시 (세입자 거주, 하루 전 예약)`);
+    L.push('');
+    L.push('고덕 에스테잇 공인중개 · 이현수');
+    return L.join('\n');
+  }
+  function briefPop(btn) {
+    const p = openPop(btn, `
+      <h4>카톡용 브리핑</h4>
+      <div class="opt">
+        ${[['hideHo', '호수 가리기'], ['skipBusy', '계약 중인 조건 빼기'], ['per', '평당가 넣기']].map(([k, l]) => `<span class="ckl" data-bopt="${k}"><span class="cb ${S.brief[k] ? 'on' : ''}">${I('check')}</span>${l}</span>`).join('')}
+      </div>
+      <textarea class="brief-pre" id="briefText" readonly></textarea>
+      <div class="row"><button class="nb" data-pop-cancel>닫기</button><button class="nb solid" data-brief-do>${ic('clipboard')}복사</button></div>`, true);
+    const fill = () => { $('#briefText', p).value = briefText(); p.querySelectorAll('[data-bopt]').forEach((el) => el.querySelector('.cb').classList.toggle('on', S.brief[el.dataset.bopt])); };
+    fill();
+    p.addEventListener('click', async (e) => {
+      const o = e.target.closest('[data-bopt]');
+      if (o) { S.brief[o.dataset.bopt] = !S.brief[o.dataset.bopt]; fill(); return; }
+      if (e.target.closest('[data-pop-cancel]')) return closePop();
+      if (e.target.closest('[data-brief-do]')) {
+        const ta = $('#briefText', p);
+        let ok = false;
+        try { await navigator.clipboard.writeText(ta.value); ok = true; } catch (err) { ta.select(); try { ok = document.execCommand('copy'); } catch (err2) { ok = false; } }
+        closePop();
+        UI.toast(ok ? '브리핑을 복사했습니다 · 카카오톡에 붙여 넣으세요' : '복사하지 못했습니다 · 글을 직접 선택해 복사하세요');
+      }
+    });
+  }
+
+  // 임장 잡기
+  function bookPop(btn, matchId) {
+    const cands = S.matches.filter((m) => !['deal', 'closed'].includes(m.stage));
+    if (!cands.length) {
+      UI.menu(btn, [
+        { note: '임장을 잡을 손님이 없습니다', sub: '연결된 손님이 모두 거래로 넘어갔거나 종료됐습니다' },
+        { label: '손님 연결', icon: 'plus', run: () => UI.toast('손님 연결 창을 엽니다 (데모)') },
+      ], { right: true, wide: true });
+      return;
+    }
+    let pick = (matchId && cands.some((m) => m.id === matchId) ? matchId : null)
+      || (cands.find((m) => !upcoming().some((v) => v.match === m.id)) || cands[0]).id;
+    let time = '15:00';
+    const TIMES = ['10:00', '11:00', '14:00', '15:00', '16:00', '19:00'];
+    const p = openPop(btn, `
+      <h4>임장 잡기 · 세입자 조건: 주말 14–17시, 하루 전 연락</h4>
+      <label class="f">손님</label>
+      <div class="time-chips" id="bkWho"></div>
+      <label class="f">날짜</label>
+      <div class="inp"><input id="bkDate" type="date" value="2026-11-14" min="2026-11-13"></div>
+      <label class="f">시간</label>
+      <div class="time-chips" id="bkTime"></div>
+      <div class="warnline" id="bkWarn"></div>
+      <div class="row"><button class="nb" data-pop-cancel>취소</button><button class="nb solid" data-book-save>잡기</button></div>`, true);
+    const draw = () => {
+      $('#bkWho', p).innerHTML = cands.map((m) => `<button class="${m.id === pick ? 'on' : ''}" data-bk-who="${m.id}">${m.name} · ${m.type}</button>`).join('');
+      $('#bkTime', p).innerHTML = TIMES.map((t) => { const h = +t.slice(0, 2); return `<button class="${t === time ? 'on' : ''} ${h < 14 || h >= 17 ? 'out' : ''}" data-bk-time="${t}">${t}</button>`; }).join('');
+      const d = new Date(`${$('#bkDate', p).value}T${time}`);
+      const wk = d.getDay() === 0 || d.getDay() === 6;
+      const h = d.getHours();
+      $('#bkWarn', p).textContent = !wk || h < 14 || h >= 17 ? '세입자 조건(주말 14–17시) 밖입니다. 세입자와 먼저 조율하세요.' : '';
+    };
+    draw();
+    p.addEventListener('input', draw);
+    p.addEventListener('click', (e) => {
+      const w = e.target.closest('[data-bk-who]'); if (w) { pick = w.dataset.bkWho; draw(); return; }
+      const t = e.target.closest('[data-bk-time]'); if (t) { time = t.dataset.bkTime; draw(); return; }
+      if (e.target.closest('[data-pop-cancel]')) return closePop();
+      if (e.target.closest('[data-book-save]')) {
+        const at = new Date(`${$('#bkDate', p).value}T${time}`);
+        if (Number.isNaN(at.getTime())) return;
+        const m = S.matches.find((x) => x.id === pick);
+        closePop();
+        const item = { id: `v${Date.now()}`, at, who: m.name, match: m.id, type: m.type };
+        S.visit.list.push(item);
+        const prevStage = m.stage;
+        const prevAt = m.at;
+        if (stageIdx(m.stage) < stageIdx('viewingOk')) m.stage = 'viewingOk';
+        m.at = new Date(TODAY);
+        const sv = bump(`stage:${m.id}`);
+        const r = addRecord({ kind: 'visit', at: new Date(TODAY), time: nowTime(), who: `${m.name} · 매수 고객`, by: S.me, title: '임장 일정', sum: `${dayFmt(at)} ${hm(at)}` });
+        lastVisit = item.id;
+        renderAll();
+        lastVisit = null;
+        UI.toast(`${m.name}님 임장을 ${dayFmt(at)} ${hm(at)}에 잡았습니다`, () => {
+          if (!fresh(`stage:${m.id}`, sv)) return;
+          S.visit.list = S.visit.list.filter((x) => x.id !== item.id);
+          m.stage = prevStage; m.at = prevAt;
+          removeRecord(r.id);
+          renderAll();
+        });
+      }
+    });
+  }
+
+  function sendBrief(m) {
+    const prev = m.stage;
+    const prevAt = m.at;
+    if (m.stage === 'suggested') m.stage = 'interested';
+    m.at = new Date(TODAY);
+    const v = bump(`stage:${m.id}`);
+    const r = addRecord({ kind: 'text', at: new Date(TODAY), time: nowTime(), who: `${m.name} · 매수 고객`, by: S.me, title: '문자 상담', sum: '브리핑 보냄', body: briefText().split('\n').slice(0, 3).join('\n') });
+    renderAll();
+    UI.toast(`${m.name}님에게 브리핑 문자를 보냈습니다 (데모)`, () => { if (!fresh(`stage:${m.id}`, v)) return; m.stage = prev; m.at = prevAt; removeRecord(r.id); renderAll(); });
+  }
+
+  function ownerCallMenu(btn) {
+    const owner = S.people[0];
+    const agent = S.people.find((p) => p.role === '대리인');
+    const cw = callWin(owner.hours);
+    const aw = callWin(agent.hours);
+    const call = (p) => { UI.toast(`${p.name}님에게 전화를 겁니다 · 끝나면 아래 입력칸에 기록하세요`); openComposer(p.id, 'call'); };
+    if (cw.ok) return call(owner);
+    UI.menu(btn, [
+      { note: `${owner.name}님은 ${owner.hours.label} 통화를 원합니다`, sub: '지금은 금요일 오후 2:20입니다' },
+      { label: `그래도 ${owner.name}님에게 걸기`, icon: 'phone', run: () => call(owner) },
+      ...(aw.ok ? [{ label: `대리인 ${agent.name}님에게 걸기`, icon: 'phone', hint: '지금 통화 가능', run: () => call(agent) }] : []),
+      { label: '오늘 19:00에 알림 받기', icon: 'clock', run: () => UI.toast('오늘 19:00에 소유주 확인 전화 알림을 띄웁니다 (데모)') },
+    ], { right: true, wide: true });
+  }
+
+  function pageMenu(btn) {
+    UI.menu(btn, [
+      { label: '거래 조건 추가', icon: 'plus', run: () => UI.toast('거래 조건 추가 창을 엽니다 (데모)') },
+      { label: '연락처 추가', icon: 'user', run: () => UI.toast('연락처 추가 창을 엽니다 (데모)') },
+      { label: '거래 바로 만들기', icon: 'handshake', run: () => UI.toast('거래 만들기 창을 엽니다 (데모)') },
+      '-', { head: '의뢰 · 접수 10.02' },
+      { label: '의뢰 보류', icon: 'clock', run: () => UI.toast('의뢰를 보류했습니다 (데모)') },
+      { label: '의뢰 종료…', icon: 'x', danger: true, run: () => UI.toast('종료 사유를 고르는 창을 엽니다 (데모)') },
+      '-',
+      { label: '새 창으로 열기', icon: 'arrowUpRight', run: () => UI.toast('새 창으로 엽니다 (데모)') },
+      { label: '링크 복사', icon: 'copy', run: () => UI.toast('매물 링크를 복사했습니다') },
+      '-', { label: ONE_OFFER ? '데모: 거래 조건 2개로 보기' : '데모: 거래 조건 1개로 보기', icon: 'sliders', run: () => { location.href = ONE_OFFER ? 'property-detail-v2.html' : 'property-detail-v2.html?offers=1'; } },
+    ], { right: true });
+  }
+
+  function confirmOther(anchor) {
+    UI.menu(anchor, [
+      { head: '확인 결과' },
+      { label: '이상 없음 (확인 완료)', icon: 'check', run: confirmNow },
+      { label: '가격이 바뀌었음', icon: 'won', run: () => editPrice(document.querySelector('.ocard [data-edit-price="sale"]'), 'sale') },
+      { label: '부재중', icon: 'phone', run: () => { const prev = { ...S.confirm }; S.confirm = { ...S.confirm, result: 'noanswer', last: new Date(TODAY) }; const v = bump('confirm'); renderAll(); UI.toast('부재중으로 기록했습니다', () => { if (!fresh('confirm', v)) return; S.confirm = prev; renderAll(); }); } },
+      { label: '의뢰 종료 (다른 곳에서 계약 등)…', icon: 'x', danger: true, run: () => UI.toast('의뢰 종료 사유를 고르는 창을 엽니다 (데모)') },
+    ], { right: true });
+  }
+
+  function setTodoDone(key, done) {
+    if (done) S.doneTodos.add(key); else S.doneTodos.delete(key);
+    renderRail();
+    return bump(`todo:${key}`);
+  }
+  const undoTodo = (key, v) => () => { if (fresh(`todo:${key}`, v)) setTodoDone(key, false); };
+
+  function flash(el) { if (!el) return; el.scrollIntoView({ block: 'center' }); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+
+  function todoAction(key, btn) {
+    if (key === 'confirm') return confirmNow();
+    if (key === 'pay') return flash($('#dealBlock'));
+    if (key.startsWith('naver-')) return naverPop(btn, key.slice(6));
+    if (key.startsWith('visit-')) {
+      const v = S.visit.list.find((x) => `visit-${x.id}` === key);
+      const t = S.tenants[0];
+      const tv = setTodoDone(key, true);
+      UI.toast(`${t.name}님에게 문자: "${dayFmt(v.at)} ${hm(v.at)}에 집 보러 가도 될까요?" (데모)`, undoTodo(key, tv));
+      return;
+    }
+    if (key === 'ad') {
+      UI.menu(btn, [
+        { head: '이실장 광고 가격 맞추기' },
+        { label: `광고 가격 수정 요청 (→ ${money(sale().price)})`, icon: 'megaphone', hint: '에이전트 업무', run: () => { const v = setTodoDone('ad', true); UI.toast('광고 수정 업무를 만들었습니다. 에이전트가 처리하면 기록에 남습니다', undoTodo('ad', v)); } },
+        { label: '이실장에서 직접 고치기', icon: 'arrowUpRight', run: () => UI.toast('이실장 광고 관리 화면을 엽니다 (데모)') },
+      ], { right: true });
+    }
+  }
+
+  function memoEdit(el, key) {
+    const get = () => (key === 'intake' ? S.intake.memo : key === 'sale-priv' ? sale().priv : sale().memo);
+    const set = (v) => { if (key === 'intake') S.intake.memo = v; else if (key === 'sale-priv') sale().priv = v; else sale().memo = v; };
+    const prev = get();
+    el.innerHTML = `<textarea class="memo-edit" aria-label="메모">${esc(prev)}</textarea>`;
+    const ta = el.querySelector('textarea');
+    ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+    let done = false;
+    const finish = (save) => {
+      if (done) return; done = true;
+      const next = ta.value.trim();
+      if (save && next !== prev) {
+        set(next);
+        const v = bump(`memo:${key}`);
+        renderAll();
+        UI.toast('메모를 저장했습니다', () => { if (!fresh(`memo:${key}`, v)) return; set(prev); renderAll(); });
+      } else renderAll();
+    };
+    ta.addEventListener('blur', () => finish(true));
+    ta.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
+    });
+  }
+
+  function toggleGuest() {
+    S.guest = !S.guest;
+    closePop();
+    if (S.guest) {
+      S.composer.open = false;
+      // 열려 있던 메뉴·서랍·명령창·알림도 닫는다 (고객 이름이 보일 수 있다)
+      document.querySelectorAll('.menu, .drawer-back, .cmdk-back, .keys-back, .dn, .toasts').forEach((x) => x.remove());
+    }
+    document.body.classList.toggle('guest-mode', S.guest);
+    S.photoPick = null;
+    closeLightbox();
+    renderAll();
+    $('#main').scrollTop = 0;
+  }
+  // 손님에게 보여주는 동안: 본문 밖을 누르거나 단축키를 쓰면 막는다 (Esc와 끄기 버튼만 통한다)
+  const guestBlocked = () => UI.toast('손님에게 보여주는 중에는 쓸 수 없습니다 · Esc로 끄기');
+  document.addEventListener('click', (e) => {
+    if (!S.guest) return;
+    if (e.target.closest('[data-guest]')) return;
+    if (e.target.closest('#pd, .lb') && !e.target.closest('a[href]')) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    guestBlocked();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (!S.guest || e.key === 'Escape' || e.key === 'Tab') return;
+    if (lbIndex >= 0 && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    const q = (s) => t.closest(s);
+    let el;
+    if (q('[data-guest]')) return toggleGuest();
+    if (photoClick(t)) return;
+    if (q('[data-open-composer]') || q('[data-focus-composer]')) return openComposer();
+    if (q('[data-close-composer]')) { $('#cmpText').value = ''; S.composer = { ...S.composer, open: false, text: '' }; renderComposer(); return; }
+    if (q('[data-save-composer]')) return saveComposer();
+    if ((el = q('[data-ctype]'))) { S.composer.type = el.dataset.ctype; renderComposer(true); return; }
+    if (q('[data-cmp-confirm]')) { S.composer.confirm = !S.composer.confirm; renderComposer(true); return; }
+    if ((el = q('[data-pick-who]'))) {
+      const pick = (id) => { S.composer.who = id; renderComposer(true); };
+      UI.menu(el, [
+        { head: '이 매물의 사람' },
+        ...people().map((p) => ({ label: p.name, hint: p.role, html: UI.av(p.name, 'md'), on: S.composer.who === p.id, run: () => pick(p.id) })),
+        { head: '손님' },
+        ...matchPeople().map((p) => ({ label: p.name, hint: p.role, html: UI.av(p.name, 'md'), on: S.composer.who === p.id, run: () => pick(p.id) })),
+        '-', { label: '새 연락처로 기록…', icon: 'plus', run: () => UI.toast('새 연락처 입력 창을 엽니다 (데모)') },
+      ], { wide: true });
+      return;
+    }
+    if ((el = q('[data-todo-check]'))) { const k = el.dataset.todoCheck; const was = S.doneTodos.has(k); const v = setTodoDone(k, !was); if (!was) UI.toast('완료로 표시했습니다', undoTodo(k, v)); return; }
+    if ((el = q('[data-todo-act]'))) return todoAction(el.dataset.todoAct, el);
+    if (q('[data-toggle-done]')) { S.showDone = !S.showDone; renderRail(); return; }
+    if (q('[data-confirm]')) return confirmNow();
+    if ((el = q('[data-conf-menu]'))) return confirmOther(el);
+    if ((el = q('[data-owner-call]'))) return ownerCallMenu(el);
+    if ((el = q('[data-edit-price]'))) { if (S.guest) return; return editPrice(el, el.dataset.editPrice); }
+    if ((el = q('[data-naver]'))) return naverPop(el, el.dataset.naver);
+    if ((el = q('[data-brief-copy]'))) return briefPop(el);
+    if ((el = q('[data-book]'))) return bookPop(el);
+    if ((el = q('[data-visit-cancel]'))) {
+      const v = S.visit.list.find((x) => x.id === el.dataset.visitCancel);
+      S.visit.list = S.visit.list.filter((x) => x !== v);
+      renderAll();
+      UI.toast(`${v.who}님 ${dayFmt(v.at)} 임장을 취소했습니다`, () => { if (!S.visit.list.includes(v)) { S.visit.list.push(v); renderAll(); } });
+      return;
+    }
+    if ((el = q('[data-next]'))) {
+      const m = S.matches.find((x) => x.id === el.dataset.next);
+      const k = el.dataset.nextKey;
+      if (k === 'deal') return flash($('#dealBlock'));
+      if (k === 'visit') return flash($('#visit .visit'));
+      if (k === 'send') return sendBrief(m);
+      if (k === 'book') return bookPop(el, m.id);
+      if (k === 'log') return openComposer(m.id, 'call');
+      return;
+    }
+    if ((el = q('[data-offer-status]'))) {
+      const o = S.offers.find((x) => x.id === el.dataset.offerStatus);
+      if (o.contract) { UI.menu(el, [{ note: '거래가 진행 중입니다', sub: '이 조건의 상태는 거래관리의 단계에 따라 바뀝니다' }, { label: '거래 보기', icon: 'arrowUpRight', run: () => flash($('#dealBlock')) }]); return; }
+      const set = (paused) => { if (o.paused === paused) return; o.paused = paused; const v = bump(`paused:${o.id}`); renderAll(); UI.toast(paused ? `${o.label}만 중단했습니다` : `${o.label}를 다시 진행합니다`, () => { if (!fresh(`paused:${o.id}`, v)) return; o.paused = !paused; renderAll(); }); };
+      UI.menu(el, [{ head: `${o.label} 상태` }, { label: '활성', html: '<span class="nt green" style="height:18px"><span class="d"></span>활성</span>', on: !o.paused, run: () => set(false) }, { label: '이 조건만 중단', html: '<span class="nt yellow" style="height:18px"><span class="d"></span>중단</span>', on: o.paused, run: () => set(true) }]);
+      return;
+    }
+    if ((el = q('[data-offer-menu]'))) {
+      const o = S.offers.find((x) => x.id === el.dataset.offerMenu);
+      UI.menu(el, [
+        { label: '가격·조건 수정', icon: 'note', run: () => editPrice(document.querySelector(`.ocard [data-edit-price="${o.id}"]`), o.id) },
+        { label: '네이버 비교', icon: 'search', run: () => naverPop(el, o.id) },
+        { label: '고객 공개 설정…', icon: 'arrowUpRight', run: () => UI.toast('고객 공개 설정 창을 엽니다 (데모)') },
+        '-', { label: '거래 조건 삭제…', icon: 'x', danger: true, run: () => UI.toast('삭제 확인 창을 엽니다 (데모)') },
+      ], { right: true });
+      return;
+    }
+    if ((el = q('[data-stage]'))) {
+      const m = S.matches.find((x) => x.id === el.dataset.stage);
+      UI.menu(el, [{ head: `${m.name} · 단계` }, ...STAGES.map(([k, l, c]) => ({ label: l, html: `<span class="nt ${c}" style="height:18px;padding:0 4px"><span class="d"></span></span>`, on: m.stage === k, run: () => { if (m.stage === k) return; const prev = m.stage; const prevAt = m.at; m.stage = k; m.at = new Date(TODAY); const v = bump(`stage:${m.id}`); renderAll(); UI.toast(`${m.name} 매칭 단계: ${stageOf(prev)[1]} → ${l}`, () => { if (!fresh(`stage:${m.id}`, v)) return; m.stage = prev; m.at = prevAt; renderAll(); }); } }))]);
+      return;
+    }
+    if ((el = q('[data-filter]'))) { S.filter = el.dataset.filter; renderRecords(); return; }
+    if ((el = q('[data-expand]'))) { const id = el.dataset.expand; S.expanded.has(id) ? S.expanded.delete(id) : S.expanded.add(id); renderRecords(); return; }
+    if ((el = q('[data-pin-rec]'))) { const r = S.records.find((x) => x.id === el.dataset.pinRec); r.pinned = !r.pinned; const v = bump(`pin:${r.id}`); renderRecords(); UI.toast(r.pinned ? '기록을 맨 위에 고정했습니다' : '고정을 풀었습니다', () => { if (!fresh(`pin:${r.id}`, v)) return; r.pinned = !r.pinned; renderRecords(); }); return; }
+    if ((el = q('[data-toggle]'))) { const k = el.dataset.toggle; S.toggles[k] = !S.toggles[k]; renderRail(); return; }
+    if ((el = q('[data-memo]')) && !t.closest('textarea')) return memoEdit(el, el.dataset.memo);
+    if ((el = q('[data-copy]'))) { UI.toast(`${tel(el.dataset.copy)} 번호를 복사했습니다`); return; }
+    if ((el = q('[data-sms]'))) { const p = contacts().find((x) => x.id === el.dataset.sms); UI.toast(`${p.name}님에게 보낼 문자 창을 엽니다 (데모)`); return; }
+    if ((el = q('[data-call]'))) {
+      const p = contacts().find((x) => x.id === el.dataset.call);
+      const cw = callWin(p.hours);
+      UI.toast(cw.ok || !p.hours ? `${p.name}님에게 전화를 겁니다 · 끝나면 아래 입력칸에 기록하세요` : `${p.name}님은 ${p.hours.label} 통화를 원합니다 · 그래도 겁니다`);
+      openComposer(p.id, 'call');
+      return;
+    }
+    if ((el = q('[data-page-menu]'))) return pageMenu(el);
+    if ((el = q('[data-soon]'))) { UI.toast(`${el.dataset.soon}는 데모에 들어 있지 않습니다`); }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (lbIndex >= 0) {
+      if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); lbIndex = (lbIndex + (e.key === 'ArrowRight' ? 1 : -1) + lbList.length) % lbList.length; drawLightbox(); }
+      return;
+    }
+    const ta = e.target.closest && e.target.closest('#cmpText');
+    if (ta) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveComposer(); }
+      else if (e.key === 'Escape') { e.preventDefault(); S.composer.open = false; renderComposer(); }
+      return;
+    }
+    if (e.target.matches && e.target.matches('[data-todo-check]') && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); e.target.click(); return; }
+    const typing = e.target.matches && e.target.matches('input, textarea, [contenteditable]');
+    if (e.key === 'Escape' && S.guest) { e.preventDefault(); toggleGuest(); return; }
+    if (typing || e.metaKey || e.ctrlKey || e.altKey || document.querySelector('.menu, .npop')) return;
+    if (!S.guest && e.key.toLowerCase() === 'r') { e.preventDefault(); openComposer(); }
+  });
+
+  renderAll();
+
+
+  UI.notes([
+    '<b>중개사가 일하는 순서로 다시 짰습니다.</b> 본문은 손님 응대 브리핑 → 집 보기 → 손님 → 거래 진행 → 기록, 오른쪽 고정 열은 지금 챙길 것 → 연락처 → 매물 확인 → 광고·네이버 → 호실·의뢰 정보입니다.',
+    '<b>고정 머리</b>: 사양 한 줄, 거래별 가격(눌러서 수정), 확인 상태, 소유주 전화·확인 완료·상담 기록이 스크롤해도 늘 보입니다.',
+    '<b>브리핑 카드</b>: 거래 조건마다 가격·평당가와 함께 세안고 실투자금(매매가 − 승계 보증금), 전세가율, 융자 상환 조건, 관리비 포함 항목을 계산해 보여 줍니다. 매물 특징과 협상 메모(비공개)는 카드 바로 아래에 둡니다.',
+    '<b>거래 조건이 하나면</b> 카드를 가로로 펼쳐 왼쪽에 거래·가격, 오른쪽에 조건을 두 줄로 둡니다. 위쪽 경로 줄의 "거래 조건 1개로 보기"로 확인할 수 있습니다.',
+    '<b>사진</b>: 브리핑 바로 아래에 대표 사진과 4장을 두고 분류(거실·주방·방·욕실·전망·외관·평면도)로 거릅니다. 누르면 크게 보며 ←/→로 넘기고, 대표 사진·광고에 쓰기·분류·삭제를 그 자리에서 합니다. 공실 때 찍은 사진은 표시합니다. 보낼 사진을 골라 카톡으로 보내고, 끌어다 놓거나 "사진 추가"로 올립니다. 손님에게 보여주기에서는 사진이 맨 위로 크게 올라옵니다.',
+    '<b>카톡용 브리핑 복사</b>: 호수 가리기·계약 중인 조건 빼기·평당가 넣기를 고르면 바로 붙여 넣을 문구가 만들어집니다.',
+    '<b>손님에게 보여주기</b>: 모니터를 손님에게 돌릴 때 누르면 연락처, 협상 메모, 다른 손님, 기록, 정확한 호수와 층을 가립니다. Esc로 끕니다.',
+    '<b>집 보기</b>: 거주 상태, 보여주기 조건, 출입 방법, 세입자 연락, 다가오는 임장을 한곳에 모았습니다. 임장 잡기는 세입자 조건 밖의 시간이면 경고합니다.',
+    '<b>연락처마다 통화 가능 시간</b>: 지금 걸어도 되는지 바로 보입니다. 소유주 전화를 누르면 통화를 원하는 시간 밖일 때 대리인에게 걸지, 알림을 받을지 고를 수 있습니다.',
+    '<b>손님 목록은 다음 할 일 순</b>: 임장 일정, 입금 예정, 아직 소개 안 한 손님에게 브리핑 보내기를 한 번에 처리합니다.',
+    '<b>상담 기록 입력칸은 화면 아래에 늘 붙어 있습니다</b> (R).',
+    '새 칸이 필요한 것: 통화 가능 시간, 집 보기 조건·출입 방법, 임장 일정의 매물 연결. 지금 앱에서는 메모 글로만 저장되어 있습니다.',
+  ], '1판과 같은 데이터로, 배치를 중개사 업무 순서로 바꾼 2판입니다.');
+})();
+</script>
+</body>
+</html>

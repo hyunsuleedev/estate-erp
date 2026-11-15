@@ -32,7 +32,7 @@
 <script type="module">
   import * as THREE from "three";
   import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-  import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+  import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 
   // 신축 단지 모형. 단위는 미터(층고 3, 필로티 5.4).
   // 실제 주동 구조를 따른다.
@@ -60,18 +60,20 @@
 
   // 외벽 한 면을 그린다: 색 지도와, 유리만 매끈하고 반사되게 하는 거칠기·금속성 지도.
   // 칸 종류: B 침실창 · L 거실창(유리 난간) · M 안방창 · E 모서리 통창 · K 주방 작은 창 · V 실외기실 루버 · G 계단실 유리띠 · A 짙은 포인트 · W 목재색 줄 · S 벽
-  const cache = new Map();
-  function facade(pattern, n) {
-    const key = pattern.map((q) => q.t + q.w).join() + n;
+  // 무늬마다 최대 층수(NMAX)로 한 장만 그려 두고, 동마다 아래에서부터 필요한 층수만큼만 잘라 쓴다(같은 그림을 모든 동이 함께 쓴다).
+  // 거칠기·금속성 지도는 절반 해상도면 충분하다.
+  const cache = new Map(), NMAX = 36;
+  function facade(pattern) {
+    const key = pattern.map((q) => q.t + q.w).join();
     if (cache.has(key)) return cache.get(key);
-    const W = pattern.reduce((sum, q) => sum + q.w, 0);
+    const W = pattern.reduce((sum, q) => sum + q.w, 0), n = NMAX;
     const w = Math.round(W * PX), h = Math.round(n * FH * PX);
-    const mk = () => Object.assign(document.createElement("canvas"), { width: w, height: h });
-    const col = mk(), orm = mk(), bump = mk();
-    const c = col.getContext("2d"), o = orm.getContext("2d"), b = bump.getContext("2d");
+    const col = Object.assign(document.createElement("canvas"), { width: w, height: h });
+    const orm = Object.assign(document.createElement("canvas"), { width: Math.ceil(w / 2), height: Math.ceil(h / 2) });
+    const c = col.getContext("2d"), o = orm.getContext("2d");
+    o.scale(0.5, 0.5);
     c.fillStyle = "#eceae4"; c.fillRect(0, 0, w, h);
     o.fillStyle = "rgb(0,225,0)"; o.fillRect(0, 0, w, h);
-    b.fillStyle = "#fff"; b.fillRect(0, 0, w, h);
     const m = (v) => v * PX;
     const wall = (u0, u1, color) => { c.fillStyle = color; c.fillRect(m(u0), 0, m(u1 - u0), h); };
     const glassRect = (u0, u1, k, z0, z1, rail, mull = rail ? 3 : 1) => {
@@ -85,7 +87,6 @@
       c.strokeStyle = "#f7f6f2"; c.lineWidth = 1.5; c.strokeRect(x, y, ww, hh);
       c.beginPath(); for (let i = 1; i <= mull; i++) { c.moveTo(x + (ww * i) / (mull + 1), y); c.lineTo(x + (ww * i) / (mull + 1), y + hh); } c.stroke();
       o.fillStyle = "rgb(0,30,165)"; o.fillRect(x, y, ww, hh);
-      b.fillStyle = "#5a5a5a"; b.fillRect(x, y, ww, hh);
     };
     let u = 0;
     pattern.forEach(({ t, w: bw }) => {
@@ -101,17 +102,14 @@
           const x = m(u + 0.04), y = h - m(k * FH + 2.55), ww = m(bw - 0.08), hh = m(2.2);
           c.fillStyle = "#8f8c85"; c.fillRect(x, y, ww, hh);
           c.fillStyle = "#c2bfb7"; for (let i = 0; i < hh; i += 4) c.fillRect(x, y + i, ww, 2);
-          b.fillStyle = "#8a8a8a"; b.fillRect(x, y, ww, hh);
         }
       }
       u += bw;
     });
-    // 최상층 짙은 띠와 층 슬래브 그림자
-    c.fillStyle = "rgba(84,88,91,0.5)"; c.fillRect(0, 0, w, m(0.9));
-    c.fillStyle = "rgba(60,60,55,0.13)"; b.fillStyle = "#bdbdbd";
-    for (let k = 1; k < n; k++) { c.fillRect(0, h - m(k * FH) - 1, w, 2); b.fillRect(0, h - m(k * FH) - 1, w, 2); }
-    const tex = (cv, srgb) => { const t = new THREE.CanvasTexture(cv); t.anisotropy = 8; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
-    const out = { map: tex(col, true), orm: tex(orm), bump: tex(bump) };
+    c.fillStyle = "rgba(60,60,55,0.13)";
+    for (let k = 1; k < n; k++) c.fillRect(0, h - m(k * FH) - 1, w, 2);
+    const tex = (cv, srgb) => { const t = new THREE.CanvasTexture(cv); t.anisotropy = 4; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+    const out = { map: tex(col, true), orm: tex(orm) };
     cache.set(key, out);
     return out;
   }
@@ -163,8 +161,61 @@
   }
 
   let renderer, scene, camera, root, raf = 0, p = 0, t0 = 0, units = [], extras = [], pads = [], ro;
+  let buildMs = 0, frameNo = 0, settle = 2;
   const mat = (color, rough = 0.85, metal = 0) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
-  const add = (geo, m, x, y, z, parent) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.castShadow = me.receiveShadow = true; parent.add(me); return me; };
+  // 따로 움직이거나 나중에 손대야 하는 부품만 메시 하나로 둔다
+  const solo = (geo, m, x, y, z, parent) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.castShadow = me.receiveShadow = true; parent.add(me); return me; };
+  // 나머지는 add()로 (부모, 재질)별로 모아 두었다가 flush()에서 한 덩어리로 합친다.
+  // 색만 다른 부품은 C(색)로 넘기면 꼭짓점 색으로 칠해 재질 하나(paintM)를 함께 쓴다.
+  const WHITE = new THREE.Color(1, 1, 1);
+  const C = (hex, m) => ({ color: new THREE.Color(hex), mat: m });
+  let pending = new Map(), paintM;
+  const part = (geo, start, count) => {
+    const out = new THREE.BufferGeometry(), idx = geo.index.array;
+    for (const name of ["position", "normal", "uv"]) {
+      const src = geo.attributes[name], size = src.itemSize, arr = new Float32Array(count * size);
+      for (let i = 0; i < count; i++) for (let k = 0; k < size; k++) arr[i * size + k] = src.array[idx[start + i] * size + k];
+      out.setAttribute(name, new THREE.BufferAttribute(arr, size));
+    }
+    return out;
+  };
+  const add = (geo, m, x, y, z, parent) => {
+    const put = (g, q) => {
+      const material = q.isMaterial ? q : q.mat || paintM;
+      g.translate(x, y, z);
+      if (material.vertexColors) {
+        const c = q.isMaterial ? WHITE : q.color, count = g.attributes.position.count, arr = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+        g.setAttribute("color", new THREE.BufferAttribute(arr, 3));
+      }
+      let byMat = pending.get(parent);
+      if (!byMat) pending.set(parent, (byMat = new Map()));
+      let list = byMat.get(material);
+      if (!list) byMat.set(material, (list = []));
+      list.push(g);
+    };
+    if (!Array.isArray(m)) return put(part(geo, 0, geo.index.count), m);
+    // 면마다 재질이 다른 상자는 면별로 나눠 담는다. 바닥면은 보이지 않으므로 뺀다.
+    geo.groups.forEach((gr) => { if (gr.materialIndex !== 3) put(part(geo, gr.start, gr.count), m[gr.materialIndex]); });
+  };
+  function flush() {
+    const world = new Map();
+    const make = (parent, material, list) => {
+      const me = new THREE.Mesh(mergeGeometries(list), material);
+      me.castShadow = me.receiveShadow = true;
+      parent.add(me);
+      list.forEach((g) => g.dispose());
+    };
+    pending.forEach((byMat, parent) => byMat.forEach((list, material) => {
+      // 움직이지 않는 부모에 달린, 잘리지 않는 부품은 장면 좌표로 옮겨 단지 전체를 하나로 합친다
+      const bake = parent !== scene && !parent.userData.live && parent.parent === scene && !material.clippingPlanes?.length;
+      if (!bake && parent !== scene) return make(parent, material, list);
+      if (bake) { parent.updateMatrix(); list.forEach((g) => g.applyMatrix4(parent.matrix)); }
+      world.set(material, (world.get(material) || []).concat(list));
+    }));
+    world.forEach((list, material) => make(scene, material, list));
+    pending = new Map();
+  }
   const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
   // 어떤 점이 건물 자리(여유 pad 포함) 안인지: 돌려 놓은 건물도 제 좌표로 바꿔서 본다
   const inPad = (x, z, pad) => pads.some((q) => {
@@ -245,16 +296,16 @@
     for (let i = 0; i < 900; i++) { const x = -106 + rnd() * 212, z = -82 + rnd() * 164; if (inPad(x, z, 2.5) && !inPad(x, z, 0.4)) shrub(x, z, 0.8 + rnd() * 0.6); }
     for (let i = 0; i < 46; i++) { const a = rnd() * 6.283; shrub(6 + Math.cos(a) * 20, 13 + Math.sin(a) * 10.5, 0.8 + rnd() * 0.5); }
 
-    const inst = (geo, material, list) => {
+    const inst = (geo, material, list, shadow = true) => {
       const mesh = new THREE.InstancedMesh(geo, material, list.length);
       list.forEach(([mx, color], i) => { mesh.setMatrixAt(i, mx); mesh.setColorAt(i, color); });
-      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.castShadow = shadow; mesh.receiveShadow = true;
       group.add(mesh);
     };
-    const leaf = new THREE.MeshStandardMaterial({ roughness: 0.95, vertexColors: true });
-    inst(lumpy(new THREE.IcosahedronGeometry(1, 2), 0.16), leaf, blobs);
-    inst(lumpy(new THREE.ConeGeometry(1, 1, 11, 3), 0.1), leaf, cones);
-    inst(new THREE.CylinderGeometry(0.55, 1, 1, 7), mat("#ffffff", 0.95), trunks);
+    const leaf = new THREE.MeshLambertMaterial({ vertexColors: true });
+    inst(lumpy(new THREE.IcosahedronGeometry(1, 1), 0.16), leaf, blobs);
+    inst(lumpy(new THREE.ConeGeometry(1, 1, 8, 2), 0.1), leaf, cones);
+    inst(new THREE.CylinderGeometry(0.55, 1, 1, 5), new THREE.MeshLambertMaterial(), trunks, false);
   }
 
   function build() {
@@ -266,19 +317,20 @@
     const sun = new THREE.DirectionalLight("#fff3e2", 3.1);
     sun.position.set(-190, 420, 180);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -250, right: 250, top: 250, bottom: -250, near: 10, far: 1100 });
-    sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.5; sun.shadow.radius = 3;
+    sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.8; sun.shadow.radius = 2.5;
     scene.add(sun);
 
     // 흰 바탕에는 그림자만 받는 바닥을 깔아 모형 받침처럼 보이게 한다
     const floor = new THREE.Mesh(new THREE.CircleGeometry(800, 64), new THREE.ShadowMaterial({ opacity: 0.15 }));
     floor.rotation.x = -Math.PI / 2; floor.position.y = -1.3; floor.receiveShadow = true;
     scene.add(floor);
-    const edge = mat("#d9d5cc");
+    paintM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 });
+    const edge = C("#d9d5cc"), edgeM = mat("#d9d5cc"), capM = mat("#e9e6df");
     add(box(SW, 1.2, SD), [edge, edge, new THREE.MeshStandardMaterial({ map: siteTexture(), roughness: 0.95 }), edge, edge, edge], 0, -0.6, 0, scene);
 
-    const concrete = mat("#e9e6df"), dark = mat("#4d5154", 0.6, 0.2), wood = mat("#a88c66", 0.7), stone = mat("#8f8a80", 0.9), white = mat("#f4f3ef");
+    const concrete = C("#e9e6df"), dark = C("#4d5154"), wood = C("#a88c66"), stone = C("#8f8a80"), white = C("#f4f3ef"), mech = C("#c9c6be"), rail = C("#5d7483");
     const glassM = new THREE.MeshStandardMaterial({ color: "#5d7483", roughness: 0.08, metalness: 0.75 });
     units = []; pads = []; extras = [];
 
@@ -289,9 +341,12 @@
       pads.push({ x: v.x, z: v.z, rot: v.rot || 0, hw: w / 2, hd: d / 2 + bd + 1 });
       const plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), PIL);
       const clip = (m) => { const c = m.clone(); c.clippingPlanes = [plane]; c.clipShadows = true; return c; };
-      const skin = (pattern, floors = n) => { const f = facade(pattern, floors); return clip(new THREE.MeshStandardMaterial({ map: f.map, roughnessMap: f.orm, metalnessMap: f.orm, roughness: 1, metalness: 1, bumpMap: f.bump, bumpScale: 2 })); };
-      const lid = clip(concrete), plain = clip(mat("#e2dfd8")), fin = clip(dark), slabM = clip(white);
-      add(box(w, H, d), [skin(v.endP), skin(v.endN), lid, lid, skin(v.front), skin(v.back)], 0, PIL + H / 2, 0, g);
+      // 같은 그림을 함께 쓰되, 이 날개의 층수만큼만 아래에서부터 잘라 쓴다
+      const crop = (tex, floors) => { const t = tex.clone(); t.repeat.set(1, floors / NMAX); t.needsUpdate = true; return t; };
+      const skin = (pattern, floors = n) => { const f = facade(pattern), orm = crop(f.orm, floors); return clip(new THREE.MeshStandardMaterial({ map: crop(f.map, floors), roughnessMap: orm, metalnessMap: orm, roughness: 1, metalness: 1 })); };
+      // 색만 다른 면(지붕·옆벽·핀)은 이 날개의 잘리는 재질 하나로 그린다
+      const paint = clip(paintM), lid = C("#e9e6df", paint), plain = C("#e2dfd8", paint), fin = C("#4d5154", paint), slabM = clip(mat("#f4f3ef"));
+      add(box(w, H, d), [skin(v.endP), v.endN === PAT.blank ? plain : skin(v.endN), lid, lid, skin(v.front), skin(v.back)], 0, PIL + H / 2, 0, g);
       // 거실: 한 층 낮게 끝나는 돌출 발코니와 층마다 내민 슬래브
       const bay = skin(PAT.bay, n - 1), spots = [...v.bays.map((x) => [x, 1]), ...(v.backBays || []).map((x) => [x, -1])];
       const slabs = new THREE.InstancedMesh(box(4.9, 0.26, bd + 0.55), slabM, spots.length * n), o = new THREE.Object3D();
@@ -299,7 +354,7 @@
         add(box(4.4, H - FH, bd), sgn > 0 ? [plain, plain, lid, lid, bay, plain] : [plain, plain, lid, lid, plain, bay], x, PIL + (H - FH) / 2, sgn * (d / 2 + bd / 2), g);
         for (let k = 0; k < n; k++) { o.position.set(x, PIL + k * FH + 0.05, sgn * (d / 2 + bd / 2 + 0.1)); o.updateMatrix(); slabs.setMatrixAt(i * n + k, o.matrix); }
       });
-      slabs.castShadow = slabs.receiveShadow = true; g.add(slabs);
+      slabs.receiveShadow = true; g.add(slabs);
       (v.fins || []).forEach((x) => add(box(0.45, H, 1.1), fin, x, PIL + H / 2, d / 2 + 0.5, g));
       // 뒷면으로 튀어나온 계단·승강기 코어
       const cores = v.cores || [], coreSkin = cores.length && skin(PAT.core);
@@ -311,13 +366,13 @@
       add(box(w + 0.6, 0.5, d + 0.8), dark, 0, PIL - 0.25, 0, g);
       if (v.canopy !== false) add(box(7, 0.35, 4.5), wood, 0, 3.6, d / 2 + 2, g);
       // 공사 중 꼭대기 슬래브(완공되면 지붕이 된다)
-      const cap = add(box(w + 0.5, 0.5, d + 0.5), concrete, 0, PIL, 0, g);
+      const cap = solo(box(w + 0.5, 0.5, d + 0.5), capM, 0, PIL, 0, g);
       // 완공 때 붙는 옥상: 파라펫, 승강기 기계실, 설비, 테라스 난간, 프레임 구조물
-      const roof = new THREE.Group(); roof.position.y = PIL + H; roof.scale.setScalar(0.001); g.add(roof);
+      const roof = new THREE.Group(); roof.userData.live = true; roof.position.y = PIL + H; roof.scale.setScalar(0.001); g.add(roof);
       for (const [w2, d2, x, z] of [[w + 0.5, 0.5, 0, d / 2], [w + 0.5, 0.5, 0, -d / 2], [0.5, d + 0.5, w / 2, 0], [0.5, d + 0.5, -w / 2, 0]]) add(box(w2, 1.3, d2), dark, x, 0.9, z, roof);
       cores.forEach((cx) => { add(box(6, 4.6, 6), concrete, cx, 2.5, -d / 2 + 1.4, roof); add(box(6.4, 0.4, 6.4), dark, cx, 5, -d / 2 + 1.4, roof); });
-      for (let x = -w / 2 + 3; x < w / 2 - 2; x += 5.5) add(box(1.6, 1.1, 1.6), mat("#c9c6be", 0.6, 0.4), x, 0.9, 1.5, roof);
-      spots.forEach(([x, sgn]) => add(box(4.4, 1.1, 0.12), glassM, x, -FH + 0.6, sgn * (d / 2 + bd - 0.1), roof));
+      for (let x = -w / 2 + 3; x < w / 2 - 2; x += 5.5) add(box(1.6, 1.1, 1.6), mech, x, 0.9, 1.5, roof);
+      spots.forEach(([x, sgn]) => add(box(4.4, 1.1, 0.12), rail, x, -FH + 0.6, sgn * (d / 2 + bd - 0.1), roof));
       if (v.crown) {
         for (const x of [-w / 2 + 0.6, w / 2 - 0.6]) for (const z of [-d / 2 + 0.6, d / 2 - 0.6]) add(box(0.7, 9, 0.7), dark, x, 4.8, z, roof);
         for (const z of [-d / 2 + 0.6, 0, d / 2 - 0.6]) add(box(w + 1.8, 0.8, 0.8), dark, 0, 9.4, z, roof);
@@ -329,14 +384,14 @@
         const crane = new THREE.Group(), cs = Math.cos(v.rot || 0), sn = Math.sin(v.rot || 0), lx = -w / 2 - 3, lz = d / 2 + 4;
         crane.position.set(v.x + lx * cs + lz * sn, 0, v.z - lx * sn + lz * cs); scene.add(crane);
         const yellow = mat("#e3b23c", 0.55, 0.3);
-        const mast = add(box(1.7, 1, 1.7), yellow, 0, 0.5, 0, crane);
-        const top = new THREE.Group(); crane.add(top);
+        const mast = solo(box(1.7, 1, 1.7), yellow, 0, 0.5, 0, crane);
+        const top = new THREE.Group(); top.userData.live = true; crane.add(top);
         add(box(44, 1, 1), yellow, 14, 0, 0, top);
         add(box(6, 2.4, 2.2), stone, -10, -0.4, 0, top);
         add(box(2, 2.2, 2), white, 0.2, -1.7, 0, top);
         add(box(0.45, 6, 0.45), yellow, 0, 3, 0, top);
         add(box(0.14, 11, 0.14), dark, 22, -5.5, 0, top);
-        crane.userData = { mast, top };
+        crane.userData = { mast, top, live: true };
         unit.crane = crane;
       }
       units.push(unit);
@@ -355,12 +410,12 @@
           endP: PAT.lobeEnd, endN: PAT.blank, bays: [2.6], backBays: [2.6], fins: [7.78], canopy: false, crown: i === 0, crane: crane && i === 0 });
       });
       const H = (n + 1) * FH, plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), PIL);
-      const m = dark.clone(); m.clippingPlanes = [plane]; m.clipShadows = true;
-      const core = add(new THREE.CylinderGeometry(7.6, 7.6, H, 6), m, x, PIL + H / 2, z, scene); core.rotation.y = rot;
-      add(new THREE.CylinderGeometry(7.2, 7.2, PIL, 6), glassM, x, PIL / 2, z, scene).rotation.y = rot;
-      const roof = new THREE.Group(); roof.position.set(x, PIL + H, z); roof.scale.setScalar(0.001); scene.add(roof);
+      const m = mat("#4d5154", 0.6, 0.2); m.clippingPlanes = [plane]; m.clipShadows = true;
+      const core = solo(new THREE.CylinderGeometry(7.6, 7.6, H, 6), m, x, PIL + H / 2, z, scene); core.rotation.y = rot;
+      solo(new THREE.CylinderGeometry(7.2, 7.2, PIL, 6), glassM, x, PIL / 2, z, scene).rotation.y = rot;
+      const roof = new THREE.Group(); roof.userData.live = true; roof.position.set(x, PIL + H, z); roof.scale.setScalar(0.001); scene.add(roof);
       add(new THREE.CylinderGeometry(5, 5, 3.6, 6), concrete, 0, 1.8, 0, roof); add(new THREE.CylinderGeometry(5.6, 5.6, 0.4, 6), dark, 0, 3.8, 0, roof);
-      units.push({ start, n: n + 1, H, plane, cap: add(new THREE.CylinderGeometry(7.8, 7.8, 0.5, 6), concrete, x, PIL, z, scene), roof, crane: null, done: null, flat: true });
+      units.push({ start, n: n + 1, H, plane, cap: solo(new THREE.CylinderGeometry(7.8, 7.8, 0.5, 6), capM, x, PIL, z, scene), roof, crane: null, done: null, flat: true });
       pads.push({ x, z, rot: 0, hw: 8, hd: 8 });
     };
     slab(-48, -62, 0.1, [29, 29, 25], 0.02, { crown: 0 });
@@ -372,34 +427,34 @@
     towerY(-8, -22, 0.5, 31, 0.03);
 
     // 정문 쪽 커뮤니티(유리 2층 + 목재 처마 + 옥상 정원)와 1층 상가, 문주, 지하주차장 진입로
-    const comm = new THREE.Group(); comm.position.set(-6, 0, 64); comm.rotation.y = 0.04; scene.add(comm);
+    const comm = new THREE.Group(); comm.userData.live = true; comm.position.set(-6, 0, 64); comm.rotation.y = 0.04; scene.add(comm);
     pads.push({ x: -6, z: 64, rot: 0.04, hw: 25, hd: 12 });
     add(box(40, 8.4, 17), glassM, 0, 4.2, 0, comm);
     for (let i = 0; i <= 10; i++) add(box(0.35, 8.4, 17.3), white, -20 + i * 4, 4.2, 0, comm);
     add(box(40.4, 0.4, 17.4), white, 0, 4.3, 0, comm);
     add(box(44, 0.7, 21), wood, 0, 8.75, 0, comm); add(box(43.6, 0.5, 20.6), concrete, 0, 9.3, 0, comm);
     add(box(16, 3.4, 9), white, -8, 11.2, -2, comm); add(box(17, 0.4, 10), dark, -8, 13.1, -2, comm);
-    add(box(12, 0.3, 8), mat("#a9b98f", 0.95), 10, 9.7, 0, comm);
+    add(box(12, 0.3, 8), C("#a9b98f"), 10, 9.7, 0, comm);
     add(box(46, 4.6, 7), white, 0, 2.3, 12, comm); add(box(46.6, 0.5, 8), dark, 0, 4.85, 12, comm);
     for (let i = 0; i < 9; i++) add(box(4.2, 3.2, 0.2), glassM, -20.4 + i * 5.1, 1.9, 15.5, comm);
     extras.push({ o: comm, at: 0.2 });
-    const gate = new THREE.Group(); gate.position.set(40, 0, 83); scene.add(gate);
+    const gate = new THREE.Group(); gate.userData.live = true; gate.position.set(40, 0, 83); scene.add(gate);
     add(box(2.6, 11, 3.2), stone, -12, 5.5, 0, gate); add(box(2.6, 11, 3.2), stone, 12, 5.5, 0, gate);
     add(box(30, 1.7, 3.8), dark, 0, 11.6, 0, gate); add(box(30, 0.4, 4), wood, 0, 10.55, 0, gate);
     add(box(4, 3, 4), white, -17, 1.5, -2, gate); add(box(4.8, 0.3, 4.8), dark, -17, 3.15, -2, gate);
     extras.push({ o: gate, at: 0.3 });
     [[-88, 78, 0], [103, -22, Math.PI / 2]].forEach(([x, z, r]) => {
-      const ramp = new THREE.Group(); ramp.position.set(x, 0, z); ramp.rotation.y = r; scene.add(ramp);
+      const ramp = new THREE.Group(); ramp.userData.live = true; ramp.position.set(x, 0, z); ramp.rotation.y = r; scene.add(ramp);
       pads.push({ x, z, rot: r, hw: 10, hd: 5 });
-      add(box(18, 0.1, 7), mat("#4a4c4e"), 0, 0.06, 0, ramp);
-      const roofG = add(box(18.6, 0.25, 8), glassM, 0, 3.4, 0, ramp); roofG.rotation.z = -0.13;
+      add(box(18, 0.1, 7), C("#4a4c4e"), 0, 0.06, 0, ramp);
+      const roofG = solo(box(18.6, 0.25, 8), glassM, 0, 3.4, 0, ramp); roofG.rotation.z = -0.13;
       for (const sx of [-8.5, -3, 3, 8.5]) for (const sz of [-3.7, 3.7]) add(box(0.3, 3.4 + sx * -0.13, 0.3), dark, sx, (3.4 + sx * -0.13) / 2, sz, ramp);
       extras.push({ o: ramp, at: 0.3 });
     });
     extras.forEach((e) => e.o.scale.set(1, 0.001, 1));
 
     // 단지 밖 도로와 차량
-    const road = (len, x, z, r) => { const me = add(box(len, 0.2, 16), [edge, edge, new THREE.MeshStandardMaterial({ map: roadTexture(len), roughness: 0.9 }), edge, edge, edge], x, -1.1, z, scene); me.rotation.y = r; me.castShadow = false; };
+    const road = (len, x, z, r) => { const me = solo(box(len, 0.2, 16), [edgeM, edgeM, new THREE.MeshStandardMaterial({ map: roadTexture(len), roughness: 0.9 }), edgeM, edgeM, edgeM], x, -1.1, z, scene); me.rotation.y = r; me.castShadow = false; };
     road(SW + 44, 8, SD / 2 + 9, 0); road(SD + 20, SW / 2 + 9, -1, Math.PI / 2);
     const cars = new THREE.InstancedMesh(box(4.4, 1.2, 1.9), mat("#ffffff", 0.35, 0.5), 22), cabins = new THREE.InstancedMesh(box(2.3, 0.9, 1.7), mat("#20262b", 0.2, 0.6), 22);
     const o = new THREE.Object3D(), tint = new THREE.Color(), paints = ["#f2f2f0", "#f2f2f0", "#2a2c2f", "#b9bcc0", "#8e9499", "#3d5a80", "#9b3b34"];
@@ -409,11 +464,12 @@
       cars.setMatrixAt(i, o.matrix); cars.setColorAt(i, tint.set(paints[Math.floor(rnd() * paints.length)]));
       o.position.y = 0.6; o.updateMatrix(); cabins.setMatrixAt(i, o.matrix);
     }
-    cars.castShadow = cabins.castShadow = true; scene.add(cars, cabins);
+    scene.add(cars, cabins);
 
-    const garden = new THREE.Group(); garden.scale.set(1, 0.001, 1); scene.add(garden);
+    const garden = new THREE.Group(); garden.userData.live = true; garden.scale.set(1, 0.001, 1); scene.add(garden);
     plant(garden);
     extras.push({ o: garden, at: 0.02 });
+    flush();
   }
 
   function frame(now) {
@@ -434,12 +490,18 @@
         u.crane.scale.setScalar(Math.max(1 - fin, 0.001));
       }
     });
+    // 그림자는 장면이 바뀌는 동안에만, 그것도 세 프레임에 한 번만 다시 그린다. 완공 뒤에는 멈춘다.
+    const busy = p < 1 || units.some((u) => u.done == null || t - u.done < 560);
+    if (busy) settle = 2;
+    renderer.shadowMap.needsUpdate = busy ? frameNo++ % 3 === 0 : settle-- > 0;
     extras.forEach((e) => { e.o.scale.y = Math.max(easeOut(clamp((p - e.at) / 0.22)), 0.001); });
     // 카메라는 단지 주위를 천천히 돈다
     const az = 0.2 + 0.2 * (1 - Math.exp(-t / 2600)) + t * 0.00002, dist = 590 - 40 * (1 - Math.exp(-t / 3000));
     camera.position.set(Math.sin(az) * dist, 250, Math.cos(az) * dist);
     camera.lookAt(0, 6, 0);
     renderer.render(scene, camera);
+    // 측정용: 완공 뒤 한 프레임의 그리기 횟수·삼각형 수와 장면 준비 시간
+    if (!window.__stats || p >= 1) window.__stats = { buildMs, calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries };
   }
   function resize() {
     const cv = renderer.domElement, w = cv.clientWidth, h = cv.clientHeight;
@@ -454,6 +516,7 @@
     cancelAnimationFrame(raf);
     ro?.disconnect();
     scene?.traverse((o) => { o.geometry?.dispose(); [].concat(o.material || []).forEach((m) => { m.map?.dispose(); m.roughnessMap?.dispose(); m.bumpMap?.dispose(); m.dispose(); }); });
+    cache.forEach((f) => { f.map.dispose(); f.orm.dispose(); });
     scene?.environment?.dispose();
     renderer?.dispose();
     renderer = scene = null;
@@ -466,14 +529,19 @@
       root = r; p = 0; seed = 7; cache.clear();
       const canvas = r.querySelector("canvas");
       renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      renderer.info.autoReset = true;
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.shadowMap.autoUpdate = false;
+      frameNo = 0; settle = 2;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.02;
       renderer.localClippingEnabled = true;
       camera = new THREE.PerspectiveCamera(30, 1, 20, 2600);
+      const b0 = performance.now();
       build();
+      buildMs = Math.round(performance.now() - b0);
       resize();
       ro = new ResizeObserver(resize); ro.observe(canvas);
       t0 = performance.now();

@@ -123,6 +123,8 @@
     { id: 'index', l: '목록', href: 'index.html' },
     { id: 'dashboard', l: '대시보드', href: 'dashboard.html' },
     { id: 'properties', l: '매물관리', href: 'properties.html' },
+    { id: 'property-detail', l: '매물 상세', href: 'property-detail.html' },
+    { id: 'property-detail-v2', l: '매물 상세 2판', href: 'property-detail-v2.html' },
     { id: 'sites', l: '관리단지', href: 'sites.html' },
     { id: 'ad-note', l: '광고노트', href: 'ad-note.html' },
     { id: 'my-ads', l: '내광고관리', href: 'my-ads.html' },

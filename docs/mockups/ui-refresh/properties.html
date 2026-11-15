@@ -182,13 +182,118 @@
   }
   .gbox svg { width: 11px; height: 11px; stroke-width: 2.4; }
   .gbox:hover { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-ink); }
-  #tbl.g-closed .ganchor { border-right: 3px double var(--line-3); }
   #tbl th.gcol { background: var(--soft); }
   #tbl td.gcol { background: color-mix(in srgb, var(--soft) 55%, var(--paper)); }
   #tbl tbody tr:hover td.gcol { background: var(--soft); }
   #tbl tbody tr.picked td.gcol { background: var(--picked); }
   #tbl .gend { border-right-color: var(--line-2); }
   #tbl:not(.g-closed) .ganchor { border-right-color: var(--line-2); }
+
+  /* 툴바 두 줄: 실제 앱의 구조 그대로, 모양만 새 부품으로 */
+  .tb1, .tb2 { display: flex; align-items: center; gap: 8px; flex: none; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--paper); }
+  .tb2 { padding: 8px 12px; border-bottom-color: var(--line-2); }
+  .tb1-right, .tb2-right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+  .tb2-right { gap: 2px; }
+  .tb2-chips { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; overflow-x: auto; scrollbar-width: none; padding: 3px; margin: -3px; }
+  .tb2-chips::-webkit-scrollbar { display: none; }
+  .ktabs { height: 30px; align-items: center; }
+  .ktabs button { height: 26px; padding: 0 12px; cursor: pointer; }
+  /* 위치 칸: 검색칸과 같은 흰 입력칸 하나를 가는 세로선으로 단지 │ 동 │ 호 셋으로 나눈다. 테두리·높이·모서리는 검색칸과 같다 */
+  .ubar { display: inline-flex; align-items: stretch; height: 30px; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); flex: none; min-width: 0; transition: box-shadow 0.12s; }
+  .ubar:hover { box-shadow: inset 0 0 0 1px var(--line-3, #cfccc6); }
+  .uloc { display: inline-flex; align-items: center; gap: 7px; width: 208px; padding: 0 9px 0 10px; border: 0; border-radius: 8px 0 0 8px; background: transparent; font: inherit; font-size: 13px; color: var(--text-3); cursor: pointer; transition: background 0.12s; }
+  .uloc:hover, .uloc[aria-expanded="true"] { background: var(--hover); }
+  .uloc .i { width: 14px; height: 14px; color: var(--text-3); flex: none; }
+  .uloc .i:last-child { width: 12px; height: 12px; }
+  .uloc .t { flex: 1; text-align: left; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .uloc.on { color: var(--text); font-weight: 600; }
+  .uloc.on .i:first-child { color: var(--accent); }
+  .uloc:focus-visible { outline: 0; box-shadow: inset 0 0 0 1.5px var(--accent); }
+  /* 동·호는 고르는 칸이 아니라 치는 칸이다: 숫자는 굵게, 단위는 옅게 오른쪽에 붙는다 */
+  .useg { position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 0 10px; font-size: 13px; color: var(--text-3); cursor: text; flex: none; transition: background 0.12s; }
+  .useg::before { content: ''; position: absolute; left: 0; top: 7px; bottom: 7px; width: 1px; background: var(--line-2); }
+  .useg.dong { width: 72px; } .useg.ho { width: 80px; border-radius: 0 8px 8px 0; }
+  .useg.ho:has(+ .uclr:not([hidden])) { border-radius: 0; }
+  .useg:hover { background: var(--hover); }
+  .useg input { flex: 1; min-width: 0; width: 0; padding: 0; border: 0; outline: 0; background: transparent; font: inherit; font-weight: 600; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+  .useg:focus-within { background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .useg:focus-within::before, .useg:focus-within + .useg::before { opacity: 0; }
+  .useg:has(input.on) span { color: var(--text-2); }
+  .uclr { align-self: center; width: 20px; height: 20px; margin: 0 5px 0 1px; display: inline-grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); cursor: pointer; flex: none; }
+  .uclr:hover { background: var(--press); color: var(--text); }
+  .uclr .i { width: 11px; height: 11px; }
+  /* 글자 검색은 위치와 떨어진 제 칸을 갖는다 */
+  .usearch { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 180px; max-width: 380px; height: 30px; padding: 0 8px 0 10px; border-radius: 8px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line-2); cursor: text; transition: box-shadow 0.12s; }
+  .usearch:hover { box-shadow: inset 0 0 0 1px var(--line-3, #cfccc6); }
+  .usearch:focus-within { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .usearch .i { width: 14px; height: 14px; color: var(--text-3); flex: none; }
+  .usearch input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text); }
+  .usearch input::placeholder { color: var(--text-3); }
+  .usearch:focus-within kbd, .usearch:has(input:not(:placeholder-shown)) kbd { display: none; }
+
+  /* 위치 패널: 지역 → 단지 → 동 → 호를 한 면에서 좁혀 간다. 건수는 지금 거래 탭 기준 */
+  .locpop { position: fixed; z-index: 60; width: 600px; max-width: calc(100vw - 32px); background: var(--paper); border-radius: 12px; box-shadow: 0 0 0 1px var(--line-2), 0 12px 32px rgba(16, 24, 40, 0.14), 0 2px 6px rgba(16, 24, 40, 0.06); overflow: hidden; animation: lpIn 0.14s ease-out; }
+  @keyframes lpIn { from { opacity: 0; transform: translateY(-4px); } }
+  @media (prefers-reduced-motion: reduce) { .locpop { animation: none; } }
+  .locpop { width: 736px; }
+  .lp-top { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-bottom: 1px solid var(--line-2); }
+  .lp-top .i { width: 14px; height: 14px; color: var(--text-3); flex: none; }
+  .lp-top input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text); }
+  .lp-top input::placeholder { color: var(--text-3); }
+  .lp-cols { display: grid; grid-template-columns: 148px 120px 124px 1fr; height: 304px; }
+  .lp-cols.find { grid-template-columns: 392px 1fr; }
+  .lp-col { min-width: 0; overflow-y: auto; padding: 6px; border-right: 1px solid var(--line); }
+  .lp-col:last-child { border-right: 0; }
+  .lp-col h6 { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 8px 4px; font-size: 11px; font-weight: 500; color: var(--text-3); position: sticky; top: -6px; background: var(--paper); z-index: 1; }
+  .lp-col h6 b { font-weight: 600; color: var(--accent); }
+  .lp-it { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 30px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; font: inherit; font-size: 13px; color: var(--text); text-align: left; cursor: pointer; }
+  .lp-it:hover { background: var(--hover); }
+  .lp-it .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lp-it .n small { margin-left: 6px; font-size: 12px; color: var(--text-3); font-weight: 400; }
+  .lp-it .c { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .lp-it .i { width: 12px; height: 12px; color: var(--text-3); flex: none; }
+  .lp-it.zero .n { color: var(--text-2); }
+  .lp-it.on { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); font-weight: 600; }
+  .lp-it.on .c, .lp-it.on > .i { color: var(--accent); }
+  .lp-it.pick.on { background: transparent; color: var(--text); }
+  .lp-it.pick.on:hover { background: var(--hover); }
+  .lp-box { width: 15px; height: 15px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--line-3, #c9c6c0); display: inline-grid; place-items: center; flex: none; background: var(--paper); }
+  .lp-box .i { width: 11px; height: 11px; color: #fff !important; stroke-width: 2.8; opacity: 0; }
+  .lp-it.on .lp-box { background: var(--accent); box-shadow: none; }
+  .lp-it.on .lp-box .i { opacity: 1; }
+  .lp-hint { padding: 28px 12px; font-size: 12.5px; line-height: 1.6; color: var(--text-3); text-align: center; }
+  .lp-foot { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-top: 1px solid var(--line-2); font-size: 12px; color: var(--text-3); }
+  .lp-foot span { flex: 1; min-width: 0; }
+  .lp-it:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  /* (이전 시안) 위치 막대 */
+  .locbar {
+    display: inline-flex; align-items: center; gap: 1px; height: 30px; padding: 0 3px 0 8px; border-radius: 8px; background: var(--paper);
+    box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(16, 24, 40, 0.04); transition: box-shadow 0.12s;
+  }
+  .locbar:focus-within { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .locbar .lfix { display: inline-flex; align-items: center; gap: 5px; padding-right: 2px; font-size: 13px; color: var(--text-2); white-space: nowrap; }
+  .locbar .lfix .i { width: 13px; height: 13px; color: var(--text-3); }
+  .locbar .lsep { font-style: normal; color: var(--text-3); font-size: 12px; padding: 0 1px; }
+  .locbar .fsel, .locbar .fin { flex: none; height: 24px; margin: 0; box-shadow: none !important; background: transparent; border-radius: 6px; padding: 0 6px; line-height: 24px; vertical-align: middle; }
+  .locbar .fsel:hover, .locbar .fin:hover { background: var(--hover); }
+  .locbar .fsel .v.empty-v { color: var(--text-3); font-weight: 400; }
+  .locbar .fsel.on, .locbar .fin.on { background: var(--accent-soft); }
+  .locbar .fin { width: 52px; }
+  .locbar .fin:focus { background: var(--soft); }
+  .locbar .fin::placeholder { color: var(--text-3); }
+  /* 조건 요약: 지금 무엇을 보고 있는지 한 문장으로 */
+  .qsum { display: flex; align-items: center; gap: 8px; padding: 0 var(--gutter) 9px; font-size: 13px; color: var(--text-2); flex: none; }
+  .qsum b { color: var(--text); font-weight: 600; }
+  .qsum .n { color: var(--accent-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .qsum .dotsep { color: var(--text-3); }
+  .qsum .btn { margin-left: 2px; }
+  .qsum .btn + .btn { margin-left: 0; }
+  .qsum .hint { margin-left: auto; font-size: 12px; color: var(--text-3); }
+  .vtab .sx { width: 16px; height: 16px; display: none; place-items: center; border-radius: 4px; color: var(--text-3); }
+  .vtab .sx .i { width: 11px; height: 11px; }
+  .vtab:hover .sx { display: inline-grid; }
+  .vtab .sx:hover { background: var(--hover); color: var(--text); }
 
   /* 필터 줄: 늘 보이는 선택 상자. 고른 값이 그 자리에 보인다 */
   .fbar { gap: 6px; padding: 10px var(--gutter) 10px; flex-wrap: wrap; }
@@ -212,7 +317,6 @@
   .fin { width: 62px; padding: 0 10px; outline: 0; font-variant-numeric: tabular-nums; }
   .fin::placeholder { color: var(--text-2); }
   .fin:focus { box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-  #fbar [data-clear] { margin-left: auto; }
   #tbl td.gcol, #tbl th.gcol { animation: gcol-in 0.18s ease-out; }
   @keyframes gcol-in { from { opacity: 0; } }
   .tbl td.memo { width: 100%; max-width: 0; min-width: 96px; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
@@ -223,44 +327,31 @@
 </head>
 <body data-active="properties">
 <main id="page">
-  <div class="ph">
-    <h1>매물관리</h1>
-    <span class="count" id="total"></span>
-    <div class="meta">
-      <span class="lnk" data-jump="check"><span class="dot warn"></span>확인 필요 <b id="needCheck"></b></span>
-      <span class="lnk" data-jump="contract"><span class="dot accent"></span>계약 진행 <b id="inContract"></b></span>
+  <!-- 1줄: 거래 탭 · 통합 검색(지역·단지 | 동 | 호 | 검색) · 목록/지도 · 새 매물 등록 — 실제 앱과 같은 순서 -->
+  <section class="tb1">
+    <div class="seg ktabs" id="kindTabs" role="tablist" aria-label="거래">
+      <button data-view="all">전체</button><button data-view="sale">매매</button><button data-view="jeonse">전세</button><button data-view="monthly">월세</button>
     </div>
-    <div class="actions">
-      <button class="btn" id="importBtn"></button>
-      <span class="btn-split"><button class="btn primary" id="newBtn"></button><button class="btn primary" aria-label="등록 방법" data-icon="chevDown"></button></span>
+    <div class="ubar" id="ubar" role="group" aria-label="위치">
+      <button class="uloc" id="locBtn" aria-haspopup="dialog"></button>
+      <label class="useg dong"><input id="fDong" inputmode="numeric" aria-label="동" autocomplete="off"><span>동</span></label>
+      <label class="useg ho"><input id="fHo" inputmode="numeric" aria-label="호" autocomplete="off"><span>호</span></label>
+      <button class="uclr" data-locclear aria-label="위치 필터 해제" hidden></button>
     </div>
-  </div>
+    <label class="usearch"><span data-icon="search"></span><input id="qInput" placeholder="주소, 연락처, 메모" aria-label="검색" autocomplete="off"><kbd class="k">/</kbd></label>
+    <div class="tb1-right">
+      <div class="seg"><button class="on" data-icon="list">목록</button><button data-icon="map" data-mapview>지도</button></div>
+      <button class="btn primary" id="newBtn"></button>
+    </div>
+  </section>
 
-  <div class="vbar">
-    <div class="vtab on" data-view="all">전체 <span class="n"></span></div>
-    <div class="vtab" data-view="sale">매매 <span class="n"></span></div>
-    <div class="vtab" data-view="jeonse">전세 <span class="n"></span></div>
-    <div class="vtab" data-view="monthly">월세 <span class="n"></span></div>
-    <div class="vtab" data-view="check">확인 필요 <span class="n"></span></div>
-    <div class="vtab add" title="보기 추가"></div>
-    <div class="vtools">
-      <label class="field" data-icon="search"><input placeholder="단지, 동·호, 연락처, 메모" aria-label="검색"><kbd>⌘F</kbd></label>
-      <button class="btn quiet sm" id="filterBtn"></button>
-      <button class="btn quiet sm" id="sortBtn"></button>
-      <button class="btn quiet sm" data-icon="sliders">열</button>
-      <span class="vsep"></span>
-      <div class="seg"><button class="on" data-icon="list">목록</button><button data-icon="map">지도</button></div>
-    </div>
-  </div>
-
-  <div class="fbar show" id="fbar">
-    <span id="fselA"></span>
-    <input class="fin" id="fDong" placeholder="동" inputmode="numeric" aria-label="동">
-    <input class="fin" id="fHo" placeholder="호" inputmode="numeric" aria-label="호">
-    <span class="vsep"></span>
-    <span id="fselB" style="display:contents"></span>
-    <button class="btn quiet sm" data-clear hidden>초기화</button>
-  </div>
+  <!-- 2줄: 조건 필터 · + 필터 · (오른쪽) 초기화 | 컬럼 -->
+  <div class="locpop" id="locPop" role="dialog" aria-label="위치 고르기" hidden></div>
+  <section class="tb2" id="fbar">
+    <div class="tb2-chips"><span id="fselB" style="display:contents"></span><button class="btn quiet sm" id="addFilterBtn"></button></div>
+    <div class="tb2-right"><button class="btn quiet sm" data-clear id="resetBtn" hidden>초기화</button><span class="vsep" id="resetSep" hidden></span><button class="btn quiet sm" data-icon="board" data-cols>컬럼</button></div>
+    <button id="filterBtn" hidden></button><button id="sortBtn" hidden></button>
+  </section>
 
   <div class="scroll" id="scroll">
     <table class="tbl" id="tbl">
@@ -336,6 +427,7 @@ const DATA = [
 ].map((r, id) => ({
   match: [3, 0, 1, 2, 0, 1, 0, 4, 0, 1, 2][id % 11],
   kindOrder: { sale: 0, jeonse: 1, monthly: 2 }[r[3]], rentN: r[5] || 0,
+  ward: r[0].startsWith('상일동') ? '상일동' : '고덕동',
   id, site: r[0], dong: r[1], ho: r[2], kind: r[3], price: r[4], rent: r[5], py: r[6], type: r[7],
   status: r[8], verified: r[9], moveIn: r[10], ads: r[11], agent: r[12], memo: r[13], adMissing: !!r[14],
 }));
@@ -353,18 +445,24 @@ const needsCheck = (r) => r.status !== 'done' && r.verified >= OVERDUE;
 
 // 늘 보이는 필터: [값 이름, 조건]
 const FDEFS = [
-  { id: 'site', k: '단지', eq: 'site', opts: () => [...new Set(DATA.map((r) => r.site))].sort((a, b) => a.localeCompare(b, 'ko')).map((v) => [v, (r) => r.site === v]) },
+  { id: 'ward', k: '법정동', eq: 'ward', loc: true, opts: () => [...new Set(DATA.map((r) => r.ward))].sort().map((v) => [v, (r) => r.ward === v]) },
+  { id: 'site', k: '단지', eq: 'site', loc: true, opts: () => [...new Set(DATA.filter((r) => !state.f.ward || r.ward === state.f.ward).map((r) => r.site))].sort((a, b) => a.localeCompare(b, 'ko')).map((v) => [v, (r) => r.site === v]) },
   { id: 'status', k: '매물상태', opts: () => Object.entries(STATUS).map(([k, [, l]]) => [l, (r) => r.status === k]) },
-  { id: 'price', k: '가격/보증금', offer: true, opts: () => [['5억 이하', (o) => o.price <= 50000], ['5억~10억', (o) => o.price >= 50000 && o.price <= 100000], ['10억~15억', (o) => o.price >= 100000 && o.price <= 150000], ['15억 이상', (o) => o.price >= 150000]] },
+  { id: 'price', k: '가격/보증금', kf: () => ({ sale: '매매가', jeonse: '전세가', monthly: '보증금' })[state.view] || '가격/보증금', offer: true, opts: () => [['5억 이하', (o) => o.price <= 50000], ['5억~10억', (o) => o.price >= 50000 && o.price <= 100000], ['10억~15억', (o) => o.price >= 100000 && o.price <= 150000], ['15억 이상', (o) => o.price >= 150000]] },
   { id: 'rent', k: '월세', offer: true, opts: () => [['100만 이하', (o) => !!o.rent && o.rent <= 100], ['100만~150만', (o) => o.rent >= 100 && o.rent <= 150], ['150만 이상', (o) => o.rent >= 150]] },
+  { id: 'rooms', k: '방/욕실', opts: () => [['방 2 · 욕실 1', (r) => r.py < 25], ['방 3 · 욕실 2', (r) => r.py >= 25 && r.py < 39], ['방 4 · 욕실 2', (r) => r.py >= 39]] },
   { id: 'py', k: '공급평형', opts: () => [['10평대', (r) => r.py < 20], ['20평대', (r) => r.py >= 20 && r.py < 30], ['30평대', (r) => r.py >= 30 && r.py < 40]] },
-  { id: 'move', k: '입주일', opts: () => [['즉시', (r) => r.moveIn === '즉시'], ['협의', (r) => r.moveIn === '협의'], ['날짜 지정', (r) => /^\d/.test(r.moveIn)]] },
-  { id: 'ads', k: '광고', opts: () => [['광고 중', (r) => !!r.ads], ['광고 없음', (r) => !r.ads], ['미노출', (r) => r.adMissing]] },
+  { id: 'move', k: '입주일', extra: true, opts: () => [['즉시', (r) => r.moveIn === '즉시'], ['협의', (r) => r.moveIn === '협의'], ['날짜 지정', (r) => /^\d/.test(r.moveIn)]] },
+  { id: 'ads', k: '광고', extra: true, opts: () => [['광고 중', (r) => !!r.ads], ['광고 없음', (r) => !r.ads], ['미노출', (r) => r.adMissing]] },
 ];
-const activeFilters = () => Object.keys(state.f).length + (state.dong ? 1 : 0) + (state.ho ? 1 : 0);
+FDEFS.sort((a, b) => ['ward', 'site', 'status', 'price', 'rent', 'py', 'rooms', 'move', 'ads'].indexOf(a.id) - ['ward', 'site', 'status', 'price', 'rent', 'py', 'rooms', 'move', 'ads'].indexOf(b.id));
+const activeFilters = () => Object.keys(state.f).length + (state.dong ? 1 : 0) + (state.ho ? 1 : 0) + (state.sites.length > 1 ? 1 : 0) + (state.sido && !state.f.ward && !state.sites.length ? 1 : 0);
+const fname = (d) => (d.kf ? d.kf() : d.k);
 function fselHtml(d) {
   const v = state.f[d.id];
-  return `<button class="fsel ${v ? 'on' : ''}" data-fs="${d.id}"><span class="k">${d.k}</span><span class="v">${v || '전체'}</span>${v ? `<span class="clr" data-fclr="${d.id}" title="지우기">${icon('x')}</span>` : icon('chevDown')}</button>`;
+  // 위치 막대 안에서는 이름표 없이 값만(비어 있으면 이름이 자리표시)
+  if (d.loc) return `<button class="fsel ${v ? 'on' : ''}" data-fs="${d.id}" aria-label="${d.k}"><span class="v ${v ? '' : 'empty-v'}">${v || d.k}</span>${v ? `<span class="clr" data-fclr="${d.id}" title="지우기">${icon('x')}</span>` : ''}</button>`;
+  return `<button class="fsel ${v ? 'on' : ''}" data-fs="${d.id}"><span class="k">${fname(d)}</span><span class="v">${v || '전체'}</span>${v ? `<span class="clr" data-fclr="${d.id}" title="지우기">${icon('x')}</span>` : icon('chevDown')}</button>`;
 }
 
 const FILTERS = [
@@ -377,7 +475,21 @@ const FILTERS = [
   { id: 'move', icon: 'cal', k: '입주', v: '즉시', test: (r) => r.moveIn === '즉시' },
 ];
 
-const state = { view: 'all', filters: new Set(), picked: new Set(), sort: null, detail: false, f: {}, dong: '', ho: '', showF: true, openTab: {}, justOpened: null, justKind: '' };
+// 법정동 마스터(시도 → 시군구 → 읍면동). 데모 매물은 모두 서울 강동구에 있다.
+const REGION = {
+  '서울특별시': { '강동구': ['강일동', '고덕동', '길동', '둔촌동', '명일동', '상일동', '성내동', '암사동', '천호동'], '강남구': ['개포동', '대치동', '도곡동', '삼성동', '역삼동'], '광진구': ['광장동', '구의동', '자양동'], '송파구': ['가락동', '문정동', '방이동', '신천동', '잠실동'] },
+  '경기도': { '구리시': ['교문동', '인창동', '토평동'], '남양주시': ['다산동', '별내동'], '하남시': ['덕풍동', '망월동', '신장동', '풍산동'] },
+  '인천광역시': { '연수구': ['송도동', '연수동'] },
+};
+const HOME = ['서울특별시', '강동구'];
+// 법정동 이름 → [시도, 시군구]. 매물이 있는 강동구를 먼저 본다
+const wardPath = (w) => {
+  if (REGION[HOME[0]][HOME[1]].includes(w)) return HOME;
+  for (const [a, gus] of Object.entries(REGION)) for (const [b, ws] of Object.entries(gus)) if (ws.includes(w)) return [a, b];
+  return null;
+};
+const regionOk = (r) => (!state.sido || state.sido === HOME[0]) && (!state.gu || state.gu === HOME[1]) && (!state.f.ward || r.ward === state.f.ward);
+const state = { sido: '', gu: '', sites: [], view: 'all', filters: new Set(), picked: new Set(), sort: null, detail: false, f: {}, dong: '', ho: '', showF: true, saved: [], locFromQ: false, openTab: {}, justOpened: null, justKind: '' };
 try { state.detail = localStorage.getItem('ui-refresh-detail-cols') === '1'; } catch (e) {}
 
 function viewTest(r) {
@@ -517,6 +629,19 @@ function row(r) {
 }
 
 function render() {
+  // 단지는 여러 개 고를 수 있다. 하나일 때만 state.f.site(검색어 해석·칩이 쓰는 값)와 같게 맞춘다.
+  if (state.f.site) { if (!(state.sites.length === 1 && state.sites[0] === state.f.site)) state.sites = [state.f.site]; }
+  else if (state.sites.length === 1) state.sites = [];
+  // 법정동이 지금 고른 시도·시군구에 속하지 않으면(검색어가 채웠거나 윗단계가 비어 있으면) 그 법정동의 윗단계로 맞춘다
+  if (state.f.ward && !(REGION[state.sido] && (REGION[state.sido][state.gu] || []).includes(state.f.ward))) {
+    const p = wardPath(state.f.ward);
+    if (p) { state.sido = p[0]; state.gu = p[1]; }
+  }
+  // 고른 단지가 지역 범위 밖이면(다른 지역을 둔 채 검색어로 단지를 찾은 경우) 지역을 푼다. 범위 안이면 지역은 건드리지 않는다
+  if (state.sites.length && (state.sido && state.sido !== HOME[0] || state.gu && state.gu !== HOME[1])) { state.sido = state.gu = ''; delete state.f.ward; }
+  // 월세 칩은 전체·월세 탭에서만 보인다. 보이지 않는 조건이 몰래 걸려 있지 않도록,
+  // 매매·전세 탭으로 가면 월세 조건을 지운다(어느 경로로 탭이 바뀌든 여기서 한 번에 처리).
+  if ((state.view === 'sale' || state.view === 'jeonse') && state.f.rent) delete state.f.rent;
   counts();
   document.getElementById('tbl').classList.toggle('g-closed', !state.detail);
   const gh = document.getElementById('gh');
@@ -535,6 +660,8 @@ function render() {
     rows = rows.filter(opt ? opt[1] : (r) => (d.eq ? r[d.eq] === v : false));
   }
   if (offerTests.length) rows = rows.filter((r) => anyOffer(r, (o) => offerTests.every((t) => t(o))));
+  rows = rows.filter(regionOk);
+  if (state.sites.length > 1) rows = rows.filter((r) => state.sites.includes(r.site));
   if (state.dong) rows = rows.filter((r) => String(r.dong).startsWith(state.dong));
   if (state.ho) rows = rows.filter((r) => String(r.ho).startsWith(state.ho));
   const q = (state.q || '').trim();
@@ -567,15 +694,30 @@ function render() {
   sbn.classList.toggle('active', !!state.sort);
   sbn.innerHTML = `${icon('sort')}정렬${state.sort ? '<span class="cnt">1</span>' : ''}`;
 
-  document.querySelectorAll('.vtab[data-view]').forEach((t) => t.classList.toggle('on', t.dataset.view === state.view));
+  document.querySelectorAll('#kindTabs [data-view]').forEach((t) => t.classList.toggle('on', t.dataset.view === state.view));
 
   const fbar = document.getElementById('fbar');
   fbar.classList.toggle('show', state.showF);
-  document.getElementById('fselA').innerHTML = fselHtml(FDEFS[0]);
-  document.getElementById('fselB').innerHTML = FDEFS.slice(1).map(fselHtml).join('');
+  // 통합 검색 막대의 위치 칸: 단지 > 법정동 > "지역·단지 전체" (실제 앱과 같은 규칙)
+  const locName = state.sites.length > 1 ? `${state.sites[0]} 외 ${state.sites.length - 1}` : state.f.site || state.f.ward || state.gu || state.sido;
+  const lb = document.getElementById('locBtn');
+  lb.classList.toggle('on', !!locName);
+  lb.innerHTML = `${icon('pin')}<span class="t">${esc(locName || '지역·단지 전체')}</span>${icon('chevDown')}`;
+  const locActive = !!(locName || state.dong || state.ho);
+  const lc = document.querySelector('[data-locclear]');
+  lc.hidden = !locActive;
+  lc.innerHTML = icon('x');
+  lb.setAttribute('aria-expanded', String(!document.getElementById('locPop').hidden));
+  if (!document.getElementById('locPop').hidden) drawLoc();
+  // 조건 필터: 기본 칩은 늘 보이고, '+ 필터'에서 고른 것(입주일·광고)은 값이 생긴 뒤에만 칩으로 나온다. 월세는 전체·월세 탭에서만.
+  const shown = FDEFS.filter((d) => !d.loc && (!d.extra || state.f[d.id]) && (d.id !== 'rent' || state.view === 'all' || state.view === 'monthly'));
+  document.getElementById('fselB').innerHTML = shown.map(fselHtml).join('');
+  document.getElementById('addFilterBtn').innerHTML = `${icon('plus')}필터`;
+  const dirty = activeFilters() > 0 || !!(state.q || '').trim();
+  document.getElementById('resetBtn').hidden = !dirty;
+  document.getElementById('resetSep').hidden = !dirty;
   document.getElementById('fDong').classList.toggle('on', !!state.dong);
   document.getElementById('fHo').classList.toggle('on', !!state.ho);
-  fbar.querySelector('[data-clear]').hidden = nf === 0;
 
   document.querySelectorAll('th[data-h]').forEach((th) => {
     th.dataset.label = th.dataset.label || th.textContent.trim();
@@ -604,9 +746,7 @@ function renderPop() {
 
 // 정적 아이콘 채우기
 document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
-document.querySelector('.vtab.add').innerHTML = icon('plus');
-document.getElementById('newBtn').innerHTML = `${icon('plus')}새 매물`;
-document.getElementById('importBtn').innerHTML = `${icon('refresh')}CP에서 가져오기`;
+document.getElementById('newBtn').innerHTML = `${icon('plus')}새 매물 등록`;
 
 // 숫자는 render()가 그릴 때마다 다시 센다 (상태 변경·확인 기록·삭제 뒤에도 맞도록)
 // 실행 취소는 그 값이 그 뒤로 다시 바뀌지 않았을 때만 되돌린다.
@@ -618,6 +758,7 @@ function fresh(r, field, v) {
   return false;
 }
 function counts() {
+  if (!document.getElementById('total')) return; // 제목 줄의 개수 표시는 없앴다(실제 앱에 없음)
   document.getElementById('total').textContent = DATA.length;
   document.getElementById('needCheck').textContent = DATA.filter(needsCheck).length;
   document.getElementById('inContract').textContent = DATA.filter((r) => r.status === 'contract').length;
@@ -638,7 +779,20 @@ document.addEventListener('click', (e) => {
     return;
   }
   const pop = document.getElementById('filterPop');
-  const vt = t.closest('.vtab[data-view]');
+  const lbtn = t.closest('#locBtn');
+  if (lbtn) {
+    toggleLoc();
+    return;
+  }
+  if (t.closest('[data-locclear]')) { delete state.f.ward; delete state.f.site; state.sites = []; state.sido = state.gu = ''; state.dong = state.ho = ''; document.getElementById('fDong').value = document.getElementById('fHo').value = ''; manualFilter(true); render(); return; }
+  if (t.closest('#addFilterBtn')) {
+    const more = FDEFS.filter((d) => d.extra && !state.f[d.id]);
+    UI.menu(t.closest('#addFilterBtn'), more.length ? [{ head: '필터 추가' }, ...more.map((d) => ({ label: d.k, icon: d.id === 'ads' ? 'megaphone' : 'cal', run: () => { const first = d.opts()[0][0]; state.f[d.id] = first; render(); const chip = document.querySelector(`[data-fs="${d.id}"]`); if (chip) chip.click(); } }))] : [{ head: '추가할 필터가 없습니다' }]);
+    return;
+  }
+  if (t.closest('[data-cols]')) { UI.toast('컬럼 표시 설정은 데모에 들어 있지 않습니다'); return; }
+  if (t.closest('[data-mapview]')) { UI.toast('지도 보기는 데모에 들어 있지 않습니다'); return; }
+  const vt = t.closest('#kindTabs [data-view]');
   if (vt) { state.view = vt.dataset.view; render(); return; }
   const jump = t.closest('[data-jump]');
   if (jump) { state.view = jump.dataset.jump; render(); return; }
@@ -691,18 +845,38 @@ document.addEventListener('click', (e) => {
   if (t.closest('#selClear')) { state.picked.clear(); render(); return; }
   const rm = t.closest('[data-rm]');
   if (rm) { state.filters.delete(rm.dataset.rm); render(); return; }
-  if (t.closest('[data-clear]')) { state.f = {}; state.dong = state.ho = ''; document.getElementById('fDong').value = document.getElementById('fHo').value = ''; render(); return; }
+  if (t.closest('[data-clear]')) { state.view = 'all'; state.f = {}; state.sido = state.gu = ''; state.q = ''; state.locFromQ = false; locBeforeQ = null; setLoc(null, '', ''); document.getElementById('qInput').value = ''; render(); return; }
+  const uns = t.closest('[data-unsave]');
+  if (uns) { const [gone] = state.saved.splice(+uns.dataset.unsave, 1); render(); UI.toast(`'${esc(gone.name)}' 조건을 지웠습니다`, () => { state.saved.push(gone); render(); }); return; }
+  const sv = t.closest('[data-saved]');
+  if (sv) {
+    const v = state.saved[+sv.dataset.saved];
+    state.view = v.view; state.f = { ...v.f }; state.q = v.q; state.locFromQ = false; locBeforeQ = null;
+    state.dong = v.dong; state.ho = v.ho;
+    document.getElementById('fDong').value = v.dong; document.getElementById('fHo').value = v.ho;
+    document.getElementById('qInput').value = v.q;
+    render();
+    return;
+  }
+  if (t.closest('[data-saveview]')) {
+    const name = [state.f.site || state.f.ward, state.dong && `${state.dong}동`, state.ho && `${state.ho}호`, KIND[state.view] || ({ check: '확인 필요', contract: '계약 진행' })[state.view], ...FDEFS.filter((d) => !d.loc && state.f[d.id]).map((d) => state.f[d.id]), (state.q || '').trim()].filter(Boolean).join(' ') || '저장한 조건';
+    if (state.saved.some((v) => v.name === name)) { UI.toast('이미 저장한 조건입니다'); return; }
+    state.saved.push({ name, view: state.view, f: { ...state.f }, dong: state.dong, ho: state.ho, q: (state.q || '').trim() });
+    render();
+    UI.toast(`'${esc(name)}' 조건을 보기 탭에 저장했습니다`);
+    return;
+  }
   const fclr = t.closest('[data-fclr]');
-  if (fclr) { delete state.f[fclr.dataset.fclr]; render(); return; }
+  if (fclr) { const id = fclr.dataset.fclr; delete state.f[id]; manualFilter(!!FDEFS.find((x) => x.id === id).loc); render(); return; }
   const fs = t.closest('[data-fs]');
   if (fs) {
     const d = FDEFS.find((x) => x.id === fs.dataset.fs);
     const cur = state.f[d.id];
     const count = (test) => DATA.filter(d.offer ? (r) => anyOffer(r, test) : test).length;
     UI.menu(fs, [
-      { label: '전체', on: !cur, run: () => { delete state.f[d.id]; render(); } },
+      { label: '전체', on: !cur, run: () => { delete state.f[d.id]; manualFilter(!!d.loc); render(); } },
       '-',
-      ...d.opts().map(([label, test]) => ({ label, hint: String(count(test)), on: cur === label, run: () => { state.f[d.id] = label; render(); } })),
+      ...d.opts().map(([label, test]) => ({ label, hint: String(count(test)), on: cur === label, run: () => { state.f[d.id] = label; manualFilter(!!d.loc); render(); } })),
       ...(cur && !d.opts().some((o) => o[0] === cur) ? [{ label: cur, hint: '0', on: true }] : []),
     ]);
     return;
@@ -738,7 +912,7 @@ document.addEventListener('click', (e) => {
     const r = DATA.find((x) => x.id === +more.closest('tr').dataset.id);
     const name = `${r.site} ${r.dong ? r.dong + '동 ' : ''}${r.ho}호`;
     UI.menu(more, [
-      { label: '상세 열기', icon: 'expand' },
+      { label: '상세 열기', icon: 'expand', run: () => { location.href = 'property-detail.html'; } },
       { label: '확인 기록 남기기', icon: 'check', run: () => { const p = r.verified; r.verified = 0; const v = bump(r, 'verified'); render(); UI.toast(`${name} 확인을 기록했습니다`, () => { if (!fresh(r, 'verified', v)) return; r.verified = p; bump(r, 'verified'); render(); }); } },
       { label: '광고 요청', icon: 'megaphone', run: () => UI.toast(`${name} 광고 업무를 만들었습니다`) },
       { label: '링크 복사', icon: 'copy', run: () => UI.toast('링크를 복사했습니다') },
@@ -763,7 +937,177 @@ document.addEventListener('click', (e) => {
   if (t.closest('#filterBtn')) { state.showF = !state.showF; render(); return; }
   if (!t.closest('#filterPop')) pop.hidden = true;
 });
-document.querySelector('.field input').addEventListener('input', (e) => { state.q = e.target.value; render(); });
+// ── 위치 패널 ─────────────────────────────────────────────
+// 실제 앱의 구성(시도·시군구·법정동 + 단지 여러 개 선택 + 단지 검색)을 그대로 두고 쓰기 편하게 편다:
+// 고르기 상자 셋 대신 세 단계를 나란히 펼쳐 한 번씩만 누르면 되고, 검색 한 칸으로 지역과 단지를 함께 찾는다.
+// 동·호는 여기서 고르지 않는다. 막대의 입력칸에 친다.
+const locPop = document.getElementById('locPop');
+locPop.innerHTML = `<label class="lp-top">${icon('search')}<input id="locQ" placeholder="지역이나 단지 이름으로 찾기 (예: 고덕동, 그라시움)" aria-label="지역·단지 찾기" autocomplete="off"></label>
+  <div id="locBody"></div>
+  <div class="lp-foot"><span>단지를 고르지 않으면 지역 전체에서 찾습니다.</span><button class="btn quiet sm" data-lreset hidden>지역 초기화</button><button class="btn primary sm" data-ldone style="padding:0 12px">완료</button></div>`;
+const locQ = document.getElementById('locQ');
+const locBase = () => DATA.filter((r) => !KIND[state.view] || anyOffer(r, (o) => o.kind === state.view));
+const uniq = (a) => [...new Set(a)];
+const SITE_WARD = Object.fromEntries(DATA.map((r) => [r.site, r.ward]));
+const ALL_SITES = Object.keys(SITE_WARD).sort((a, b) => a.localeCompare(b, 'ko'));
+const setSites = (arr) => { state.sites = arr; if (arr.length === 1) state.f.site = arr[0]; else delete state.f.site; };
+const pruneSites = () => setSites(state.sites.filter((x) => regionOk({ ward: SITE_WARD[x] })));
+function drawLoc() {
+  const base = locBase();
+  const q = locQ.value.trim();
+  const cnt = (n) => (n ? `<span class="c">${n}</span>` : '');
+  const it = (attr, v, label, n, on) => `<button class="lp-it${on ? ' on' : ''}${n ? '' : ' zero'}" data-${attr}="${esc(v)}" aria-pressed="${on}"><span class="n">${esc(label)}</span>${cnt(n)}${attr !== 'lward' && v && on ? icon('chevRight') : ''}</button>`;
+  const pick = (x) => { const on = state.sites.includes(x); return `<button class="lp-it pick${on ? ' on' : ''}" data-lsite="${esc(x)}" role="checkbox" aria-checked="${on}"><span class="lp-box">${icon('check')}</span><span class="n">${esc(x)}<small>${esc(SITE_WARD[x])}</small></span>${cnt(base.filter((r) => r.site === x).length)}</button>`; };
+  const nSido = (a) => (a === HOME[0] ? base.length : 0);
+  const nGu = (a, b) => (a === HOME[0] && b === HOME[1] ? base.length : 0);
+  const nWard = (a, b, w) => (nGu(a, b) ? base.filter((r) => r.ward === w).length : 0);
+  const siteHead = `<h6>단지${state.sites.length ? ` <b>${state.sites.length}개 선택</b>` : ''}</h6>`;
+  let html;
+  if (q) {
+    // 찾기: 지역은 "서울특별시 강동구 고덕동"처럼 전체 경로로, 단지는 이름·법정동으로 맞춘다
+    const paths = [];
+    for (const [a, gus] of Object.entries(REGION)) {
+      if (a.includes(q)) paths.push([a, '', '']);
+      for (const [b, ws] of Object.entries(gus)) {
+        if (b.includes(q)) paths.push([a, b, '']);
+        ws.forEach((w) => { if (w.includes(q)) paths.push([a, b, w]); });
+      }
+    }
+    const sites = ALL_SITES.filter((x) => x.includes(q) || SITE_WARD[x].includes(q));
+    html = `<div class="lp-cols find">
+      <div class="lp-col"><h6>지역</h6>${paths.map(([a, b, w]) => `<button class="lp-it" data-lpath="${esc([a, b, w].join('|'))}">${icon('pin')}<span class="n">${esc([a, b, w].filter(Boolean).join(' '))}</span>${cnt(w ? nWard(a, b, w) : b ? nGu(a, b) : nSido(a))}</button>`).join('') || '<div class="lp-hint">맞는 지역이 없습니다</div>'}</div>
+      <div class="lp-col">${siteHead}${sites.map(pick).join('') || '<div class="lp-hint">일치하는 단지가 없습니다</div>'}</div></div>`;
+  } else {
+    const gus = state.sido ? Object.keys(REGION[state.sido]) : [];
+    const wards = state.gu ? REGION[state.sido][state.gu] : [];
+    const sites = ALL_SITES.filter((x) => regionOk({ ward: SITE_WARD[x] }));
+    html = `<div class="lp-cols">
+      <div class="lp-col"><h6>시도</h6>${it('lsido', '', '전체', base.length, !state.sido)}${Object.keys(REGION).map((a) => it('lsido', a, a, nSido(a), state.sido === a)).join('')}</div>
+      <div class="lp-col"><h6>시군구</h6>${state.sido ? it('lgu', '', '전체', nSido(state.sido), !state.gu) + gus.map((b) => it('lgu', b, b, nGu(state.sido, b), state.gu === b)).join('') : '<div class="lp-hint">시도를<br>먼저 고르세요</div>'}</div>
+      <div class="lp-col"><h6>법정동</h6>${state.gu ? it('lward', '', '전체', nGu(state.sido, state.gu), !state.f.ward) + wards.map((w) => it('lward', w, w, nWard(state.sido, state.gu, w), state.f.ward === w)).join('') : '<div class="lp-hint">시군구를<br>먼저 고르세요</div>'}</div>
+      <div class="lp-col">${siteHead}${sites.map(pick).join('') || '<div class="lp-hint">이 지역에 등록된 단지가 없습니다</div>'}</div></div>`;
+  }
+  document.getElementById('locBody').innerHTML = html;
+  locPop.querySelector('[data-lreset]').hidden = !state.sido;
+  const b = document.getElementById('ubar').getBoundingClientRect();
+  locPop.style.left = `${Math.max(16, Math.min(b.left, window.innerWidth - locPop.offsetWidth - 16))}px`;
+  locPop.style.top = `${b.bottom + 6}px`;
+}
+function openLoc() { if (!locPop.hidden) return; locQ.value = ''; locPop.hidden = false; render(); locQ.focus({ preventScroll: true }); }
+// 닫을 때 화면을 다시 그리지 않는다. 바깥을 누르는 순간(mousedown) 표를 새로 만들면
+// 누르던 버튼·행이 바뀌어 그 클릭이 사라지기 때문이다.
+function closeLoc(refocus) { if (locPop.hidden) return; locPop.hidden = true; document.getElementById('locBtn').setAttribute('aria-expanded', 'false'); if (refocus) document.getElementById('locBtn').focus(); }
+function toggleLoc() { if (locPop.hidden) openLoc(); else closeLoc(); }
+locQ.addEventListener('input', drawLoc);
+locPop.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const b = e.target.closest('button');
+  if (!b) return;
+  const d = b.dataset;
+  if ('ldone' in d) { closeLoc(true); return; }
+  const key = Object.keys(d)[0], val = d[key];
+  if ('lreset' in d) { state.sido = state.gu = ''; delete state.f.ward; }
+  // 이미 고른 단계를 다시 눌러도 아랫단계 선택은 그대로 둔다
+  else if ('lsido' in d) { if (d.lsido !== state.sido) { state.sido = d.lsido; state.gu = ''; delete state.f.ward; pruneSites(); } }
+  else if ('lgu' in d) { if (d.lgu !== state.gu) { state.gu = d.lgu; delete state.f.ward; pruneSites(); } }
+  else if ('lward' in d) { if (d.lward) state.f.ward = d.lward; else delete state.f.ward; pruneSites(); }
+  else if ('lpath' in d) { const [a, g, w] = d.lpath.split('|'); state.sido = a; state.gu = g; if (w) state.f.ward = w; else delete state.f.ward; pruneSites(); locQ.value = ''; }
+  else if ('lsite' in d) setSites(state.sites.includes(d.lsite) ? state.sites.filter((x) => x !== d.lsite) : [...state.sites, d.lsite]);
+  manualFilter(true);
+  render();
+  // 다시 그리면 버튼이 새로 만들어지므로, 키보드로 고르던 자리를 되찾아 준다
+  const again = [...locPop.querySelectorAll('button')].find((x) => key in x.dataset && x.dataset[key] === val && !x.hidden);
+  if (again) again.focus({ preventScroll: true }); else locQ.focus({ preventScroll: true });
+});
+document.addEventListener('mousedown', (e) => {
+  if (locPop.hidden || locPop.contains(e.target)) return;
+  if (e.target.closest('#locBtn')) return; // 버튼은 스스로 여닫는다
+  closeLoc();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !locPop.hidden) { e.stopPropagation(); closeLoc(locPop.contains(document.activeElement)); } }, true);
+window.addEventListener('resize', () => { if (!locPop.hidden) drawLoc(); });
+// '/' 로 검색칸에 바로 들어간다(입력 중이거나 대화상자가 열려 있으면 제외)
+document.addEventListener('keydown', (e) => {
+  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+  if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
+  // 다른 전역 단축키와 같은 기준: 보이는 대화창·메뉴·서랍·안내창이 하나라도 있으면 쉰다(위치 패널만 예외로 닫고 넘어간다)
+  const layer = [...document.querySelectorAll('[role="dialog"], [aria-modal="true"], dialog[open], .cmdk-back, .drawer-back, .keys-back, .menu, .modal, .dlg, .dlg-back, .insp-back, .pop')]
+    .some((x) => x !== locPop && !x.hidden && x.getClientRects().length > 0);
+  if (layer) return;
+  e.preventDefault(); closeLoc(); document.getElementById('qInput').focus();
+});
+// "그라시움 103 3401", "103-3401", "아르테온 312동" 같은 입력을 단지·동·호로 읽는다.
+// 단지 이름은 하나로만 좁혀질 때, 숫자는 동 → 호 순서로 본다. 읽지 못하면 평소처럼 글자 검색이다.
+function parseLoc(q) {
+  const tokens = q.trim().replace(/(\d+)\s*(동|호)/g, '$1 ').replace(/(\d)-(\d)/g, '$1 $2').split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+  const sites = [...new Set(DATA.map((r) => r.site))];
+  let site = null;
+  const nums = [];
+  for (const t of tokens) {
+    if (/^\d+$/.test(t)) { nums.push(t); continue; }
+    const hit = sites.filter((x) => x.includes(t));
+    if (hit.length !== 1 || (site && site !== hit[0])) return null;
+    site = hit[0];
+  }
+  if (nums.length > 2 || (!site && nums.length < 2)) return null;
+  const noDong = site && DATA.filter((r) => r.site === site).every((r) => !r.dong);
+  if (noDong) return nums.length > 1 ? null : { site, dong: '', ho: nums[0] || '' };
+  return { site, dong: nums[0] || '', ho: nums[1] || '' };
+}
+function setLoc(site, dong, ho) {
+  if (site) { state.f.site = site; delete state.f.ward; } else { delete state.f.site; state.sites = []; }
+  state.dong = dong; state.ho = ho;
+  document.getElementById('fDong').value = dong;
+  document.getElementById('fHo').value = ho;
+}
+// 검색어로 위치를 채우기 직전의 위치(직접 고른 것). 검색어를 지우거나 바꾸면 이 상태로 돌아간다.
+let locBeforeQ = null;
+const locNow = () => ({ ward: state.f.ward, site: state.f.site, sites: [...state.sites], sido: state.sido, gu: state.gu, dong: state.dong, ho: state.ho });
+function restoreLoc(v) {
+  if (v.ward) state.f.ward = v.ward; else delete state.f.ward;
+  if (v.site) state.f.site = v.site; else delete state.f.site;
+  state.sites = [...(v.sites || [])]; state.sido = v.sido || ''; state.gu = v.gu || '';
+  state.dong = v.dong; state.ho = v.ho;
+  document.getElementById('fDong').value = v.dong;
+  document.getElementById('fHo').value = v.ho;
+}
+// 사용자가 필터를 직접 바꿨다: 지금 위치를 사용자의 것으로 확정한다
+function manualFilter(isLocation) {
+  if (!isLocation) return;
+  if (state.locFromQ) {
+    // 검색어가 채운 위치를 직접 고쳤다: 검색칸의 글자는 더 이상 이 위치를 뜻하지 않으니 비운다
+    document.getElementById('qInput').value = '';
+  }
+  state.locFromQ = false;
+  locBeforeQ = null;
+  const site = state.f.site;
+  if (site && state.f.ward && !DATA.some((r) => r.site === site && r.ward === state.f.ward)) delete state.f.site;
+}
+document.getElementById('qInput').addEventListener('input', (e) => {
+  const text = e.target.value;
+  if (state.locFromQ && locBeforeQ) restoreLoc(locBeforeQ); // 이전 검색어가 채운 위치를 먼저 걷어낸다
+  let loc = parseLoc(text);
+  if (loc) {
+    // 단지를 치지 않았으면 직접 골라 둔 단지 안에서 동·호를 찾는다
+    const site = loc.site || state.f.site || null;
+    const hit = DATA.some((r) => (!site || r.site === site) && String(r.dong).startsWith(loc.dong) && String(r.ho).startsWith(loc.ho));
+    if (!hit) loc = null; // 그런 동·호가 없으면(전화번호 뒷자리 등) 글자 검색으로 넘긴다
+    else loc.site = site;
+  }
+  if (loc) {
+    if (!state.locFromQ) locBeforeQ = locNow();
+    if (loc.site) { state.f.site = loc.site; if (state.f.ward && !DATA.some((r) => r.site === loc.site && r.ward === state.f.ward)) delete state.f.ward; }
+    state.dong = loc.dong; state.ho = loc.ho;
+    document.getElementById('fDong').value = loc.dong;
+    document.getElementById('fHo').value = loc.ho;
+    state.q = ''; state.locFromQ = true;
+  } else {
+    state.locFromQ = false; locBeforeQ = null;
+    state.q = text;
+  }
+  render();
+});
 // 매칭 메모: 입력하는 대로 저장해 두고(다시 그려도 남음), 칸을 벗어나면 알린다
 document.addEventListener('input', (e) => {
   const el = e.target.closest('.mmemo');
@@ -778,12 +1122,12 @@ document.addEventListener('focusout', (e) => {
   if (!el.textContent.trim()) el.textContent = '';
   if (el.dataset.dirty) { delete el.dataset.dirty; UI.toast('매칭 메모를 저장했습니다'); }
 });
-document.getElementById('fDong').addEventListener('input', (e) => { state.dong = e.target.value.trim(); render(); });
-document.getElementById('fHo').addEventListener('input', (e) => { state.ho = e.target.value.trim(); render(); });
+document.getElementById('fDong').addEventListener('input', (e) => { state.dong = e.target.value.trim(); manualFilter(true); render(); });
+document.getElementById('fHo').addEventListener('input', (e) => { state.ho = e.target.value.trim(); manualFilter(true); render(); });
 document.addEventListener('keydown', (e) => {
   if (e.isComposing || e.keyCode === 229) return; // 한글 조합 확정용 Enter는 저장으로 치지 않는다
   if (e.key === 'Enter' && e.target.matches('.mmemo')) { e.preventDefault(); e.target.blur(); return; }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); document.querySelector('.field input').focus(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); document.getElementById('qInput').focus(); }
   if (e.key === 'Escape') { document.getElementById('filterPop').hidden = true; state.picked.clear(); render(); }
 });
 
@@ -791,17 +1135,13 @@ render();
 
 UI.notes(
   [
-    '<b>버튼을 세 단계로</b> 나눴습니다. 주 버튼은 채움과 그림자가 있고 등록 방법을 고르는 나뉜 버튼입니다. 보조 버튼은 테두리와 옅은 그림자, 도구 버튼은 이름이 붙은 조용한 버튼입니다. 모두 올림·눌림·포커스 상태가 있습니다.',
-    '<b>필터는 늘 보입니다.</b> 단지·동·호와 매물상태·가격/보증금·월세·공급평형·입주일·광고가 표 위에 선택 상자로 나와 있고, 고른 값이 그 자리에 파랗게 표시됩니다. 값 옆 ×로 하나씩 지우고, 오른쪽 끝에서 한 번에 초기화합니다.',
-    '<b>검색은 실제 입력칸</b>입니다. 테두리, 포커스 링, 단축키 표시가 있습니다.',
-    '<b>표 머리</b>에 열 종류 아이콘, 정렬 표시, 올리면 나타나는 너비 손잡이를 넣었습니다(Notion 방식). 칸 사이에는 옅은 세로선이 있습니다.',
-    '<b>선택 칸이 항상 보이고</b> 머리의 칸으로 모두 선택합니다. 선택한 행은 왼쪽에 파란 띠가 붙습니다. 칸을 누르면 스프레드시트처럼 파란 테두리로 잡힙니다.',
-    '<b>상세 열 묶음</b>은 표 머리 윗선에 걸친 작은 <b>+ / −</b> 상자로 펼치고 접습니다. 따로 띠가 없고, 펼치면 타입·매칭·광고·확인의 윗선이 굵어져 묶음 범위를 보여 줍니다.',
-    '<b>열 구성은 원본 앱과 같습니다</b>: 거래, 단지, 동, 호, 공급, (타입·매칭·광고·확인), 매물상태, 가격/보증금, 월세, 입주가능일, 의뢰 메모.',
-    '<b>한 호실에 거래 조건이 여럿</b>이면 거래·가격/보증금·월세가 칸 안에 한 줄씩 쌓입니다(117동 1203호, 305동 503호 등). <b>매칭·광고</b>는 묶음을 펼친 뒤 숫자 버튼을 누르면 행 아래로 카드가 열립니다. 카드의 꼬리가 누른 버튼을 가리키고, 카드 안 탭으로 연결 구매고객과 광고 현황을 오갑니다. 구매고객은 한 줄씩 나오고, 단계 점을 눌러 옮기거나 메모를 바로 고치고 종료·거래 전환을 할 수 있습니다. 광고는 조건·CP사별 표입니다.',
-    '<b>상태는 옅은 배지</b>로, 표 아래에는 개수와 평균가를 보여 주는 <b>요약 줄</b>이 붙어 있습니다.',
+    '<b>툴바는 실제 앱과 같은 두 줄</b>입니다. 윗줄은 거래 탭 · 통합 검색(지역·단지 | 동 | 호 | 검색) · 목록/지도 · 새 매물 등록, 아랫줄은 매물상태 · 가격 · 월세 · 공급평형 · 방/욕실 · + 필터, 오른쪽에 초기화와 컬럼입니다. 제목 줄, 개수 표시, CP에서 가져오기는 뺐습니다.',
+    '<b>가격 칩 이름</b>은 실제 앱처럼 거래 탭을 따라 가격/보증금 · 매매가 · 전세가 · 보증금으로 바뀌고, 월세 칩은 전체·월세 탭에서만 나옵니다. 입주일·광고는 "+ 필터"에서 고르면 칩으로 나타납니다.',
+    '<b>검색칸에 "그라시움 103 3401"이나 "103-3401"</b>을 치면 단지·동·호 칸이 채워집니다. 실제 앱에 없는 추가 동작입니다.',
+    '<b>표 머리</b>는 흰 바탕에 열 종류 아이콘, 접는 열 묶음은 머리 윗선 위의 작은 + / − 상자입니다.',
+    '<b>한 호실에 거래 조건이 여럿</b>이면 거래·가격/보증금·월세가 칸 안에 한 줄씩 쌓입니다. 매칭·광고는 묶음을 펼친 뒤 숫자 버튼으로 행 아래에 엽니다.',
   ],
-  '버튼·입력칸·표를 실제 제품 수준의 부품으로 다시 만들었습니다.',
+  '구조는 지금 매물관리 화면 그대로 두고, 부품의 모양과 반응만 바꿨습니다.',
 );
 </script>
 </body>

@@ -67,8 +67,7 @@
 | loginId  | String  | 로그인 ID (unique, owner/직원 모두 별도 아이디 사용 가능) |
 | email    | String? | 이메일 (nullable, owner 필수, 직원 선택)                  |
 | auth0Id  | String? | Auth0 user_id (unique). 직원 인증의 유일한 연결 키        |
-| tokensValidAfter | DateTime? | 이 시각 이전에 발급된 접근 토큰은 받지 않음 (비밀번호 재설정·비활성화 때 설정) |
-| clerkId  | String? | 이전 로그인 서비스(Clerk) user.id. 인증에는 쓰지 않음     |
+| tokensValidAfter | DateTime? | 이 시각 이전에 발급됐거나 이 시각 이전에 로그인한 세션의 접근 토큰은 받지 않음 (비밀번호 재설정·비활성화 때 설정) |
 | name     | String  | 이름                                                      |
 | phone    | String? | 전화번호                                                  |
 | role     | String  | owner / manager / agent                                   |
@@ -77,8 +76,8 @@
 > **인증**: 비밀번호는 우리 DB에 저장하지 않는다. 로그인 서비스(Auth0)가 아이디·비밀번호를 확인하고, 서버는 접근 토큰의 `sub`(Auth0 user_id)로 `auth0Id`를 찾는다. 아이디(`loginId`) 문자열이 같다는 이유로는 연결하지 않는다(공개 가입으로 남의 아이디를 선점해 계정을 가져가는 일을 막기 위해서다).
 > **계정 생성**: 직원은 owner/manager가 만들 때 서버가 Auth0 계정과 User를 함께 만들고 `auth0Id`를 저장한다. 직접 가입한 사람은 처음 로그인할 때 사무소 없는 owner User가 만들어지고, 온보딩에서 사무소를 만든다. 가입한 아이디가 이미 있는 `loginId`와 같으면 거절한다.
 > **비활성화**: 접근을 끊는 기준은 이 표다. `isActive = false`와 `tokensValidAfter = 지금`을 먼저 저장하므로 로그인 서비스(Auth0)가 응답하지 않아도 즉시 끊긴다. Auth0 계정 차단과 refresh token 폐기는 그 뒤에 하고, 실패하면 서버가 다시 시도한다. 사무소·역할·활성 여부는 토큰에 넣지 않고 요청마다 이 표에서 읽는다(서버가 기억해 두지 않는다).
+> **이메일**: 사장님은 가입할 때 이메일을 반드시 넣는다(Auth0 연결에서 가입 시 필수, 연결 안에서 중복 불가). 직원은 서버가 계정을 만들므로 이메일 없이 만든다. 사장님이 비밀번호를 잊으면 로그인 화면의 비밀번호 찾기가 이 이메일로 Auth0 재설정 링크를 보낸다. 직원 비밀번호는 사장님이 직원관리에서 재설정한다. 메일 링크로 비밀번호가 바뀌면 그 이전에 로그인한 세션은 모두 끊긴다. Auth0 Action이 접근 토큰에 세션의 로그인 시각을 넣고 변경 이전 세션의 토큰 갱신을 거절하며, 서버는 로그인 시각이 `tokensValidAfter` 이전인 토큰을 발급 시각과 상관없이 거절한다. 또 다른 Action이 변경을 서버에 알려(`POST /auth/auth0-events/password-changed`, 공유 비밀값 `AUTH0_EVENT_SECRET`) 접근 토큰 만료를 기다리지 않고 바로 끊는다. 올리는 방법은 `apps/server/auth0/README.md`.
 > **비밀번호 재설정**: `tokensValidAfter = 지금`으로 바꿔 이미 발급된 접근 토큰을 즉시 거절하고, 실시간 연결을 끊고, refresh token을 폐기한다. API 키(`esk_`)는 그대로 둔다.
-> `clerkId`는 운영 사용자를 Auth0로 옮길 때 대응 관계를 찾기 위해 남겨 둔 값이다.
 
 ---
 
@@ -433,6 +432,7 @@ ContactRelation: 김집주인 → 박어머니 (type: parent)
 | id                 | UUID      | PK                                                    |
 | officeId           | UUID      | FK → Office                                           |
 | propertyId         | UUID      | FK → Property                                         |
+| brokerageCaseId    | UUID?     | FK → BrokerageCase. 사용자가 중개 건으로 묶었을 때만  |
 | lifecycleStatus    | String    | open, hold, closed                                    |
 | lifecycleChangedAt | DateTime  | 마지막 생명주기 전이 시각                             |
 | lifecycleChangedBy | String    | user, system:deal                                     |
@@ -602,6 +602,58 @@ ListingIntake 자동 종료 정책은 아직 적용하지 않는다.
 
 ---
 
+### BrokerageCase (중개 건, 선택)
+
+한 가족의 매물 의뢰와 구매 의뢰가 서로 물려 있을 때(갈아타기 등) 사용자가 직접
+묶는 업무철이다. 의뢰는 건 없이 존재하며, 서버가 당사자를 보고 알아서 묶지 않는다.
+
+| 필드       | 타입      | 설명                    |
+| ---------- | --------- | ----------------------- |
+| id         | UUID      | PK                      |
+| officeId   | UUID      | FK → Office             |
+| title      | String?   | 건 이름                 |
+| memo       | String?   | 메모                    |
+| archivedAt | DateTime? | 보관 시각               |
+
+- 의뢰는 `ListingIntake.brokerageCaseId` / `BuyerIntake.brokerageCaseId`(둘 다 nullable)로
+  건에 담긴다. 한 건에 매물 의뢰 여러 개와 구매 의뢰 여러 개가 담길 수 있고, 한 의뢰는
+  건 하나에만 속한다.
+- 당사자는 건에 복사하지 않는다. 구매 의뢰는 `BuyerIntakeContact`, 매물 의뢰는 그
+  부동산의 활성 `PropertyContact`에서 읽는다.
+- **고객 원장**은 저장된 건이 아니라 조회 결과다. 건에 담긴 의뢰는 건이 한 줄이고,
+  나머지는 실제 당사자(매수인·소유자) 조합이 같은 진행 중 의뢰들이 한 줄이다
+  (`GET /brokerage-cases/ledger`).
+- 돈의 흐름(자금 일정, 부족 경고)은 계산하지 않는다. 금액과 조건은 단계 메모에 적는다.
+
+### BrokerageCaseStep (건의 진행 계획)
+
+사람이 정한 단계와 순서. 시스템은 순서를 정하지 않고, 단계가 가리키는 의뢰·거래의
+현재 상태와 잔금일을 읽어 옆에 보여 줄 뿐이다.
+
+| 필드            | 타입      | 설명                                                       |
+| --------------- | --------- | ---------------------------------------------------------- |
+| id              | UUID      | PK                                                         |
+| officeId        | UUID      | FK → Office                                                |
+| brokerageCaseId | UUID      | FK → BrokerageCase                                         |
+| sortOrder       | Int       | 사용자가 정한 차례. 같은 번호면 동시 진행                  |
+| title           | String    | 단계 이름 ("A 매도", "대출 실행", "이사")                  |
+| listingIntakeId | UUID?     | 이 단계가 가리키는 매물 의뢰 (같은 건에 담긴 의뢰만)       |
+| buyerIntakeId   | UUID?     | 이 단계가 가리키는 구매 의뢰 (같은 건에 담긴 의뢰만)       |
+| dealId          | UUID?     | 의뢰 없이 바로 만든 거래                                   |
+| targetDate      | Date?     | 목표일                                                     |
+| memo            | String?   | 메모 (금액, 조건 등)                                       |
+| doneAt          | DateTime? | 아무것도 가리키지 않는 단계의 완료 체크                    |
+
+- 한 단계는 매물 의뢰, 구매 의뢰, 거래 중 **하나만** 가리키거나 아무것도 가리키지
+  않는다(CHECK 제약). 같은 의뢰·거래를 한 건에 두 번 넣을 수 없다.
+- 건에 담긴 의뢰는 단계가 하나씩 있다. 의뢰를 담으면 단계가 생기고, 그 단계를 지우면
+  의뢰가 건에서 빠진다. 건을 지우면(묶음 풀기) 의뢰와 거래는 남는다.
+- 의뢰를 가리키는 단계의 완료 여부와 잔금일은 저장하지 않는다. 그 의뢰의 취소되지 않은
+  가장 최근 거래에서 읽는다(매물 의뢰: `Listing → Deal`, 구매 의뢰: `Deal.buyerIntakeId`).
+- 순서를 저장할 때는 건의 모든 단계를 빠짐없이 보낸다.
+
+---
+
 ## 7. 상담
 
 ### Consultation (상담 메모)
@@ -664,6 +716,7 @@ suggested → buyerInterested → viewingConfirmed → viewing → negotiating �
 | id                     | UUID     | PK                        |
 | officeId               | UUID     | FK → Office               |
 | listingId              | UUID     | FK → Listing              |
+| buyerIntakeId          | UUID?    | FK → BuyerIntake. 매칭에서 전환하면 서버가 채우고, 매칭 없이 만든 거래는 사용자가 고르며, 구매 의뢰 없이 바로 계약한 거래는 비움 |
 | stage                  | String   | 거래 단계 (DealStage)     |
 | price                  | Int?     | 최종 거래가 (만원)        |
 | buyerContactId         | UUID?    | FK → Contact (매수인)     |
