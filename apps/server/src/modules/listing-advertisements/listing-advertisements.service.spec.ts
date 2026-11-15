@@ -50,6 +50,44 @@ describe("ListingAdvertisementsService", () => {
 
   // ---- findAll ----
 
+  it("changes an unlinked manual channel while excluding itself from the active duplicate check", async () => {
+    const { prisma, service } = createService();
+    prisma.listingAdvertisement.findFirst
+      .mockResolvedValueOnce({ id: "ad-1", officeId: "office-1", listingId: "listing-1", channel: "esiljang", status: "active", source: "manual" })
+      .mockResolvedValueOnce(null);
+    prisma.listingAdvertisement.update.mockResolvedValue({ id: "ad-1", channel: "peterpan" });
+
+    await expect(service.update("ad-1", "office-1", { channel: "peterpan" })).resolves.toEqual({ id: "ad-1", channel: "peterpan" });
+    expect(prisma.listingAdvertisement.findFirst).toHaveBeenLastCalledWith({
+      where: { officeId: "office-1", listingId: "listing-1", channel: "peterpan", status: "active", id: { not: "ad-1" } },
+      select: { id: true },
+    });
+    expect(prisma.listingAdvertisement.update).toHaveBeenCalledWith({ where: { id: "ad-1" }, data: { channel: "peterpan" } });
+  });
+
+  it("rejects changing a manual channel to another active advertisement's channel", async () => {
+    const { prisma, service } = createService();
+    prisma.listingAdvertisement.findFirst
+      .mockResolvedValueOnce({ id: "ad-1", listingId: "listing-1", channel: "esiljang", status: "active", source: "manual" })
+      .mockResolvedValueOnce({ id: "ad-2" });
+
+    await expect(service.update("ad-1", "office-1", { channel: "peterpan" })).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.listingAdvertisement.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { source: "cp_sync" },
+    { source: "manual", externalAdId: "cp-123" },
+    { source: "manual", naverArticleNo: "123" },
+    { source: "manual", naverUrl: "https://land.naver.com/123" },
+    { source: "manual", lastSyncedAt: new Date() },
+  ])("preserves the channel of an externally linked advertisement: %j", async metadata => {
+    const { prisma, service } = createService();
+    prisma.listingAdvertisement.findFirst.mockResolvedValue({ id: "ad-1", channel: "esiljang", status: "active", ...metadata });
+    await expect(service.update("ad-1", "office-1", { channel: "peterpan" })).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.listingAdvertisement.update).not.toHaveBeenCalled();
+  });
+
   it("returns advertisement rows for the office with linked listing context", async () => {
     const { prisma, service } = createService();
     prisma.listingAdvertisement.findMany.mockResolvedValue([{ id: "ad-1" }]);

@@ -361,9 +361,12 @@ export class ListingAdvertisementsService {
         throw new BadRequestException("channel cannot be empty");
       }
       this.assertKnownChannelShape(dto.channel);
-      if (dto.channel !== existing.channel) {
+      if (dto.channel !== existing.channel && (
+        existing.source !== ListingAdvertisementSource.MANUAL ||
+        existing.externalAdId || existing.naverArticleNo || existing.naverUrl || existing.lastSyncedAt
+      )) {
         throw new ConflictException(
-          "광고 채널은 게재 이력의 식별값이라 변경할 수 없습니다. 잘못 등록한 행은 삭제 후 다시 등록하세요.",
+          "외부 광고와 연결된 채널은 변경할 수 없습니다.",
         );
       }
     }
