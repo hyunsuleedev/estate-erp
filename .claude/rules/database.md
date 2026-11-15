@@ -1,106 +1,42 @@
 ---
 paths:
   - "prisma/**"
-  - "apps/server/src/modules/**"
-  - "packages/shared/**"
+  - "apps/server/src/prisma/**"
 ---
 
-# Database Rules
+# DB 규칙
 
-## 테이블 구조 (35개)
+표와 칸의 목록은 적지 않는다. `prisma/schema/*.prisma`가 기준이고, 왜 그렇게 했는지는 그 파일의 주석에 있다. 영역별 요약은 `docs/DATA_STRUCTURE.md`.
 
-### 법정동 코드 마스터 (공공데이터 import, 읽기 전용)
-- `provinces` → `districts` → `wards` (시도 → 시군구 → 읍면동)
-- 코드 기반 PK: Province("11"), District("11740"), Ward("1174010100")
-- 데이터 소스: 국토교통부 법정동코드 (data.go.kr)
+## 이름과 타입
 
-### 멀티테넌시
-- `offices` — 모든 데이터의 최상위. 모든 테이블에 `office_id` FK 필수.
+- 모델은 `PascalCase`, 필드는 `camelCase` + `@map("snake_case")`, 표는 `@@map("snake_case_복수형")`
+- 가격은 `Int`, 만원 단위. 면적은 `Decimal`, m² 단위
+- id는 UUID. 법정동 마스터만 코드가 PK다 (Province `"11"`, District `"11740"`, Ward `"1174010100"`)
+- 좌표는 `Unsupported("geometry(Point, 5179)")`. Prisma로 읽고 쓸 수 없으므로 `$queryRaw`를 쓴다
 
-### 멀티테넌시 상세
-- `users` — loginId (사용자가 직접 생성, unique), role (owner/manager/agent)
+## 새 표를 만들 때
 
-### 장소/매물 체인
-- `sites` → `dongs` → `units` → `properties`
-- `site_unit_types` — 평형 카탈로그 (84A, 59B 등), 네이버 pyeongList 1:1 대응
-- sites: `is_public` + `office_id` nullable — 공공데이터(null, true) vs 사무소 비공개(UUID, false)
-- sites: 가시성 쿼리 패턴: `WHERE is_public = true OR office_id = ?`
-- sites: `ward_code` FK → Ward (법정동 코드 참조, 자유텍스트 아님)
-- sites: 도로명 + 지번 이중 주소, PostGIS geometry(Point, 5179)
-- sites: 자체 UUID PK + 외부 매핑 코드 (kapt_complex_code, naver_complex_code, kb_complex_code)
-- sites: 타입별 가변 속성은 `metadata` JSONB (parkingCount, heatingType 등)
-- dongs/units: `office_id` nullable (공공데이터 공유)
-- units: floor + lineNo → 동별 호실 그리드 (네이버 스타일), siteUnitTypeId FK
-- sites: `is_locked` — 공공데이터 수정 방지
-- `office_sites` — 사무소별 관리 단지 즐겨찾기 (Office ↔ Site M:N, 공공+비공개 통합)
-- `price_histories` — 매물 가격 변경 이력 자동 추적 (before/after 값)
+1. `office_id`를 넣는다(법정동 마스터 제외).
+2. `apps/server/src/prisma/prisma.service.ts`의 `TENANT_SCOPED_MODELS`에 올린다. 빠지면 그 표는 사무소 격리 없이 조회된다.
+3. 변경 이력이 필요하면 `AUDITED_MODELS`에도 올린다. 주민번호·전화번호가 든 표와, 수집기가 대량으로 덮어쓰는 표(외부 매물 등)는 올리지 않는다.
+4. 같은 사무소 안에서만 이어져야 하는 관계는 `(office_id, id)` 조합 FK로 건다. 다른 사무소의 행을 가리키는 일을 DB가 막게 하기 위해서다.
 
-### 감사 추적
-- `activity_logs` — 모든 비즈니스 데이터 변경 자동 로깅 (Prisma Middleware)
-- actor: "user" | "mcp:claude" | "system:rule_engine", source: "web" | "mcp" | "system"
-- userId FK (nullable) — 직원 작업이면 설정
-- changes JSONB — 변경 전/후 값
-- 추적 대상: 핵심 10개 (Property, Contact, PropertyContact, Tenant, BuyerRequirement, Match, Deal, Consultation, Task, NetworkSharedProperty)
+## 마이그레이션
 
-### 매물 유형별 연결
-- 건물형 전체 (아파트/오피스텔/빌라/다세대/상가/지식산업센터): site → dong → unit → property
-- 단독주택/토지: site → property (unit/dong 없음)
-- 단일 동 건물은 `dongs.is_placeholder = true`인 Dong 하나 자동 생성 → 체인 항상 통일
-- `units.dong_id`는 NOT NULL (단일 동은 placeholder Dong 참조)
+- 위치는 `prisma/schema/migrations/`. 개발에서는 `pnpm prisma:migrate`, 배포에서는 `prisma migrate deploy`.
+- Prisma가 표현하지 못하는 것(CHECK, 조건부 unique index, 조합 FK, PostGIS)은 마이그레이션 SQL에 직접 쓴다. 이런 제약은 스키마 파일에는 주석으로만 남으므로, 표를 고칠 때 그 표의 마이그레이션도 찾아본다.
+- 이미 적용된 마이그레이션 파일은 고치지 않는다. 새 파일을 만든다.
+- 데이터를 옮기는 마이그레이션은 실제 데이터의 복사본에서 먼저 돌려 본다. 로컬 DB는 다른 작업 세션도 쓰므로 적용 전에 사용자에게 묻는다.
+- 칸을 지울 때는 그 칸을 읽는 서버 코드, `packages/api-client` 타입, 화면, 시드를 함께 지운다.
 
-### 연락처 체계
-- `contacts` — 모든 사람 (소유주/매수자/세입자 구분 없이)
-- `contact_relations` — 사람 간 관계 (parent, spouse, child, sibling, lawyer, tax_agent, other)
-- `property_contacts` — 매물-연락처 역할 (owner, co_owner, representative, lawyer, tax_agent)
-- `tenants` — 세입자 상세 (보증금/월세/계약기간)
+## 공공 데이터와 사무소 데이터
 
-### 공동 중개망 (킬러 피쳐)
-- `network_rooms` — 중개방 (public: 공개방, private: 비공개방). 방장 승인제.
-- `network_room_members` — 방 참여자 (admin/member, pending/approved/rejected/left)
-- `network_shared_properties` — 공유 매물. 기존 properties에서 선택, 필드별 마스킹(show_* boolean). 매물 추적/뺏기 방지.
-- `network_inquiries` — 공유 매물 문의 (pending → accepted/rejected/expired)
-- `network_messages` — 중개방 채팅 (매물 카드 첨부 가능)
+- Site·Dong·Unit은 `office_id`가 비어 있을 수 있다. 비어 있으면 모든 사무소가 보는 공공 데이터다.
+- Site를 읽을 때는 `isPublic = true OR officeId = 내 사무소`로 좁힌다. `isLocked`인 공공 데이터는 사무소가 고칠 수 없다.
+- 사무소가 관리하는 단지는 `OfficeSite`로 표시한다.
 
-### 거래/계약/정산
-- `deals` — 거래 관리 (수수료 매도측/매수측 분리, 공동중개 필드)
-- `contracts` — 계약 상세 (Deal 1:1, 당사자, 금액 스케줄, 임대기간, 첨부파일)
-- `deal_participants` — 거래 참여 직원 (역할/side/수수료 배분/정산)
-- Office.commissionConfig JSONB — 사장님이 설정하는 기본 수수료 배분 규칙
-- `notifications` — 인앱 알림 (WebSocket push + DB 저장)
+## 시드
 
-### 외부 시장 매물 (광고노트)
-- `external_listing_groups` — 호실 단위 외부 매물 그룹 (electron-estate HouseProperty 대응). 사용자가 확인한 ho(텍스트)·memo를 기억. 크롤러가 덮어쓰지 못함.
-- `external_listings` — 개별 외부 매물 1건 (electron-estate Offer 대응). 네이버 articleNo 기준 unique `[officeId, source, articleNo]`.
-- **멀티테넌시**: 모든 외부 매물은 `office_id` NOT NULL. 사무소가 자기 책임으로 수집·입력한 데이터를 자기 네임스페이스에만 저장.
-- **법적 회피**: 서버는 크롤링하지 않음. 입력 경로는 (a) Electron 로컬 크롤러, (b) MCP 도구 `external_listing.create`, (c) 수동 UI — 모두 동일 API 엔드포인트.
-- **매칭 로직**: 입력은 sessionId + 묶음(대표 필수) 단위.
-  1. 묶음의 `articleNo`가 기존 데이터와 하나라도 겹치면 그 그룹에 합류하고 대표를 새 묶음의 대표로 변경
-  2. 겹치지 않으면 새 그룹 생성
-  3. 같은 번호가 두 묶음에 있거나 묶음과 기존 그룹이 1:1이 아니면 입력 거부
-- **스냅샷 닫기**: `expectedListingCount`를 실제 입력 건수와 대조하고, 이번에 입력되지 않은 광고를 비활성화하며, 직전 완료 스냅샷과의 비교 결과를 반환.
-- **스냅샷 편집**: 열려 있는 동안 추가·수정·삭제 가능, 닫으면 광고는 변경 불가(호수·메모 제외). 화면 입력(source `manual`)도 같은 스냅샷을 쓰고, 닫을 때 입력되지 않은 광고는 입력 방식과 관계없이 비활성화. 미입력 매물은 화면의 "유지"로 다시 입력 없이 남길 수 있다.
-- **호수**: 자동 추정 없음. 사용자가 UI에서 `ho` 텍스트 입력.
-- **ActivityLog 제외**: 외부 매물은 감사 추적 대상 아님 (크롤러 upsert로 activity_logs 오염 방지).
-- Group → Listing 1:N, Group의 `main_external_listing_id`로 대표 매물 지정 (네이버 representative 대응).
-
-### 핵심 Enums
-- `SiteType`: apartment, officetel, villa, house, commercial, land, living_accommodation
-- `CheckStatus`: unverified → verified → in_contract → hold → done
-- `MatchStage`: suggested → buyerContacted → viewing → ownerContacted → negotiating → dealCreated → closed
-- `DealStage`: selection → deposit → contract → completed → closed
-- `ContractStatus`: draft → signed → depositPaid → balancePaid → registered → cancelled
-- `DealParticipantRole`: listing_agent, buying_agent, dual_agent, manager, assistant, closer
-- `DealParticipantSide`: seller, buyer, both
-- `TaskSource`: manual, system, ai
-- `CalendarEventType`: viewing, contract, meeting, task, general
-
-## Prisma 규칙
-
-- Model명: PascalCase (`BuyerRequirement`)
-- 필드명: camelCase → `@map("snake_case")`로 DB 컬럼 매핑
-- 테이블명: `@@map("snake_case_plural")`
-- 가격 필드: `Int` 타입, 만원 단위
-- 면적 필드: `Decimal` 타입, m² 단위
-- 새 테이블 추가 시 반드시 `officeId` 포함 (마스터 테이블 제외)
-- 공간 쿼리(반경 검색 등)는 PostGIS + `$queryRaw` 사용
-- sites.metadata JSONB 접근도 `$queryRaw` 또는 Prisma JsonFilter 사용
+- `prisma/seed*.ts`. 법정동(`seed-legal-dong.ts`)은 공공데이터에서 가져오는 읽기 전용 마스터다.
+- 데모 시드(`seed-demo.ts`)는 데모 사무소의 데이터만 지우고 다시 만든다. 공용 DB에서 돌리기 전에 사용자에게 묻는다.

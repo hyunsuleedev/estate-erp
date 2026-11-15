@@ -3,58 +3,43 @@ paths:
   - "apps/server/**"
 ---
 
-# NestJS Server Rules
+# 서버 (NestJS) 규칙
 
-## 모듈 구조
+모듈 목록은 적지 않는다. `apps/server/src/modules/`가 기준이다.
 
-```
-src/modules/
-  auth/           # Auth0 직원 인증(토큰 검증·Management API), /auth/me
-  properties/     # 매물 CRUD + 비즈니스 로직
-  contacts/       # 연락처/고객
-  sites/          # 단지/건물
-  dongs/          # 동
-  units/          # 호실
-  matches/        # 매칭 파이프라인
-  deals/          # 거래/계약
-  tasks/          # 업무 관리
-  consultations/  # 상담 기록
-  buyer-requirements/ # 구매 희망조건
-  calendar-events/    # 캘린더
-  cti/            # 전화 이벤트 WebSocket
-  insights/       # 규칙 엔진
-  notifications/  # 알림 (푸시, 인앱)
-  mcp/            # CRM MCP Server
-```
+## 요청 처리
 
-## 코드 패턴
+- 컨트롤러는 `@UseGuards(JwtAuthGuard)`를 달고, 현재 사용자는 `@CurrentUser()`로 받는다. 값은 `{ userId, auth0UserId?, officeId, role }`.
+- 역할 제한이 필요한 곳만 `RolesGuard` + `@Roles(...)`를 쓴다. 역할은 `owner / manager / agent`.
+- 서비스 메서드는 `officeId`를 인자로 받아 조회·수정 범위를 직접 좁힌다. 요청 맥락(`common/request-context`)을 보고 `PrismaService`가 격리 대상 모델에 `officeId`를 넣어 주지만, 그것에만 기대지 않는다.
+- 입력 검증은 서비스에서 한다. 형식이 틀리면 `BadRequestException`, 없으면 `NotFoundException`, 상태가 맞지 않으면 `ConflictException`. 사용자에게 보일 수 있는 메시지는 한국어로 쓴다.
+- 여러 표를 함께 바꾸는 일은 `prisma.$transaction` 안에서 한다. 읽은 값과 비교해 쓰는 갱신은 DB의 한 문장(`updateMany` + 조건)으로 한다. 동시에 들어온 요청이 서로 덮어쓰지 않게 하기 위해서다.
 
-- 모든 Controller에 `@UseGuards(JwtAuthGuard)` 적용
-- 현재 사용자: `@CurrentUser()` 데코레이터
-- DTO는 `class-validator` 데코레이터로 검증
-- Service에서 PrismaService 주입하여 DB 접근
-- office_id 필터링은 Prisma middleware 또는 서비스 레벨에서 처리
+## 변경 기록
 
-## Auth
+- `PrismaService`가 감사 대상 모델의 생성·수정·삭제를 `ActivityLog`에 남긴다. 대상 목록은 `prisma/prisma.service.ts`에 있다.
+- 누가(`userId`, `actor`), 어디서(`source`: web / mcp / system) 했는지는 요청 맥락에서 읽는다.
+- 주민번호·전화번호처럼 민감한 값이 있는 모델은 일부러 대상에서 뺐다(변경 내용에 복사되지 않게).
+
+## 인증
 
 - 직원(owner/manager/agent) 로그인 서비스는 Auth0다. 서버는 Auth0 접근 토큰(RS256, `aud` = `AUTH0_AUDIENCE`)을 검증하고, 토큰의 `sub`로 `User.auth0Id`를 찾는다 (`modules/auth/staff-auth.service.ts`).
-- 아이디(`loginId`) 문자열로 연결하지 않는다. 사무소·역할·활성 여부는 토큰이 아니라 DB에서 요청마다 읽는다(기억하는 것은 토큰 서명 확인 결과뿐이다).
-- 접근 차단의 기준은 DB다: `User.isActive`, `Office.isActive`, `User.tokensValidAfter`(이 시각 이전에 발급됐거나, 이 시각 이전에 로그인한 세션이 갱신해 받은 토큰 거절. 세션 로그인 시각은 Auth0 Action이 토큰에 넣는다: `apps/server/auth0/`). Auth0 차단·refresh token 폐기는 뒤처리다 (`modules/auth/auth0-account-sync.service.ts`).
-- 실시간 연결은 토큰 만료 시각에 서버가 끊는다. 다시 연결할 때 인증을 처음부터 거친다. 사무소 없는 계정은 연결할 수 없다.
-- 처음 로그인한 가입자는 사무소 없는 owner로 만들어지고, 온보딩(`POST /offices/me`)에서 사무소를 만든다.
+- 아이디(`loginId`) 문자열로 연결하지 않는다. 공개 가입으로 남의 아이디를 선점해 계정을 가져가는 일을 막기 위해서다.
+- 사무소·역할·활성 여부는 토큰이 아니라 DB에서 요청마다 읽는다. 기억하는 것은 토큰 서명 확인 결과뿐이다.
+- 접근 차단의 기준은 DB다: `User.isActive`, `Office.isActive`, `User.tokensValidAfter`. `tokensValidAfter` 이전에 발급됐거나, 그 이전에 로그인한 세션이 갱신해 받은 토큰을 거절한다. 세션의 로그인 시각은 Auth0 Action이 토큰에 넣는다 (`apps/server/auth0/`).
+- Auth0 계정 차단과 refresh token 폐기는 뒤처리다. 실패하면 다시 시도한다 (`modules/auth/auth0-account-sync.service.ts`).
+- 처음 로그인한 가입자는 사무소 없는 owner로 만들어지고, 온보딩(`POST /offices/me`)에서 사무소를 만든다. 사장님 가입에는 이메일이 필수이고 직원 계정은 이메일 없이 서버가 만든다.
 - 직원 계정 생성·비밀번호 재설정·차단은 Auth0 Management API로 한다 (`modules/auth/auth0-management.service.ts`, `modules/employees`).
-- `CurrentUserPayload`: `{ userId, auth0UserId?, officeId, role }`
-- 소비자 사이트(apps/catalog) 로그인은 별개의 Clerk 사용자 집합이다 (`ConsumerAuthGuard`).
+- `/mcp`는 MCP 전용 토큰과 API 키(`esk_…`)만 받는다. 데스크톱 로그인 토큰은 받지 않는다. 반대로 REST는 `AUTH0_STAFF_CLIENT_IDS`에 있는 앱의 토큰만 받는다.
+- 소비자 사이트(`apps/catalog`) 로그인은 별개의 Clerk 사용자 집합이다 (`ConsumerAuthGuard`).
 
-## 클라이언트 앱 구성
+## 실시간
 
-- **Desktop (Electron)**: CTI Bridge, 시스템 트레이, 로컬 MCP Host 포함. 풀 기능.
-- **Mobile (React Native, Android only)**: 전화 오버레이 + 녹음, 상담 기록 빠른 등록.
-- UI 코드는 각 앱이 독립적으로 보유. `packages/shared` (타입/enum)와 `packages/api-client` (API 호출)만 공유.
+- Socket.io + Redis 어댑터 (`src/realtime`). 연결은 토큰 만료 시각에 서버가 끊고, 다시 연결할 때 인증을 처음부터 거친다. 사무소 없는 계정은 연결할 수 없다.
+- 접근을 끊을 때는 `RealtimeService.disconnectUser`도 함께 부른다.
 
-## 규칙 엔진 (BullMQ)
+## 테스트
 
-- 매물 가격 변동 감지 → 태스크 자동 생성
-- 매물 확인일 7일 경과 → 알림
-- 구매고객 조건 매칭 매물 등장 → 알림
-- 계약 마감일 임박 → 알림
+- `*.spec.ts`는 jest로 돈다. 대부분 Prisma를 가짜로 바꾼 단위 테스트다.
+- SQL을 직접 쓰는 조회나 마이그레이션은 가짜로는 확인되지 않는다. 임시 DB에서 실제로 돌려 본다.
+- 운영(`NODE_ENV=production`)에서만 필수인 환경 변수는 `src/config/env.validation.ts`에 있다. 새로 추가하면 `.env.example`에도 적는다.

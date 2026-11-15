@@ -1,4 +1,4 @@
-# Estate ERP
+# 에스테잇플로우 (Estait Flow)
 
 부동산 중개사 업무를 위한 NestJS 서버와 Electron 데스크톱 앱입니다.
 일반 사용자가 매물을 탐색하는 웹사이트는 [estate-catalog](https://github.com/hyunsuleedev/estate-catalog)에서 별도로 관리합니다.
