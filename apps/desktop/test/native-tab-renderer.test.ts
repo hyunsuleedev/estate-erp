@@ -120,7 +120,7 @@ describe('renderer surface role', () => {
   });
 
   it('gives a document a bridge only for the role main granted it', () => {
-    const preload = readFileSync(resolve(testDir, '../src/preload.ts'), 'utf8');
+    const preload = readFileSync(resolve(testDir, '../src/preload/index.ts'), 'utf8');
     const main = readFileSync(resolve(testDir, '../src/main/windowManager.ts'), 'utf8');
     assert.match(preload, /if \(surface\.kind !== 'none'\) \{\s*contextBridge\.exposeInMainWorld\(/);
     assert.match(

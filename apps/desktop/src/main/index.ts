@@ -2,23 +2,23 @@ import { app, dialog, net, protocol } from 'electron';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import started from 'electron-squirrel-startup';
 import { existsSync } from 'node:fs';
 import {
   WindowManager,
   registerTabIpcHandlers,
   setPackagedRendererBaseUrl,
-} from './main/windowManager';
+} from './windowManager';
 import {
   APP_DOCUMENT,
   fallsBackToAppDocument,
   missingRendererDocuments,
+  resolveAssetUnderRoute,
   resolvePackagedRequest,
-} from './main/rendererDocuments';
-import { runStartup } from './main/startup';
-import { allowsUpdaterRequest } from './main/updaterAccess';
-import { UpdaterService } from './main/updaterService';
-import { APP_WINDOW_TITLE } from './common/tabs/windowTitle';
+} from './rendererDocuments';
+import { runStartup } from './startup';
+import { allowsUpdaterRequest } from './updaterAccess';
+import { UpdaterService } from './updaterService';
+import { APP_WINDOW_TITLE } from '../common/tabs/windowTitle';
 
 const APP_PROTOCOL = 'estate-erp';
 
@@ -35,11 +35,6 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ]);
-
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (started) {
-  app.quit();
-}
 
 // 앱은 한 번만 뜬다. 같은 사용자 데이터 폴더로 두 프로세스가 뜨면 둘이 같은 로그인
 // 토큰을 갱신하고, Auth0는 그것을 토큰 재사용으로 보고 양쪽 로그인을 모두 끊는다.
@@ -114,12 +109,7 @@ function registerPackagedRendererProtocol() {
   if (!app.isPackaged) return null;
   if (packagedRendererProtocolRegistered) return `${APP_PROTOCOL}://app`;
 
-  const rendererRoot = path.join(
-    app.getAppPath(),
-    '.vite',
-    'renderer',
-    'main_window',
-  );
+  const rendererRoot = path.join(app.getAppPath(), 'out', 'renderer');
 
   // 문서가 빠진 빌드는 쓸 수 없다. 조용히 넘어가지 않고 바로 알린다(로그인 뒤에야 빈
   // 창으로 드러나지 않게). 주소 처리를 등록하기 전에 확인해, 실패해도 상태가 어중간하지 않다.
@@ -142,10 +132,16 @@ function registerPackagedRendererProtocol() {
       fallsBackToAppDocument(requested.relativePath)
         ? net.fetch(pathToFileURL(path.join(rendererRoot, APP_DOCUMENT)).toString())
         : new Response('Not Found', { status: 404 });
-    return net.fetch(pathToFileURL(requested.filePath).toString()).then(
-      (response) => (response.ok ? response : whenMissing()),
-      () => whenMissing(),
-    );
+    const fetchFile = (filePath: string) =>
+      net.fetch(pathToFileURL(filePath).toString()).then(
+        (response) => (response.ok ? response : null),
+        () => null,
+      );
+    // 화면 주소 아래로 온 자산 요청(/properties/assets/…)은 문서 폴더의 자산으로 답한다.
+    const asset = resolveAssetUnderRoute(rendererRoot, requested.relativePath);
+    return fetchFile(requested.filePath)
+      .then((response) => response ?? (asset ? fetchFile(asset.filePath) : null))
+      .then((response) => response ?? whenMissing());
   });
   packagedRendererProtocolRegistered = true;
 

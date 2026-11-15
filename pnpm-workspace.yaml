@@ -10,7 +10,7 @@ allowBuilds:
   '@prisma/engines': true
   '@scarf/scarf': false
   electron: true
-  electron-winstaller: true
+  electron-winstaller: false
   esbuild: true
   msgpackr-extract: true
   prisma: true

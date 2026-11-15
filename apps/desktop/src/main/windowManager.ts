@@ -145,8 +145,16 @@ import {
   resolveMainApiBaseUrl,
 } from './auth/sessionUserClient';
 
-declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
-declare const MAIN_WINDOW_VITE_NAME: string;
+import { resolveDevServerUrl } from './devServerUrl';
+
+// 빌드 결과의 자리: out/main/index.js(이 코드), out/preload/index.js, out/renderer/*.html.
+const PRELOAD_PATH = path.join(__dirname, '../preload/index.js');
+const RENDERER_DIR = path.join(__dirname, '../renderer');
+
+/** 화면 개발 서버의 주소. 개발 실행에서만 있고, 패키지 앱에서는 언제나 없다. */
+function devServerUrl(): string | undefined {
+  return resolveDevServerUrl({ packaged: app.isPackaged, env: process.env });
+}
 
 let packagedRendererBaseUrl: string | null = null;
 
@@ -221,7 +229,7 @@ function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
   return {
     backgroundColor: '#f8f9fa',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: PRELOAD_PATH,
       // 창 자체의 화면이라는 역할은 main이 여기서 정해 준다. 역할을 받지 못한 문서에는
       // preload가 아무 통로도 내주지 않는다.
       additionalArguments: [`${RENDERER_SURFACE_ARGUMENT}window-shell`].concat(
@@ -235,9 +243,9 @@ function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
 /** 지금 실행에서 문서를 불러오는 곳(개발 서버, 패키지 앱의 전용 주소, 아니면 파일). */
 function rendererLocation(): RendererLocation {
   return {
-    devServerUrl: MAIN_WINDOW_VITE_DEV_SERVER_URL,
+    devServerUrl: devServerUrl(),
     packagedBaseUrl: packagedRendererBaseUrl,
-    rendererDir: path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}`),
+    rendererDir: RENDERER_DIR,
   };
 }
 
@@ -402,7 +410,7 @@ export class WindowManager {
     createView: () => {
       const view = new WebContentsView({
         webPreferences: {
-          preload: path.join(__dirname, 'preload.js'),
+          preload: PRELOAD_PATH,
           contextIsolation: true,
           sandbox: true,
           additionalArguments: [`${RENDERER_SURFACE_ARGUMENT}call-overlay`],
@@ -442,7 +450,7 @@ export class WindowManager {
   constructor() {
     this.apiBaseUrl = resolveMainApiBaseUrl({
       configured: import.meta.env.VITE_API_BASE_URL as string | undefined,
-      devServerUrl: MAIN_WINDOW_VITE_DEV_SERVER_URL,
+      devServerUrl: devServerUrl(),
     });
     console.info(`[auth] API server: ${this.apiBaseUrl}`);
     this.auth = this.createAuthController();
@@ -484,7 +492,7 @@ export class WindowManager {
       new ElectronNativeTabViewFactory({
         backgroundColor: '#f8f9fa',
         webPreferences: (tab) => ({
-          preload: path.join(__dirname, 'preload.js'),
+          preload: PRELOAD_PATH,
           contextIsolation: true,
           sandbox: true,
           additionalArguments: [

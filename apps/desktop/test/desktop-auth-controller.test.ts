@@ -569,7 +569,7 @@ describe('DesktopAuthController: sessions change only through logout', () => {
   });
 
   it('keeps the first copy signed in when a second running copy shares the stored login', async () => {
-    // 앱은 한 번만 뜨게 돼 있다(main.ts). 그 잠금이 듣지 않아 두 프로세스가 같은 저장소를
+    // 앱은 한 번만 뜨게 돼 있다(src/main/index.ts). 그 잠금이 듣지 않아 두 프로세스가 같은 저장소를
     // 쓰더라도, 서로의 refresh token을 재사용해 양쪽 로그인을 끊지 않는다.
     const store = new MemoryStore(stored('rt:hyunsu:0'));
     const auth0 = fakeAuth0();

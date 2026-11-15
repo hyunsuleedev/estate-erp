@@ -10,6 +10,8 @@ app.setPath('userData', previewProfile);
 app.commandLine.appendSwitch('remote-debugging-port', '9345');
 app.whenReady().then(() => {
   const win = new BrowserWindow({ width: 1580, height: 1040, minWidth: 700, minHeight: 650, title: '매칭 흐름 · 세 가지 디자인', backgroundColor: '#ffffff', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
-  win.loadURL('http://localhost:5174/prototypes/matching-flow/index.html');
+  // 개발 서버의 기준 폴더는 src/renderer다. 그 밖에 있는 이 페이지는 파일 경로(/@fs)로 연다.
+  const pagePath = path.join(__dirname, 'index.html').split(path.sep).join('/');
+  win.loadURL(`http://localhost:5174/@fs${pagePath.startsWith('/') ? '' : '/'}${pagePath}`);
 });
 app.on('window-all-closed', () => app.quit());

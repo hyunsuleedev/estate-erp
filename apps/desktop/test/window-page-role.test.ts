@@ -14,7 +14,7 @@ import {
   windowPageRoleOfDocument,
 } from '../src/main/windowPageRole';
 
-const rendererDir = path.resolve('/opt/app/.vite/renderer/main_window');
+const rendererDir = path.resolve('/opt/app/out/renderer');
 const dev: RendererLocation = { devServerUrl: 'http://localhost:5175', rendererDir };
 const packaged: RendererLocation = { packagedBaseUrl: 'estate-erp://app', rendererDir };
 const files: RendererLocation = { rendererDir };

@@ -11,6 +11,7 @@
 | 실시간 | Socket.io | CTI와 팀 동기화에 유리 |
 | 큐/잡 | Redis + BullMQ | 규칙 엔진과 백그라운드 작업 |
 | 데스크톱 | Electron | 설치형 UX와 로컬 기능 필요 |
+| 데스크톱 빌드·설치 | electron-vite + electron-builder(NSIS, 사용자별 설치) + electron-updater | 전화 브리지(CTI)를 같은 설치 파일로 깔려면 설치 중 DLL 등록이 필요한데 Squirrel로는 안 된다. 2026-11-15에 Electron Forge에서 옮김 |
 | 웹 | Vite SPA | 보조 접근 채널 |
 | 모바일 | React Native Android only | 전화 감지/녹음 제약 대응 |
 | AI 전략 | 내장 안 함 | MCP로 외부 AI 연결 |

@@ -92,7 +92,7 @@ EventSMS / EventMMS                               // 문자 수신
 | 실시간 인프라 | `apps/server/src/realtime/realtime.gateway.ts` — Socket.io `/realtime` 네임스페이스, `officeRoom(officeId)` 방 구조, Redis 어댑터 |
 | 소켓 인증 | `StaffAuthService.authenticateBearerToken` (Auth0 접근 토큰, Bearer JWT) |
 | API Key 인프라 | `apps/server/src/modules/mcp/api-key.service.ts` — User별 `apiKeyHash`/`apiKeyPrefix`, `X-API-Key` 검증. **Bridge 인증에 재사용 가능** |
-| 데스크톱 | `apps/desktop` = Electron Forge. `src/main/`(windowManager, updaterService), `src/preload.ts`(contextBridge), `src/renderer/` |
+| 데스크톱 | `apps/desktop` = electron-vite + electron-builder(Windows 설치 파일은 NSIS). `src/main/`(windowManager, updaterService), `src/preload/index.ts`(contextBridge), `src/renderer/` |
 | 연락처 통합검색 | `all_contacts_view`(Contact + VendorContact) 설계는 DATA_STRUCTURE에 있음 (구현 확인 필요) |
 
 **GAP 정리:**
@@ -250,7 +250,7 @@ export interface CtiCallEvent {
   메인 창에, 다른 앱 창만 있으면 가장 최근에 쓰던 창에 띄운다.
 - (배포 옵션) Bridge exe 생명주기 관리: Electron이 Bridge를 child_process로 spawn할지, 독립 설치/자동시작으로 둘지 결정 필요. **초기엔 독립 프로세스 + 수동/윈도우 시작프로그램 등록** 권장(권한/충돌 단순).
 
-**preload (`apps/desktop/src/preload.ts`):**
+**preload (`apps/desktop/src/preload/index.ts`):**
 ```ts
 // 셸·탭 화면: 읽기와 발신 요청만
 cti: {
@@ -408,6 +408,7 @@ Phase 1은 **첫 번째(Electron 경유)** 로 시작. 무인 수신 요구가 �
 - [ ] 클릭투콜(`SendCTC`) 역방향 경로 (renderer → main → Bridge WS → SDK).
 
 ### Step 6 — 배포/운영
+- 앱 설치 파일은 2026-11-15에 Squirrel에서 NSIS(electron-builder)로 바꿨다. 사용자별 설치라 앱 업데이트에는 관리자 권한이 필요 없다. Bridge를 앱 설치 파일에 함께 넣을 때는 NSIS 설치 스크립트(`apps/desktop/build/`에 둔다)에서 DLL 등록 단계만 관리자 권한을 받게 한다. 아직 넣지 않았다.
 - [ ] Bridge를 win-x86 self-contained exe로 패키징 (`dotnet publish -r win-x86`).
 - [ ] **KT DLL 동봉 + 설치 시 레지스트리 등록 자동화** (DLL은 오픈 — `OpenAPI 레지스트리 등록.bat` 방식).
 - [ ] 사무소 온보딩: KT OpenAPI 사용자 등록 안내 + 인증키를 `appsettings.json`(또는 설정 UI)에 입력하는 절차 문서화.

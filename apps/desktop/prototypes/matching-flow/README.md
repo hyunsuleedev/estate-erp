@@ -4,15 +4,11 @@
 
 ## 실행
 
-기존 desktop Vite 서버가 5174에서 실행 중일 때:
+desktop 개발 서버(`pnpm dev:desktop`, 기본 5174)가 실행 중일 때 엽니다. 개발 서버의 기준 폴더는 `src/renderer`이므로, 그 밖에 있는 이 페이지는 파일 경로로 엽니다(`/@fs` 뒤에 이 폴더의 절대 경로):
 
-http://localhost:5174/prototypes/matching-flow/index.html
+http://localhost:5174/@fs/<저장소 경로>/apps/desktop/prototypes/matching-flow/index.html
 
-서버가 꺼져 있다면 저장소 루트에서:
-
-```sh
-pnpm --filter @estate-erp/desktop exec vite --config vite.renderer.config.ts --port 5174
-```
+서버가 꺼져 있다면 저장소 루트에서 `pnpm dev:desktop`으로 앱과 함께 띄웁니다. 개발 서버만 띄우려면 `pnpm --filter @estate-erp/desktop exec electron-vite dev --rendererOnly`를 씁니다.
 
 별도 Electron 데모 창:
 

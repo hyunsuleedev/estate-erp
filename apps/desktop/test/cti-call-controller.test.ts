@@ -881,7 +881,7 @@ function sourceFiles(directory: string): string[] {
 
 describe('CTI wiring: main owns the call flow', () => {
   const manager = source('../src/main/windowManager.ts');
-  const preload = source('../src/preload.ts');
+  const preload = source('../src/preload/index.ts');
 
   it('leaves no call owner or relay in the shell', () => {
     // 셸이 통화 상태를 팝업 층에 보내거나 팝업의 버튼을 받던 길이 없다.
@@ -890,7 +890,7 @@ describe('CTI wiring: main owns the call flow', () => {
     }
     assert.doesNotMatch(manager, /forwardCallOverlayAction|webContents\.send\('cti:overlayAction'/);
     assert.equal(existsSync(resolve(testDir, '../src/main/ctiClient.ts')), false);
-    assert.doesNotMatch(source('../src/main.ts'), /ctiClient|CtiClient|setMainOverlayVisible/);
+    assert.doesNotMatch(source('../src/main/index.ts'), /ctiClient|CtiClient|setMainOverlayVisible/);
 
     // 화면은 서버에 통화를 기록하거나 고객 카드를 조회하지 않는다(팝업의 저장 버튼은 예외).
     const provider = source('../src/renderer/features/cti/cti-provider.tsx');

@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 /**
- * 탭바 문서(tabbar.html → src/tabbar/main.tsx)는 새 창을 열었을 때 가장 먼저 그려지는
+ * 탭바 문서(tabbar.html → src/renderer/tabbar/main.tsx)는 새 창을 열었을 때 가장 먼저 그려지는
  * 화면이다. 앱 전체(라우터, 서버 호출, 로그인, store)를 끌어오면 다시 느려지므로, 이
  * 문서가 불러오는 것을 여기서 지킨다.
  */
@@ -83,7 +83,7 @@ function walk(entry: string): { files: string[]; packages: string[] } {
 }
 
 describe('tab bar document', () => {
-  const graph = walk('src/tabbar/main.tsx');
+  const graph = walk('src/renderer/tabbar/main.tsx');
 
   it('loads only what a tab bar needs', () => {
     // 탭을 끌어 옮기는 것은 브라우저의 기본 끌어 놓기로 한다(다른 창의 탭 줄, 창 밖까지
@@ -111,7 +111,7 @@ describe('tab bar document', () => {
       /^src\/renderer\/components\//,
       /^src\/renderer\/app\.css$/,
       /^src\/main\//,
-      /^src\/preload\.ts$/,
+      /^src\/preload\//,
     ];
     for (const file of graph.files) {
       for (const pattern of forbidden) {
@@ -120,7 +120,9 @@ describe('tab bar document', () => {
     }
     // 화면 쪽에서 가져다 쓰는 것은 탭바 부품과 그 부품이 쓰는 작은 도우미뿐이다.
     assert.deepEqual(
-      graph.files.filter((file) => file.startsWith('src/renderer/')),
+      graph.files.filter(
+        (file) => file.startsWith('src/renderer/') && !file.startsWith('src/renderer/tabbar/'),
+      ),
       [
         'src/renderer/features/tabs/TabBar/NewTabButton.tsx',
         'src/renderer/features/tabs/TabBar/Tab.tsx',
@@ -145,7 +147,7 @@ describe('tab bar document', () => {
       }
       return found;
     };
-    const tabBar = declarations(read('src/tabbar/tabbar.css'));
+    const tabBar = declarations(read('src/renderer/tabbar/tabbar.css'));
     const app = declarations(read('src/renderer/app.css'));
     const shared = [...tabBar.keys()].filter((name) => app.has(name));
     assert.ok(shared.length >= 10, 'expected the tab bar to share theme tokens with the app');
@@ -166,18 +168,18 @@ describe('tab bar document', () => {
   });
 
   it('is built next to the app document and never replaced by it', () => {
-    const html = read('tabbar.html');
-    assert.match(html, /<script type="module" src="\/src\/tabbar\/main\.tsx"><\/script>/);
+    const html = read('src/renderer/tabbar.html');
+    assert.match(html, /<script type="module" src="\/tabbar\/main\.tsx"><\/script>/);
     // 탭바 문서는 서버를 부르지 않는다: 바깥 호스트를 허용하지 않는다.
     const csp = html.match(/http-equiv="Content-Security-Policy"\s+content="([^"]+)"/)?.[1] ?? '';
     assert.ok(csp.length > 0);
     assert.doesNotMatch(csp, /https:|naver|kakao|estaitt/);
 
-    const vite = read('vite.renderer.config.ts');
-    assert.match(vite, /index: path\.resolve\(__dirname, 'index\.html'\)/);
-    assert.match(vite, /tabbar: path\.resolve\(__dirname, 'tabbar\.html'\)/);
+    const vite = read('electron.vite.config.ts');
+    assert.match(vite, /index: path\.resolve\(__dirname, 'src\/renderer\/index\.html'\)/);
+    assert.match(vite, /tabbar: path\.resolve\(__dirname, 'src\/renderer\/tabbar\.html'\)/);
 
-    const main = read('src/main.ts');
+    const main = read('src/main/index.ts');
     // 없는 .html 문서를 앱 문서로 대신하지 않는다(탭바가 빠진 빌드가 앱 전체를 띄우지 않게).
     assert.match(main, /fallsBackToAppDocument\(requested\.relativePath\)/);
     assert.match(main, /new Response\('Not Found', \{ status: 404 \}\)/);

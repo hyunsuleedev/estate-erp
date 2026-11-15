@@ -117,7 +117,7 @@ describe('contract document tab', () => {
   it('does not expose contract-specific BrowserWindow IPC', () => {
     const sources = [
       source('../src/main/windowManager.ts'),
-      source('../src/preload.ts'),
+      source('../src/preload/index.ts'),
       source('../src/renderer/electron.d.ts'),
       source('../../../packages/shared/src/types/tabs.ts'),
     ];

@@ -10,7 +10,7 @@ if (typeof pngToIco !== 'function') {
   process.exit(1);
 }
 
-const assetsDir = path.join(__dirname, '../assets');
+const assetsDir = path.join(__dirname, '../build');
 const sourceFile = path.join(assetsDir, 'icon.png');
 const inputPng = path.join(assetsDir, 'icon_actual.png'); // 진짜 PNG 형식의 소스
 const outputIcns = path.join(assetsDir, 'icon.icns');
@@ -61,7 +61,7 @@ try {
   
   // Clean up temporary iconset directory
   fs.rmSync(iconsetDir, { recursive: true, force: true });
-  console.log('✓ Created apps/desktop/assets/icon.icns successfully.');
+  console.log('✓ Created apps/desktop/build/icon.icns successfully.');
 } catch (error) {
   console.error('✗ Failed to generate macOS .icns:', error.message);
 }
@@ -71,7 +71,7 @@ console.log('Creating Windows .ico...');
 pngToIco(inputPng)
   .then((buf) => {
     fs.writeFileSync(outputIco, buf);
-    console.log('✓ Created apps/desktop/assets/icon.ico successfully.');
+    console.log('✓ Created apps/desktop/build/icon.ico successfully.');
     
     // Clean up temporary icon_actual.png
     if (fs.existsSync(inputPng)) {

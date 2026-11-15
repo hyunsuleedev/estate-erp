@@ -14,7 +14,7 @@ import { useTabStore } from './store/useTabStore';
 
 /**
  * 브라우저 단독 미리보기(main이 없다)의 탭바: 이 문서의 탭 store가 탭 목록의 주인이다.
- * Electron에서는 탭 목록의 주인이 main이고 탭바는 따로 있는 작은 문서(src/tabbar)가
+ * Electron에서는 탭 목록의 주인이 main이고 탭바는 따로 있는 작은 문서(src/renderer/tabbar)가
  * 그리므로, 이 파일은 쓰이지 않는다.
  */
 

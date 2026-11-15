@@ -82,7 +82,7 @@ describe('property full-page window', () => {
 
   it('exposes only the narrow property-window IPC contract', () => {
     const sharedSource = source('../../../packages/shared/src/types/tabs.ts');
-    const preloadSource = source('../src/preload.ts');
+    const preloadSource = source('../src/preload/index.ts');
     const declarationSource = source('../src/renderer/electron.d.ts');
 
     assert.match(
@@ -95,7 +95,7 @@ describe('property full-page window', () => {
 
   it('restores native detail view state through an authorized main snapshot', () => {
     const mainSource = source('../src/main/windowManager.ts');
-    const preloadSource = source('../src/preload.ts');
+    const preloadSource = source('../src/preload/index.ts');
     const reporterSource = source(
       '../src/renderer/features/tabs/native/NativeTabRetentionReporter.tsx',
     );
@@ -111,7 +111,7 @@ describe('property full-page window', () => {
 
   it('keeps the tabs in main so a reloaded window page finds them unchanged', () => {
     const mainSource = source('../src/main/windowManager.ts');
-    const preloadSource = source('../src/preload.ts');
+    const preloadSource = source('../src/preload/index.ts');
     const layoutSource = source('../src/renderer/routes/_authenticated.tsx');
 
     // 창의 화면은 탭 목록을 갖지 않는다. 뜰 때 main에서 읽고, 바뀔 때마다 받는다.
@@ -190,7 +190,7 @@ describe('property full-page window', () => {
   it('routes non-property links out of a native detail surface', () => {
     const layoutSource = source('../src/renderer/routes/_authenticated.tsx');
     const mainSource = source('../src/main/windowManager.ts');
-    const preloadSource = source('../src/preload.ts');
+    const preloadSource = source('../src/preload/index.ts');
 
     assert.match(layoutSource, /NativeTabNavigationBridge/);
     assert.match(layoutSource, /resolveNativeTabRoute\(rawHref\)/);

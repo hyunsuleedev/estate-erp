@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 /**
- * WindowManager·main.ts·UpdaterService는 Electron에 묶여 있어 여기서 실행할 수 없다.
+ * WindowManager·src/main/index.ts·UpdaterService는 Electron에 묶여 있어 여기서 실행할 수 없다.
  * 규칙 자체는 순수 함수와 실제 클래스의 테스트가 지킨다(window-page-role, tab-registry,
  * tab-view-coordinator, native-tab-host, internal-route, startup, updater-access).
  * 이 파일은 그 규칙이 Electron 쪽에 실제로 연결돼 있는지만 소스에서 확인한다.
@@ -171,7 +171,7 @@ describe('updater and startup wiring', () => {
     }
     // 정해 주지 않으면 아무 요청도 받지 않는다.
     assert.match(updater, /private readonly isAllowed: UpdaterAccess = \(\) => false,/);
-    const main = source('../src/main.ts');
+    const main = source('../src/main/index.ts');
     assert.match(
       main,
       /allowsUpdaterRequest\(\s*request,\s*event\.senderFrame === event\.sender\.mainFrame\s*\? windowManager\.updaterSenderKind\(event\.sender\.id\)\s*: 'other',/,
@@ -179,7 +179,7 @@ describe('updater and startup wiring', () => {
   });
 
   it('runs the startup order from src/main/startup.ts and stops reopening windows after a failure', () => {
-    const main = source('../src/main.ts');
+    const main = source('../src/main/index.ts');
     assert.match(main, /void runStartup\(\{[\s\S]*?checkForUpdates: \(\) => \{\s*updaterService\.checkForUpdates\(\);\s*\},\s*createWindow,[\s\S]*?reportFailure: reportStartupFailure,/);
     assert.doesNotMatch(main, /app\.on\('ready', async/);
     assert.equal(main.match(/if \(startupFailed\) return;/g)?.length, 2);

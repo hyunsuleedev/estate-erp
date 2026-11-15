@@ -479,7 +479,7 @@ Phase 1은 기본(9,900원)으로 출시. CTI/공적장부 API 연동이 완료�
 - `autoDownload: false` → 사용자 확인 후 다운로드
 - 커스텀 알림 UI: Main 프로세스에서 이벤트 발생 → IPC → Renderer(React)에서 shadcn 기반 토스트/모달 표시
 - 프로그레스 바 + "지금 재시작" 버튼
-- `electron-forge` maker (Squirrel.Windows + ZIP.macOS) + publisher-s3
+- 설치 파일은 `electron-builder`로 만든다 (Windows NSIS, macOS dmg + zip). 업데이트 파일은 한 폴더에 올려 두고 주소로 받는다(generic)
 
 ### 12.4 광고노트 서버 부하 관리
 

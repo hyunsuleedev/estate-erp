@@ -23,6 +23,7 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "vite-env.d.ts",
-    "forge.env.d.ts"
+    "electron.vite.config.ts",
+    "electron-builder.config.ts"
   ]
 }

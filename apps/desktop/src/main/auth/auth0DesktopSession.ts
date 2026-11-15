@@ -692,7 +692,7 @@ export class Auth0DesktopSession {
 
   /**
    * 저장소에 이 프로세스가 쓰지 않은 refresh token이 있는가. 앱은 한 번만 뜨게 돼
-   * 있지만(main.ts), 그 잠금이 듣지 않는 환경에서도 두 프로세스가 서로의 로그인을
+   * 있지만(src/main/index.ts), 그 잠금이 듣지 않는 환경에서도 두 프로세스가 서로의 로그인을
    * 끊지 않게 한다.
    */
   private storedSessionReplacedElsewhere(): Promise<boolean> {

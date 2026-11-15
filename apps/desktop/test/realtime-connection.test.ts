@@ -728,14 +728,14 @@ describe('realtime wiring', () => {
   it('keeps the only socket in main: renderers no longer connect or elect an owner', () => {
     const rendererAndPreload = [
       ...sourceFiles(resolve(testDir, '../src/renderer')),
-      resolve(testDir, '../src/preload.ts'),
+      resolve(testDir, '../src/preload/index.ts'),
     ];
     assert.deepEqual(
       rendererAndPreload.filter((path) => /socket\.io-client/.test(readFileSync(path, 'utf8'))),
       [],
     );
     const main = source('../src/main/windowManager.ts');
-    const preload = source('../src/preload.ts');
+    const preload = source('../src/preload/index.ts');
     for (const removed of [
       'realtime:claimAuthority',
       'realtime:releaseAuthority',
@@ -816,7 +816,7 @@ describe('socket.io in the main bundle', () => {
   it('replaces ws’s optional native modules in the main build', () => {
     // 이 연결이 없으면 Vite가 넣는 대체 모듈 때문에 main 번들이 뜨지 않거나
     // (개발 빌드) 48바이트 이상의 프레임을 보내지 못한다(프로덕션 빌드).
-    const config = readFileSync(resolve(testDir, '../vite.main.config.ts'), 'utf8');
+    const config = readFileSync(resolve(testDir, '../electron.vite.config.ts'), 'utf8');
     assert.match(config, /bufferutil: path\.resolve\(\s*__dirname,\s*'src\/main\/realtime\/wsOptionalDeps\/bufferutil\.ts'/);
     assert.match(config, /'utf-8-validate': path\.resolve\(\s*__dirname,\s*'src\/main\/realtime\/wsOptionalDeps\/utf-8-validate\.ts'/);
     const factory = readFileSync(resolve(testDir, '../src/main/realtime/socketIoRealtimeSocket.ts'), 'utf8');

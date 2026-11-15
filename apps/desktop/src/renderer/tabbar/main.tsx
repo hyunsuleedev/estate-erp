@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
-import { emptyTabBarState } from '../common/tabs/tabBarContract';
-import { createBridgeTabBarPort, type TabBarPort } from '../common/tabs/tabBarPort';
+import { emptyTabBarState } from '../../common/tabs/tabBarContract';
+import { createBridgeTabBarPort, type TabBarPort } from '../../common/tabs/tabBarPort';
 import { TabBarWindow } from './TabBarWindow';
 import './tabbar.css';
 

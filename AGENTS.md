@@ -19,7 +19,7 @@
 ```
 apps/
   server/       NestJS 서버 (src/modules/*, src/realtime, src/prisma)
-  desktop/      Electron 앱 (src/main, src/preload.ts, src/renderer) — 직원이 쓰는 유일한 화면
+  desktop/      Electron 앱 (src/main, src/preload, src/renderer) — 직원이 쓰는 유일한 화면
   cti-bridge/   전화 연동 브리지 (C#, 계획 단계: docs/CTI_BRIDGE_PLAN.md)
   catalog/      소비자 사이트. 분리 당시 소스로만 남아 있고 후속 작업은 별도 저장소에서 한다
 packages/
@@ -49,8 +49,12 @@ pnpm typecheck           # 전체 타입 검사
 pnpm --filter @estate-erp/server test     # 서버 (jest)
 pnpm --filter @estate-erp/desktop test    # 데스크톱 (node:test)
 pnpm prisma:migrate      # 마이그레이션 만들기·적용 (개발)
+
+pnpm --filter @estate-erp/desktop package   # 앱 폴더만 만들기 (dist/, 설치 파일 없음)
+pnpm --filter @estate-erp/desktop make      # 설치 파일 만들기 (electron-builder)
 ```
 
+- 데스크톱은 electron-vite로 빌드하고(`apps/desktop/electron.vite.config.ts` → `out/`) electron-builder로 설치 파일을 만든다(`electron-builder.config.ts` → `dist/`). 쓰는 패키지는 main·preload·화면 모두 번들에 넣으므로 전부 `devDependencies`에 둔다. `dependencies`에 적으면 그 패키지가 앱의 `node_modules`로 들어가고, 그 안의 선택 의존성을 찾는 `require`가 `app.asar` 밖까지 올라간다(이유는 `electron.vite.config.ts`의 main 주석).
 - 패키지(`shared`, `api-client`)를 고치면 `pnpm --filter <패키지> build` 뒤에 서버·데스크톱 타입 검사를 다시 돌린다.
 - 일을 끝냈다고 말하기 전에 고친 쪽의 타입 검사와 관련 테스트를 돌린다. 실패가 있으면 그대로 보고한다.
 

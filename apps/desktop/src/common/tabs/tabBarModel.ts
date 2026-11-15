@@ -211,7 +211,7 @@ export function tabBarChrome(state: Pick<TabBarState, 'platform' | 'fullscreen'>
   };
 }
 
-/** 탭바의 치수(문서 좌표). src/tabbar/TabBarWindow.tsx와 탭 부품이 이 값으로 그린다. */
+/** 탭바의 치수(문서 좌표). src/renderer/tabbar/TabBarWindow.tsx와 탭 부품이 이 값으로 그린다. */
 export const TAB_BAR_METRICS = {
   /** Notion 데스크톱에서 실측한 탭 줄(타이틀바)의 높이. */
   height: 36,

@@ -17,7 +17,7 @@
     {
       "name": "desktop-renderer",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@estate-erp/desktop", "exec", "vite", "--config", "vite.renderer.config.ts"],
+      "runtimeArgs": ["--filter", "@estate-erp/desktop", "exec", "electron-vite", "dev", "--rendererOnly"],
       "port": 5174
     },
     {

@@ -14,8 +14,7 @@
       "prisma",
       "msgpackr-extract",
       "esbuild",
-      "electron",
-      "electron-winstaller"
+      "electron"
     ]
   },
   "scripts": {

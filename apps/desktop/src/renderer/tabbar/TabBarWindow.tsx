@@ -1,11 +1,11 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { PanelLeft } from 'lucide-react';
-import { acceptAppTabDrops } from '../common/tabs/tabDrag';
-import { tabBarChrome } from '../common/tabs/tabBarModel';
-import type { TabBarPort } from '../common/tabs/tabBarPort';
-import { TabBar } from '../renderer/features/tabs/TabBar/TabBar';
-import { TabBarProvider } from '../renderer/features/tabs/TabBar/tabBarContext';
-import { TabNavigationButtons } from '../renderer/features/tabs/TabBar/TabNavigationButtons';
+import { acceptAppTabDrops } from '../../common/tabs/tabDrag';
+import { tabBarChrome } from '../../common/tabs/tabBarModel';
+import type { TabBarPort } from '../../common/tabs/tabBarPort';
+import { TabBar } from '../features/tabs/TabBar/TabBar';
+import { TabBarProvider } from '../features/tabs/TabBar/tabBarContext';
+import { TabNavigationButtons } from '../features/tabs/TabBar/TabNavigationButtons';
 
 /**
  * 로그인 뒤의 창 자체의 화면: 맨 위 36px의 탭바만 그린다. 탭바 아래(사이드바 + 화면)는

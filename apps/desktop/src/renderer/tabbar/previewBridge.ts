@@ -2,8 +2,8 @@ import {
   emptyTabBarState,
   type TabBarActionEnvelope,
   type TabBarState,
-} from '../common/tabs/tabBarContract';
-import type { TabBarBridgeLike } from '../common/tabs/tabBarPort';
+} from '../../common/tabs/tabBarContract';
+import type { TabBarBridgeLike } from '../../common/tabs/tabBarPort';
 
 /**
  * 개발 전용: main 없이 탭바 문서를 브라우저로 열었을 때 쓰는 본보기 상태. 화면 확인용이라

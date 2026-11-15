@@ -10,13 +10,14 @@ import {
   isTabBarDocumentUrl,
   isTrustedDocumentUrl,
   missingRendererDocuments,
+  resolveAssetUnderRoute,
   resolvePackagedRequest,
   tabBarDocumentPath,
   windowPageTarget,
   type RendererLocation,
 } from '../src/main/rendererDocuments';
 
-const rendererDir = path.resolve('/opt/app/.vite/renderer/main_window');
+const rendererDir = path.resolve('/opt/app/out/renderer');
 const dev: RendererLocation = { devServerUrl: 'http://localhost:5175', rendererDir };
 const packaged: RendererLocation = { packagedBaseUrl: 'estate-erp://app', rendererDir };
 const files: RendererLocation = { rendererDir };
@@ -131,7 +132,51 @@ describe('documents the app loads into windows and tab views', () => {
     assert.equal(fallsBackToAppDocument('dashboard'), true);
     assert.equal(fallsBackToAppDocument('tabbar.html'), false);
     assert.equal(fallsBackToAppDocument('missing/PAGE.HTML'), false);
+    // 없는 자산도 404다(화면 주소 아래로 온 것 포함).
+    assert.equal(fallsBackToAppDocument('assets/gone-abc.js'), false);
+    assert.equal(fallsBackToAppDocument('properties/assets/gone-abc.js'), false);
     assert.equal(tabBarDocumentPath(root), path.join(root, 'tabbar.html'));
+  });
+
+  it('answers asset requests that arrive under a route with the asset from the renderer folder', () => {
+    const root = rendererDir;
+    // 문서를 /properties/p1로 열면 상대 주소의 자산은 /properties/assets/…로 온다.
+    assert.deepEqual(resolveAssetUnderRoute(root, 'properties/assets/index-abc.js'), {
+      filePath: path.join(root, 'assets/index-abc.js'),
+      relativePath: 'assets/index-abc.js',
+    });
+    assert.deepEqual(resolveAssetUnderRoute(root, 'deals/d1/edit/assets/chunks/x.css'), {
+      filePath: path.join(root, 'assets/chunks/x.css'),
+      relativePath: 'assets/chunks/x.css',
+    });
+    // 제자리에 있는 자산과 화면 주소는 건드리지 않는다.
+    assert.equal(resolveAssetUnderRoute(root, 'assets/index-abc.js'), null);
+    assert.equal(resolveAssetUnderRoute(root, 'properties/p1'), null);
+    assert.equal(resolveAssetUnderRoute(root, 'properties/assets'), null);
+    // 문서 폴더 밖으로 나가는 주소는 받지 않는다.
+    assert.equal(resolveAssetUnderRoute(root, 'properties/assets/../../../etc/passwd'), null);
+    assert.equal(resolveAssetUnderRoute(root, '../assets/x.js'), null);
+    // Windows에서는 역슬래시가 폴더 구분자다. 어느 운영체제에서든 받지 않는다.
+    assert.equal(resolveAssetUnderRoute(root, 'properties/assets/..\\..\\secret'), null);
+    assert.equal(resolveAssetUnderRoute(root, 'properties/assets\\..\\..\\secret'), null);
+    // Windows의 경로 규칙으로 계산해도 자산 폴더 밖으로 나가지 않는다.
+    const winRoot = 'C:\\app\\out\\renderer';
+    assert.deepEqual(resolveAssetUnderRoute(winRoot, 'properties/assets/index-abc.js', path.win32), {
+      filePath: `${winRoot}\\assets\\index-abc.js`,
+      relativePath: 'assets/index-abc.js',
+    });
+    for (const requested of [
+      'p/assets/..\\..\\..\\Windows\\win.ini',
+      'p/assets/C:/Windows/win.ini',
+      'p/assets/C:\\Windows\\win.ini',
+      'p/assets/.../x',
+    ]) {
+      const resolved = resolveAssetUnderRoute(winRoot, requested, path.win32);
+      assert.ok(
+        resolved === null || resolved.filePath.startsWith(`${winRoot}\\assets\\`),
+        requested,
+      );
+    }
   });
 
   it('does not count the abort of the document it replaced as a failed load', () => {

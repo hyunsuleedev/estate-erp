@@ -85,8 +85,8 @@ typings/
 # Webpack
 .webpack/
 
-# Vite
-.vite/
-
-# Electron-Forge
+# electron-vite 빌드 결과
 out/
+
+# electron-builder 결과(설치 파일, 업데이트 목록)
+dist/

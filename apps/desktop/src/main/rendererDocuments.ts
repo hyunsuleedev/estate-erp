@@ -196,11 +196,48 @@ export function resolvePackagedRequest(
   return { filePath, relativePath };
 }
 
+/** 빌드한 화면의 자산(스크립트·스타일 등)이 들어 있는 폴더. Vite의 기본값이다. */
+const ASSETS_DIR = 'assets';
+
+/**
+ * 화면 주소 아래로 온 자산 요청이 실제로 가리키는 파일. 해당하지 않으면 null.
+ *
+ * 빌드한 앱 문서는 자산을 상대 주소(`./assets/…`)로 부른다. 탭 화면은 그 문서를
+ * `/properties/p1` 같은 주소로 열기 때문에, 자산 요청은 `/properties/assets/…`로 온다.
+ * 자산은 언제나 문서 폴더 바로 아래의 `assets/`에 있으므로 그 파일로 답한다. 이 처리가
+ * 없으면 두 단계 이상인 주소로 연 화면은 스크립트 대신 앱 문서를 받아 빈 화면이 된다.
+ */
+export function resolveAssetUnderRoute(
+  rendererRoot: string,
+  relativePath: string,
+  /** 파일 경로를 계산하는 규칙. 테스트가 Windows의 규칙으로도 확인할 수 있게 받는다. */
+  fs: path.PlatformPath = path,
+): { filePath: string; relativePath: string } | null {
+  // Windows는 역슬래시도 폴더 구분자로 읽는다(`assets/..\..\x`). 자산 주소에는 올 일이 없다.
+  if (relativePath.includes('\\')) return null;
+  const segments = path.posix.normalize(relativePath).split('/');
+  if (segments.includes('..')) return null;
+  const at = segments.lastIndexOf(ASSETS_DIR);
+  // 맨 앞의 assets/는 이미 제자리다. 폴더 이름뿐이고 파일이 없는 주소도 아니다.
+  if (at <= 0 || at === segments.length - 1) return null;
+  const assetPath = segments.slice(at);
+  const filePath = fs.normalize(fs.join(rendererRoot, ...assetPath));
+  // 운영체제의 경로 규칙으로 다시 확인한다. 자산 폴더 밖을 가리키면 답하지 않는다.
+  const fromAssets = fs.relative(fs.join(rendererRoot, ASSETS_DIR), filePath);
+  if (!fromAssets || fromAssets.startsWith('..') || fs.isAbsolute(fromAssets)) {
+    return null;
+  }
+  return { filePath, relativePath: assetPath.join('/') };
+}
+
 /**
  * 파일이 없을 때 앱 문서로 대신 답해도 되는지. 화면 주소(/properties/…)는 앱 문서가
- * 받아 그리지만, 없는 .html 문서를 앱 문서로 대신하지는 않는다: 탭바 문서가 빠진 빌드가
+ * 받아 그리지만, 없는 .html 문서와 없는 자산을 앱 문서로 대신하지는 않는다: 탭바 문서가 빠진 빌드가
  * 로그인 뒤의 창에 앱 전체를 조용히 띄우게 된다.
  */
 export function fallsBackToAppDocument(relativePath: string): boolean {
+  // 없는 자산(오래된 스크립트 조각 등)도 앱 문서로 대신하지 않는다. 스크립트를 달라는
+  // 요청에 문서를 주면 404가 아니라 알아보기 어려운 형식 오류로 드러난다.
+  if (relativePath.split('/').includes(ASSETS_DIR)) return false;
   return path.extname(relativePath).toLowerCase() !== '.html';
 }

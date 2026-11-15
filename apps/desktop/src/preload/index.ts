@@ -9,45 +9,45 @@ import type {
   DesktopAuthSessionSnapshot,
   DesktopAuthSignupInput,
   DesktopAuthSignupResult,
-} from './common/desktopAuth';
+} from '../common/desktopAuth';
 import type {
   RealtimeEventMessage,
   RealtimeRoomRequest,
   RealtimeStatus,
-} from './common/desktopRealtime';
+} from '../common/desktopRealtime';
 import type {
   ActiveCall,
   CtiDialRequest,
   CtiDialResult,
   CtiStatus,
-} from './common/desktopCti';
-import type { NativeTabAction } from './common/nativeTabActions';
+} from '../common/desktopCti';
+import type { NativeTabAction } from '../common/nativeTabActions';
 import type {
   CallOverlayAction,
   CallOverlayInset,
   CallOverlaySize,
   WindowToast,
-} from './common/callOverlay';
+} from '../common/callOverlay';
 import type {
   NativeSidebarState,
   SidebarPreviewCommand,
   NativeTabAssignment,
   NativeTabNavigateCommand,
   NativeTabRetentionUpdate,
-} from './common/nativeTabs';
+} from '../common/nativeTabs';
 import {
   parseRendererSurfaceArguments,
   RENDERER_LAUNCH_WINDOW_ARGUMENT,
   type RendererSurfaceInfo,
-} from './common/rendererSurface';
-import type { TabCommand } from './common/tabCommands';
+} from '../common/rendererSurface';
+import type { TabCommand } from '../common/tabCommands';
 import {
   TAB_BAR_CHANNELS,
   isTabBarState,
   type TabBarActionEnvelope,
   type TabBarState,
-} from './common/tabs/tabBarContract';
-import { acceptAppTabDrops } from './common/tabs/tabDrag';
+} from '../common/tabs/tabBarContract';
+import { acceptAppTabDrops } from '../common/tabs/tabDrag';
 
 /**
  * 이 문서의 역할. main이 화면을 만들 때 정해 준 것만 따른다. 정해 주지 않은 문서에는

@@ -28,7 +28,7 @@ function methodBody(text: string, start: string, end: string): string {
 describe('desktop auth lifecycle wiring', () => {
   it('lets only main own the session: renderers cannot publish it or hold tokens for others', () => {
     const mainSource = source('../src/main/windowManager.ts');
-    const preloadSource = source('../src/preload.ts');
+    const preloadSource = source('../src/preload/index.ts');
 
     // 셸을 "세션 주인"으로 뽑던 통로는 없다.
     for (const removed of [
@@ -59,7 +59,7 @@ describe('desktop auth lifecycle wiring', () => {
       Object.keys(pkg.dependencies ?? {}).filter((name) => name.startsWith('@clerk/')),
       [],
     );
-    assert.ok(!/clerk/i.test(source('../index.html')));
+    assert.ok(!/clerk/i.test(source('../src/renderer/index.html')));
   });
 
   it('clears the previous account before announcing a new session to every surface', () => {
@@ -136,7 +136,7 @@ describe('desktop auth lifecycle wiring', () => {
       const handler = methodBody(mainSource, `ipcMain.handle('${channel}'`, '\n  });');
       assert.match(handler, /if \(!isCurrentWindowShellEvent\(event\)\)/, channel);
     }
-    const preloadSource = source('../src/preload.ts');
+    const preloadSource = source('../src/preload/index.ts');
     const sessionBridge = methodBody(
       preloadSource,
       'const sessionAuthBridge = {',
@@ -240,7 +240,7 @@ describe('desktop auth lifecycle wiring', () => {
   });
 
   it('hands a window its tabs from main without trusting what the page says about the account', () => {
-    const preloadSource = source('../src/preload.ts');
+    const preloadSource = source('../src/preload/index.ts');
     const mainSource = source('../src/main/windowManager.ts');
 
     // 탭바 문서만, 문서가 뜨는 순간 main에서 자기 창의 탭 상태를 읽는다. 누구의 탭인지는
@@ -267,7 +267,7 @@ describe('desktop auth lifecycle wiring', () => {
   });
 
   it('keeps the signed-in tab bar document away from login and tokens', () => {
-    const preloadSource = source('../src/preload.ts');
+    const preloadSource = source('../src/preload/index.ts');
     const mainSource = source('../src/main/windowManager.ts');
 
     // 탭바 문서에는 탭바 통로만 내준다. 로그인·토큰·실시간·전화 통로는 없다.

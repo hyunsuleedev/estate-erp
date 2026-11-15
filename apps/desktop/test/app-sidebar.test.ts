@@ -111,13 +111,13 @@ describe("desktop app sidebar", () => {
   });
 
   it("places the Estaitt brand before the titlebar sidebar trigger", () => {
-    // 로그인 뒤의 창 화면은 탭바 문서다(src/tabbar). 타이틀바는 거기서 그린다.
+    // 로그인 뒤의 창 화면은 탭바 문서다(src/renderer/tabbar). 타이틀바는 거기서 그린다.
     const layoutSource = readFileSync(
-      resolve(testDir, "../src/tabbar/TabBarWindow.tsx"),
+      resolve(testDir, "../src/renderer/tabbar/TabBarWindow.tsx"),
       "utf8",
     );
     const titlebarCss = readFileSync(
-      resolve(testDir, "../src/tabbar/tabbar.css"),
+      resolve(testDir, "../src/renderer/tabbar/tabbar.css"),
       "utf8",
     );
 
@@ -199,7 +199,7 @@ describe("desktop app sidebar", () => {
 
   it("renders detached windows with a focused titlebar and nothing of the app below it", () => {
     const shellSource = readFileSync(
-      resolve(testDir, "../src/tabbar/TabBarWindow.tsx"),
+      resolve(testDir, "../src/renderer/tabbar/TabBarWindow.tsx"),
       "utf8",
     );
     // 창의 종류는 main이 보내 준 탭바 상태가 말해 준다. 한 문서가 두 종류를 그린다.
