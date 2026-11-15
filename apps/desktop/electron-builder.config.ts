@@ -36,7 +36,15 @@ const config: Configuration = {
   // 앱에 들어가는 것은 빌드 결과(out/)와 package.json뿐이다. 쓰는 패키지는 모두 번들에 들어
   // 있어서(electron.vite.config.ts) node_modules는 넣지 않는다. package.json에 dependencies를
   // 두지 않는 것도 그래서다. 거기 적은 패키지는 electron-builder가 앱에 넣는다.
-  files: ['out/**', 'package.json', '!**/node_modules/**'],
+  // out/ 전체가 아니라 빌드가 만드는 세 폴더만 고른다. out/ 에 다른 파일(옛 빌드, 화면 갈무리)이
+  // 남아 있어도 앱에 딸려 들어가지 않는다.
+  files: [
+    'out/main/**',
+    'out/preload/**',
+    'out/renderer/**',
+    'package.json',
+    '!**/node_modules/**',
+  ],
   // 네이티브 모듈이 없다. 설치된 패키지를 다시 빌드하지 않는다.
   npmRebuild: false,
   // 업데이트 목록(latest*.yml)과 설치 파일을 한 폴더에 나란히 올리므로, 운영체제와 CPU가
