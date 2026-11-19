@@ -150,6 +150,12 @@ export interface UpdateDealPaymentDto {
 
 export function createDealsApi(request: RequestFn) {
   return {
+    findActive: () => request<Deal[]>('/deals?scope=active'),
+    findArchive: (filters: { kind: 'closed' | 'cancelled'; q: string; since: string }, cursor?: string) => {
+      const params = new URLSearchParams({ ...filters, ...(cursor && { cursor }) });
+      return request<{ items: Deal[]; nextCursor: string | null }>(`/deals/views/archive?${params}`);
+    },
+
     findAll: () => request<Deal[]>('/deals'),
 
     findOne: (id: string) => request<Deal>(`/deals/${id}`),

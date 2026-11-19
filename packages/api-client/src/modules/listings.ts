@@ -17,7 +17,24 @@ export type ListingAdvertisementSource = 'manual' | 'cp_sync';
 export interface ListingAdvertisement {
   id: string;
   officeId: string;
-  listingId: string;
+  /** 어느 의뢰의 광고인지. 매물과 아직 잇지 못한 광고는 null */
+  listingId: string | null;
+  /** 우리 사무소의 관리 공간. 매물이 없어도 호실까지 찾았으면 있다 */
+  propertyId?: string | null;
+  /** 건물(대지). 호실을 못 찾아도 건물까지 찾았으면 있다 */
+  siteId?: string | null;
+  /** 광고의 거래유형. 매물이 없는 광고도 가격을 읽을 수 있게 광고에 따로 둔다 */
+  transactionType?: string | null;
+  /** CP가 적은 그대로의 위치 글. 우리 데이터와 잇지 못한 광고를 사람이 알아보는 근거 */
+  rawJibunAddress?: string | null;
+  rawRoadAddress?: string | null;
+  rawSiteName?: string | null;
+  rawDong?: string | null;
+  rawHo?: string | null;
+  rawFloorText?: string | null;
+  rawAreaM2?: number | string | null;
+  /** 층 노출: exact(정확한 층) | band(저 · 중 · 고) */
+  floorExposure?: string | null;
   channel: string;
   status: ListingAdvertisementStatus;
   source: ListingAdvertisementSource | string;
@@ -135,7 +152,8 @@ export interface Listing {
     };
     unit?: {
       id: string;
-      name: string;
+      /** 호 이름. 호 없이 층이 단위인 공간은 null */
+      name: string | null;
       floor: number | null;
       exclusiveAreaM2: number | null;
       supplyAreaM2: number | null;
@@ -229,6 +247,8 @@ export interface ListingFilterSite {
   type: string;
   roadAddress: string | null;
   jibunAddress: string | null;
+  /** 법정동 코드(10자리). 앞 2자리가 시도, 앞 5자리가 시군구다. 옛 서버 응답에는 없다 */
+  wardCode?: string | null;
   listingCount: number;
   propertyCount: number;
 }

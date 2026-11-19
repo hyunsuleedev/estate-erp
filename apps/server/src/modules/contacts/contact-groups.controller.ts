@@ -20,7 +20,7 @@ import {
 } from './contact-groups.dto';
 import { ContactGroupsService } from './contact-groups.service';
 
-// 그룹 이름에 '/'가 들어갈 수 있어(예: 매수/투자) 경로 대신 본문과 쿼리로 이름을 받는다.
+// 그룹 이름에 '/'가 들어갈 수 있어(예: 재개발/재건축) 경로 대신 본문과 쿼리로 이름을 받는다.
 @ApiTags('연락처 그룹')
 @ApiBearerAuth()
 @Controller('contact-groups')
@@ -33,7 +33,12 @@ export class ContactGroupsController {
     @Body() dto: CreateContactGroupDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.contactGroups.create(user.officeId, dto.name, dto.contactIds);
+    return this.contactGroups.create(
+      user.officeId,
+      dto.name,
+      dto.contactIds,
+      user.userId,
+    );
   }
 
   @Patch()
@@ -61,6 +66,7 @@ export class ContactGroupsController {
       user.officeId,
       dto.name,
       dto.contactIds,
+      user.userId,
     );
   }
 

@@ -88,7 +88,7 @@ describe('PropertiesService — site/unit chain guard', () => {
   });
 
   describe('building types — unit 필수', () => {
-    it.each(['apartment', 'officetel', 'villa', 'commercial', 'living_accommodation'])(
+    it.each(['apartment', 'officetel', 'villa', 'living_accommodation'])(
       'rejects a %s property without a unit',
       async (type) => {
         const { prisma, service } = createService();
@@ -102,6 +102,12 @@ describe('PropertiesService — site/unit chain guard', () => {
         ).rejects.toThrow('unitId is required for building-type properties');
       },
     );
+
+    it('allows a whole commercial building without a unit', async () => {
+      const { prisma, service } = createService();
+      mockSite(prisma, 'commercial');
+      await expect(service.create('office-1', { siteId: 'site-1' })).resolves.toEqual({ id: 'property-1' });
+    });
 
     it('allows an apartment property with a unit', async () => {
       const { prisma, service } = createService();

@@ -8,6 +8,8 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
@@ -43,15 +45,59 @@ export class CommissionPaymentController {
   }
 
   @Post(':id/collect')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   collect(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { actualAmount: number; method: string; paidAt?: string; note?: string },
   ) {
-    return this.service.collect(id, user.officeId, body);
+    return this.service.collect(id, user.officeId, user.userId, body);
+  }
+
+  @Get(':id/receipts')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
+  listReceipts(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
+    return this.service.listReceipts(user.officeId, id);
+  }
+
+  @Post(':id/receipts')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
+  addReceipt(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { amountWon: number; receivedAt?: string; method?: string; memo?: string },
+  ) {
+    return this.service.addReceipt(id, user.officeId, user.userId, body);
+  }
+
+  @Post(':id/refund')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
+  refund(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { amountWon: number; refundedAt?: string; memo?: string },
+  ) {
+    return this.service.refund(id, user.officeId, user.userId, body);
+  }
+
+  @Post('receipts/:receiptId/void')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
+  voidReceipt(
+    @Param('receiptId') receiptId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { reason?: string },
+  ) {
+    return this.service.voidReceipt(receiptId, user.officeId, user.userId, body?.reason);
   }
 
   @Post(':id/waive')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   waive(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
@@ -61,6 +107,8 @@ export class CommissionPaymentController {
   }
 
   @Post(':id/confirm')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   confirmDraft(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
@@ -70,6 +118,8 @@ export class CommissionPaymentController {
   }
 
   @Post(':id/tax-invoice')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   issueTaxInvoice(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
@@ -79,6 +129,8 @@ export class CommissionPaymentController {
   }
 
   @Patch(':id/distributions')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   replaceDistributions(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
@@ -88,6 +140,8 @@ export class CommissionPaymentController {
   }
 
   @Patch('deal/:dealId/distributions')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   applyDistributionsToDeal(
     @Param('dealId') dealId: string,
     @CurrentUser() user: CurrentUserPayload,

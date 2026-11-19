@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { DONE_DEAL_STAGES } from '@estate-erp/shared';
+import { DONE_DEAL_STAGES, formatUnitName } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   appendIntakeStep,
@@ -43,7 +43,7 @@ const dealFlowSelect = {
           site: { select: { name: true } },
           unit: {
             select: {
-              name: true,
+              name: true, floor: true, floorEnd: true, floorLabel: true,
               dong: { select: { name: true, isPlaceholder: true } },
             },
           },
@@ -77,7 +77,7 @@ const caseDetailInclude = {
               site: { select: { name: true } },
               unit: {
                 select: {
-                  name: true,
+                  name: true, floor: true, floorEnd: true, floorLabel: true,
                   dong: { select: { name: true, isPlaceholder: true } },
                 },
               },
@@ -140,7 +140,10 @@ type StepRow = CaseDetail['steps'][number];
 interface PropertyLabelSource {
   site: { name: string };
   unit: {
-    name: string;
+    name: string | null;
+    floor?: number | null;
+    floorEnd?: number | null;
+    floorLabel?: string | null;
     dong: { name: string; isPlaceholder: boolean } | null;
   } | null;
 }
@@ -155,7 +158,8 @@ function propertyLabel(property: PropertyLabelSource | null | undefined) {
         ? dong.name
         : `${dong.name}동`
       : null,
-    property.unit?.name ?? null,
+    // 호가 없는 공간은 층이 이름이다
+    formatUnitName(property.unit) || null,
   ]
     .filter(Boolean)
     .join(' ');
@@ -610,7 +614,7 @@ export class BrokerageCasePlanService {
               site: { select: { name: true } },
               unit: {
                 select: {
-                  name: true,
+                  name: true, floor: true, floorEnd: true, floorLabel: true,
                   dong: { select: { name: true, isPlaceholder: true } },
                 },
               },

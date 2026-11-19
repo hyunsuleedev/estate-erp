@@ -44,7 +44,7 @@ export interface PublicDocument {
   property?: {
     id: string;
     site: { name: string };
-    unit?: { name: string; dong?: { name: string } } | null;
+    unit?: { name: string | null; dong?: { name: string } } | null;
   } | null;
   site?: { id: string; name: string };
 }

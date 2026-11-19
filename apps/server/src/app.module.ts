@@ -43,6 +43,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module';
 import { RegionsModule } from './modules/regions/regions.module';
 import { ServiceVendorsModule } from './modules/service-vendors/service-vendors.module';
+import { NoticesModule } from './modules/notices/notices.module';
 import { CtiModule } from './modules/cti/cti.module';
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 import { RealtimeModule } from './realtime/realtime.module';
@@ -107,6 +108,7 @@ const GENERAL_API_RATE_LIMIT_PER_MINUTE = 600;
     PublicDocumentsModule,
     PropertyPhotosModule,
     ServiceVendorsModule,
+    NoticesModule,
     CtiModule,
     NotificationsModule,
     NetworkModule,

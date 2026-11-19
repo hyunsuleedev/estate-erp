@@ -32,6 +32,7 @@ export class PropertiesController {
     @Query('unitId') unitId: string,
     @Query('search') search: string,
     @Query('hasListing') hasListing: string,
+    @Query('withoutUnit') withoutUnit: string,
     @Query('sortBy') sortBy: string,
     @Query('sortOrder') sortOrder: string,
     @Query('page') page: string,
@@ -43,6 +44,7 @@ export class PropertiesController {
       wardCode: wardCode || undefined,
       siteId: siteId || undefined,
       unitId: unitId || undefined,
+      withoutUnit: withoutUnit === 'true',
       search: search || undefined,
       hasListing: hasListing === 'true' ? true : undefined,
       sortBy: (sortBy as 'createdAt' | 'updatedAt') || undefined,
@@ -58,6 +60,21 @@ export class PropertiesController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.propertiesService.findOne(id, user.officeId);
+  }
+
+  /**
+   * 그 자리(건물 + 호 · 층)의 관리 공간을 돌려주고 없으면 만든다.
+   * 매물 없이 광고를 넣을 때 쓴다: 광고는 공공 호실에 직접 걸지 않고 우리 사무소의 관리 공간에 건다.
+   */
+  @Post('ensure')
+  ensure(
+    @Body() dto: { siteId: string; unitId?: string | null },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.propertiesService.ensure(user.officeId, {
+      siteId: dto?.siteId,
+      unitId: dto?.unitId ?? null,
+    });
   }
 
   @Post()

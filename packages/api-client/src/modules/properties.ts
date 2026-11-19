@@ -58,8 +58,11 @@ export interface Property {
   };
   unit?: {
     id: string;
-    name: string;
+    /** 호 이름. 호 없이 층이 단위인 공간은 null */
+    name: string | null;
     floor: number | null;
+    floorEnd?: number | null;
+    floorLabel?: string | null;
     exclusiveAreaM2: number | null;
     supplyAreaM2: number | null;
     dong?: {
@@ -81,6 +84,7 @@ export interface Property {
 }
 
 export interface PropertiesFilter {
+  withoutUnit?: boolean;
   siteType?: string;
   siteId?: string;
   unitId?: string;
@@ -113,6 +117,13 @@ export function createPropertiesApi(request: RequestFn) {
 
     findOne: (id: string) =>
       request<Property>(`/properties/${id}`),
+
+    /** 그 자리의 관리 공간을 돌려주고 없으면 만든다 (매물 없이 광고를 넣을 때) */
+    ensure: (dto: { siteId: string; unitId?: string | null }) =>
+      request<{ id: string; siteId: string; unitId: string | null; created: boolean }>(
+        '/properties/ensure',
+        { method: 'POST', body: dto },
+      ),
 
     create: (dto: CreatePropertyDto) =>
       request<Property>('/properties', { method: 'POST', body: dto }),

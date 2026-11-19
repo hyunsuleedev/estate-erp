@@ -18,18 +18,12 @@ import {
 } from '../listings/listing-state';
 
 const VALID_SITE_TYPES: ReadonlySet<string> = new Set(Object.values(SiteType));
-// Unit 연결 정책:
-// - FORBIDDEN: 토지(land)는 Unit 자체가 없음 → property는 siteId만으로 식별
-// - REQUIRED: 건물형(아파트/오피스텔/빌라/상가/생활숙박시설)은 Unit 필수
-// - house(단독/다가구주택)는 어느 쪽에도 속하지 않음 → 둘 다 허용.
-//   다가구주택은 101호/201호 개별 임대가 일상이므로 통건물 Property와
-//   호실 Property를 모두 만들 수 있어야 한다.
+// 토지는 공간을 지정할 수 없다. 단독·다가구와 상가는 통건물 또는 개별 공간을 쓴다.
 const UNIT_FORBIDDEN_SITE_TYPES: ReadonlySet<string> = new Set([SiteType.LAND]);
 const UNIT_REQUIRED_SITE_TYPES: ReadonlySet<string> = new Set([
   SiteType.APARTMENT,
   SiteType.OFFICETEL,
   SiteType.VILLA,
-  SiteType.COMMERCIAL,
   SiteType.LIVING_ACCOMMODATION,
 ]);
 const VALID_SORT_FIELDS: ReadonlySet<string> = new Set([
@@ -39,6 +33,7 @@ const VALID_SORT_FIELDS: ReadonlySet<string> = new Set([
 const VALID_SORT_ORDERS: ReadonlySet<string> = new Set(['asc', 'desc']);
 
 export interface PropertySearchQuery {
+  withoutUnit?: boolean;
   siteType?: string;
   wardCode?: string;
   siteId?: string;
@@ -80,6 +75,8 @@ export class PropertiesService {
 
     if (query.unitId) {
       filters.push({ unitId: query.unitId });
+    } else if (query.withoutUnit) {
+      filters.push({ unitId: null });
     }
 
     if (query.siteType || query.wardCode) {
@@ -288,6 +285,43 @@ export class PropertiesService {
     }
 
     return this.withContactPhones(property);
+  }
+
+  /**
+   * 그 자리(대지 + 공간)의 관리매물을 돌려주고, 없으면 만든다.
+   * 광고를 넣는 agent가 쓴다: 광고를 낸 호실은 정의상 우리가 다루는 호실이므로 묻지 않고 만든다.
+   * 의뢰나 가격 같은 업무 내용은 만들지 않는다 (매물 등록은 사용자에게 물은 뒤 따로 한다).
+   */
+  async ensure(officeId: string, dto: { siteId: string; unitId?: string | null }) {
+    if (!dto.siteId) {
+      throw new BadRequestException('siteId is required');
+    }
+    const lookup = () => this.prisma.property.findFirst({
+      where: { officeId, siteId: dto.siteId, unitId: dto.unitId ?? null },
+      select: { id: true, siteId: true, unitId: true },
+    });
+    const existing = await lookup();
+    if (existing) return { ...existing, created: false };
+
+    let property;
+    try {
+      property = await this.create(officeId, dto);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const concurrent = await lookup();
+        if (concurrent) return { ...concurrent, created: false };
+      }
+      throw error;
+    }
+    if (!property) {
+      throw new NotFoundException('Property could not be created');
+    }
+    return {
+      id: property.id,
+      siteId: property.siteId,
+      unitId: property.unitId,
+      created: true,
+    };
   }
 
   async create(officeId: string, dto: PropertyCreateDto) {
@@ -502,7 +536,7 @@ export class PropertiesService {
   ) {
     if (UNIT_REQUIRED_SITE_TYPES.has(siteType) && !unit) {
       throw new BadRequestException(
-        'unitId is required for building-type properties (apartment/officetel/villa/commercial/living_accommodation)',
+        'unitId is required for building-type properties (apartment/officetel/villa/living_accommodation)',
       );
     }
 

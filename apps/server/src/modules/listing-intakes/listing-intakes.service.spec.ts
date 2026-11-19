@@ -1297,3 +1297,56 @@ describe('ListingIntakesService', () => {
     expect(tx.listingIntake.update).not.toHaveBeenCalled();
   });
 });
+
+describe('resolveVerifiedAt (확인 정렬과 화면의 확인 칸이 함께 쓰는 날짜)', () => {
+  // 같은 경우들을 화면 쪽 테스트(apps/desktop/test/property-confirm-cell-state.test.ts)도 확인한다.
+  const { resolveVerifiedAt } = jest.requireActual<
+    typeof import('./listing-intakes.service')
+  >('./listing-intakes.service');
+  const verified = new Date('2026-11-10T00:00:00.000Z');
+  const checked = new Date('2026-11-18T00:00:00.000Z');
+
+  it('uses the verified date, not the later attempt that did not reach the owner', () => {
+    expect(
+      resolveVerifiedAt({
+        lastVerifiedAt: verified,
+        lastCheckedAt: checked,
+        lastCheckResult: 'no_answer',
+      }),
+    ).toBe(verified);
+  });
+
+  it('has no date for an intake that was only tried, never verified', () => {
+    for (const lastCheckResult of ['no_answer', 'pending', 'unavailable', null]) {
+      expect(
+        resolveVerifiedAt({
+          lastVerifiedAt: null,
+          lastCheckedAt: checked,
+          lastCheckResult,
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it('falls back to the checked date for an old record whose last result was valid', () => {
+    for (const lastCheckResult of ['alive', 'price_changed']) {
+      expect(
+        resolveVerifiedAt({
+          lastVerifiedAt: null,
+          lastCheckedAt: checked,
+          lastCheckResult,
+        }),
+      ).toBe(checked);
+    }
+  });
+
+  it('treats an unreadable verified date as missing', () => {
+    expect(
+      resolveVerifiedAt({
+        lastVerifiedAt: 'not a date',
+        lastCheckedAt: checked,
+        lastCheckResult: 'alive',
+      }),
+    ).toBe(checked);
+  });
+});

@@ -284,8 +284,145 @@ export interface CashflowSummary {
   monthlyTrend: MonthlyTrend[];
 }
 
+/* ───────── 입금 기록과 직원 정산 (금액은 원 단위) ───────── */
+
+export interface CommissionReceipt {
+  id: string;
+  paymentId: string;
+  /** receipt: 들어온 돈(양수) / refund: 돌려준 돈(음수) */
+  kind: 'receipt' | 'refund';
+  receivedAt: string;
+  /** 실제로 오간 금액 (원, 부가세 포함) */
+  amountWon: number;
+  /** 부가세를 뺀 금액 (원) */
+  supplyWon: number;
+  method: string | null;
+  memo: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  /** 들어간 확정 정산. 없으면 아직 정산 전. */
+  settlementId: string | null;
+  createdAt: string;
+}
+
+export type SettlementTiming = 'closed' | 'received';
+export type EmploymentType = 'freelancer' | 'employee';
+
+export interface SettlementDetailItem {
+  receiptId: string;
+  dealId: string;
+  dealTitle: string;
+  kind: 'receipt' | 'refund';
+  receivedAt: string;
+  amountWon: number;
+  supplyWon: number;
+  /** 이 청구에서 우리 사무소가 갖는 비율 (%) */
+  ourRatio: number;
+  /** 이 거래에서 이 직원이 맡은 비중 (%) */
+  sharePercent: number;
+  /** 직원 몫 (%) */
+  ratio: number;
+  shareWon: number;
+}
+
+export interface SettlementLine {
+  /** 확정한 정산에만 있다 */
+  lineId: string | null;
+  userId: string;
+  name: string;
+  employmentType: EmploymentType;
+  withholdTax: boolean;
+  /** 직원 몫을 곱하기 전 금액 */
+  targetWon: number;
+  shareWon: number;
+  /** 프리랜서의 기본급. 근로자는 0 (급여에서 나간다). */
+  baseWon: number;
+  /** 돌려준 돈 때문에 빼는 몫 (0 이하) */
+  adjustWon: number;
+  /** 지난 정산에서 넘어온 뺄 돈 */
+  carryInWon: number;
+  withholdingWon: number;
+  /** 프리랜서: 이체할 금액 / 근로자: 세금 떼기 전 성과급 */
+  netWon: number;
+  /** 다음 달로 넘기는 뺄 돈 */
+  carryOutWon: number;
+  detail: SettlementDetailItem[];
+  paidAt: string | null;
+}
+
+export interface SettlementWaitingItem {
+  receiptId: string;
+  dealId: string;
+  dealTitle: string;
+  receivedAt: string;
+  amountWon: number;
+  /** balance: 잔금을 기다림 / participants: 담당 배분이 없음 / ratio: 직원 몫이 정해지지 않음 */
+  reason: 'balance' | 'participants' | 'ratio';
+}
+
+export interface SettlementView {
+  month: string;
+  status: 'draft' | 'confirmed';
+  timing: SettlementTiming;
+  confirmedAt: string | null;
+  lines: SettlementLine[];
+  waiting: SettlementWaitingItem[];
+  /** 확정할 수 없는 이유. 확정할 수 있으면 null. */
+  blockedReason: string | null;
+  canUnconfirm: boolean;
+}
+
+export interface MySettlementLine extends Omit<SettlementLine, 'userId' | 'name' | 'lineId'> {
+  lineId: string;
+  month: string;
+  confirmedAt: string;
+}
+
+export interface DealParticipantShare {
+  userId: string;
+  name: string;
+  /** 이 거래에서 맡은 비중 (%). 한 거래의 합은 100. */
+  sharePercent: number;
+  /** 이 거래에서만 쓰는 직원 몫 (%). 없으면 직원의 기본 몫. */
+  ratio: number | null;
+  defaultRatio: number | null;
+}
+
 export function createFinanceApi(request: RequestFn) {
   return {
+    /** 직원 정산. 조회·확정·지급은 대표만, mine 은 누구나 자기 것만. */
+    settlements: {
+      get: (month: string) => request<SettlementView>(`/finance/settlements/${month}`),
+      confirm: (month: string) =>
+        request<SettlementView>(`/finance/settlements/${month}/confirm`, { method: 'POST', body: {} }),
+      unconfirm: (month: string) =>
+        request<SettlementView>(`/finance/settlements/${month}/unconfirm`, { method: 'POST', body: {} }),
+      markPaid: (lineId: string, paidAt?: string) =>
+        request<SettlementView>(`/finance/settlements/lines/${lineId}/pay`, {
+          method: 'POST',
+          body: { paidAt },
+        }),
+      unmarkPaid: (lineId: string) =>
+        request<SettlementView>(`/finance/settlements/lines/${lineId}/unpay`, { method: 'POST', body: {} }),
+      mine: () => request<MySettlementLine[]>('/finance/settlements/mine'),
+      getSettings: () => request<{ timing: SettlementTiming }>('/finance/settlements/settings'),
+      updateSettings: (data: { timing: SettlementTiming }) =>
+        request<{ timing: SettlementTiming }>('/finance/settlements/settings', {
+          method: 'PATCH',
+          body: data,
+        }),
+      getParticipants: (dealId: string) =>
+        request<DealParticipantShare[]>(`/finance/settlements/deals/${dealId}/participants`),
+      setParticipants: (
+        dealId: string,
+        items: Array<{ userId: string; sharePercent: number; ratio?: number | null }>,
+      ) =>
+        request<DealParticipantShare[]>(`/finance/settlements/deals/${dealId}/participants`, {
+          method: 'PUT',
+          body: { items },
+        }),
+    },
+
     commissionPayments: {
       list: (filter?: { status?: string }) =>
         request<CommissionPayment[]>('/finance/commission-payments', {
@@ -309,6 +446,34 @@ export function createFinanceApi(request: RequestFn) {
         request<CommissionPayment>(
           `/finance/commission-payments/${id}/collect`,
           { method: 'POST', body: data },
+        ),
+
+      /** 이 청구의 입금 기록 (취소한 줄 포함) */
+      listReceipts: (id: string) =>
+        request<CommissionReceipt[]>(`/finance/commission-payments/${id}/receipts`),
+
+      /** 입금 한 건을 원 단위(부가세 포함)로 기록한다 */
+      addReceipt: (
+        id: string,
+        data: { amountWon: number; receivedAt?: string; method?: string; memo?: string },
+      ) =>
+        request<CommissionPayment>(`/finance/commission-payments/${id}/receipts`, {
+          method: 'POST',
+          body: data,
+        }),
+
+      /** 돌려준 돈을 기록한다. 이미 정산한 돈이면 다음 정산에서 직원 몫이 빠진다. */
+      refund: (id: string, data: { amountWon: number; refundedAt?: string; memo?: string }) =>
+        request<CommissionPayment>(`/finance/commission-payments/${id}/refund`, {
+          method: 'POST',
+          body: data,
+        }),
+
+      /** 잘못 넣은 입금 기록을 취소한다. 정산에 들어간 줄은 취소할 수 없다. */
+      voidReceipt: (receiptId: string, reason?: string) =>
+        request<CommissionPayment>(
+          `/finance/commission-payments/receipts/${receiptId}/void`,
+          { method: 'POST', body: { reason } },
         ),
 
       waive: (id: string, note?: string) =>

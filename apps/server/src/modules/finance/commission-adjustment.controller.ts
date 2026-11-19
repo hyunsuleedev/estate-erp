@@ -8,6 +8,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -23,11 +25,15 @@ export class CommissionAdjustmentController {
   constructor(private readonly service: CommissionAdjustmentService) {}
 
   @Get('pending')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   listPending(@CurrentUser() user: CurrentUserPayload) {
     return this.service.listPending(user.officeId);
   }
 
   @Get()
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   listByPayment(
     @CurrentUser() user: CurrentUserPayload,
     @Query('paymentId') paymentId: string,
@@ -50,6 +56,8 @@ export class CommissionAdjustmentController {
   }
 
   @Post(':id/approve')
+  @Roles('owner')
+  @UseGuards(RolesGuard)
   approve(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
@@ -64,6 +72,8 @@ export class CommissionAdjustmentController {
   }
 
   @Post(':id/reject')
+  @Roles('owner')
+  @UseGuards(RolesGuard)
   reject(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,

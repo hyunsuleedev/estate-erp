@@ -13,6 +13,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { MatchesService } from './matches.service';
 import {
   CreateMatchDto,
+  UpdateMatchAgreedTermsDto,
   UpdateMatchMemoDto,
   UpdateMatchStageDto,
 } from './dto/match.dto';
@@ -77,6 +78,15 @@ export class MatchesController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.matchesService.updateMemo(id, user.officeId, dto);
+  }
+
+  @Patch(':id/agreed-terms')
+  updateAgreedTerms(
+    @Param('id') id: string,
+    @Body() dto: UpdateMatchAgreedTermsDto,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.matchesService.updateAgreedTerms(id, user.officeId, dto);
   }
 
   @Delete(':id')

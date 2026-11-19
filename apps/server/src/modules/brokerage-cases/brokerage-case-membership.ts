@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -81,7 +82,7 @@ export async function listingIntakeStepTitle(
       site: { select: { name: true } },
       unit: {
         select: {
-          name: true,
+          name: true, floor: true, floorEnd: true, floorLabel: true,
           dong: { select: { name: true, isPlaceholder: true } },
         },
       },
@@ -95,7 +96,7 @@ export async function listingIntakeStepTitle(
         ? dong.name
         : `${dong.name}동`
       : null,
-    property?.unit?.name,
+    formatUnitName(property?.unit),
     '매물 의뢰',
   ].filter(Boolean);
   return parts.join(' ');

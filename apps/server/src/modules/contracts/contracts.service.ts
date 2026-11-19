@@ -1,17 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
-import {
-  ContractTransactionType,
-  CONTRACT_TRANSACTION_TYPE_LABELS,
-  CONTRACT_DOCUMENT_KIND_SET,
-  createResidentialSaleAgreementDraft,
-  mergeResidentialSaleAgreementMetadata,
-  readResidentialSaleAgreement,
-  sanitizeContractRichTextValue,
-  validateResidentialSaleAgreement,
-  type ResidentialSaleAgreementDraft,
-} from '@estate-erp/shared';
+import { ContractTransactionType, CONTRACT_TRANSACTION_TYPE_LABELS, CONTRACT_DOCUMENT_KIND_SET, createResidentialSaleAgreementDraft, mergeResidentialSaleAgreementMetadata, readResidentialSaleAgreement, sanitizeContractRichTextValue, validateResidentialSaleAgreement, type ResidentialSaleAgreementDraft, formatUnitName } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   ContractPartyAgentDto,
@@ -1593,7 +1583,7 @@ export class ContractsService {
     const targetDescription = [
       site?.name,
       unit?.dong && !unit.dong.isPlaceholder ? `${unit.dong.name}동` : undefined,
-      unit?.name,
+      formatUnitName(unit),
     ]
       .filter((value): value is string => Boolean(value))
       .join(' ');

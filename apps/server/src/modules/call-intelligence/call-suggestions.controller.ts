@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { IsObject, IsOptional } from 'class-validator';
+import { IsObject, IsOptional, IsBoolean } from 'class-validator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -13,6 +13,11 @@ export class AcceptCallSuggestionDto {
   @IsOptional()
   @IsObject()
   payload?: Record<string, unknown>;
+
+  /** 제안한 뒤 대상의 값이 바뀌었다는 안내를 보고도 반영할 때 true */
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }
 
 @ApiTags('통화 분석 제안')
@@ -27,10 +32,14 @@ export class CallSuggestionsController {
     @CurrentUser() user: CurrentUserPayload,
     @Query('recordingId') recordingId?: string,
     @Query('status') status?: string,
+    @Query('targetType') targetType?: string,
+    @Query('targetId') targetId?: string,
   ) {
     return this.service.findAll(user.officeId, {
       recordingId: recordingId || undefined,
       status: status || undefined,
+      targetType: targetType || undefined,
+      targetId: targetId || undefined,
     });
   }
 
@@ -40,7 +49,7 @@ export class CallSuggestionsController {
     @Body() dto: AcceptCallSuggestionDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.service.accept(id, user.officeId, user.userId, dto.payload);
+    return this.service.accept(id, user.officeId, user.userId, dto.payload, { force: dto.force === true });
   }
 
   @Post(':id/dismiss')

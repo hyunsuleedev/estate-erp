@@ -1,3 +1,4 @@
+import { formatUnitName } from "@estate-erp/shared";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -1153,7 +1154,7 @@ export class BrokerageCasesService {
             ? unit.dong.name
             : `${unit.dong.name}동`
           : null,
-        unit?.name ?? null,
+        formatUnitName(unit) || null,
       ].filter(Boolean);
       return intake.listings.map((listing) => ({
         kind: "listing" as const,

@@ -1,5 +1,7 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -15,6 +17,8 @@ export class LedgerController {
   constructor(private readonly service: LedgerService) {}
 
   @Get()
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   get(
     @CurrentUser() user: CurrentUserPayload,
     @Query('preset') preset?: string,

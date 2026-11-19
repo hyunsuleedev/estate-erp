@@ -45,13 +45,21 @@ export type {
   ListingAdvertisementsFilter,
   ListingAdvertisementWithListing,
   ListingAdvertisementActionContext,
+  AdvertisementLinkLevel,
+  AdvertisementChangeKind,
+  AdvertisementChangeRequest,
+  LinkListingAdvertisementDto,
+  CreateAdvertisementChangeRequestDto,
   ListingAdvertisementPriceHistory,
+  ListingAdvertisementTimeline,
+  AdvertisementComparisonRecord,
   CreateListingAdvertisementDto,
   UpdateListingAdvertisementDto,
 } from "./modules/listing-advertisements.js";
 export type {
   OfficeAdvertisement,
   OfficeAdvertisementGroup,
+  AdvertisementComparisonSet,
   OfficeAdvertisementGroupsFilter,
   OfficeAdvertisementBatchItemDto,
   OfficeAdvertisementBatchGroupDto,
@@ -120,6 +128,7 @@ export type {
   Match,
   MatchDealLink,
   CreateMatchDto,
+  UpdateMatchAgreedTermsDto,
   UpdateMatchMemoDto,
 } from "./modules/matches.js";
 export type { Deal, CreateDealDto } from "./modules/deals.js";
@@ -311,7 +320,10 @@ export type {
   MatchCreateSuggestionPayload,
   MatchStageSuggestionPayload,
   ListingConfirmSuggestionPayload,
+  CallSuggestionTargetType,
+  CallSuggestionBaseChange,
 } from "./modules/call-recordings.js";
+export { CALL_SUGGESTION_BASE_CHANGED } from "./modules/call-recordings.js";
 export type {
   McpApiKeyStatus,
   McpApiKeyGenerateResponse,
@@ -352,6 +364,15 @@ export type {
   LedgerDeal,
   LedgerPayment,
   LedgerPaymentDistribution,
+  CommissionReceipt,
+  SettlementTiming,
+  EmploymentType,
+  SettlementDetailItem,
+  SettlementLine,
+  SettlementWaitingItem,
+  SettlementView,
+  MySettlementLine,
+  DealParticipantShare,
 } from "./modules/finance.js";
 export type {
   AppNotification,
@@ -359,6 +380,7 @@ export type {
   NotificationsListResponse,
   NotificationCreatedEvent,
 } from "./modules/notifications.js";
+export type { Notice, NoticeList } from "./modules/notices.js";
 export type {
   DashboardSummary,
   DashboardThisMonth,

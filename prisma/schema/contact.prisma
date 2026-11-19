@@ -7,32 +7,33 @@ model Contact {
   officeId  String   @map("office_id") @db.Uuid
   name      String
   email     String?
-  tags      String[]
   memo      String?
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office                    Office                     @relation(fields: [officeId], references: [id])
-  phones                    ContactPhone[]
-  propertyContacts          PropertyContact[]
-  buyerIntakeContacts       BuyerIntakeContact[]
-  consultations             Consultation[]
-  tenants                   Tenant[]
-  tasks                     Task[]
-  calendarEvents            CalendarEvent[]
-  dealsAsBuyer              Deal[]                     @relation("DealBuyer")
-  dealsAsSeller             Deal[]                     @relation("DealSeller")
-  contractsAsBuyer          Contract[]                 @relation("ContractBuyer")
-  contractsAsSeller         Contract[]                 @relation("ContractSeller")
-  contractParties           ContractParty[]
-  commissionPayments        CommissionPayment[]        @relation("CommissionPayer")
+  office              Office                 @relation(fields: [officeId], references: [id])
+  phones              ContactPhone[]
+  propertyContacts    PropertyContact[]
+  buyerIntakeContacts BuyerIntakeContact[]
+  consultations       Consultation[]
+  tenants             Tenant[]
+  tasks               Task[]
+  calendarEvents      CalendarEvent[]
+  dealsAsBuyer        Deal[]                 @relation("DealBuyer")
+  dealsAsSeller       Deal[]                 @relation("DealSeller")
+  contractsAsBuyer    Contract[]             @relation("ContractBuyer")
+  contractsAsSeller   Contract[]             @relation("ContractSeller")
+  contractParties     ContractParty[]
+  commissionPayments  CommissionPayment[]    @relation("CommissionPayer")
   // 통화 녹음
-  callRecordings            CallRecording[]
+  callRecordings      CallRecording[]
   // 통화 이벤트 로그 (CTI)
-  callLogs                  CallLog[]
+  callLogs            CallLog[]
   // ContactRelation 양방향
-  relationsAsMain           ContactRelation[]          @relation("MainContact")
-  relationsAsRelated        ContactRelation[]          @relation("RelatedContact")
+  relationsAsMain     ContactRelation[]      @relation("MainContact")
+  relationsAsRelated  ContactRelation[]      @relation("RelatedContact")
+  groupMemberships    ContactGroupMember[]
+  tagAssignments      ContactTagAssignment[]
 
   // office_id를 포함하는 관계 FK가 tenant 경계를 DB에서도 강제할 수 있게 한다.
   @@unique([officeId, id])
@@ -40,9 +41,10 @@ model Contact {
 }
 
 // ============================================================
-// 연락처 그룹 (사무소가 직접 만드는 분류)
-// 소속은 Contact.tags에 같은 이름으로 저장한다. 이 표는 연락처가 아직 없는
-// 그룹도 사이드바에 남도록 이름을 기억한다.
+// 연락처 그룹 (사무소가 직접 만드는 묶음: VIP, 설 선물 등)
+// 그룹과 태그는 다른 것이다. 태그(ContactTag)는 그 사람을 설명하는 말이라 표의 칸에
+// 꼬리표로 붙고, 그룹은 사람이 골라 넣어 관리하는 명단이라 왼쪽 목록에 나온다.
+// 소속은 ContactGroupMember의 한 줄이다.
 // ============================================================
 
 model ContactGroup {
@@ -52,10 +54,85 @@ model ContactGroup {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office Office @relation(fields: [officeId], references: [id])
+  office  Office               @relation(fields: [officeId], references: [id])
+  members ContactGroupMember[]
 
   @@unique([officeId, name])
+  // 소속 FK가 사무소 경계를 DB에서도 지키게 한다.
+  @@unique([officeId, id])
   @@map("contact_groups")
+}
+
+// ============================================================
+// 그룹 소속 (그룹 ↔ 사람). 한 사람이 여러 그룹에 들어갈 수 있다.
+// 그룹별 칸 같은 확장은 두지 않는다. 누가 언제 넣었는지만 남긴다.
+// ============================================================
+
+model ContactGroupMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  officeId  String   @map("office_id") @db.Uuid
+  groupId   String   @map("group_id") @db.Uuid
+  contactId String   @map("contact_id") @db.Uuid
+  /// 넣은 직원. 직원이 지워지면 비운다.
+  addedById String?  @map("added_by_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  office  Office       @relation(fields: [officeId], references: [id])
+  group   ContactGroup @relation(fields: [officeId, groupId], references: [officeId, id], onDelete: Cascade)
+  contact Contact      @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Cascade)
+  addedBy User?        @relation("ContactGroupMemberAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([groupId, contactId])
+  @@index([officeId, contactId])
+  @@map("contact_group_members")
+}
+
+// ============================================================
+// 연락처 태그 (그 사람을 설명하는 말: 신혼, 학군, VIP)
+// 2026-11-18 이전에는 Contact.tags 글자 배열이었다. 공백·대소문자 변형이 쌓이고
+// 이름을 바꾸려면 모든 연락처를 다시 써야 해서 표로 옮겼다.
+// ============================================================
+
+model ContactTag {
+  id        String   @id @default(uuid()) @db.Uuid
+  officeId  String   @map("office_id") @db.Uuid
+  /// 앞뒤 공백을 떼고 가운데 공백을 하나로 줄인 이름. 사무소 안에서 유일하다.
+  name      String
+  /// 색 이름 (packages/shared의 CONTACT_TAG_COLORS). 허용값은 DB CHECK로도 막는다.
+  color     String   @default("gray")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office      Office                 @relation(fields: [officeId], references: [id])
+  assignments ContactTagAssignment[]
+
+  @@unique([officeId, name])
+  // 연결 FK가 사무소 경계를 DB에서도 지키게 한다.
+  @@unique([officeId, id])
+  @@map("contact_tags")
+}
+
+// ============================================================
+// 태그 연결 (태그 ↔ 사람). 한 사람이 여러 태그를 가진다.
+// ============================================================
+
+model ContactTagAssignment {
+  id        String   @id @default(uuid()) @db.Uuid
+  officeId  String   @map("office_id") @db.Uuid
+  tagId     String   @map("tag_id") @db.Uuid
+  contactId String   @map("contact_id") @db.Uuid
+  /// 붙인 직원. 직원이 지워지면 비운다.
+  addedById String?  @map("added_by_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  office  Office     @relation(fields: [officeId], references: [id])
+  tag     ContactTag @relation(fields: [officeId, tagId], references: [officeId, id], onDelete: Cascade)
+  contact Contact    @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Cascade)
+  addedBy User?      @relation("ContactTagAssignmentAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([tagId, contactId])
+  @@index([officeId, contactId])
+  @@map("contact_tag_assignments")
 }
 
 // ============================================================
@@ -86,6 +163,8 @@ model ContactPhone {
 
 // ============================================================
 // 연락처 관계 (사람 ↔ 사람, 영구)
+// 의뢰가 끝나도 변하지 않는 관계(가족)만 둔다. 법무사·세무사·대리인은 의뢰마다
+// 달라지므로 PropertyContact.role에 적는다.
 // ============================================================
 
 model ContactRelation {
@@ -95,10 +174,10 @@ model ContactRelation {
   contactId        String   @map("contact_id") @db.Uuid
   /// 상대 인물. relationType은 이 인물이 기준 인물에게 어떤 관계인지 뜻한다.
   relatedContactId String   @map("related_contact_id") @db.Uuid
-  relationType     String   @map("relation_type") // parent, spouse, child, sibling, lawyer, tax_agent, other
-  /// 기준 인물 화면에서 보여줄 보충 라벨 ("큰어머니", "담당 법무사")
+  relationType     String   @map("relation_type") // parent, spouse, child, sibling, grandparent, grandchild, other
+  /// 기준 인물 화면에서 보여줄 보충 라벨 ("큰어머니", "외할머니")
   label            String?
-  /// 상대 인물 화면에서 보여줄 역방향 보충 라벨 ("조카", "의뢰인")
+  /// 상대 인물 화면에서 보여줄 역방향 보충 라벨 ("조카", "외손녀")
   inverseLabel     String?  @map("inverse_label")
   memo             String?
   createdAt        DateTime @default(now()) @map("created_at")

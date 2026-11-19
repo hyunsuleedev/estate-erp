@@ -78,6 +78,8 @@ model CommissionPayment {
 
   distributions CommissionDistribution[]
   adjustments   CommissionAdjustment[]
+  /// 입금 건별 기록. actualAmount·paidAt·method·status 는 이 기록에서 다시 계산한 값이다.
+  receipts      CommissionReceipt[]
 
   @@index([officeId, status])
   @@index([officeId, dueDate])
@@ -214,4 +216,146 @@ model OfficeExpenseTemplate {
 
   @@index([officeId, isActive])
   @@map("office_expense_templates")
+}
+
+// ============================================================
+// 수수료 입금 기록 (CommissionReceipt)
+// ============================================================
+//
+// 손님에게서 수수료가 들어온(또는 돌려준) 일 한 번이 한 줄이다. 계약 때 일부, 잔금 때
+// 나머지를 받으면 두 줄이 된다. 직원 정산은 이 줄을 달별로 모아 계산한다.
+//
+// 금액은 **원** 단위다. 가격은 만원이 규칙이지만, 부가세 10%와 3.3% 공제를 계산해야 해서
+// 만원으로는 담을 수 없다. amountWon 은 손님이 실제로 낸 돈(부가세 포함),
+// supplyWon 은 거기서 부가세를 뺀 금액이고 직원과 나누는 기준이다.
+//
+// 고치지 않는다. 잘못 넣었으면 취소(voidedAt)하고 다시 넣는다. 정산에 들어간 줄
+// (settlementId 가 있음)은 취소할 수 없고, 돌려준 돈은 kind='refund' 인 음수 줄로 남긴다.
+// 그 음수 줄이 다음 정산에서 직원 몫을 깎는다.
+//
+// DB 제약(마이그레이션): amount_won <> 0, kind 와 부호 일치,
+// (office_id, payment_id) → commission_payments(office_id, id) 조합 FK.
+
+model CommissionReceipt {
+  id        String @id @default(uuid()) @db.Uuid
+  officeId  String @map("office_id") @db.Uuid
+  paymentId String @map("payment_id") @db.Uuid
+
+  /// receipt (들어온 돈, 양수) | refund (돌려준 돈, 음수)
+  kind       String   @default("receipt")
+  /// 돈이 움직인 날 (시각 없이 날짜만 뜻이 있다)
+  receivedAt DateTime @map("received_at")
+  /// 실제로 오간 금액 (원, 부가세 포함). 환불은 음수.
+  amountWon  Int      @map("amount_won")
+  /// 부가세를 뺀 금액 (원). 직원과 나누는 기준.
+  supplyWon  Int      @map("supply_won")
+  /// cash | transfer | card | etc
+  method     String?
+  memo       String?
+
+  createdById String?   @map("created_by_id") @db.Uuid
+  voidedAt    DateTime? @map("voided_at")
+  voidedById  String?   @map("voided_by_id") @db.Uuid
+  voidReason  String?   @map("void_reason")
+
+  /// 이 줄이 들어간 확정 정산. 비어 있으면 아직 정산하지 않은 돈이다.
+  settlementId String? @map("settlement_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office     Office            @relation(fields: [officeId], references: [id])
+  payment    CommissionPayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  settlement Settlement?       @relation(fields: [settlementId], references: [id], onDelete: SetNull)
+
+  @@index([officeId, receivedAt])
+  @@index([paymentId])
+  @@index([officeId, settlementId])
+  @@map("commission_receipts")
+}
+
+// ============================================================
+// 직원 정산 (Settlement / SettlementLine)
+// ============================================================
+//
+// 한 달 치 직원 정산을 **확정**한 기록이다. 확정 전의 정산은 저장하지 않고 입금 기록에서
+// 그때그때 계산해 보여 준다(SettlementService.preview). 확정하면 그때의 규칙·직원 조건·
+// 금액을 그대로 굳혀 저장하므로, 뒤에 직원 몫이나 정산 시점 설정을 바꿔도 달라지지 않는다.
+//
+// 고정 규칙(설정이 아님): 부가세를 빼고 나눈다 / 공동중개 상대 몫을 먼저 뺀다 /
+// 깎아 준 수수료는 실제 받은 돈을 나누므로 비율대로 부담한다 / 정산한 뒤 돌려준 돈은
+// 다음 정산에서 뺀다 / 뺄 돈이 더 크면 다음 달로 넘긴다(carryOutWon).
+//
+// DB 제약(마이그레이션): (office_id, month) 유일, month 는 'YYYY-MM' 형식.
+
+model Settlement {
+  id       String @id @default(uuid()) @db.Uuid
+  officeId String @map("office_id") @db.Uuid
+  /// 'YYYY-MM'
+  month    String @db.VarChar(7)
+
+  /// 확정 당시의 정산 시점 설정: closed (잔금이 끝난 뒤) | received (돈이 들어온 달)
+  timing String
+
+  confirmedAt   DateTime @default(now()) @map("confirmed_at")
+  confirmedById String?  @map("confirmed_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office   Office              @relation(fields: [officeId], references: [id])
+  lines    SettlementLine[]
+  receipts CommissionReceipt[]
+
+  @@unique([officeId, month])
+  @@map("settlements")
+}
+
+/// 확정 정산의 직원 한 명 몫. 금액은 모두 원.
+model SettlementLine {
+  id           String @id @default(uuid()) @db.Uuid
+  officeId     String @map("office_id") @db.Uuid
+  settlementId String @map("settlement_id") @db.Uuid
+  userId       String @map("user_id") @db.Uuid
+
+  // ─── 확정 당시의 직원 조건 ─────────────────────────────────
+  /// freelancer | employee
+  employmentType String  @map("employment_type")
+  withholdTax    Boolean @map("withhold_tax")
+
+  // ─── 금액 (원) ────────────────────────────────────────────
+  /// 직원 몫을 곱하기 전, 이 직원에게 배분된 금액
+  targetWon      Int @map("target_won")
+  /// 거래에서 나온 직원 몫 (들어온 돈)
+  shareWon       Int @map("share_won")
+  /// 프리랜서의 기본급. 근로자는 급여에서 나가므로 0.
+  baseWon        Int @default(0) @map("base_won")
+  /// 돌려준 돈 때문에 빼는 몫 (0 이하)
+  adjustWon      Int @default(0) @map("adjust_won")
+  /// 지난 정산에서 다 못 빼고 넘어온 돈 (0 이상)
+  carryInWon     Int @default(0) @map("carry_in_won")
+  /// 3.3% 공제액. 근로자와 공제를 끈 프리랜서는 0.
+  withholdingWon Int @default(0) @map("withholding_won")
+  /// 프리랜서: 이체할 금액 / 근로자: 세금 떼기 전 성과급
+  netWon         Int @map("net_won")
+  /// 이번에도 다 못 빼 다음 달로 넘기는 돈 (0 이상)
+  carryOutWon    Int @default(0) @map("carry_out_won")
+
+  /// 거래별 계산 근거 (화면 표시용). [{ dealId, title, receivedAt, amountWon, supplyWon, ourRatio, sharePercent, ratio, shareWon }]
+  detail Json @db.JsonB
+
+  /// 프리랜서: 지급한 날 / 근로자: 급여에 넘긴 날
+  paidAt   DateTime? @map("paid_at")
+  paidById String?   @map("paid_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office     Office     @relation(fields: [officeId], references: [id])
+  settlement Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  user       User       @relation("SettlementLines", fields: [userId], references: [id])
+
+  @@unique([settlementId, userId])
+  @@index([officeId, userId])
+  @@map("settlement_lines")
 }

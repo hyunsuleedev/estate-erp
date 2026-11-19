@@ -73,7 +73,7 @@ links: 이 통화가 주로 다룬 대상의 참조 (없으면 null)
 5. "match_create" — 손님(R)이 목록의 우리 매물(L)에 관심을 보임
    { "requirementRef": "R참조", "listingRef": "L참조", "memo": null }
 6. "match_stage" — 진행 중 매칭(M)이 다음 단계로 넘어감. 목록에 적힌 다음 단계만, 손님이 그 매물을 원하지 않으면 "closed"
-   { "matchRef": "M참조", "stage": "buyerInterested|viewingConfirmed|viewing|negotiating|closed" }
+   { "matchRef": "M참조", "stage": "buyerInterested|viewingConfirmed|viewing|buyerReviewing|negotiating|closed" }
 7. "listing_confirm" — 집주인·의뢰인과 매물이 아직 유효한지 확인한 통화
    { "intakeRef": "I참조", "result": "alive|price_changed|unavailable", "priceChanges": [{ "listingRef": "L참조", "price": null, "deposit": null, "monthlyRent": null }], "memo": null }
    alive=그대로 진행, price_changed=가격이 바뀜(바뀐 가격을 priceChanges에), unavailable=팔렸거나 거둬들임`;

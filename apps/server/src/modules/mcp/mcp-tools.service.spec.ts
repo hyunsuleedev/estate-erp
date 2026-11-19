@@ -497,6 +497,30 @@ describe('McpToolsService', () => {
   });
 
 
+  it('keeps advertising-note tools off unless explicitly enabled', async () => {
+    const { service, externalListings } = createService();
+    const names = service.getToolDefinitions(ctx).map((tool) => tool.name);
+
+    expect(names.filter((name) => name.includes('external_listing'))).toEqual([]);
+    const result = await service.executeTool(
+      'batch_upsert_external_listings',
+      { sessionId: 'snapshot-1', bundles: [] },
+      ctx,
+    );
+    expect(result.isError).toBe(true);
+    expect(externalListings.batchUpsert).not.toHaveBeenCalled();
+  });
+
+  describe('with advertising-note tools enabled (MCP_EXTERNAL_LISTING_TOOLS=on)', () => {
+  const previous = process.env.MCP_EXTERNAL_LISTING_TOOLS;
+  beforeEach(() => {
+    process.env.MCP_EXTERNAL_LISTING_TOOLS = 'on';
+  });
+  afterEach(() => {
+    if (previous === undefined) delete process.env.MCP_EXTERNAL_LISTING_TOOLS;
+    else process.env.MCP_EXTERNAL_LISTING_TOOLS = previous;
+  });
+
   it('exposes complete advertising-note snapshot semantics through MCP', async () => {
     const { service, externalListings } = createService();
 
@@ -622,6 +646,7 @@ describe('McpToolsService', () => {
 
     expect(tools.length).toBeGreaterThan(0);
     expect(JSON.stringify(tools)).not.toMatch(/네이버|크롤|수집|naver|seango|epju/i);
+  });
   });
 
   it('delegates sale contract draft validation as a read-only tool', async () => {

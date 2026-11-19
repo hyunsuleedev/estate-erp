@@ -38,9 +38,16 @@ model Office {
   //   "closerBonus": 0 }            // 마감 담당 보너스 (만원)
   commissionConfig Json? @map("commission_config") @db.JsonB
 
+  /// 직원 정산을 언제 하나. closed: 잔금이 끝난 거래만 / received: 돈이 들어온 달에 바로.
+  /// 사무소가 고르는 정산 규칙은 이것 하나다 (나머지는 finance.prisma 의 고정 규칙).
+  settlementTiming String @default("closed") @map("settlement_timing")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  commissionReceipts                   CommissionReceipt[]
+  settlements                          Settlement[]
+  settlementLines                      SettlementLine[]
   users                                User[]
   officeSites                          OfficeSite[]
   sites                                Site[]
@@ -49,6 +56,9 @@ model Office {
   contacts                             Contact[]
   contactPhones                        ContactPhone[]
   contactGroups                        ContactGroup[]
+  contactGroupMembers                  ContactGroupMember[]
+  contactTags                          ContactTag[]
+  contactTagAssignments                ContactTagAssignment[]
   contactRelations                     ContactRelation[]
   propertyContacts                     PropertyContact[]
   tenants                              Tenant[]
@@ -57,11 +67,12 @@ model Office {
   publicListings                       PublicListing[]
   listings                             Listing[]
   listingAdvertisements                ListingAdvertisement[]
-  listingAdvertisementPriceHistories   ListingAdvertisementPriceHistory[]
+  listingAdvertisementHistories        ListingAdvertisementHistory[]
+  advertisementChangeRequests          AdvertisementChangeRequest[]
   listingAdvertisementSnapshotSessions ListingAdvertisementSnapshotSession[]
   listingAdvertisementSnapshotItems    ListingAdvertisementSnapshotItem[]
-  officeAdvertisementGroups            OfficeAdvertisementGroup[]
-  officeAdvertisements                 OfficeAdvertisement[]
+  advertisementComparisons             AdvertisementComparison[]
+  advertisementComparisonRecords       AdvertisementComparisonRecord[]
   tasks                                Task[]
   consultations                        Consultation[]
   buyerIntakes                         BuyerIntake[]
@@ -171,22 +182,30 @@ model User {
   baseSalary     Int?     @map("base_salary")
   /// 개인 수수료 배분율 (%). null 이면 Office.commissionConfig 기본값.
   commissionRate Decimal? @map("commission_rate") @db.Decimal
+  /// 직원 정산에서의 구분. freelancer: 기본급+몫에서 3.3%를 떼고 지급액까지 계산 /
+  /// employee: 세금 떼기 전 성과급까지만 계산하고 기본급·세금·4대보험은 급여에서 처리.
+  employmentType String   @default("freelancer") @map("employment_type")
+  /// 프리랜서에게 줄 때 3.3%를 떼는지. 기본은 뗀다. 근로자에게는 뜻이 없다.
+  withholdTax    Boolean  @default(true) @map("withhold_tax")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office               Office?            @relation(fields: [officeId], references: [id])
-  assignedRequirements BuyerRequirement[] @relation("AssignedAgent")
-  assignedTasks        Task[]             @relation("TaskAssignee")
-  createdTasks         Task[]             @relation("TaskCreator")
-  assignedTaskRequests Task[]             @relation("TaskAssigner")
-  consultations        Consultation[]     @relation("ConsultationCreator")
-  calendarEvents       CalendarEvent[]
+  office                      Office?                      @relation(fields: [officeId], references: [id])
+  assignedRequirements        BuyerRequirement[]           @relation("AssignedAgent")
+  assignedTasks               Task[]                       @relation("TaskAssignee")
+  createdTasks                Task[]                       @relation("TaskCreator")
+  advertisementChangeRequests AdvertisementChangeRequest[] @relation("AdvertisementChangeRequester")
+  assignedTaskRequests        Task[]                       @relation("TaskAssigner")
+  consultations               Consultation[]               @relation("ConsultationCreator")
+  calendarEvents              CalendarEvent[]
 
   priceHistories   PriceHistory[]
   activityLogs     ActivityLog[]
   notifications    Notification[]
   dealParticipants DealParticipant[] @relation("DealParticipants")
+  settlementLines  SettlementLine[]  @relation("SettlementLines")
+  noticeReads      NoticeRead[]      @relation("NoticeReads")
 
   // 수수료 조정 승인 워크플로우
   commissionAdjustmentsRequested CommissionAdjustment[] @relation("AdjustmentRequester")
@@ -219,6 +238,8 @@ model User {
   listingAdvertisementSnapshotSessionsStarted   ListingAdvertisementSnapshotSession[] @relation("ListingAdvertisementSnapshotStartedBy")
   listingAdvertisementSnapshotSessionsCompleted ListingAdvertisementSnapshotSession[] @relation("ListingAdvertisementSnapshotCompletedBy")
   listingAdvertisementSnapshotItemsSubmitted    ListingAdvertisementSnapshotItem[]    @relation("ListingAdvertisementSnapshotSubmittedBy")
+  contactGroupMembersAdded                      ContactGroupMember[]                  @relation("ContactGroupMemberAddedBy")
+  contactTagAssignmentsAdded                    ContactTagAssignment[]                @relation("ContactTagAssignmentAddedBy")
 
   @@map("users")
 }

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -44,9 +45,72 @@ export interface ConsultationSearchQuery {
   createdById?: string;
   dateFrom?: string;
   dateTo?: string;
+  /** with = 녹음이 붙은 상담만, without = 녹음 없는 상담만 */
+  recording?: 'with' | 'without';
+  /** pending = 통화 분석이 낸 제안 가운데 아직 처리하지 않은 것이 있는 상담만 (작업 요청) */
+  suggestions?: 'pending';
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
+}
+
+/**
+ * 상담 목록에 붙여 보내는 녹음 요약. 받아쓰기 전문과 분석 전체는 녹음 상세에서 따로 읽는다
+ * (목록 한 줄마다 대화 전체를 실어 보내지 않기 위해서다).
+ */
+const CONSULTATION_RECORDING_SELECT = {
+  id: true,
+  direction: true,
+  durationSec: true,
+  fileName: true,
+  sttStatus: true,
+  analysisStatus: true,
+  analysis: true,
+  autoConsultationId: true,
+  _count: { select: { suggestions: { where: { status: 'pending' } } } },
+} satisfies Prisma.CallRecordingSelect;
+
+type ConsultationRecordingRow = Prisma.CallRecordingGetPayload<{
+  select: typeof CONSULTATION_RECORDING_SELECT;
+}>;
+
+function summarizeRecording(
+  recording: ConsultationRecordingRow | null,
+  consultation: { id?: string; content?: string | null },
+) {
+  if (!recording) return null;
+  const analysis = recording.analysis as {
+    summary?: unknown;
+    consultationContent?: unknown;
+  } | null;
+  return {
+    id: recording.id,
+    direction: recording.direction,
+    durationSec: recording.durationSec,
+    hasFile: Boolean(recording.fileName),
+    sttStatus: recording.sttStatus,
+    analysisStatus: recording.analysisStatus,
+    summary: typeof analysis?.summary === 'string' ? analysis.summary : null,
+    pendingSuggestionCount: recording._count.suggestions,
+    // 상담 내용이 분석이 써 넣은 글 그대로인지. 사람이 한 글자라도 고쳤거나 직접 적은 상담이면 false다.
+    // 화면은 이 값이 true일 때만 내용을 "AI가 쓴 글"로 다룬다 (추측으로 사람의 메모를 가리지 않게).
+    contentIsAuto:
+      recording.autoConsultationId === consultation.id &&
+      typeof analysis?.consultationContent === 'string' &&
+      analysis.consultationContent === consultation.content,
+  };
+}
+
+/** 응답 모양으로: 대표 전화번호를 붙이고 녹음은 요약만 남긴다 */
+function toConsultationResponse<
+  T extends Parameters<typeof withPrimaryContactPhone>[0] & {
+    id?: string;
+    content?: string | null;
+    callRecording?: ConsultationRecordingRow | null;
+  },
+>(row: T) {
+  const { callRecording, ...rest } = withPrimaryContactPhone(row);
+  return { ...rest, callRecording: summarizeRecording(callRecording ?? null, row) };
 }
 
 @Injectable()
@@ -69,7 +133,7 @@ export class ConsultationsService {
         unit: {
           select: {
             id: true,
-            name: true,
+            name: true, floorEnd: true, floorLabel: true,
             floor: true,
             lineNo: true,
             dong: { select: { id: true, name: true, isPlaceholder: true } },
@@ -108,6 +172,7 @@ export class ConsultationsService {
       },
     },
     createdBy: { select: { id: true, name: true } },
+    callRecording: { select: CONSULTATION_RECORDING_SELECT },
   };
 
   async findAll(officeId: string, query: ConsultationSearchQuery = {}) {
@@ -127,6 +192,11 @@ export class ConsultationsService {
     if (query.buyerReqId) filters.push({ buyerReqId: query.buyerReqId });
     if (query.type) filters.push({ type: query.type });
     if (query.createdById) filters.push({ createdById: query.createdById });
+    if (query.recording === 'with') filters.push({ callRecordingId: { not: null } });
+    if (query.recording === 'without') filters.push({ callRecordingId: null });
+    if (query.suggestions === 'pending') {
+      filters.push({ callRecording: { suggestions: { some: { status: 'pending' } } } });
+    }
 
     if (query.context) {
       filters.push(this.buildContextFilter(query.context));
@@ -183,7 +253,7 @@ export class ConsultationsService {
     ]);
 
     return {
-      items: items.map(withPrimaryContactPhone),
+      items: items.map(toConsultationResponse),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -226,7 +296,7 @@ export class ConsultationsService {
       include: this.defaultInclude,
     });
     if (!consultation) throw new NotFoundException('Consultation not found');
-    return withPrimaryContactPhone(consultation);
+    return toConsultationResponse(consultation);
   }
 
   async create(
@@ -331,7 +401,7 @@ export class ConsultationsService {
         },
         include: this.defaultInclude,
       })
-      .then(withPrimaryContactPhone);
+      .then(toConsultationResponse);
   }
 
   async update(
@@ -347,7 +417,7 @@ export class ConsultationsService {
       where: { id },
       data: dto,
       include: this.defaultInclude,
-    }).then(withPrimaryContactPhone);
+    }).then(toConsultationResponse);
   }
 
   async remove(id: string, officeId: string) {
@@ -362,7 +432,7 @@ export class ConsultationsService {
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
-    return consultations.map(withPrimaryContactPhone);
+    return consultations.map(toConsultationResponse);
   }
 
   // ================================================================
@@ -431,6 +501,73 @@ export class ConsultationsService {
       sttStatus: 'processing',
       recordingFileName: file.originalname,
       recordingSize: file.size,
+    };
+  }
+
+  /**
+   * 이미 적어 둔 상담(방문 메모 등)에 녹음을 붙인다 → 받아쓰기·분석(비동기).
+   * 녹음의 자동 상담 자리를 이 상담으로 잡아 두므로 분석이 상담을 새로 만들지 않고,
+   * 사람이 적은 내용도 덮어쓰지 않는다(분석은 자기가 쓴 글만 고친다). 요약과 업무 제안은 녹음 쪽에 남는다.
+   */
+  async attachRecordingToConsultation(
+    id: string,
+    officeId: string,
+    userId: string,
+    dto: { durationSec?: number; calledAt?: string; direction?: string },
+    file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('녹음 파일이 필요합니다');
+
+    const recording = await this.prisma.$transaction(async (tx) => {
+      const consultation = await tx.consultation.findFirst({
+        where: { id, officeId },
+        select: {
+          id: true,
+          type: true,
+          contactId: true,
+          createdAt: true,
+          contact: { select: { phones: contactPhonesSelectOrdered } },
+        },
+      });
+      if (!consultation) throw new NotFoundException('Consultation not found');
+
+      const created = await tx.callRecording.create({
+        data: {
+          officeId,
+          userId,
+          contactId: consultation.contactId,
+          direction: recordingDirection(consultation.type, dto.direction),
+          phoneNumber: withPrimaryPhone(consultation.contact).phone ?? '',
+          durationSec: dto.durationSec || 0,
+          fileName: file.originalname,
+          fileSize: file.size,
+          sttStatus: 'processing',
+          // 상담한 시각에 놓는다. 따로 알려 주지 않으면 상담 기록의 시각을 쓴다.
+          calledAt: parseOptionalDate(dto.calledAt) ?? consultation.createdAt,
+          autoConsultationId: consultation.id,
+        },
+      });
+      // 두 사람이 동시에 붙여도 녹음 하나만 남도록, 비어 있을 때만 연결한다
+      const linked = await tx.consultation.updateMany({
+        where: { id: consultation.id, officeId, callRecordingId: null },
+        data: { callRecordingId: created.id },
+      });
+      if (linked.count === 0) {
+        throw new ConflictException('이미 녹음이 붙어 있는 상담입니다');
+      }
+      return created;
+    });
+
+    this.callIntelligence.startTranscription(recording.id, file);
+
+    return {
+      recording: {
+        id: recording.id,
+        sttStatus: recording.sttStatus,
+        fileName: recording.fileName,
+        fileSize: recording.fileSize,
+      },
+      consultation: { id },
     };
   }
 

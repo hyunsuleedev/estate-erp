@@ -387,6 +387,7 @@ describe('ListingsService', () => {
             type: 'apartment',
             roadAddress: '서울시 강동구 고덕로',
             jibunAddress: null,
+            wardCode: '1174010100',
           },
         },
       },
@@ -399,11 +400,13 @@ describe('ListingsService', () => {
             type: 'apartment',
             roadAddress: '서울시 강동구 고덕로',
             jibunAddress: null,
+            wardCode: '1174010100',
           },
         },
       },
     ]);
 
+    // wardCode는 화면이 지역 선택에 맞춰 단지 목록을 좁히는 데 쓴다. 없는 단지는 null로 준다
     await expect(service.findFilterSites('office-1')).resolves.toEqual([
       {
         id: 'site-1',
@@ -411,6 +414,7 @@ describe('ListingsService', () => {
         type: 'apartment',
         roadAddress: '서울시 강동구 고덕로',
         jibunAddress: null,
+        wardCode: '1174010100',
         listingCount: 2,
         propertyCount: 1,
       },
@@ -420,6 +424,7 @@ describe('ListingsService', () => {
         type: 'apartment',
         roadAddress: null,
         jibunAddress: '서울시 강동구',
+        wardCode: null,
         listingCount: 1,
         propertyCount: 1,
       },
@@ -444,6 +449,7 @@ describe('ListingsService', () => {
                 type: true,
                 roadAddress: true,
                 jibunAddress: true,
+                wardCode: true,
               },
             },
           },
@@ -486,6 +492,7 @@ describe('ListingsService', () => {
         type: 'apartment',
         roadAddress: '서울시 강동구 고덕로',
         jibunAddress: null,
+        wardCode: null,
         listingCount: 1,
         propertyCount: 1,
       },

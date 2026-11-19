@@ -248,4 +248,179 @@ describe('ConsultationsService', () => {
       }),
     );
   });
+  it('filters by recording and sends only a recording summary with each consultation', async () => {
+    const { prisma, service } = createService();
+    prisma.consultation.findMany.mockResolvedValue([
+      {
+        id: 'c-1',
+        contact: { id: 'contact-1', name: '김소유', phones: [] },
+        callRecording: {
+          id: 'rec-1',
+          direction: 'visit',
+          durationSec: 754,
+          fileName: 'visit.m4a',
+          sttStatus: 'completed',
+          analysisStatus: 'completed',
+          analysis: {
+            summary: '전세 만기 전 매도 의사',
+            keyPoints: ['긴 내용'],
+            consultationContent: '전세 만기 전 매도 의사\n핵심: 3월 만기',
+          },
+          autoConsultationId: 'c-1',
+          _count: { suggestions: 2 },
+        },
+        // 사람이 자동 기록 뒤에 메모를 덧붙였다
+        content: '전세 만기 전 매도 의사\n핵심: 3월 만기\n(직접 추가) 세입자와 통화 필요',
+      },
+      { id: 'c-2', contact: null, callRecording: null },
+      {
+        id: 'c-3',
+        contact: null,
+        content: '요약\n핵심',
+        callRecording: {
+          id: 'rec-3',
+          direction: 'inbound',
+          durationSec: 10,
+          fileName: 'a.m4a',
+          sttStatus: 'completed',
+          analysisStatus: 'completed',
+          analysis: { summary: '요약', consultationContent: '요약\n핵심' },
+          autoConsultationId: 'c-3',
+          _count: { suggestions: 0 },
+        },
+      },
+    ]);
+    prisma.consultation.count.mockResolvedValue(3);
+
+    const result = await service.findAll('office-1', { recording: 'with' });
+
+    expect(prisma.consultation.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { AND: [{ officeId: 'office-1' }, { callRecordingId: { not: null } }] },
+      }),
+    );
+    // 받아쓰기 전문·분석 전체는 목록에 싣지 않는다
+    expect(result.items[0].callRecording).toEqual({
+      id: 'rec-1',
+      direction: 'visit',
+      durationSec: 754,
+      hasFile: true,
+      sttStatus: 'completed',
+      analysisStatus: 'completed',
+      summary: '전세 만기 전 매도 의사',
+      pendingSuggestionCount: 2,
+      // 고친 글은 사람의 글이다 (자동 기록으로 시작해도)
+      contentIsAuto: false,
+    });
+    expect(result.items[1].callRecording).toBeNull();
+    // 분석이 쓴 그대로일 때만 자동 기록으로 친다
+    expect(result.items[2].callRecording?.contentIsAuto).toBe(true);
+
+    // 작업 요청: 처리하지 않은 제안이 있는 상담만
+    await service.findAll('office-1', { suggestions: 'pending' });
+    expect(prisma.consultation.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { officeId: 'office-1' },
+            { callRecording: { suggestions: { some: { status: 'pending' } } } },
+          ],
+        },
+      }),
+    );
+
+    await service.findAll('office-1', { recording: 'without' });
+    expect(prisma.consultation.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { AND: [{ officeId: 'office-1' }, { callRecordingId: null }] },
+      }),
+    );
+  });
+
+  describe('attachRecordingToConsultation', () => {
+    const file = { originalname: 'visit.m4a', size: 2048 } as Express.Multer.File;
+
+    function createAttachService(linkedCount: number) {
+      const context = createService();
+      const tx = {
+        consultation: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'c-1',
+            type: 'visit',
+            contactId: 'contact-1',
+            createdAt: new Date('2026-11-10T05:00:00.000Z'),
+            contact: { phones: [{ phone: '01012345678', isPrimary: true }] },
+          }),
+          updateMany: jest.fn().mockResolvedValue({ count: linkedCount }),
+        },
+        callRecording: {
+          create: jest.fn().mockResolvedValue({
+            id: 'rec-1',
+            sttStatus: 'processing',
+            fileName: 'visit.m4a',
+            fileSize: 2048,
+          }),
+        },
+      };
+      (context.prisma as Record<string, unknown>).$transaction = jest.fn(
+        (run: (client: typeof tx) => unknown) => run(tx),
+      );
+      return { ...context, tx };
+    }
+
+    it('adds a recording to a written consultation without making a second consultation', async () => {
+      const { service, tx, callIntelligence } = createAttachService(1);
+
+      const result = await service.attachRecordingToConsultation(
+        'c-1',
+        'office-1',
+        'user-1',
+        { durationSec: 600 },
+        file,
+      );
+
+      expect(tx.callRecording.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          officeId: 'office-1',
+          contactId: 'contact-1',
+          direction: 'visit',
+          phoneNumber: '01012345678',
+          durationSec: 600,
+          // 상담한 시각에 놓는다
+          calledAt: new Date('2026-11-10T05:00:00.000Z'),
+          // 분석이 상담을 새로 만들지 않고 이 상담을 쓴다
+          autoConsultationId: 'c-1',
+        }),
+      });
+      // 비어 있을 때만 연결한다
+      expect(tx.consultation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'c-1', officeId: 'office-1', callRecordingId: null },
+        data: { callRecordingId: 'rec-1' },
+      });
+      expect(callIntelligence.startTranscription).toHaveBeenCalledWith('rec-1', file);
+      expect(result.consultation).toEqual({ id: 'c-1' });
+    });
+
+    it('refuses a second recording and does not start transcription', async () => {
+      const { service, callIntelligence } = createAttachService(0);
+
+      await expect(
+        service.attachRecordingToConsultation('c-1', 'office-1', 'user-1', {}, file),
+      ).rejects.toThrow('이미 녹음이 붙어 있는 상담입니다');
+      expect(callIntelligence.startTranscription).not.toHaveBeenCalled();
+    });
+
+    it('requires a file', async () => {
+      const { service } = createAttachService(1);
+      await expect(
+        service.attachRecordingToConsultation(
+          'c-1',
+          'office-1',
+          'user-1',
+          {},
+          undefined as unknown as Express.Multer.File,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
 });

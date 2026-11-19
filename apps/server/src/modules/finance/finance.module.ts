@@ -10,6 +10,8 @@ import { LedgerService } from './ledger.service';
 import { LedgerController } from './ledger.controller';
 import { CommissionAdjustmentService } from './commission-adjustment.service';
 import { CommissionAdjustmentController } from './commission-adjustment.controller';
+import { SettlementService } from './settlement.service';
+import { SettlementController } from './settlement.controller';
 
 @Module({
   imports: [PrismaModule],
@@ -19,6 +21,7 @@ import { CommissionAdjustmentController } from './commission-adjustment.controll
     CashflowController,
     LedgerController,
     CommissionAdjustmentController,
+    SettlementController,
   ],
   providers: [
     CommissionPaymentService,
@@ -26,6 +29,7 @@ import { CommissionAdjustmentController } from './commission-adjustment.controll
     CashflowService,
     LedgerService,
     CommissionAdjustmentService,
+    SettlementService,
   ],
   exports: [
     CommissionPaymentService,

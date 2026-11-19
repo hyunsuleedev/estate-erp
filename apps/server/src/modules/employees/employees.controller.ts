@@ -29,24 +29,28 @@ export class EmployeesController {
   @Get()
   @Roles(...USER_ROLES)
   @UseGuards(RolesGuard)
-  findAll(@CurrentUser() user: CurrentUserPayload) {
-    return this.employeesService.findAll(user.officeId);
+  async findAll(@CurrentUser() user: CurrentUserPayload) {
+    const employees = await this.employeesService.findAll(user.officeId);
+    return employees.map((employee) => this.employeesService.forViewer(user, employee));
   }
 
   @Get(':id')
   @Roles(...USER_ROLES)
   @UseGuards(RolesGuard)
-  findOne(
+  async findOne(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.employeesService.findOne(id, user.officeId);
+    return this.employeesService.forViewer(
+      user,
+      await this.employeesService.findOne(id, user.officeId),
+    );
   }
 
   @Post()
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
-  create(
+  async create(
     @Body()
     dto: {
       name: string;
@@ -60,13 +64,16 @@ export class EmployeesController {
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.employeesService.create(user, dto);
+    return this.employeesService.forViewer(
+      user,
+      await this.employeesService.create(user, dto),
+    );
   }
 
   @Patch(':id')
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
-  update(
+  async update(
     @Param('id') id: string,
     @Body()
     dto: {
@@ -78,32 +85,43 @@ export class EmployeesController {
       payType?: string;
       baseSalary?: number | null;
       commissionRate?: number | null;
+      employmentType?: string;
+      withholdTax?: boolean;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.employeesService.update(id, user, dto);
+    return this.employeesService.forViewer(
+      user,
+      await this.employeesService.update(id, user, dto),
+    );
   }
 
   @Patch(':id/status')
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
-  updateStatus(
+  async updateStatus(
     @Param('id') id: string,
     @Body() dto: { isActive: boolean },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.employeesService.updateStatus(id, user, dto.isActive);
+    return this.employeesService.forViewer(
+      user,
+      await this.employeesService.updateStatus(id, user, dto.isActive),
+    );
   }
 
   @Patch(':id/role')
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
-  updateRole(
+  async updateRole(
     @Param('id') id: string,
     @Body() dto: { role: string },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.employeesService.updateRole(id, user, dto.role);
+    return this.employeesService.forViewer(
+      user,
+      await this.employeesService.updateRole(id, user, dto.role),
+    );
   }
 
   /**

@@ -1,4 +1,4 @@
-import { MATCH_STAGE_ORDER, MatchStage, normalizeMatchStage } from '@estate-erp/shared';
+import { MATCH_STAGE_ORDER, MatchStage, normalizeMatchStage, formatUnitName } from '@estate-erp/shared';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import {
   getIntakeConfirmationState,
@@ -56,6 +56,7 @@ export const MATCH_STAGE_TEXT: Record<string, string> = {
   buyerInterested: '고객 관심',
   viewingConfirmed: '임장 조율',
   viewing: '임장',
+  buyerReviewing: '고객 검토',
   negotiating: '협상',
   dealCreated: '거래 전환',
   closed: '종료',
@@ -101,7 +102,7 @@ const LISTING_SUMMARY_SELECT = {
   property: {
     select: {
       site: { select: { name: true } },
-      unit: { select: { name: true, dong: { select: { name: true, isPlaceholder: true } } } },
+      unit: { select: { name: true, floor: true, floorEnd: true, floorLabel: true, dong: { select: { name: true, isPlaceholder: true } } } },
     },
   },
 } satisfies Prisma.ListingSelect;
@@ -111,7 +112,7 @@ type PropertyPlace = ListingSummary['property'];
 
 function placeText(property: PropertyPlace) {
   const dong = property.unit?.dong;
-  return [property.site.name, dong && !dong.isPlaceholder ? dong.name : null, property.unit?.name]
+  return [property.site.name, dong && !dong.isPlaceholder ? dong.name : null, formatUnitName(property.unit)]
     .filter(Boolean)
     .join(' ');
 }
@@ -195,7 +196,7 @@ export async function buildCallContext(
           select: {
             id: true,
             site: { select: { name: true } },
-            unit: { select: { name: true, dong: { select: { name: true, isPlaceholder: true } } } },
+            unit: { select: { name: true, floor: true, floorEnd: true, floorLabel: true, dong: { select: { name: true, isPlaceholder: true } } } },
             listingIntakes: {
               where: NON_CLOSED_INTAKE_WHERE,
               orderBy: { createdAt: 'desc' },
@@ -439,7 +440,7 @@ export async function describeSuggestionTargets(
   const labels: Record<string, string> = {};
   const placeSelect = {
     site: { select: { name: true } },
-    unit: { select: { name: true, dong: { select: { name: true, isPlaceholder: true } } } },
+    unit: { select: { name: true, floor: true, floorEnd: true, floorLabel: true, dong: { select: { name: true, isPlaceholder: true } } } },
   } as const;
   const [listings, properties, intakes, requirements, matches, sites] = await Promise.all([
     ids.listing.size

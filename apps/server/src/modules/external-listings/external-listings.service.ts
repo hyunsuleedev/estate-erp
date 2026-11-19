@@ -344,22 +344,35 @@ export class ExternalListingsService {
         ),
       ),
     ];
-    const ownAdvertisements =
+    // 내 광고인 줄: 읽어 온 표시가 내 광고(isMine)이거나, 그 줄이 속한 광고의 네이버 번호와 같은 줄.
+    // "바로 이 광고"인지는 저장하지 않고 광고의 지금 번호로 가른다(재광고 · 번호 정정에도 어긋나지 않게).
+    const ownCandidates =
       activeArticleNos.length === 0
         ? []
-        : await this.prisma.officeAdvertisement.findMany({
+        : await this.prisma.advertisementComparison.findMany({
             where: {
               officeId,
-              isMine: true,
               isActive: true,
               articleNo: { in: activeArticleNos },
             },
             select: {
               articleNo: true,
+              isMine: true,
               articleConfirmYmd: true,
               ranking: true,
+              advertisement: { select: { naverArticleNo: true } },
             },
           });
+    const ownAdvertisements = ownCandidates
+      .filter(
+        (row) => row.isMine || row.articleNo === row.advertisement?.naverArticleNo,
+      )
+      // 같은 번호가 여러 광고의 비교에 들어 있으면 "바로 그 광고"의 줄을 먼저 쓴다
+      .sort(
+        (left, right) =>
+          Number(left.articleNo === left.advertisement?.naverArticleNo) -
+          Number(right.articleNo === right.advertisement?.naverArticleNo),
+      );
     const ownAdvertisementByListing = new Map(
       ownAdvertisements.map((advertisement) => [
         advertisement.articleNo,

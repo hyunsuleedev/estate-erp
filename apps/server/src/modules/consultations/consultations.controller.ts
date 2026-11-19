@@ -54,6 +54,8 @@ export class ConsultationsController {
     @Query('createdById') createdById: string,
     @Query('dateFrom') dateFrom: string,
     @Query('dateTo') dateTo: string,
+    @Query('recording') recording: string,
+    @Query('suggestions') suggestions: string,
     @Query('sortOrder') sortOrder: string,
     @Query('page') page: string,
     @Query('limit') limit: string,
@@ -85,6 +87,9 @@ export class ConsultationsController {
       createdById: createdById || undefined,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
+      recording:
+        recording === 'with' || recording === 'without' ? recording : undefined,
+      suggestions: suggestions === 'pending' ? 'pending' : undefined,
       sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
@@ -167,6 +172,30 @@ export class ConsultationsController {
         phoneNumber: phoneNumber || '',
         durationSec: durationSec ? Number(durationSec) : 0,
         calledAt: calledAt || undefined,
+      },
+      file,
+    );
+  }
+
+  /** 이미 적어 둔 상담에 녹음을 붙인다 (방문 메모에 나중에 녹음을 올리는 경우) */
+  @Post(':id/recording')
+  @UseInterceptors(FileInterceptor('file'))
+  attachRecordingToConsultation(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('durationSec') durationSec: string,
+    @Body('calledAt') calledAt: string,
+    @Body('direction') direction: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.attachRecordingToConsultation(
+      id,
+      user.officeId,
+      user.userId,
+      {
+        durationSec: durationSec ? Number(durationSec) : 0,
+        calledAt: calledAt || undefined,
+        direction: direction || undefined,
       },
       file,
     );

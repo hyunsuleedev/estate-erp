@@ -14,6 +14,9 @@
  */
 import { PrismaClient, Prisma } from '@prisma/client';
 
+// packages/shared의 CONTACT_TAG_COLORS와 같은 값. 시드는 운영 컨테이너에서 단독으로 돌기 때문에 가져오지 않고 적어 둔다.
+const CONTACT_TAG_COLORS = ['gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red'];
+
 const DEMO_TAG = '[DEMO]';
 const LEGACY_DEMO_INTAKE_PREFIX = '데모 물건 ';
 const REGION_BY_NAME = {
@@ -607,7 +610,6 @@ async function seedContacts(ctx: Ctx) {
         officeId: ctx.officeId,
         name: def.name,
         email: `${normalized}@demo.test`,
-        tags: def.tags,
         memo: `${DEMO_TAG} ${def.name} 더미`,
         phones: {
           create: {
@@ -619,6 +621,22 @@ async function seedContacts(ctx: Ctx) {
         },
       },
     });
+    // 태그는 표(ContactTag)에 있고 연락처와는 연결 줄로 이어진다. 색은 아홉 색을 돌려 가며 붙인다.
+    for (const name of def.tags) {
+      const tagCount = await ctx.prisma.contactTag.count({ where: { officeId: ctx.officeId } });
+      const tag = await ctx.prisma.contactTag.upsert({
+        where: { officeId_name: { officeId: ctx.officeId, name } },
+        update: {},
+        create: {
+          officeId: ctx.officeId,
+          name,
+          color: CONTACT_TAG_COLORS[tagCount % CONTACT_TAG_COLORS.length],
+        },
+      });
+      await ctx.prisma.contactTagAssignment.create({
+        data: { officeId: ctx.officeId, tagId: tag.id, contactId: c.id },
+      });
+    }
     // CallRecording 등에서 사용할 수 있게 대표번호를 함께 들고 다닌다.
     created.push({ ...c, phone: normalized });
   }

@@ -163,6 +163,7 @@ const LISTING_INTAKE_SORT_CANDIDATE_SELECT = {
   receivedAt: true,
   lastCheckedAt: true,
   lastVerifiedAt: true,
+  lastCheckResult: true,
   memo: true,
   createdAt: true,
   updatedAt: true,
@@ -171,7 +172,7 @@ const LISTING_INTAKE_SORT_CANDIDATE_SELECT = {
       site: { select: { name: true } },
       unit: {
         select: {
-          name: true,
+          name: true, floor: true, floorEnd: true, floorLabel: true,
           exclusiveAreaM2: true,
           supplyAreaM2: true,
           dong: { select: { name: true } },
@@ -1626,7 +1627,7 @@ export class ListingIntakesService {
       unit: {
         select: {
           id: true,
-          name: true,
+          name: true, floorEnd: true, floorLabel: true,
           floor: true,
           exclusiveAreaM2: true,
           supplyAreaM2: true,
@@ -2049,9 +2050,7 @@ function getListingIntakeTableSortValue(
         0,
       );
     case 'confirmationAt':
-      return readSortDate(
-        candidate.lastCheckedAt ?? candidate.lastVerifiedAt,
-      );
+      return readSortDate(resolveVerifiedAt(candidate));
     case 'listingAvailability':
       return getListingAvailabilitySortRank(candidate, listings);
     case 'price':
@@ -2209,6 +2208,26 @@ function readSortNumber(value: unknown) {
   if (value == null) return null;
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+/**
+ * 유효하다고 확인된 마지막 날. 화면의 확인 칸이 보여 주는 날짜와 같은 규칙이어야 한다
+ * (apps/desktop/.../properties/-components/property-confirm-cell-state.ts).
+ * 연락해 본 날로 줄을 세우면 부재중이었던 의뢰가 방금 확인한 의뢰와 섞인다. 다만 확인된 날이
+ * 비어 있는 옛 기록은, 마지막 시도가 유효 확인(alive·price_changed)이었으면 그 시도한 날을 쓴다.
+ */
+export function resolveVerifiedAt(intake: {
+  lastVerifiedAt?: Date | string | null;
+  lastCheckedAt?: Date | string | null;
+  lastCheckResult?: string | null;
+}): Date | string | null {
+  if (readSortDate(intake.lastVerifiedAt) !== null) {
+    return intake.lastVerifiedAt ?? null;
+  }
+  return intake.lastCheckResult === 'alive' ||
+    intake.lastCheckResult === 'price_changed'
+    ? (intake.lastCheckedAt ?? null)
+    : null;
 }
 
 function readSortDate(value?: Date | string | null) {

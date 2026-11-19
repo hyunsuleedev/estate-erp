@@ -70,6 +70,9 @@ const consultationInclude = {
   buyerRequirement: { select: { id: true, status: true, transactionType: true } },
 } as const;
 
+/** 직원 상세에 담는 업무·고객·거래 참여의 최대 건수 */
+const EMPLOYEE_DETAIL_LIST_LIMIT = 100;
+
 const employeeDetailInclude = {
   office: {
     select: {
@@ -78,17 +81,22 @@ const employeeDetailInclude = {
       commissionConfig: true,
     },
   },
+  // 직원관리의 "지금 챙길 것"은 이 목록에서 밀린 일을 찾는다. 끝난 일까지 섞어서 앞에서
+  // 자르면 예전에 끝난 일이 자리를 채워 지금 밀린 일이 빠진다. 그래서 진행 중인 것만,
+  // 급한 것(기한·연락일이 빠른 것, 미정산)부터 담는다 — 잘리더라도 급한 것은 남는다.
   assignedTasks: {
+    where: { status: { notIn: ['completed', 'cancelled'] } },
     include: taskInclude,
-    orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
-    take: 20,
+    orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
+    take: EMPLOYEE_DETAIL_LIST_LIMIT,
   },
   assignedRequirements: {
+    where: { status: 'active' },
     include: {
       buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
     },
-    orderBy: [{ nextContactDate: 'asc' }, { createdAt: 'desc' }],
-    take: 20,
+    orderBy: [{ nextContactDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
+    take: EMPLOYEE_DETAIL_LIST_LIMIT,
   },
   dealParticipants: {
     include: {
@@ -96,8 +104,9 @@ const employeeDetailInclude = {
         include: dealInclude,
       },
     },
-    orderBy: { createdAt: 'desc' },
-    take: 20,
+    // 'unsettled'가 'settled'보다 뒤 글자라 내림차순이면 미정산이 먼저 온다
+    orderBy: [{ settlementStatus: 'desc' }, { createdAt: 'desc' }],
+    take: EMPLOYEE_DETAIL_LIST_LIMIT,
   },
   consultations: {
     include: consultationInclude,
@@ -197,6 +206,8 @@ export class EmployeesService {
         baseSalary: employee.baseSalary,
         commissionRate:
           employee.commissionRate === null ? null : Number(employee.commissionRate),
+        employmentType: employee.employmentType,
+        withholdTax: employee.withholdTax,
         createdAt: employee.createdAt,
         updatedAt: employee.updatedAt,
         counts: {
@@ -342,10 +353,23 @@ export class EmployeesService {
       payType?: string;
       baseSalary?: number | null;
       commissionRate?: number | null;
+      employmentType?: string;
+      withholdTax?: boolean;
     },
   ) {
     const target = await this.findOne(id, actor.officeId);
     this.assertCanManageTarget(actor.role, target.role);
+    // 급여와 배분율은 사장님만 정한다. 매니저는 직원의 이름·연락처·자격만 고칠 수 있다.
+    if (
+      actor.role !== 'owner' &&
+      (dto.payType !== undefined ||
+        dto.baseSalary !== undefined ||
+        dto.commissionRate !== undefined ||
+        dto.employmentType !== undefined ||
+        dto.withholdTax !== undefined)
+    ) {
+      throw new ForbiddenException('급여와 배분율은 대표만 변경할 수 있습니다.');
+    }
 
     if (dto.payType !== undefined && !USER_PAY_TYPES.includes(dto.payType as never)) {
       throw new BadRequestException('유효하지 않은 급여 유형입니다.');
@@ -368,6 +392,17 @@ export class EmployeesService {
       throw new BadRequestException('기본급은 0 이상의 정수(만원)여야 합니다.');
     }
 
+    if (
+      dto.employmentType !== undefined &&
+      dto.employmentType !== 'freelancer' &&
+      dto.employmentType !== 'employee'
+    ) {
+      throw new BadRequestException('구분은 프리랜서 또는 근로자여야 합니다.');
+    }
+    if (dto.withholdTax !== undefined && typeof dto.withholdTax !== 'boolean') {
+      throw new BadRequestException('3.3% 공제 여부는 켬 또는 끔이어야 합니다.');
+    }
+
     const employee = await this.prisma.user.update({
       where: { id },
       data: {
@@ -385,6 +420,8 @@ export class EmployeesService {
         payType: dto.payType,
         baseSalary: dto.baseSalary,
         commissionRate: dto.commissionRate,
+        employmentType: dto.employmentType,
+        withholdTax: dto.withholdTax,
       },
       include: employeeDetailInclude,
     });
@@ -608,6 +645,35 @@ export class EmployeesService {
     };
   }
 
+  /**
+   * 급여 설정(급여 유형·기본급·개인 배분율)은 사장님과 본인만 본다.
+   * 그 밖의 사람(매니저, 다른 중개사)에게 나가는 응답에서는 값을 비우고 payVisible을 false로 둔다.
+   * 서비스 안에서 쓰는 값은 그대로이고, 컨트롤러가 응답을 내보내기 직전에 이것을 거친다.
+   */
+  forViewer<
+    T extends {
+      id: string;
+      payType: string | null;
+      baseSalary: number | null;
+      commissionRate: number | null;
+      employmentType?: string | null;
+      withholdTax?: boolean | null;
+    },
+  >(viewer: CurrentUserPayload, employee: T): T & { payVisible: boolean } {
+    if (viewer.role === 'owner' || viewer.userId === employee.id) {
+      return { ...employee, payVisible: true };
+    }
+    return {
+      ...employee,
+      payType: null,
+      baseSalary: null,
+      commissionRate: null,
+      employmentType: null,
+      withholdTax: null,
+      payVisible: false,
+    };
+  }
+
   private enrichEmployee(employee: EmployeeDetail) {
     const activeTasks = employee.assignedTasks.filter(
       (task) => !['completed', 'cancelled'].includes(task.status),
@@ -634,6 +700,8 @@ export class EmployeesService {
       baseSalary: employee.baseSalary,
       commissionRate:
         employee.commissionRate === null ? null : Number(employee.commissionRate),
+      employmentType: employee.employmentType,
+      withholdTax: employee.withholdTax,
       createdAt: employee.createdAt,
       updatedAt: employee.updatedAt,
       office: employee.office,

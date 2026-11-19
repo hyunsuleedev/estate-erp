@@ -56,8 +56,10 @@ export class UnitsController {
       siteId: string;
       dongId: string;
       siteUnitTypeId?: string;
-      name: string;
-      floor?: number;
+      name?: string | null;
+      floor?: number | null;
+      floorEnd?: number | null;
+      floorLabel?: string | null;
       lineNo?: number;
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
@@ -76,10 +78,12 @@ export class UnitsController {
     @Param('id') id: string,
     @Body()
     dto: {
-      name?: string;
+      name?: string | null;
       dongId?: string;
       siteUnitTypeId?: string | null;
       floor?: number | null;
+      floorEnd?: number | null;
+      floorLabel?: string | null;
       lineNo?: number | null;
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;

@@ -98,7 +98,8 @@ export function contactCategoryWhere(
       return { consultations: { none: {} } };
     case 'uncategorized':
       return {
-        tags: { isEmpty: true },
+        tagAssignments: { none: {} },
+        groupMemberships: { none: {} },
         buyerIntakeContacts: { none: {} },
         propertyContacts: { none: {} },
         tenants: { none: {} },

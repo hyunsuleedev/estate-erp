@@ -60,7 +60,8 @@ export interface CtiLookupProperty {
     site: { id: string; name: string };
     unit: {
       id: string;
-      name: string;
+      /** 호 이름. 호 없이 층이 단위인 공간은 null */
+      name: string | null;
       dong: { name: string; isPlaceholder: boolean } | null;
     } | null;
   };

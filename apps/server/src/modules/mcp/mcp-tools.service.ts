@@ -38,10 +38,11 @@ import { CashflowService } from '../finance/cashflow.service';
 import { PublicDocumentsService } from '../public-documents/public-documents.service';
 import { PropertyPhotosService } from '../property-photos/property-photos.service';
 import { ListingAdvertisementsService } from '../listing-advertisements/listing-advertisements.service';
+import { AdvertisementChangeRequestsService } from '../listing-advertisements/advertisement-change-requests.service';
 import { ListingAdvertisementSnapshotsService } from '../listing-advertisement-snapshots/listing-advertisement-snapshots.service';
 import {
   OfficeAdvertisementsService,
-  type OfficeAdvertisementBatchGroupDto,
+  type AdvertisementComparisonInput,
 } from '../office-advertisements/office-advertisements.service';
 import { getRoleScopes } from '../../constants/role-permissions';
 
@@ -179,6 +180,7 @@ export class McpToolsService {
     private readonly officeAdvertisements: OfficeAdvertisementsService,
     private readonly listingIntakes: ListingIntakesService,
     private readonly listingAdvertisementSnapshots: ListingAdvertisementSnapshotsService,
+    private readonly advertisementChangeRequests: AdvertisementChangeRequestsService,
   ) {
     this.registerAll();
   }
@@ -302,6 +304,303 @@ export class McpToolsService {
           | undefined,
       },
       'agent:contract-writer',
+    );
+  }
+
+  /**
+   * 외부매물 광고노트 도구.
+   *
+   * 2026-11-17부터 기본으로 꺼 둔다. 광고노트는 네이버 자료를 담는 자리라 제품에서의 위치가
+   * 정리될 때까지 화면 메뉴와 MCP에서 뺐다. 표와 서버 코드(external-listings 모듈)는 그대로다.
+   * 다시 켤 때는 환경 변수 MCP_EXTERNAL_LISTING_TOOLS=on.
+   */
+  private registerExternalListingTools() {
+    if (process.env.MCP_EXTERNAL_LISTING_TOOLS !== 'on') return;
+
+    // ═══════════════════════════════════════════════════════════
+    // 외부매물 광고노트 (External Listings)
+    // ═══════════════════════════════════════════════════════════
+    this.add(
+      'find_external_listing_groups',
+      '외부 매물(광고노트) 그룹 목록. 단지/거래유형/상태 필터.',
+      obj({
+        siteId: str('단지 ID'),
+        transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+        status: str('상태'),
+        search: str('검색어'),
+      }),
+      async (a, c) =>
+        this.externalListings.findAllGroups(c.officeId, {
+          siteId: a.siteId as string,
+          transactionType: a.transactionType as string,
+          status: a.status as string,
+          search: a.search as string,
+        }),
+    );
+
+    this.add(
+      'get_external_listing_group',
+      '외부 매물 그룹 상세. 개별 매물 목록 포함.',
+      obj({ id: str('그룹 ID') }, ['id']),
+      async (a, c) =>
+        this.externalListings.findGroupById(a.id as string, c.officeId),
+    );
+
+    this.add(
+      'update_external_listing_group',
+      '외부 매물 그룹의 호수 텍스트, 메모, 상태를 수정합니다.',
+      obj(
+        {
+          id: str('그룹 ID'),
+          ho: str('호수 텍스트 (예: "1503호")'),
+          memo: str('메모'),
+          status: strEnum('상태', ['unmatched', 'verified', 'on_hold']),
+        },
+        ['id'],
+      ),
+      async (a, c) =>
+        this.externalListings.updateGroup(a.id as string, c.officeId, {
+          ho: a.ho as string | null,
+          memo: a.memo as string | null,
+          status: a.status as string,
+        }),
+    );
+
+    this.add(
+      'get_active_external_listing_snapshot_session',
+      '광고노트 단지·거래유형의 열린 스냅샷을 조회합니다. 이번에 입력된 광고 수(receivedListingCount)와 닫으면 내려갈 광고 수(pendingRemovalCount)를 함께 돌려줍니다.',
+      obj(
+        {
+          siteId: str('단지 ID'),
+          transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+        },
+        ['siteId', 'transactionType'],
+      ),
+      async (a, c) =>
+        this.externalListings.getActiveSession(
+          c.officeId,
+          a.siteId as string,
+          a.transactionType as string,
+        ),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'create_external_listing_snapshot_session',
+      '광고노트 스냅샷을 엽니다. 같은 단지·거래유형에는 열린 스냅샷이 하나만 존재하며, 입력과 닫기에 반환된 id를 사용합니다.',
+      obj(
+        {
+          siteId: str('단지 ID'),
+          transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
+        },
+        ['siteId', 'transactionType'],
+      ),
+      async (a, c) =>
+        this.externalListings.createSession(c.officeId, c.userId, {
+          siteId: a.siteId as string,
+          transactionType: a.transactionType as string,
+        }),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'complete_external_listing_snapshot_session',
+      '입력을 마친 스냅샷을 닫고 이전 자료와 비교한 결과(신규 매물, 광고 추가, 사라진 매물, 가격 변경)를 돌려줍니다. 이번에 입력되지 않은 기존 광고는 비활성화합니다. expectedListingCount가 실제 입력 건수와 다르면 거부하고 스냅샷을 열어 둡니다. 입력이 0건이면 expectedListingCount 0으로 닫아 모든 광고를 내립니다.',
+      obj(
+        {
+          id: str('ExternalListingSnapshotSession ID'),
+          expectedListingCount: num('이번 스냅샷에 입력한 광고의 전체 건수'),
+        },
+        ['id', 'expectedListingCount'],
+      ),
+      async (a, c) => {
+        // 건수 확인 없이 닫으면 입력 누락이 사라진 매물로 처리된다.
+        if (typeof a.expectedListingCount !== 'number') {
+          throw new Error('expectedListingCount는 필수입니다.');
+        }
+        return this.externalListings.completeSession(
+          c.officeId,
+          c.userId,
+          c.role ?? 'agent',
+          a.id as string,
+          { expectedListingCount: a.expectedListingCount },
+        );
+      },
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'cancel_external_listing_snapshot_session',
+      '입력이 불완전하거나 중단됐을 때 스냅샷을 취소합니다. 입력되지 않은 기존 광고를 비활성화하지 않습니다.',
+      obj({ id: str('ExternalListingSnapshotSession ID') }, ['id']),
+      async (a, c) =>
+        this.externalListings.cancelSession(
+          c.officeId,
+          c.userId,
+          c.role ?? 'agent',
+          a.id as string,
+        ),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'batch_upsert_external_listings',
+      '열린 스냅샷에 외부 광고를 묶음 단위로 입력합니다. 같은 매물의 광고는 모두 한 묶음에 넣고 요청 사이에 나누지 않습니다. 묶음의 번호가 기존 데이터와 겹치면 기존 그룹에 합류하고, 대표는 새 묶음의 대표로 바뀝니다. 요청 하나는 최대 100건이며 전부 저장되거나 전부 거부됩니다.',
+      obj(
+        {
+          sessionId: str('열린 ExternalListingSnapshotSession ID'),
+          source: str('입력자가 지정하는 데이터 출처 식별자'),
+          batchId: str('입력 실행을 식별하는 선택적 안정 키'),
+          groups: {
+            type: 'array',
+            description: '동일 매물의 광고 묶음 목록',
+            items: {
+              type: 'object',
+              properties: {
+                representativeArticleNo: str(
+                  '이 묶음의 대표 광고 번호. listings 안에 있어야 합니다.',
+                ),
+                listings: {
+                  type: 'array',
+                  description: '묶음에 속한 광고 목록',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      articleNo: str('광고 번호 (필수, 출처 안에서 유일)'),
+                      price: num('가격 (만원)'),
+                      deposit: num('보증금 (만원)'),
+                      monthlyRent: num('월세 (만원)'),
+                      articleName: str('광고명'),
+                      articleFeatureDesc: str('특징 설명'),
+                      detailDescription: str('상세 설명'),
+                      articleConfirmYmd: str('광고 확인일 YYYYMMDD'),
+                      floorInfo: str('층 정보'),
+                      exclusiveAreaM2: num('전용면적 (m²)'),
+                      supplyAreaM2: num('공급면적 (m²)'),
+                      direction: str('향'),
+                      realtorName: str('중개사명'),
+                      realtorId: str('중개사 식별자'),
+                      representativeTelNo: str('대표번호'),
+                      ranking: num('광고 노출 순위'),
+                      buildingName: str('동명'),
+                      ho: str('호수 텍스트'),
+                      areaName: str('평형명 (84A 등)'),
+                      sourceUrl: str('원본 URL'),
+                    },
+                    required: ['articleNo'],
+                  },
+                },
+              },
+              required: ['representativeArticleNo', 'listings'],
+            },
+          },
+        },
+        ['sessionId', 'source', 'groups'],
+      ),
+      async (a, c) =>
+        this.externalListings.batchUpsert(c.officeId, {
+          sessionId: a.sessionId as string,
+          source: a.source as string,
+          batchId: a.batchId as string | undefined,
+          groups: a.groups as ListingGroupInput[],
+        }),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'add_external_listing_to_snapshot_group',
+      '열린 스냅샷에 입력한 매물에 동일 광고를 한 건 추가합니다. 대표는 바뀌지 않습니다.',
+      obj(
+        {
+          sessionId: str('열린 ExternalListingSnapshotSession ID'),
+          groupId: str('이번 스냅샷에 입력한 그룹 ID'),
+          source: str('입력자가 지정하는 데이터 출처 식별자'),
+          listing: {
+            type: 'object',
+            description: '추가할 광고',
+            properties: {
+              articleNo: str('광고 번호 (필수, 출처 안에서 유일)'),
+              price: num('가격 (만원)'),
+              deposit: num('보증금 (만원)'),
+              monthlyRent: num('월세 (만원)'),
+              articleFeatureDesc: str('특징 설명'),
+              floorInfo: str('층 정보'),
+              direction: str('향'),
+              realtorName: str('중개사명'),
+              representativeTelNo: str('대표번호'),
+              ranking: num('광고 노출 순위'),
+              sourceUrl: str('원본 URL'),
+            },
+            required: ['articleNo'],
+          },
+        },
+        ['sessionId', 'groupId', 'source', 'listing'],
+      ),
+      async (a, c) =>
+        this.externalListings.addSnapshotListing(
+          c.officeId,
+          a.sessionId as string,
+          a.groupId as string,
+          {
+            source: a.source as string,
+            listing: a.listing as BatchListingItem,
+          },
+        ),
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'update_external_listing_in_snapshot',
+      '열린 스냅샷에서 광고를 수정합니다. 수정한 광고는 이번 스냅샷에 입력된 것으로 처리됩니다. 스냅샷을 닫은 뒤에는 수정할 수 없습니다.',
+      obj(
+        {
+          sessionId: str('열린 ExternalListingSnapshotSession ID'),
+          listingId: str('광고 ID'),
+          price: num('가격 (만원)'),
+          deposit: num('보증금 (만원)'),
+          monthlyRent: num('월세 (만원)'),
+          articleName: str('광고명'),
+          articleFeatureDesc: str('특징 설명'),
+          detailDescription: str('상세 설명'),
+          articleConfirmYmd: str('광고 확인일 YYYYMMDD'),
+          floorInfo: str('층 정보'),
+          direction: str('향'),
+          realtorName: str('중개사명'),
+          representativeTelNo: str('대표번호'),
+          ranking: num('광고 노출 순위'),
+          sourceUrl: str('원본 URL'),
+        },
+        ['sessionId', 'listingId'],
+      ),
+      async (a, c) => {
+        const { sessionId, listingId, ...patch } = a;
+        return this.externalListings.updateSnapshotListing(
+          c.officeId,
+          sessionId as string,
+          listingId as string,
+          patch as SnapshotListingPatch,
+        );
+      },
+      ['advertisements:observe'],
+    );
+
+    this.add(
+      'remove_external_listing_from_snapshot',
+      '열린 스냅샷에서 광고를 뺍니다. 이번에 처음 입력한 광고는 지우고, 기존 광고는 닫을 때 비활성화되도록 이번 입력에서 제외합니다. 스냅샷을 닫은 뒤에는 뺄 수 없습니다.',
+      obj(
+        {
+          sessionId: str('열린 ExternalListingSnapshotSession ID'),
+          listingId: str('광고 ID'),
+        },
+        ['sessionId', 'listingId'],
+      ),
+      async (a, c) =>
+        this.externalListings.removeSnapshotListing(
+          c.officeId,
+          a.sessionId as string,
+          a.listingId as string,
+        ),
+      ['advertisements:observe'],
     );
   }
 
@@ -643,9 +942,12 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_listing_advertisements',
-      'CP 광고 원장(ListingAdvertisement)을 검색합니다. 각 row는 한 번의 연속된 실제 게재이고, endedAt은 완전한 스냅샷에서 관측 종료된 시각입니다.',
+      'CP 광고 원장(ListingAdvertisement)을 검색합니다. 각 row는 한 번의 연속된 실제 게재이고, endedAt은 완전한 스냅샷에서 관측 종료된 시각입니다. 광고는 매물 없이도 있을 수 있고, 각 row의 linkLevel이 연결 단계입니다(listing=매물까지, property=관리매물까지, site=건물까지, none=연결 없음). 매물이 없는 광고는 link=no_listing으로 모아 사용자에게 "매물로 등록할까요?"를 물을 때 씁니다. changeRequests에는 이 광고에 걸린 변경 요청과 반영 여부(fulfilled)가 들어 있습니다.',
       obj({
         listingId: str('매물 ID'),
+        propertyId: str('관리매물 ID'),
+        link: strEnum('연결 단계로 거르기', ['listing', 'no_listing', 'no_property', 'no_site']),
+        requests: strEnum('pending이면 처리되지 않은 변경 요청이 걸린 광고만', ['pending']),
         channel: str('CP사 slug (esiljang, budongsanbank 등)'),
         status: strEnum('광고 생명주기', ['active', 'ended']),
         source: strEnum('광고 원장 출처', ['manual', 'cp_sync']),
@@ -662,6 +964,9 @@ export class McpToolsService {
       async (a, c) =>
         this.listingAdvertisements.findAll(c.officeId, {
           listingId: a.listingId as string,
+          propertyId: a.propertyId as string,
+          link: a.link as 'listing' | 'no_listing' | 'no_property' | 'no_site',
+          requests: a.requests === 'pending' ? 'pending' : undefined,
           channel: a.channel as string,
           status: a.status as string,
           source: a.source as string,
@@ -690,10 +995,21 @@ export class McpToolsService {
 
     this.add(
       'create_listing_advertisement',
-      'CP에서 실제로 관측한 광고 원장(ListingAdvertisement)을 생성합니다. 작성·승인 대기 요청이나 동기화 오류 row를 만들지 않습니다.',
+      'CP에서 실제로 관측한 광고(ListingAdvertisement)를 넣습니다. 한 줄 = 한 광고입니다: 같은 매물 · 같은 채널(매물이 없으면 같은 관리 공간 · 채널 · 거래유형, 그것도 없으면 같은 CP 광고 번호)의 광고가 이미 있으면 새 줄을 만들지 않고 그 줄을 고쳐 돌려줍니다 — 재광고(네이버 번호가 바뀜)와 내려갔다 다시 올라온 것은 같은 줄의 변화이고, 지나간 상태는 이력에 쌓입니다. 작성·승인 대기 요청이나 동기화 오류 row를 만들지 않습니다. 매물 없이도 만들 수 있습니다: listingId·propertyId·siteId 중 아는 가장 깊은 단계 하나만 주면 위 단계는 서버가 채우고, 아무것도 모르면 CP 원문(raw*)만 넣습니다. 층과 가격이 같다는 것만으로 같은 집이라고 추정해 연결하지 마세요.',
       obj(
         {
-          listingId: str('매물 ID'),
+          listingId: str('매물 ID (어느 의뢰의 광고인지까지 아는 경우)'),
+          propertyId: str('관리매물 ID (호실까지만 아는 경우)'),
+          siteId: str('단지·건물 ID (건물까지만 아는 경우)'),
+          transactionType: strEnum('거래유형 (매물에 연결되면 매물의 값을 따른다)', ['sale', 'jeonse', 'monthly']),
+          rawJibunAddress: str('CP에 적힌 지번주소 원문'),
+          rawRoadAddress: str('CP에 적힌 도로명주소 원문'),
+          rawSiteName: str('CP에 적힌 단지·건물 이름 원문'),
+          rawDong: str('CP에 적힌 동 원문'),
+          rawHo: str('CP에 적힌 호 원문'),
+          rawFloorText: str('CP의 층 표기 원문 (예: 12/25, 저/25, B1)'),
+          rawAreaM2: num('CP에 적힌 면적 (m²)'),
+          floorExposure: strEnum('광고의 층 노출 방식 (exact=정확한 층, band=저·중·고)', ['exact', 'band']),
           channel: str('CP사 slug (esiljang, budongsanbank 등)'),
           status: strEnum('광고 생명주기', ['active', 'ended']),
           source: strEnum('광고 원장 출처', ['manual', 'cp_sync']),
@@ -710,11 +1026,22 @@ export class McpToolsService {
           lastCheckedAt: str('마지막 네이버 비교일 (ISO)'),
           lastSyncedAt: str('마지막 CP 동기화일 (ISO)'),
         },
-        ['listingId', 'channel'],
+        ['channel'],
       ),
       async (a, c) =>
         this.listingAdvertisements.create(c.officeId, {
-          listingId: a.listingId as string,
+          listingId: a.listingId as string | undefined,
+          propertyId: a.propertyId as string | undefined,
+          siteId: a.siteId as string | undefined,
+          transactionType: a.transactionType as string | undefined,
+          rawJibunAddress: a.rawJibunAddress as string | undefined,
+          rawRoadAddress: a.rawRoadAddress as string | undefined,
+          rawSiteName: a.rawSiteName as string | undefined,
+          rawDong: a.rawDong as string | undefined,
+          rawHo: a.rawHo as string | undefined,
+          rawFloorText: a.rawFloorText as string | undefined,
+          rawAreaM2: a.rawAreaM2 as number | undefined,
+          floorExposure: a.floorExposure as string | undefined,
           channel: a.channel as string,
           status: a.status as string,
           source: a.source as string,
@@ -735,10 +1062,20 @@ export class McpToolsService {
 
     this.add(
       'update_listing_advertisement',
-      'CP 광고 원장(ListingAdvertisement)을 수정합니다. 완전한 CP 수집 성공 후 더 이상 반환되지 않은 광고만 status=ended로 전환하세요. 수집 실패 시 기존 row를 변경하지 않습니다.',
+      'CP 광고 원장(ListingAdvertisement)을 수정합니다 — "직접 변경"입니다: 이미 CP에서 바뀐 것을 기록에 맞출 때만 쓰세요. CP에서 바꿔 달라는 요청은 create_advertisement_change_request로 만듭니다. 완전한 CP 수집 성공 후 더 이상 반환되지 않은 광고만 status=ended로 전환하세요. 수집 실패 시 기존 row를 변경하지 않습니다. 종료된 광고가 다시 올라왔으면 status=active로 되돌립니다(새 광고로 넣지 않습니다). 재광고로 네이버 번호가 바뀌었으면 naverArticleNo를 새 번호로 고칩니다 — 게재 상태 · 네이버 번호 · 가격의 변화는 이력에 남습니다. 연결은 link_listing_advertisement로 바꿉니다.',
       obj(
         {
           id: str('광고 원장 ID'),
+          transactionType: strEnum('거래유형 (매물에 연결되면 매물의 값을 따른다)', ['sale', 'jeonse', 'monthly']),
+          rawJibunAddress: str('CP에 적힌 지번주소 원문'),
+          rawRoadAddress: str('CP에 적힌 도로명주소 원문'),
+          rawSiteName: str('CP에 적힌 단지·건물 이름 원문'),
+          rawDong: str('CP에 적힌 동 원문'),
+          rawHo: str('CP에 적힌 호 원문'),
+          rawFloorText: str('CP의 층 표기 원문 (예: 12/25, 저/25, B1)'),
+          rawAreaM2: num('CP에 적힌 면적 (m²)'),
+          floorExposure: strEnum('광고의 층 노출 방식 (exact=정확한 층, band=저·중·고)', ['exact', 'band']),
+
           channel: str('CP사 slug (esiljang, budongsanbank 등)'),
           status: strEnum('광고 생명주기', ['active', 'ended']),
           source: strEnum('광고 원장 출처', ['manual', 'cp_sync']),
@@ -759,6 +1096,15 @@ export class McpToolsService {
       ),
       async (a, c) =>
         this.listingAdvertisements.update(a.id as string, c.officeId, {
+          transactionType: a.transactionType as string | undefined,
+          rawJibunAddress: a.rawJibunAddress as string | undefined,
+          rawRoadAddress: a.rawRoadAddress as string | undefined,
+          rawSiteName: a.rawSiteName as string | undefined,
+          rawDong: a.rawDong as string | undefined,
+          rawHo: a.rawHo as string | undefined,
+          rawFloorText: a.rawFloorText as string | undefined,
+          rawAreaM2: a.rawAreaM2 as number | undefined,
+          floorExposure: a.floorExposure as string | undefined,
           channel: a.channel as string,
           status: a.status as string,
           source: a.source as string,
@@ -775,6 +1121,77 @@ export class McpToolsService {
           lastCheckedAt: a.lastCheckedAt as string | null,
           lastSyncedAt: a.lastSyncedAt as string | null,
         }),
+    );
+
+    this.add(
+      'link_listing_advertisement',
+      '광고를 우리 데이터에 연결하거나 연결을 풉니다. listingId·propertyId·siteId 중 아는 가장 깊은 단계 하나만 주면 위 단계는 서버가 채웁니다(매물 → 관리매물 → 건물). propertyId만 주면 매물 연결은 풀리고, 셋 다 비우면 모두 풀립니다. 호실은 알지만 관리매물이 없으면 find_or_create_property로 먼저 만드세요. 같은 호실에 같은 거래유형의 열린 매물이 하나일 때만 매물까지 연결하고, 여럿이거나 없으면 관리매물까지만 연결한 뒤 사용자에게 물으세요.',
+      obj(
+        {
+          id: str('광고 원장 ID'),
+          listingId: str('매물 ID'),
+          propertyId: str('관리매물 ID'),
+          siteId: str('단지·건물 ID'),
+        },
+        ['id'],
+      ),
+      async (a, c) =>
+        this.listingAdvertisements.link(a.id as string, c.officeId, {
+          listingId: a.listingId as string | undefined,
+          propertyId: a.propertyId as string | undefined,
+          siteId: a.siteId as string | undefined,
+        }),
+    );
+
+    this.add(
+      'find_advertisement_change_requests',
+      '처리되지 않은 광고 변경 요청 목록입니다. 사용자가 "CP에서 이렇게 바꿔 달라"고 한 일이고, 각 요청은 광고 업무(task)와 짝입니다. 실행하려면 claim_task로 그 업무를 가져간 뒤 CP에서 바꾸고, 끝나면 update_task로 완료 처리하세요. 광고 값은 직접 고치지 말고 다음 수집(스냅샷)에서 확인되게 두세요.',
+      obj({ advertisementId: str('특정 광고의 요청만') }),
+      async (a, c) =>
+        this.advertisementChangeRequests.findOpen(c.officeId, {
+          advertisementId: a.advertisementId as string | undefined,
+        }),
+    );
+
+    this.add(
+      'create_advertisement_change_request',
+      '광고를 CP에서 바꿔 달라는 요청을 만듭니다. 광고 업무(task, category=advertisement)가 함께 생기고 광고 값은 바뀌지 않습니다. kind: price(가격 변경, toValue에 price/deposit/monthlyRent 중 바꿀 것만, 만원) / floor_exposure(층 노출 변경, toValue.floorExposure = exact|band) / readvertise(재광고: 게재 중이면 다시 올려 날짜를 새로 받기, 종료된 광고면 다시 올리기) / takedown(광고 내리기). 이미 CP에서 바꾼 것을 기록만 맞출 때는 update_listing_advertisement를 쓰세요.',
+      obj(
+        {
+          advertisementId: str('광고 원장 ID'),
+          kind: strEnum('요청 종류', ['price', 'floor_exposure', 'readvertise', 'takedown']),
+          toValue: {
+            type: 'object',
+            description: '바꿀 값. price: { price?, deposit?, monthlyRent? } (만원) / floor_exposure: { floorExposure }',
+            additionalProperties: true,
+          },
+          memo: str('업무에 함께 적을 말'),
+          dueDate: str('기한 (ISO)'),
+          assignedToId: str('맡길 직원 ID. 비우면 담당자 없이 등록되어 에이전트가 가져간다'),
+        },
+        ['advertisementId', 'kind'],
+      ),
+      async (a, c) =>
+        this.advertisementChangeRequests.create(
+          c.officeId,
+          c.userId,
+          a.advertisementId as string,
+          {
+            kind: a.kind as string,
+            toValue: a.toValue as Record<string, unknown> | undefined,
+            memo: a.memo as string | undefined,
+            dueDate: a.dueDate as string | undefined,
+            assignedToId: a.assignedToId as string | undefined,
+          },
+        ),
+    );
+
+    this.add(
+      'cancel_advertisement_change_request',
+      '처리되지 않은 광고 변경 요청을 거둡니다(연결된 업무가 취소됩니다).',
+      obj({ id: str('요청 ID') }, ['id']),
+      async (a, c) =>
+        this.advertisementChangeRequests.cancel(c.officeId, a.id as string),
     );
 
     this.add(
@@ -845,7 +1262,7 @@ export class McpToolsService {
 
     this.add(
       'submit_listing_advertisement_snapshot_item',
-      '에이전트가 로컬 JSON에서 읽고 매물 연결을 판단한 CP 광고 한 건을 원문과 함께 제출합니다. listingId+resolution 또는 error 중 하나만 보냅니다.',
+      '에이전트가 로컬 JSON에서 읽은 CP 광고 한 건을 원문과 함께 제출합니다. 광고는 매물 없이도 저장됩니다: 우리 데이터에서 찾은 만큼만 listingId·propertyId·siteId 중 가장 깊은 단계 하나로 알리고, 못 찾았으면 셋 다 비우고 제출하세요(오류가 아닙니다). error는 광고 자체를 읽지 못했을 때만 씁니다. 찾는 순서: 단지·건물(search_central_sites, find_office_sites) → 동·호(find_dongs, find_units; 호가 없는 건물이면 create_unit으로 층 공간을 만듦) → find_or_create_property → 그 관리매물에 같은 거래유형의 열린 매물이 정확히 하나면 listingId, 아니면 propertyId까지만. raw에 siteName(또는 complexName)·dong·ho·floor·fullAddress·transactionType이 있으면 광고의 원문 칸으로 남습니다.',
       obj(
         {
           sessionId: str('광고 snapshot session ID'),
@@ -856,14 +1273,16 @@ export class McpToolsService {
             required: ['externalAdId'],
             additionalProperties: true,
           },
-          listingId: str('확정한 Listing ID. 실패 제출이면 생략'),
+          listingId: str('확정한 Listing ID (어느 의뢰의 광고인지까지 정해졌을 때)'),
+          propertyId: str('관리매물 ID (호실까지만 정해졌을 때)'),
+          siteId: str('단지·건물 ID (건물까지만 찾았을 때)'),
           resolution: {
             type: 'object',
             description:
-              '선택한 siteId/dongId/unitId/propertyId/intakeId와 판단 근거. listingId와 함께 제출',
+              '어떻게 그 연결을 정했는지(고른 dongId/unitId, 판단 근거). listingId를 줄 때는 필수',
             additionalProperties: true,
           },
-          error: str('연결하지 못한 구체적인 이유. 실패 제출일 때만 사용'),
+          error: str('광고를 읽지 못한 구체적인 이유. 연결을 못 찾은 것은 여기에 쓰지 않습니다'),
         },
         ['sessionId', 'raw'],
       ),
@@ -876,6 +1295,8 @@ export class McpToolsService {
             sessionId: a.sessionId as string,
             raw: a.raw as Record<string, unknown>,
             listingId: a.listingId as string | null,
+            propertyId: a.propertyId as string | null,
+            siteId: a.siteId as string | null,
             resolution: a.resolution as Record<string, unknown> | null,
             error: a.error as string | null,
           },
@@ -897,7 +1318,7 @@ export class McpToolsService {
 
     this.add(
       'complete_listing_advertisement_snapshot',
-      '모든 원본 항목이 Listing에 연결되고 manifest가 일치할 때 한 트랜잭션으로 광고 원장을 갱신하고, 이번 완전 스냅샷에서 사라진 CP 광고를 ended 처리합니다.',
+      '읽지 못한 항목(error)이 없고 manifest가 일치할 때 한 트랜잭션으로 광고 원장을 갱신하고, 이번 완전 스냅샷에서 사라진 CP 광고를 ended 처리합니다. 매물에 연결되지 않은 광고도 그대로 저장됩니다. 끝난 뒤 find_listing_advertisements(link=no_listing)로 매물 없는 광고를 모아, 사용자에게 "이 N건은 매물이 없습니다. 등록할까요?"를 물으세요. 사용자가 원하면 매물을 등록하고 link_listing_advertisement로 연결합니다. 사람이 화면에서 이어 둔 연결은 이번 수집이 연결을 찾지 못해도 지워지지 않습니다.',
       obj({ sessionId: str('광고 snapshot session ID') }, ['sessionId']),
       async (a, c) =>
         this.listingAdvertisementSnapshots.complete(
@@ -927,14 +1348,14 @@ export class McpToolsService {
     // 내 광고의 네이버 비교 스냅샷 (OfficeAdvertisements)
     // ═══════════════════════════════════════════════════════════
     this.add(
-      'find_office_advertisement_groups',
-      'ListingAdvertisement별 네이버 비교 스냅샷을 검색합니다.',
+      'find_advertisement_comparisons',
+      '네이버 비교가 있는 내 광고와 그 비교 목록(지금 네이버에 보이는 광고들, 읽은 시각)을 검색합니다. 지나간 흐름은 find_advertisement_comparison_records로 봅니다.',
       obj({
         search: str('검색어 (CP/네이버 광고번호, 단지명, 호수, 중개사명)'),
         ...page,
       }),
       async (a, c) =>
-        this.officeAdvertisements.findAllGroups(c.officeId, {
+        this.officeAdvertisements.findComparisons(c.officeId, {
           search: a.search as string,
           page: (a.page as number) ?? 1,
           limit: this.clampLimit(a),
@@ -942,26 +1363,25 @@ export class McpToolsService {
     );
 
     this.add(
-      'batch_upsert_office_advertisements',
-      '각 ListingAdvertisement의 네이버 링크를 읽은 결과를 저장합니다. 모든 그룹은 listingAdvertisementId와 그 원장의 정확한 naverArticleNo를 포함해야 합니다.',
+      'save_advertisement_comparisons',
+      '내 광고 한 건마다 네이버에서 같은 집으로 보이는 광고 전체 목록을 저장합니다. 목록은 통째로 넣으세요 — 이번 목록에 없는 줄은 내려간 것으로 처리됩니다. 절반만 읽었으면 넣지 마세요(totalCount를 주면 서버가 모자란 목록을 거절합니다). 모든 항목은 listingAdvertisementId와 그 광고의 정확한 naverArticleNo를 가진 줄을 포함해야 합니다. 한 건의 저장은 전부 되거나 전부 안 되고, 저장할 때마다 그때의 순위 · 최저가 요약이 기록으로 쌓입니다. 달라진 것(더 싼 광고가 생김 등)은 이 호출이 끝날 때 한 번에 묶어 알리므로, 여러 광고는 한 호출에 모아 보내세요.',
       obj(
         {
-          groups: {
+          comparisons: {
             type: 'array' as const,
-            description: 'ListingAdvertisement별 네이버 비교 결과 (최대 100)',
+            description: '내 광고 한 건마다 하나: 그 광고의 네이버 비교 목록 전체 (최대 100)',
             items: obj(
               {
-                listingAdvertisementId: str('비교 대상 CP 광고 원장 ID'),
-                memo: str('메모'),
+                listingAdvertisementId: str('비교 대상 내 광고 ID'),
+                totalCount: num('네이버가 알려 준 같은 집 광고 수. 주면 목록이 이보다 적을 때 거절한다'),
                 advertisements: {
                   type: 'array' as const,
-                  description: '그룹에 속하는 개별 광고 (1개 이상 필수)',
+                  description: '네이버에서 같은 집으로 보이는 광고 전체 (내 광고 포함, 1개 이상 필수)',
                   items: obj(
                     {
                       articleNo: str('네이버 매물번호'),
                       sourceUrl: str('네이버 광고 URL'),
                       isMine: bool('내 사무소 광고 여부'),
-                      isMain: bool('그룹 대표 광고 여부'),
                       isActive: bool('활성 여부 (기본 true)'),
                       articleName: str('매물명'),
                       realtorName: str('등록 중개사명'),
@@ -987,13 +1407,29 @@ export class McpToolsService {
             ),
           },
         },
-        ['groups'],
+        ['comparisons'],
       ),
       async (a, c) =>
-        this.officeAdvertisements.batchUpsert(c.officeId, {
-          groups: a.groups as OfficeAdvertisementBatchGroupDto[],
+        this.officeAdvertisements.saveComparisons(c.officeId, {
+          comparisons: a.comparisons as AdvertisementComparisonInput[],
         }),
       ['advertisements:observe'],
+    );
+
+    this.add(
+      'find_advertisement_comparison_records',
+      '네이버 비교를 읽을 때마다 쌓인 요약(내 순위, 같은 집 광고 수, 경쟁 최저가, 나보다 싼 광고 수, 그때의 판단, 직전과 달라진 것)을 최근 것부터 봅니다. 한 광고의 흐름을 보려면 listingAdvertisementId를, 달라진 것만 보려면 changedOnly를 주세요. changes 값: cheaper_appeared, cheaper_gone, own_hidden, own_restored, floor_disadvantage, rank_changed.',
+      obj({
+        listingAdvertisementId: str('광고 ID (한 광고의 흐름)'),
+        changedOnly: bool('직전 기록에서 달라진 것이 있는 줄만'),
+        limit: num('가져올 수 (기본 50, 최대 200)'),
+      }),
+      async (a, c) =>
+        this.officeAdvertisements.findRecords(c.officeId, {
+          listingAdvertisementId: a.listingAdvertisementId as string | undefined,
+          changedOnly: a.changedOnly as boolean | undefined,
+          limit: a.limit as number | undefined,
+        }),
     );
 
     // ═══════════════════════════════════════════════════════════
@@ -1118,6 +1554,20 @@ export class McpToolsService {
         this.properties.create(c.officeId, {
           siteId: a.siteId as string,
           unitId: a.unitId as string,
+        }),
+    );
+
+    this.add(
+      'find_or_create_property',
+      '그 자리(단지·건물 + 호실)의 관리매물을 돌려주고, 없으면 만듭니다. 광고를 넣을 때 씁니다: 광고를 낸 호실은 우리가 다루는 호실이므로 사용자에게 묻지 않고 만들어도 됩니다. 의뢰·가격 같은 매물 내용은 만들지 않습니다(매물 등록은 사용자에게 물은 뒤 따로). created로 새로 만들었는지 알 수 있습니다.',
+      obj(
+        { siteId: str('단지·건물 ID'), unitId: str('호실(공간) ID. 단독주택·토지는 생략') },
+        ['siteId'],
+      ),
+      async (a, c) =>
+        this.properties.ensure(c.officeId, {
+          siteId: a.siteId as string,
+          unitId: a.unitId as string | undefined,
         }),
     );
 
@@ -1658,6 +2108,35 @@ export class McpToolsService {
     );
 
     this.add(
+      'create_unit',
+      '건물 아래에 이 사무소의 공간을 만듭니다. 대장에 호가 없는 건물(다가구, 일반 상가건물)이나 호 없이 층이 거래 단위인 경우에 씁니다. 공공 건물 아래에도 만들 수 있고, 만든 공간은 이 사무소만 봅니다. name(호 이름 또는 "좌측" 같은 구획 이름)과 floor 중 하나는 꼭 줍니다. 층은 숫자입니다: 지하는 음수(B2 = -2), 0층은 없습니다. 여러 층을 한 공간으로 둘 때는 floor와 floorEnd(1~2층 = 1, 2). 같은 이름의 공공 호가 이미 있으면 만들지 않고 그 호의 unitId를 알려 줍니다.',
+      obj(
+        {
+          siteId: str('단지·건물 ID'),
+          dongId: str('동 ID (동 구분이 없는 건물은 find_dongs의 숨김용 동)'),
+          name: str('호 이름(예: 101) 또는 층의 일부에 붙인 이름(예: 좌측). 층 전체면 생략'),
+          floor: num('층. 지하는 음수 (B2 = -2), 0은 쓰지 않음'),
+          floorEnd: num('여러 층을 한 공간으로 둘 때의 끝 층'),
+          floorLabel: str('숫자로 안 떨어지는 층의 표시 이름 (반지하, M층, 옥탑)'),
+          exclusiveAreaM2: num('전용면적 (m²)'),
+          supplyAreaM2: num('공급면적 (m²)'),
+        },
+        ['siteId', 'dongId'],
+      ),
+      async (a, c) =>
+        this.units.create(c.officeId, {
+          siteId: a.siteId as string,
+          dongId: a.dongId as string,
+          name: a.name as string | undefined,
+          floor: a.floor as number | undefined,
+          floorEnd: a.floorEnd as number | undefined,
+          floorLabel: a.floorLabel as string | undefined,
+          exclusiveAreaM2: a.exclusiveAreaM2 as number | undefined,
+          supplyAreaM2: a.supplyAreaM2 as number | undefined,
+        }),
+    );
+
+    this.add(
       'get_unit',
       '호실 상세.',
       obj({ id: str('호실 ID') }, ['id']),
@@ -1830,291 +2309,7 @@ export class McpToolsService {
       async (_a, c) => this.offices.getMe(c.officeId),
     );
 
-    // ═══════════════════════════════════════════════════════════
-    // 외부매물 광고노트 (External Listings)
-    // ═══════════════════════════════════════════════════════════
-    this.add(
-      'find_external_listing_groups',
-      '외부 매물(광고노트) 그룹 목록. 단지/거래유형/상태 필터.',
-      obj({
-        siteId: str('단지 ID'),
-        transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
-        status: str('상태'),
-        search: str('검색어'),
-      }),
-      async (a, c) =>
-        this.externalListings.findAllGroups(c.officeId, {
-          siteId: a.siteId as string,
-          transactionType: a.transactionType as string,
-          status: a.status as string,
-          search: a.search as string,
-        }),
-    );
-
-    this.add(
-      'get_external_listing_group',
-      '외부 매물 그룹 상세. 개별 매물 목록 포함.',
-      obj({ id: str('그룹 ID') }, ['id']),
-      async (a, c) =>
-        this.externalListings.findGroupById(a.id as string, c.officeId),
-    );
-
-    this.add(
-      'update_external_listing_group',
-      '외부 매물 그룹의 호수 텍스트, 메모, 상태를 수정합니다.',
-      obj(
-        {
-          id: str('그룹 ID'),
-          ho: str('호수 텍스트 (예: "1503호")'),
-          memo: str('메모'),
-          status: strEnum('상태', ['unmatched', 'verified', 'on_hold']),
-        },
-        ['id'],
-      ),
-      async (a, c) =>
-        this.externalListings.updateGroup(a.id as string, c.officeId, {
-          ho: a.ho as string | null,
-          memo: a.memo as string | null,
-          status: a.status as string,
-        }),
-    );
-
-    this.add(
-      'get_active_external_listing_snapshot_session',
-      '광고노트 단지·거래유형의 열린 스냅샷을 조회합니다. 이번에 입력된 광고 수(receivedListingCount)와 닫으면 내려갈 광고 수(pendingRemovalCount)를 함께 돌려줍니다.',
-      obj(
-        {
-          siteId: str('단지 ID'),
-          transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
-        },
-        ['siteId', 'transactionType'],
-      ),
-      async (a, c) =>
-        this.externalListings.getActiveSession(
-          c.officeId,
-          a.siteId as string,
-          a.transactionType as string,
-        ),
-      ['advertisements:observe'],
-    );
-
-    this.add(
-      'create_external_listing_snapshot_session',
-      '광고노트 스냅샷을 엽니다. 같은 단지·거래유형에는 열린 스냅샷이 하나만 존재하며, 입력과 닫기에 반환된 id를 사용합니다.',
-      obj(
-        {
-          siteId: str('단지 ID'),
-          transactionType: strEnum('거래유형', ['sale', 'jeonse', 'monthly']),
-        },
-        ['siteId', 'transactionType'],
-      ),
-      async (a, c) =>
-        this.externalListings.createSession(c.officeId, c.userId, {
-          siteId: a.siteId as string,
-          transactionType: a.transactionType as string,
-        }),
-      ['advertisements:observe'],
-    );
-
-    this.add(
-      'complete_external_listing_snapshot_session',
-      '입력을 마친 스냅샷을 닫고 이전 자료와 비교한 결과(신규 매물, 광고 추가, 사라진 매물, 가격 변경)를 돌려줍니다. 이번에 입력되지 않은 기존 광고는 비활성화합니다. expectedListingCount가 실제 입력 건수와 다르면 거부하고 스냅샷을 열어 둡니다. 입력이 0건이면 expectedListingCount 0으로 닫아 모든 광고를 내립니다.',
-      obj(
-        {
-          id: str('ExternalListingSnapshotSession ID'),
-          expectedListingCount: num('이번 스냅샷에 입력한 광고의 전체 건수'),
-        },
-        ['id', 'expectedListingCount'],
-      ),
-      async (a, c) => {
-        // 건수 확인 없이 닫으면 입력 누락이 사라진 매물로 처리된다.
-        if (typeof a.expectedListingCount !== 'number') {
-          throw new Error('expectedListingCount는 필수입니다.');
-        }
-        return this.externalListings.completeSession(
-          c.officeId,
-          c.userId,
-          c.role ?? 'agent',
-          a.id as string,
-          { expectedListingCount: a.expectedListingCount },
-        );
-      },
-      ['advertisements:observe'],
-    );
-
-    this.add(
-      'cancel_external_listing_snapshot_session',
-      '입력이 불완전하거나 중단됐을 때 스냅샷을 취소합니다. 입력되지 않은 기존 광고를 비활성화하지 않습니다.',
-      obj({ id: str('ExternalListingSnapshotSession ID') }, ['id']),
-      async (a, c) =>
-        this.externalListings.cancelSession(
-          c.officeId,
-          c.userId,
-          c.role ?? 'agent',
-          a.id as string,
-        ),
-      ['advertisements:observe'],
-    );
-
-    this.add(
-      'batch_upsert_external_listings',
-      '열린 스냅샷에 외부 광고를 묶음 단위로 입력합니다. 같은 매물의 광고는 모두 한 묶음에 넣고 요청 사이에 나누지 않습니다. 묶음의 번호가 기존 데이터와 겹치면 기존 그룹에 합류하고, 대표는 새 묶음의 대표로 바뀝니다. 요청 하나는 최대 100건이며 전부 저장되거나 전부 거부됩니다.',
-      obj(
-        {
-          sessionId: str('열린 ExternalListingSnapshotSession ID'),
-          source: str('입력자가 지정하는 데이터 출처 식별자'),
-          batchId: str('입력 실행을 식별하는 선택적 안정 키'),
-          groups: {
-            type: 'array',
-            description: '동일 매물의 광고 묶음 목록',
-            items: {
-              type: 'object',
-              properties: {
-                representativeArticleNo: str(
-                  '이 묶음의 대표 광고 번호. listings 안에 있어야 합니다.',
-                ),
-                listings: {
-                  type: 'array',
-                  description: '묶음에 속한 광고 목록',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      articleNo: str('광고 번호 (필수, 출처 안에서 유일)'),
-                      price: num('가격 (만원)'),
-                      deposit: num('보증금 (만원)'),
-                      monthlyRent: num('월세 (만원)'),
-                      articleName: str('광고명'),
-                      articleFeatureDesc: str('특징 설명'),
-                      detailDescription: str('상세 설명'),
-                      articleConfirmYmd: str('광고 확인일 YYYYMMDD'),
-                      floorInfo: str('층 정보'),
-                      exclusiveAreaM2: num('전용면적 (m²)'),
-                      supplyAreaM2: num('공급면적 (m²)'),
-                      direction: str('향'),
-                      realtorName: str('중개사명'),
-                      realtorId: str('중개사 식별자'),
-                      representativeTelNo: str('대표번호'),
-                      ranking: num('광고 노출 순위'),
-                      buildingName: str('동명'),
-                      ho: str('호수 텍스트'),
-                      areaName: str('평형명 (84A 등)'),
-                      sourceUrl: str('원본 URL'),
-                    },
-                    required: ['articleNo'],
-                  },
-                },
-              },
-              required: ['representativeArticleNo', 'listings'],
-            },
-          },
-        },
-        ['sessionId', 'source', 'groups'],
-      ),
-      async (a, c) =>
-        this.externalListings.batchUpsert(c.officeId, {
-          sessionId: a.sessionId as string,
-          source: a.source as string,
-          batchId: a.batchId as string | undefined,
-          groups: a.groups as ListingGroupInput[],
-        }),
-      ['advertisements:observe'],
-    );
-
-    this.add(
-      'add_external_listing_to_snapshot_group',
-      '열린 스냅샷에 입력한 매물에 동일 광고를 한 건 추가합니다. 대표는 바뀌지 않습니다.',
-      obj(
-        {
-          sessionId: str('열린 ExternalListingSnapshotSession ID'),
-          groupId: str('이번 스냅샷에 입력한 그룹 ID'),
-          source: str('입력자가 지정하는 데이터 출처 식별자'),
-          listing: {
-            type: 'object',
-            description: '추가할 광고',
-            properties: {
-              articleNo: str('광고 번호 (필수, 출처 안에서 유일)'),
-              price: num('가격 (만원)'),
-              deposit: num('보증금 (만원)'),
-              monthlyRent: num('월세 (만원)'),
-              articleFeatureDesc: str('특징 설명'),
-              floorInfo: str('층 정보'),
-              direction: str('향'),
-              realtorName: str('중개사명'),
-              representativeTelNo: str('대표번호'),
-              ranking: num('광고 노출 순위'),
-              sourceUrl: str('원본 URL'),
-            },
-            required: ['articleNo'],
-          },
-        },
-        ['sessionId', 'groupId', 'source', 'listing'],
-      ),
-      async (a, c) =>
-        this.externalListings.addSnapshotListing(
-          c.officeId,
-          a.sessionId as string,
-          a.groupId as string,
-          {
-            source: a.source as string,
-            listing: a.listing as BatchListingItem,
-          },
-        ),
-      ['advertisements:observe'],
-    );
-
-    this.add(
-      'update_external_listing_in_snapshot',
-      '열린 스냅샷에서 광고를 수정합니다. 수정한 광고는 이번 스냅샷에 입력된 것으로 처리됩니다. 스냅샷을 닫은 뒤에는 수정할 수 없습니다.',
-      obj(
-        {
-          sessionId: str('열린 ExternalListingSnapshotSession ID'),
-          listingId: str('광고 ID'),
-          price: num('가격 (만원)'),
-          deposit: num('보증금 (만원)'),
-          monthlyRent: num('월세 (만원)'),
-          articleName: str('광고명'),
-          articleFeatureDesc: str('특징 설명'),
-          detailDescription: str('상세 설명'),
-          articleConfirmYmd: str('광고 확인일 YYYYMMDD'),
-          floorInfo: str('층 정보'),
-          direction: str('향'),
-          realtorName: str('중개사명'),
-          representativeTelNo: str('대표번호'),
-          ranking: num('광고 노출 순위'),
-          sourceUrl: str('원본 URL'),
-        },
-        ['sessionId', 'listingId'],
-      ),
-      async (a, c) => {
-        const { sessionId, listingId, ...patch } = a;
-        return this.externalListings.updateSnapshotListing(
-          c.officeId,
-          sessionId as string,
-          listingId as string,
-          patch as SnapshotListingPatch,
-        );
-      },
-      ['advertisements:observe'],
-    );
-
-    this.add(
-      'remove_external_listing_from_snapshot',
-      '열린 스냅샷에서 광고를 뺍니다. 이번에 처음 입력한 광고는 지우고, 기존 광고는 닫을 때 비활성화되도록 이번 입력에서 제외합니다. 스냅샷을 닫은 뒤에는 뺄 수 없습니다.',
-      obj(
-        {
-          sessionId: str('열린 ExternalListingSnapshotSession ID'),
-          listingId: str('광고 ID'),
-        },
-        ['sessionId', 'listingId'],
-      ),
-      async (a, c) =>
-        this.externalListings.removeSnapshotListing(
-          c.officeId,
-          a.sessionId as string,
-          a.listingId as string,
-        ),
-      ['advertisements:observe'],
-    );
+    this.registerExternalListingTools();
 
     // ═══════════════════════════════════════════════════════════
     // 수수료/캐시플로우 (Finance) — 읽기만

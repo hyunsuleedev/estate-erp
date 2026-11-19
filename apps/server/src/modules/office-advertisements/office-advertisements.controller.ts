@@ -6,7 +6,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
-  OfficeAdvertisementBatchUpsertDto,
+  SaveAdvertisementComparisonsDto,
   OfficeAdvertisementsService,
 } from './office-advertisements.service';
 
@@ -24,7 +24,7 @@ export class OfficeAdvertisementsController {
     @Query('page') page: string | undefined,
     @Query('limit') limit: string | undefined,
   ) {
-    return this.service.findAllGroups(user.officeId, {
+    return this.service.findComparisons(user.officeId, {
       search,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
@@ -33,9 +33,9 @@ export class OfficeAdvertisementsController {
 
   @Post('batch')
   batchUpsert(
-    @Body() dto: OfficeAdvertisementBatchUpsertDto,
+    @Body() dto: SaveAdvertisementComparisonsDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.service.batchUpsert(user.officeId, dto);
+    return this.service.saveComparisons(user.officeId, dto);
   }
 }

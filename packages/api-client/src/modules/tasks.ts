@@ -34,7 +34,8 @@ export interface TaskPropertySummary {
   };
   unit?: {
     id: string;
-    name: string;
+    /** 호 이름. 호 없이 층이 단위인 공간은 null */
+    name: string | null;
     floor: number | null;
     lineNo?: number | null;
     exclusiveAreaM2: number | null;

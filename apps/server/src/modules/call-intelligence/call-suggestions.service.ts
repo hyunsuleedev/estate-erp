@@ -24,6 +24,15 @@ import {
   type SuggestionPayloadByType,
   validateSuggestionPayload,
 } from './call-suggestion.payload';
+import {
+  type BaseValueChange,
+  diffListingPriceWrites,
+  diffSuggestionBaseValues,
+  parseSuggestionBaseValues,
+  proposedListingPrices,
+  readSuggestionBaseValues,
+  type SuggestionBaseValues,
+} from './call-suggestion.target';
 
 /**
  * 통화 분석 제안 반영·무시.
@@ -44,6 +53,9 @@ import {
 const ALREADY_APPLIED_DIFFERENTLY =
   '앞서 반영한 내용으로 이미 처리돼 있어요. 바꾸려면 만들어진 항목에서 직접 고쳐 주세요';
 
+/** 제안한 뒤 대상의 값이 바뀌어 반영을 멈췄을 때의 오류 코드 (화면이 이 코드를 보고 "그래도 반영"을 묻는다) */
+export const SUGGESTION_BASE_CHANGED = 'SUGGESTION_BASE_CHANGED';
+
 /** 반영 중 서버가 멈춰 'applying'에 남은 제안을 다시 처리할 수 있게 되는 시간 */
 const STALE_APPLYING_MS = 2 * 60_000;
 
@@ -57,6 +69,9 @@ const SUGGESTION_SELECT = {
   evidence: true,
   payload: true,
   seq: true,
+  targetType: true,
+  targetId: true,
+  baseValues: true,
   appliedEntityType: true,
   appliedEntityId: true,
   appliedPayload: true,
@@ -72,6 +87,18 @@ interface ApplyContext {
   suggestionId: string;
   consultationId: string | null;
   recording: { id: string; contactId: string | null; userId: string; calledAt: Date };
+  /** 매물 확인: 값을 견주기 전에 읽은 매물의 수정 시각. 가격을 쓸 때 조건으로 건다 */
+  listingVersions?: Map<string, Date>;
+}
+
+function baseChangedError(changes: BaseValueChange[]) {
+  return new ConflictException({
+    code: SUGGESTION_BASE_CHANGED,
+    message: `지금 저장된 값을 확인해 주세요 (제안할 때 → 지금): ${changes
+      .map((change) => `${change.label} ${change.was} → ${change.now}`)
+      .join(', ')}. 확인한 뒤 다시 반영해 주세요`,
+    changes,
+  });
 }
 
 interface Applied {
@@ -91,11 +118,18 @@ export class CallSuggestionsService {
     private readonly listings: ListingsService,
   ) {}
 
-  findAll(officeId: string, query: { recordingId?: string; status?: string } = {}) {
+  /** targetType + targetId를 주면 그 대상(매물 의뢰·희망조건 등)에 걸린 제안만 고른다 */
+  findAll(
+    officeId: string,
+    query: { recordingId?: string; status?: string; targetType?: string; targetId?: string } = {},
+  ) {
     return this.prisma.callActionSuggestion.findMany({
       where: {
         officeId,
         ...(query.recordingId ? { recordingId: query.recordingId } : {}),
+        ...(query.targetType && query.targetId
+          ? { targetType: query.targetType, targetId: query.targetId }
+          : {}),
         ...(query.status ? { status: { in: query.status.split(',').map((status) => status.trim()) } } : {}),
       },
       orderBy: [{ createdAt: 'desc' }, { seq: 'asc' }],
@@ -104,7 +138,16 @@ export class CallSuggestionsService {
     });
   }
 
-  async accept(id: string, officeId: string, userId: string, editedPayload?: unknown) {
+  /**
+   * @param options.force 제안을 만든 뒤 대상의 값이 바뀌었어도 반영한다 (사람이 달라진 값을 보고 다시 누른 경우)
+   */
+  async accept(
+    id: string,
+    officeId: string,
+    userId: string,
+    editedPayload?: unknown,
+    options: { force?: boolean } = {},
+  ) {
     const suggestion = await this.prisma.callActionSuggestion.findFirst({
       where: { id, officeId },
       include: {
@@ -203,6 +246,47 @@ export class CallSuggestionsService {
         if (prior && stableJson(prior) === stableJson(payload)) return finalized;
         appliedDifferently = true;
       } else {
+        // 제안을 만든 뒤 누가 값을 고쳤으면 조용히 덮어쓰지 않는다. 무엇이 달라졌는지 알리고
+        // 사람이 보고 다시 누르면(force) 그때 반영한다. 제안할 때의 값이 없는 옛 제안은 견주지 않는다.
+        // 확인과 쓰기 사이에 끼어든 수정도 막는다:
+        //  - 매물 가격: 확인하기 전에 읽은 수정 시각을 쓰기 조건으로 건다 (그 뒤 누가 고쳤으면 쓰기가 실패한다)
+        //  - 희망조건: 행을 잠그고 같은 트랜잭션에서 확인하고 쓴다 (applyRequirementUpdate)
+        const base = options.force ? null : parseSuggestionBaseValues(suggestion.baseValues);
+        if (type === CallSuggestionType.LISTING_CONFIRM) {
+          // 실제로 쓰려는 가격 (고쳐서 반영했으면 고친 값 — 제안에 없던 칸이나 매물이 들어 있을 수 있다)
+          const writes = proposedListingPrices(payload as SuggestionPayloadByType['listing_confirm']);
+          const listingIds = Object.keys(writes);
+          // 값과 수정 시각을 한 번에 읽는다: 이 뒤에 누가 고치면 쓰기 조건(수정 시각)에 걸린다
+          const rows = listingIds.length
+            ? await this.prisma.listing.findMany({
+                where: { officeId, id: { in: listingIds } },
+                select: { id: true, price: true, deposit: true, monthlyRent: true, updatedAt: true },
+              })
+            : [];
+          context.listingVersions = new Map(rows.map((row) => [row.id, row.updatedAt]));
+          if (!options.force) {
+            const current = Object.fromEntries(
+              rows.map((row) => [row.id, { price: row.price, deposit: row.deposit, monthlyRent: row.monthlyRent }]),
+            );
+            const changes = diffListingPriceWrites(
+              base,
+              current,
+              writes,
+              // 앞선 시도가 일부 매물의 가격을 이미 써 둔 경우만 그 값과 같은 것을 봐준다
+              prior ? proposedListingPrices(prior as SuggestionPayloadByType['listing_confirm']) : {},
+            );
+            if (changes.length > 0) throw baseChangedError(changes);
+          }
+        } else if (base && type !== CallSuggestionType.BUYER_REQUIREMENT_UPDATE) {
+          const now = await readSuggestionBaseValues(
+            this.prisma,
+            officeId,
+            type,
+            suggestion.payload as unknown as SuggestionPayload,
+          );
+          const changes = diffSuggestionBaseValues(base, now);
+          if (changes.length > 0) throw baseChangedError(changes);
+        }
         // 도메인에 쓰기 전에 이번 내용을 기록해 둔다 (다시 시도할 때 무엇이 적용됐는지 알 수 있게)
         await this.prisma.callActionSuggestion.update({
           where: { id },
@@ -213,6 +297,9 @@ export class CallSuggestionsService {
             payload as SuggestionPayloadByType['buyer_requirement_update'],
             context,
             finalize,
+            base
+              ? { base, original: suggestion.payload as unknown as SuggestionPayload }
+              : null,
           );
         }
         const applied = await this.apply(type, payload, context);
@@ -552,8 +639,23 @@ export class CallSuggestionsService {
       appliedPayload: unknown,
       client: Pick<Prisma.TransactionClient, 'callActionSuggestion'>,
     ) => Promise<unknown>,
+    /** 제안할 때의 값과 견줄 것 (사람이 확인하고 다시 눌렀거나 옛 제안이면 null) */
+    guard: { base: SuggestionBaseValues; original: SuggestionPayload } | null,
   ) {
     return this.prisma.$transaction(async (tx) => {
+      // 행을 잠근 뒤에 견주고 쓴다. 그 사이 다른 수정은 이 트랜잭션이 끝날 때까지 기다리므로
+      // "확인한 값"과 "덮어쓰는 값"이 어긋나지 않는다.
+      await tx.$queryRaw`SELECT 1 FROM "buyer_requirements" WHERE "id" = ${payload.buyerReqId}::uuid AND "office_id" = ${context.officeId}::uuid FOR UPDATE`;
+      if (guard) {
+        const now = await readSuggestionBaseValues(
+          tx,
+          context.officeId,
+          CallSuggestionType.BUYER_REQUIREMENT_UPDATE,
+          guard.original,
+        );
+        const changes = diffSuggestionBaseValues(guard.base, now);
+        if (changes.length > 0) throw baseChangedError(changes);
+      }
       const existing = await tx.buyerRequirement.findFirst({
         where: { id: payload.buyerReqId, officeId: context.officeId },
         select: { memo: true, preferredSites: { select: { siteId: true, priority: true, memo: true } } },
@@ -635,9 +737,14 @@ export class CallSuggestionsService {
     context: ApplyContext,
   ): Promise<Applied> {
     const contactId = this.requireContact(context);
-    for (const change of payload.priceChanges) {
-      const { listingId, ...prices } = change;
-      await this.listings.update(listingId, context.officeId, withoutNulls(prices));
+    // 견줄 때와 같은 목록(매물별로 합친 값)을 쓴다. 확인하지 않은 칸이 쓰이는 일이 없다.
+    for (const [listingId, prices] of Object.entries(proposedListingPrices(payload))) {
+      // 견주기 전에 읽은 수정 시각을 조건으로 건다: 그 뒤 누가 이 매물을 고쳤으면 덮어쓰지 않고 멈춘다.
+      const expectedUpdatedAt = context.listingVersions?.get(listingId);
+      await this.listings.update(listingId, context.officeId, {
+        ...prices,
+        ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+      });
     }
     await this.listingIntakes.confirm(payload.intakeId, context.officeId, context.userId, {
       result: payload.result,

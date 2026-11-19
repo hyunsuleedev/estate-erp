@@ -151,17 +151,15 @@ describe('MatchesService stage progression', () => {
     expect(result.stage).toBe('buyerInterested');
   });
 
-  it('requires viewing confirmation before entering the viewing stage', async () => {
+  it('lets a match enter viewing without going through viewing confirmation', async () => {
     const { service, prisma } = setup(buildMatch('buyerInterested'));
 
-    await expect(
-      service.updateStage('match-1', 'office-1', { stage: 'viewing' }),
-    ).rejects.toThrow(
-      new BadRequestException(
-        '집주인·점유자와 임장 조율을 먼저 완료해 주세요',
-      ),
-    );
-    expect(prisma.match.update).not.toHaveBeenCalled();
+    const result = await service.updateStage('match-1', 'office-1', {
+      stage: 'viewing',
+    });
+
+    expect(prisma.match.update).toHaveBeenCalled();
+    expect(result.stage).toBe('viewing');
   });
 
   it('allows the confirmed viewing to advance into viewing', async () => {
@@ -175,14 +173,83 @@ describe('MatchesService stage progression', () => {
     expect(result.stage).toBe('viewing');
   });
 
-  it('does not allow skipping multiple forward stages', async () => {
+  // 임장 없이 계약으로 가는 경우가 있어 단계 순서를 강제하지 않는다
+  it('allows skipping forward stages', async () => {
     const { service, prisma } = setup(buildMatch('buyerInterested'));
+
+    const result = await service.updateStage('match-1', 'office-1', {
+      stage: 'negotiating',
+    });
+
+    expect(prisma.match.update).toHaveBeenCalled();
+    expect(result.stage).toBe('negotiating');
+  });
+
+  it('still blocks skipping past buyer interest when the listing is not verified', async () => {
+    const { service, prisma } = setup(
+      buildMatch('suggested', { lastVerifiedAt: null, lastCheckedAt: null, lastCheckResult: null }),
+    );
 
     await expect(
       service.updateStage('match-1', 'office-1', { stage: 'negotiating' }),
-    ).rejects.toThrow(
-      new BadRequestException('현재 단계의 다음 업무를 먼저 완료해 주세요'),
-    );
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.match.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('MatchesService agreed terms', () => {
+  it('changes only the fields that were sent and keeps the stage', async () => {
+    const { service, prisma } = setup(buildMatch('negotiating'));
+
+    await service.updateAgreedTerms('match-1', 'office-1', {
+      agreedPrice: 315000,
+      agreedMoveInDate: '2027-02-20',
+    });
+
+    const { data } = prisma.match.update.mock.calls[0][0];
+    expect(data.agreedPrice).toBe(315000);
+    expect(data.agreedMoveInDate).toEqual(new Date('2027-02-20'));
+    expect(data.agreedDeposit).toBeUndefined();
+    expect(data.agreedMonthlyRent).toBeUndefined();
+    expect(data).not.toHaveProperty('stage');
+  });
+
+  it('clears a field when null is sent', async () => {
+    const { service, prisma } = setup(buildMatch('negotiating'));
+
+    await service.updateAgreedTerms('match-1', 'office-1', {
+      agreedPrice: null,
+      agreedMoveInDate: null,
+    });
+
+    const { data } = prisma.match.update.mock.calls[0][0];
+    expect(data.agreedPrice).toBeNull();
+    expect(data.agreedMoveInDate).toBeNull();
+  });
+
+  it('accepts terms before the negotiating stage', async () => {
+    const { service, prisma } = setup(buildMatch('buyerInterested'));
+
+    await service.updateAgreedTerms('match-1', 'office-1', { agreedPrice: 300000 });
+
+    expect(prisma.match.update).toHaveBeenCalled();
+  });
+
+  it('refuses to change terms after the match became a deal', async () => {
+    const { service, prisma } = setup(buildMatch('dealCreated'));
+
+    await expect(
+      service.updateAgreedTerms('match-1', 'office-1', { agreedPrice: 300000 }),
+    ).rejects.toThrow(ConflictException);
+    expect(prisma.match.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unreadable move-in date', async () => {
+    const { service, prisma } = setup(buildMatch('negotiating'));
+
+    await expect(
+      service.updateAgreedTerms('match-1', 'office-1', { agreedMoveInDate: '내년 봄' }),
+    ).rejects.toThrow(BadRequestException);
     expect(prisma.match.update).not.toHaveBeenCalled();
   });
 });

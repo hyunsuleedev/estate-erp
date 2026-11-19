@@ -24,6 +24,12 @@ export interface Match {
   /** 자동 종료를 일으킨 거래 */
   closedByDealId: string | null;
   memo: string | null;
+  /** 협상하며 적어 둔 합의 조건 (만원). 거래로 전환한 뒤에는 Deal 쪽이 기준이다. */
+  agreedPrice: number | null;
+  agreedDeposit: number | null;
+  agreedMonthlyRent: number | null;
+  /** ISO 날짜 */
+  agreedMoveInDate: string | null;
   createdAt: string;
   updatedAt: string;
   property?: Property;
@@ -42,6 +48,15 @@ export interface CreateMatchDto {
 export interface UpdateMatchMemoDto {
   memo: string | null;
   expectedUpdatedAt?: string | null;
+}
+
+/** 보낸 칸만 바꾼다 — 칸을 빼면 변경 없음, null 이면 비우기. 금액은 만원 단위 정수. */
+export interface UpdateMatchAgreedTermsDto {
+  agreedPrice?: number | null;
+  agreedDeposit?: number | null;
+  agreedMonthlyRent?: number | null;
+  /** YYYY-MM-DD 또는 ISO */
+  agreedMoveInDate?: string | null;
 }
 
 export interface MatchesFilter {
@@ -72,6 +87,10 @@ export function createMatchesApi(request: RequestFn) {
     /** stage를 건드리지 않는 메모 전용 수정. expectedUpdatedAt 지정 시 충돌을 감지한다. */
     updateMemo: (id: string, dto: UpdateMatchMemoDto) =>
       request<Match>(`/matches/${id}/memo`, { method: 'PATCH', body: dto }),
+
+    /** 협상 중 합의 조건. 거래로 전환한 매칭이면 409. */
+    updateAgreedTerms: (id: string, dto: UpdateMatchAgreedTermsDto) =>
+      request<Match>(`/matches/${id}/agreed-terms`, { method: 'PATCH', body: dto }),
 
     remove: (id: string) =>
       request<void>(`/matches/${id}`, { method: 'DELETE' }),

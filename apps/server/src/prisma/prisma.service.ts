@@ -7,6 +7,9 @@ const TENANT_SCOPED_MODELS = new Set([
   "OfficeSite",
   "Contact",
   "ContactGroup",
+  "ContactGroupMember",
+  "ContactTag",
+  "ContactTagAssignment",
   "ContactRelation",
   "PropertyContact",
   "Tenant",
@@ -15,7 +18,8 @@ const TENANT_SCOPED_MODELS = new Set([
   "Listing",
   "PublicListing",
   "ListingAdvertisement",
-  "ListingAdvertisementPriceHistory",
+  "AdvertisementChangeRequest",
+  "ListingAdvertisementHistory",
   "ListingAdvertisementSnapshotSession",
   "ListingAdvertisementSnapshotItem",
   "PriceHistory",
@@ -29,6 +33,10 @@ const TENANT_SCOPED_MODELS = new Set([
   "Deal",
   "Contract",
   "DealParticipant",
+  // 직원 정산: 입금 건별 기록과 확정 정산
+  "CommissionReceipt",
+  "Settlement",
+  "SettlementLine",
   "ContractDocument",
   "ContractDocumentRevision",
   "PublicDocument",
@@ -45,8 +53,8 @@ const TENANT_SCOPED_MODELS = new Set([
   "ExternalListingGroup",
   "ExternalListing",
   "ExternalListingSnapshotSession",
-  "OfficeAdvertisementGroup",
-  "OfficeAdvertisement",
+  "AdvertisementComparison",
+  "AdvertisementComparisonRecord",
   // 공동중개 네트워크 모델(NetworkRoom/NetworkRoomMember/NetworkSharedProperty/
   // NetworkInquiry/NetworkMessage)은 여러 사무소가 한 방을 공유하는 크로스 오피스
   // 데이터라 자동 officeId 주입 대상이 아니다 (NetworkInquiry는 officeId 컬럼 자체가
@@ -76,6 +84,11 @@ const AUDITED_MODELS = new Set([
   "ContractDocument",
   "ContractClauseTemplate",
   "OfficePrintTemplate",
+  "AdvertisementChangeRequest",
+  // 돈이 오간 기록과 정산 확정·지급은 누가 언제 바꿨는지 남긴다
+  "CommissionReceipt",
+  "Settlement",
+  "SettlementLine",
 ]);
 
 const AUDITED_OPERATIONS = new Set<PrismaOperation>([

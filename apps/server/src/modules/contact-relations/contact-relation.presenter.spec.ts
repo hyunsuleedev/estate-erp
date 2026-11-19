@@ -20,14 +20,14 @@ describe('withContactRelationPerspective', () => {
     });
   });
 
-  it('전문가 관계를 반대쪽에서는 의뢰인으로 표현한다', () => {
+  it('조부모 관계를 반대쪽에서는 손주로 표현한다', () => {
     expect(
       withContactRelationPerspective(
-        { relationType: 'lawyer', label: null, inverseLabel: null },
+        { relationType: 'grandparent', label: null, inverseLabel: null },
         true,
       ),
     ).toMatchObject({
-      displayRelationType: 'client',
+      displayRelationType: 'grandchild',
       displayLabel: null,
     });
   });

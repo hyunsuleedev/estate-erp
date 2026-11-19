@@ -12,9 +12,9 @@ model Property {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office           Office            @relation(fields: [officeId], references: [id])
-  site             Site              @relation(fields: [siteId], references: [id])
-  unit             Unit?             @relation(fields: [unitId], references: [id])
+  office           Office                 @relation(fields: [officeId], references: [id])
+  site             Site                   @relation(fields: [siteId], references: [id])
+  unit             Unit?                  @relation(fields: [unitId], references: [id])
   propertyContacts PropertyContact[]
   tenants          Tenant[]
   listingIntakes   ListingIntake[]
@@ -24,6 +24,8 @@ model Property {
   calendarEvents   CalendarEvent[]
   publicDocuments  PublicDocument[]
   photos           PropertyPhoto[]
+  /// 이 관리 공간의 광고 (매물이 정해지지 않은 광고 포함)
+  advertisements   ListingAdvertisement[]
 
   @@unique([officeId, siteId, unitId])
   @@index([officeId])
@@ -38,11 +40,11 @@ model Property {
 // ============================================================
 
 model ListingIntake {
-  id               String @id @default(uuid()) @db.Uuid
-  officeId         String @map("office_id") @db.Uuid
+  id              String  @id @default(uuid()) @db.Uuid
+  officeId        String  @map("office_id") @db.Uuid
   /// 사용자가 중개 건으로 묶었을 때만 채워진다.
-  brokerageCaseId  String? @map("brokerage_case_id") @db.Uuid
-  propertyId       String @map("property_id") @db.Uuid
+  brokerageCaseId String? @map("brokerage_case_id") @db.Uuid
+  propertyId      String  @map("property_id") @db.Uuid
 
   /// 의뢰 생명주기만 저장: open | hold | closed
   lifecycleStatus    String   @default("open") @map("lifecycle_status")
@@ -72,10 +74,10 @@ model ListingIntake {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office                Office                    @relation(fields: [officeId], references: [id])
-  brokerageCase         BrokerageCase?            @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Restrict)
-  property              Property                  @relation(fields: [propertyId], references: [id])
-  jointBrokeragePartner PartnerBroker?            @relation("ListingIntakeJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
+  office                Office              @relation(fields: [officeId], references: [id])
+  brokerageCase         BrokerageCase?      @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Restrict)
+  property              Property            @relation(fields: [propertyId], references: [id])
+  jointBrokeragePartner PartnerBroker?      @relation("ListingIntakeJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
   listings              Listing[]
   consultations         Consultation[]
   tasks                 Task[]
@@ -148,7 +150,7 @@ model Listing {
   priceHistories             PriceHistory[]
   advertisements             ListingAdvertisement[]
   advertisementSnapshotItems ListingAdvertisementSnapshotItem[]
-  publication PublicListing?
+  publication                PublicListing?
   // 공동 중개망
   networkSharedProperties    NetworkSharedProperty[]
 
@@ -161,21 +163,59 @@ model Listing {
 }
 
 // ============================================================
-// ListingAdvertisement (한 번의 연속된 실제 광고 게재 기록)
+// ListingAdvertisement (광고 — 한 집을 한 채널에 내는 광고)
 // 이실장/부동산뱅크처럼 호실을 제공하는 CP에서 가져온 실제 광고를 기록한다.
 // channel/externalAdId/url은 CP 기준이고, naver*는 CP가 제공한 내 광고 비교
 // 식별값이다. 광고노트 ExternalListing과의 FK나 논리적 연결에는 사용하지 않는다.
 // CP 동기화는 lastSyncedAt, 네이버 비교 확인은 lastCheckedAt으로 분리한다.
-// CP는 현재 광고 중인 항목만 반환한다. 완전한 스냅샷에서 사라진 광고는 row를
-// 삭제하지 않고 status=ended와 endedAt(관측 종료 시각)을 기록한다. 이후 재광고는
-// 같은 Listing 아래 새 row로 생성하며, 가격 수정은 PriceHistory에 누적한다.
+//
+// 한 줄 = 한 광고다 (2026-11-18, 이전에는 "게재 한 회차"였다). 같은 광고인지는 열쇠로 가른다:
+//   매물이 있으면          사무소 + 매물 + 채널
+//   매물 없이 호실까지면   사무소 + 관리 공간 + 채널 + 거래유형
+//   그 밖에는              열쇠가 없다 — 같은 채널의 CP 광고 번호(externalAdId)가 같을 때만 같은 광고다
+// 재광고(네이버 번호가 바뀜)와 내려갔다 다시 올라온 것은 새 줄이 아니라 같은 줄의 변화다.
+// 그래서 연결 · 변경 요청 · 비교 기록이 한 줄기로 이어지고, 지나간 상태는 ListingAdvertisementHistory에 쌓인다.
+// CP는 현재 광고 중인 항목만 반환한다. 완전한 스냅샷에서 사라진 광고는 줄을 지우지 않고
+// status=ended와 endedAt(관측 종료 시각)을 적는다. 다시 보이면 같은 줄이 active로 돌아온다.
+// 열쇠의 유일성은 부분 유일 인덱스로 건다 (마이그레이션 SQL — Prisma 스키마로는 적을 수 없다).
 // 로컬 Skill의 수집 실패는 로컬 실행 상태에만 기록하고 기존 광고 row를 변경하지 않는다.
+//
+// 광고는 매물 없이도 존재한다 (2026-11-18). 사용자의 agent가 CP에서 살아 있는 광고를 모두 넣는 것이
+// 먼저이고, 우리 데이터와의 연결은 찾은 만큼만 채운다. 연결은 세 단계다:
+//   siteId      건물(대지)까지 찾음
+//   propertyId  우리 사무소의 관리 공간까지 찾음 — 공공 호실(Unit)에 직접 걸지 않는다.
+//               사무소의 기록은 모두 Property를 거쳐 호실에 닿는다.
+//   listingId   어느 의뢰의 광고인지까지 정해짐
+// 아래 단계가 채워지면 위 단계도 채워져 있어야 하고, 매물은 그 Property의 매물이어야 한다.
+// 이 일관성은 서버가 저장할 때 확인한다 (FK가 지워지며 한 칸씩 비워지는 순서 때문에 CHECK로 걸지 않았다).
+// 화면의 "매물 연결됨 / 매물 없음 / 호실 못 찾음 / 건물 못 찾음"은 이 세 칸에서 계산하고 따로 저장하지 않는다.
+// 층·가격이 같다는 것만으로 같은 집이라고 추정해 연결하지 않는다 (같은 층의 다른 호를 묶게 된다).
 // ============================================================
 
 model ListingAdvertisement {
-  id        String @id @default(uuid()) @db.Uuid
-  officeId  String @map("office_id") @db.Uuid
-  listingId String @map("listing_id") @db.Uuid
+  id         String  @id @default(uuid()) @db.Uuid
+  officeId   String  @map("office_id") @db.Uuid
+  listingId  String? @map("listing_id") @db.Uuid
+  propertyId String? @map("property_id") @db.Uuid
+  siteId     String? @map("site_id") @db.Uuid
+
+  /// sale / jeonse / monthly. 매물이 없을 때 이 광고가 무슨 거래인지 알기 위해 광고에도 둔다.
+  transactionType String? @map("transaction_type")
+
+  // CP에 적힌 원문. 연결된 뒤에도 지우지 않는다 — 우리 매물과 다른 점이 광고 담당자가 볼 차이다.
+  // 주소는 CP마다 지번과 도로명 중 한쪽만 주기도 해서 따로 둔다.
+  rawJibunAddress String?  @map("raw_jibun_address")
+  rawRoadAddress  String?  @map("raw_road_address")
+  rawSiteName     String?  @map("raw_site_name")
+  rawDong         String?  @map("raw_dong")
+  rawHo           String?  @map("raw_ho")
+  /// CP의 층 표기 그대로: "12/25", "저/25", "B1"
+  rawFloorText    String?  @map("raw_floor_text")
+  rawAreaM2       Decimal? @map("raw_area_m2") @db.Decimal
+
+  /// 광고에 층을 어떻게 내보내는지: exact(정확한 층) / band(저·중·고).
+  /// 중개대상물 표시·광고 명시사항 세부기준이 허용하는 선택지이고, 호는 어느 유형에서도 광고 항목이 아니다.
+  floorExposure String? @map("floor_exposure")
 
   channel String // CP사 slug: esiljang, budongsanbank 등
   status  String @default("active") // active, ended
@@ -206,25 +246,69 @@ model ListingAdvertisement {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office                   Office                             @relation(fields: [officeId], references: [id])
-  listing                  Listing                            @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  officeAdvertisementGroup OfficeAdvertisementGroup?
-  priceHistories           ListingAdvertisementPriceHistory[]
+  office            Office                          @relation(fields: [officeId], references: [id])
+  /// 매물이 지워져도 광고는 남는다 (CP에 실제로 걸려 있는 것의 기록이므로)
+  listing           Listing?                        @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  property          Property?                       @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  site              Site?                           @relation(fields: [siteId], references: [id])
+  comparisons       AdvertisementComparison[]
+  comparisonRecords AdvertisementComparisonRecord[]
+  histories         ListingAdvertisementHistory[]
+  changeRequests    AdvertisementChangeRequest[]
 
   @@index([officeId])
+  @@index([officeId, propertyId])
+  @@index([officeId, siteId])
   @@index([listingId, status])
   @@index([officeId, channel, status])
   @@index([officeId, naverArticleNo])
   @@map("listing_advertisements")
 }
 
-/// CP 광고에서 실제로 관측된 가격 상태. 광고 최초 발견과 가격 변경 때만 append한다.
+/// 광고를 이렇게 바꿔 달라는 요청. "요청"과 "직접 변경"을 가르기 위한 표다:
+/// - 요청: CP에서 이렇게 바꿔 달라는 것. 업무(Task, category=advertisement)가 생기고 agent가 가져가 실행한다.
+///   광고 값은 그대로 두고, 다음 수집에서 본 값을 toValue와 견주어 반영됐는지 계산한다.
+/// - 직접 변경: 이미 CP에서 바꿨고 기록만 맞추는 것. 이 표를 거치지 않고 광고 값을 바로 고친다.
+/// 진행 상태는 여기에 두지 않고 연결된 Task의 상태를 읽는다.
+model AdvertisementChangeRequest {
+  id              String @id @default(uuid()) @db.Uuid
+  officeId        String @map("office_id") @db.Uuid
+  advertisementId String @map("advertisement_id") @db.Uuid
+  taskId          String @unique @map("task_id") @db.Uuid
+
+  /// price / floor_exposure / readvertise / takedown
+  kind      String
+  /// 요청할 때의 값과 바꿀 값. 예: { "price": 320000 } → { "price": 315000 }
+  fromValue Json?  @map("from_value") @db.JsonB
+  toValue   Json?  @map("to_value") @db.JsonB
+
+  requestedById String?  @map("requested_by_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  office        Office               @relation(fields: [officeId], references: [id])
+  advertisement ListingAdvertisement @relation(fields: [advertisementId], references: [id], onDelete: Cascade)
+  task          Task                 @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  requestedBy   User?                @relation("AdvertisementChangeRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+
+  @@index([officeId, advertisementId])
+  @@map("advertisement_change_requests")
+}
+
+/// 내 광고가 어떻게 바뀌어 왔는지. 한 줄 = 바뀐 뒤의 광고 상태(바뀐 칸만이 아니라 전체).
+/// 쌓이는 때: 처음 생길 때, 가격이 바뀔 때, 종료될 때, 다시 게재될 때, 네이버 번호가 바뀔 때(재광고).
+/// 광고 줄 자체는 재광고 · 재게재해도 그대로라서, 지나간 상태는 여기에서만 읽을 수 있다.
 /// Listing 원장의 PriceHistory와 분리해 원장 가격과 외부 노출 가격의 차이를 보존한다.
-model ListingAdvertisementPriceHistory {
+/// (2026-11-18 이전 이름: ListingAdvertisementPriceHistory — 가격만 담았다)
+model ListingAdvertisementHistory {
   id                     String  @id @default(uuid()) @db.Uuid
   officeId               String  @map("office_id") @db.Uuid
   listingAdvertisementId String  @map("listing_advertisement_id") @db.Uuid
   snapshotSessionId      String? @map("snapshot_session_id") @db.Uuid
+
+  /// 그 시점의 게재 상태: active | ended
+  status         String  @default("active")
+  /// 그 시점의 네이버 매물번호. 직전 줄과 다르면 재광고다
+  naverArticleNo String? @map("naver_article_no")
 
   advertisedPrice       Int? @map("advertised_price")
   advertisedDeposit     Int? @map("advertised_deposit")
@@ -234,14 +318,14 @@ model ListingAdvertisementPriceHistory {
   source     String   @default("cp_sync") // cp_sync, manual, migration
   createdAt  DateTime @default(now()) @map("created_at")
 
-  office        Office                               @relation(fields: [officeId], references: [id], map: "listing_ad_price_histories_office_id_fkey")
-  advertisement ListingAdvertisement                 @relation(fields: [listingAdvertisementId], references: [id], onDelete: Cascade, map: "listing_ad_price_histories_advertisement_id_fkey")
-  snapshot      ListingAdvertisementSnapshotSession? @relation(fields: [snapshotSessionId], references: [id], onDelete: SetNull, map: "listing_ad_price_histories_snapshot_session_id_fkey")
+  office        Office                               @relation(fields: [officeId], references: [id])
+  advertisement ListingAdvertisement                 @relation(fields: [listingAdvertisementId], references: [id], onDelete: Cascade)
+  snapshot      ListingAdvertisementSnapshotSession? @relation(fields: [snapshotSessionId], references: [id], onDelete: SetNull)
 
-  @@index([officeId, observedAt], map: "listing_ad_price_histories_office_observed_idx")
-  @@index([listingAdvertisementId, observedAt], map: "listing_ad_price_histories_ad_observed_idx")
-  @@index([snapshotSessionId], map: "listing_ad_price_histories_snapshot_idx")
-  @@map("listing_advertisement_price_histories")
+  @@index([officeId, observedAt])
+  @@index([listingAdvertisementId, observedAt])
+  @@index([snapshotSessionId])
+  @@map("listing_advertisement_histories")
 }
 
 // ============================================================

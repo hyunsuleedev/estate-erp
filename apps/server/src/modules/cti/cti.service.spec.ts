@@ -456,7 +456,12 @@ describe('CtiService', () => {
     it('연락처 매칭 시 상담/매물/구매조건/업무를 함께 반환한다', async () => {
       const { prisma, service } = createService();
       prisma.contactPhone.findFirst.mockResolvedValue({
-        contact: { id: 'contact-1', name: '김소유', tags: [], memo: null },
+        contact: {
+          id: 'contact-1',
+          name: '김소유',
+          memo: null,
+          tagAssignments: [{ tag: { name: 'VIP' } }],
+        },
       });
       prisma.vendorContact.findMany.mockResolvedValue([]);
       prisma.callLog.findMany.mockResolvedValue([]);
@@ -469,7 +474,8 @@ describe('CtiService', () => {
 
       expect(result.isNew).toBe(false);
       expect(result.contact).toEqual(
-        expect.objectContaining({ id: 'contact-1', name: '김소유' }),
+        // 태그는 연결 표에서 읽어 이름 배열로 돌려준다
+        expect.objectContaining({ id: 'contact-1', name: '김소유', tags: ['VIP'] }),
       );
       expect(result.recentConsultations).toHaveLength(1);
       expect(result.properties).toHaveLength(1);

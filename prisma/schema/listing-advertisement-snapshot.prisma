@@ -37,11 +37,11 @@ model ListingAdvertisementSnapshotSession {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office         Office                             @relation(fields: [officeId], references: [id])
-  startedBy      User                               @relation("ListingAdvertisementSnapshotStartedBy", fields: [startedById], references: [id])
-  completedBy    User?                              @relation("ListingAdvertisementSnapshotCompletedBy", fields: [completedById], references: [id])
-  items          ListingAdvertisementSnapshotItem[]
-  priceHistories ListingAdvertisementPriceHistory[]
+  office                 Office                             @relation(fields: [officeId], references: [id])
+  startedBy              User                               @relation("ListingAdvertisementSnapshotStartedBy", fields: [startedById], references: [id])
+  completedBy            User?                              @relation("ListingAdvertisementSnapshotCompletedBy", fields: [completedById], references: [id])
+  items                  ListingAdvertisementSnapshotItem[]
+  advertisementHistories ListingAdvertisementHistory[]
 
   @@unique([officeId, channel, manifestHash], map: "listing_ad_snapshot_session_identity_key")
   @@index([officeId, channel, status], map: "listing_ad_snapshot_session_channel_status_idx")
@@ -62,6 +62,9 @@ model ListingAdvertisementSnapshotItem {
   itemHash     String @map("item_hash") @db.VarChar(64)
 
   listingId  String? @map("listing_id") @db.Uuid
+  /// 매물까지 정하지 못해도 찾은 만큼 적는다 (광고 원장의 연결 세 단계와 같다)
+  propertyId String? @map("property_id") @db.Uuid
+  siteId     String? @map("site_id") @db.Uuid
   resolution Json?   @db.JsonB
   error      String? @db.Text
 

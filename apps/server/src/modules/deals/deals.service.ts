@@ -103,14 +103,39 @@ export class DealsService {
 
   private readonly dealInclude = dealInclude;
 
-  async findAll(officeId: string) {
+  async findAll(officeId: string, activeOnly = false) {
     const deals = await this.prisma.deal.findMany({
-      where: { officeId },
+      where: { officeId, ...(activeOnly && { isCancelled: false, stage: { not: 'closed' } }) },
       include: this.dealInclude,
       orderBy: { createdAt: 'desc' },
     });
 
     return deals.map((deal) => this.withPropertyContext(deal));
+  }
+
+  async findArchive(officeId: string, kind: 'closed' | 'cancelled', query?: string, since?: Date, cursor?: string) {
+    const cancelled = kind === 'cancelled';
+    const dateField = cancelled ? 'cancelledAt' : 'stageChangedAt';
+    const search = { contains: query, mode: 'insensitive' as const };
+    const rows = await this.prisma.deal.findMany({
+      where: {
+        officeId,
+        isCancelled: cancelled,
+        ...(!cancelled && { stage: 'closed' }),
+        ...(since && { [dateField]: { gte: since } }),
+        ...(query && { OR: [
+          { listing: { property: { site: { name: search } } } },
+          { buyerContact: { name: search } },
+          { sellerContact: { name: search } },
+        ] }),
+      },
+      orderBy: [{ [dateField]: 'desc' }, { id: 'desc' }],
+      ...(cursor && { cursor: { id: cursor }, skip: 1 }),
+      take: 31,
+      include: this.dealInclude,
+    });
+    const page = rows.slice(0, 30);
+    return { items: page.map((row) => this.withPropertyContext(row)), nextCursor: rows.length > 30 ? page[29].id : null };
   }
 
   async findOne(id: string, officeId: string) {

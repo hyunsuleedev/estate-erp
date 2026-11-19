@@ -1,4 +1,8 @@
 import {
+  CONTACT_TAG_NAMES_INCLUDE,
+  withTagNames,
+} from '../contacts/contact-tags.service';
+import {
   BadRequestException,
   Injectable,
   Logger,
@@ -357,7 +361,14 @@ export class CtiService {
         where: { officeId, phone },
         orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
         select: {
-          contact: { select: { id: true, name: true, tags: true, memo: true } },
+          contact: {
+            select: {
+              id: true,
+              name: true,
+              memo: true,
+              tagAssignments: CONTACT_TAG_NAMES_INCLUDE,
+            },
+          },
         },
       }),
       this.prisma.vendorContact.findMany({
@@ -388,7 +399,8 @@ export class CtiService {
       }),
     ]);
 
-    const contact = matchedPhone?.contact ?? null;
+    // 화면은 태그를 이름 배열로 받는다.
+    const contact = matchedPhone?.contact ? withTagNames(matchedPhone.contact) : null;
 
     if (!contact) {
       return {
@@ -424,7 +436,7 @@ export class CtiService {
                 unit: {
                   select: {
                     id: true,
-                    name: true,
+                    name: true, floor: true, floorEnd: true, floorLabel: true,
                     dong: { select: { name: true, isPlaceholder: true } },
                   },
                 },

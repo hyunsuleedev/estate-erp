@@ -71,7 +71,7 @@ export class PublicDocumentsService {
           select: {
             id: true,
             site: { select: { name: true } },
-            unit: { select: { name: true, dong: { select: { name: true } } } },
+            unit: { select: { name: true, floor: true, floorEnd: true, floorLabel: true, dong: { select: { name: true } } } },
           },
         },
         site: { select: { id: true, name: true } },

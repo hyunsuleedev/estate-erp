@@ -19,10 +19,29 @@ model Site {
   roadBuildingSub  Int?    @map("road_building_sub")
   roadAddress      String? @map("road_address") // 전체 도로명주소 (표시용)
 
-  // 지번주소
+  // 지번주소 — 땅(필지)을 가리킨다. 토지와 미준공 건물은 도로명주소 없이 지번만 있다.
+  // 도로명주소(위)는 건물을 가리키므로 둘은 서로에게서 만들어 낼 수 없다. 받은 대로 둘 다 저장한다.
   jibunMain    String? @map("jibun_main")
   jibunSub     String? @map("jibun_sub")
   jibunAddress String? @map("jibun_address") // 전체 지번주소 (표시용)
+  /// "산 12-3"과 "12-3"은 다른 필지다. 필지 번호도 이 값이 있어야 만든다.
+  isMountain   Boolean @default(false) @map("is_mountain")
+
+  // 공공 식별자 — 단지 코드가 없는 건물(다세대·다가구·상가·토지)을 가리키는 열쇠
+  /// 필지 번호 19자리 (법정동 10 + 대지/산 1 + 본번 4 + 부번 4). 찾는 조건으로만 쓴다:
+  /// 한 필지에 건물이 여럿 있을 수 있고 행정구역이 바뀌면 번호도 바뀐다. 블록·로트 지번은 비어 있다.
+  pnu              String?   @db.VarChar(19)
+  /// 건물이 걸친 다른 필지들 (대표 필지는 pnu)
+  relatedPnus      String[]  @default([]) @map("related_pnus")
+  /// 도로명코드 (도로명주소 API의 rnMgtSn)
+  roadCode         String?   @map("road_code")
+  /// 지하 건물번호 여부 (도로명주소 API의 udrtYn)
+  isUnderground    Boolean   @default(false) @map("is_underground")
+  /// 건축물대장 총괄표제부 번호. 한 대지에 건물이 여럿일 때만 있다.
+  recapRegisterPk  String?   @map("recap_register_pk")
+  /// 위 식별자를 어디서 받았는지: juso / building_register / manual
+  identifierSource String?   @map("identifier_source")
+  identifiedAt     DateTime? @map("identified_at")
 
   // 좌표 — PostGIS geometry는 migration SQL에서 추가
   // ALTER TABLE sites ADD COLUMN location geometry(Point, 5179);
@@ -61,6 +80,8 @@ model Site {
   buyerRequirements BuyerRequirementSite[]
 
   publicDocuments                 PublicDocument[]
+  /// 건물까지만 찾은 광고도 여기에 걸린다
+  listingAdvertisements           ListingAdvertisement[]
   externalListingGroups           ExternalListingGroup[]
   externalListingSnapshotSessions ExternalListingSnapshotSession[]
 
@@ -70,6 +91,7 @@ model Site {
   @@index([kaptComplexCode])
   @@index([naverComplexCode])
   @@index([kbComplexCode])
+  @@index([pnu])
   @@index([location], type: Gist)
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin) // 단지명 퍼지 검색
   @@map("sites")
@@ -144,27 +166,59 @@ model SiteUnitType {
   @@map("site_unit_types")
 }
 
-/// 동(棟). 단일 동 건물도 placeholder Dong 하나를 생성해 체인을 통일한다
+/// 동(棟) = 건물 한 채. 건축물대장의 표제부 한 건과 짝이다.
+/// 단일 동 건물도 placeholder Dong 하나를 생성해 체인을 통일한다
 /// (isPlaceholder = true). Site → Dong → Unit → Property는 토지/단독을
 /// 제외한 모든 건물형 자산에서 항상 성립.
 model Dong {
-  id            String   @id @default(uuid()) @db.Uuid
-  officeId      String?  @map("office_id") @db.Uuid // null = 중앙 데이터
-  siteId        String   @map("site_id") @db.Uuid
+  id            String  @id @default(uuid()) @db.Uuid
+  officeId      String? @map("office_id") @db.Uuid // null = 중앙 데이터
+  siteId        String  @map("site_id") @db.Uuid
   name          String // 동 이름 (101, A, 단일 동 건물은 "-" 등) - "동" suffix는 저장하지 않음
-  isPlaceholder Boolean  @default(false) @map("is_placeholder") // true = 실제 동 구분 없음, UI에서 숨김
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  isPlaceholder Boolean @default(false) @map("is_placeholder") // true = 실제 동 구분 없음, UI에서 숨김
+
+  // 건물의 공공 식별자
+  /// 건축물대장 표제부 번호
+  registerPk         String? @map("register_pk")
+  /// 도로명 건물관리번호 25자리 (도로명주소 API의 bdMgtSn). 쪼개 쓰지 않고 통째로 둔다.
+  roadBuildingMgmtNo String? @map("road_building_mgmt_no")
+  /// 대장 종류. 호를 공공에서 가져올 수 있는지가 유형(상가·오피스텔)이 아니라 이것으로 갈린다.
+  /// collective = 집합건축물(호별 전유부 있음) / general = 일반건축물(층별 기록까지만, 호는 사무소가 만든다)
+  registerKind       String? @map("register_kind")
+  groundFloors       Int?    @map("ground_floors")
+  undergroundFloors  Int?    @map("underground_floors")
+  /// 대장의 주용도 (다세대주택, 제2종근린생활시설 …)
+  mainPurpose        String? @map("main_purpose")
+  /// 이 건물만의 도로명 건물번호. 대부분의 단지는 모든 동이 같은 번호를 쓰므로 비어 있고,
+  /// 비어 있으면 Site의 대표 도로명주소를 따른다.
+  roadBuildingMain   Int?    @map("road_building_main")
+  roadBuildingSub    Int?    @map("road_building_sub")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   office Office? @relation(fields: [officeId], references: [id])
   site   Site    @relation(fields: [siteId], references: [id])
   units  Unit[]
 
   @@index([siteId])
+  @@index([registerPk])
+  @@index([roadBuildingMgmtNo])
   @@map("dongs")
 }
 
-/// 호실. 모든 건물형 자산은 반드시 Dong에 속한다 (단일 동 건물도 placeholder Dong 사용).
+/// 거래 단위 공간. 호가 그중 한 종류이고, 호 없이 층이 단위인 건물(상가건물 2층, 다가구 3층)과
+/// 층의 일부(2층 좌측), 여러 층(1~2층 통임대)도 여기에 담는다. 건물 전체와 토지는 Unit 없이
+/// Site → Property로 건다.
+///
+/// officeId가 비어 있으면 공공 데이터(건축물대장 전유부에서 온 호), 채워져 있으면 그 사무소가 만든 공간이다.
+/// 다가구·일반 상가건물은 대장에 호가 없어서 사무소가 공공 건물 아래에 공간을 만든다.
+///
+/// 마이그레이션 SQL에만 있는 제약 (20261118100000_widen_places_and_ad_links):
+/// - 이름과 층 중 하나는 있다 / 0층은 없다 / floorEnd는 floor보다 위다
+/// - 같은 건물의 공공 호 이름은 하나 (units_public_name_key)
+/// - 한 사무소가 같은 공간을 두 번 만들지 않는다 (units_office_space_key)
+/// 모든 건물형 자산은 반드시 Dong에 속한다 (단일 동 건물도 placeholder Dong 사용).
 model Unit {
   id             String  @id @default(uuid()) @db.Uuid
   officeId       String? @map("office_id") @db.Uuid // null = 중앙 데이터
@@ -172,9 +226,17 @@ model Unit {
   dongId         String  @map("dong_id") @db.Uuid // NOT NULL — 단일 동은 placeholder Dong
   siteUnitTypeId String? @map("site_unit_type_id") @db.Uuid // FK → SiteUnitType (평형 타입)
 
-  name   String // 호수 (3501호)
-  floor  Int? // 층 (35)
-  lineNo Int?   @map("line_no") // 라인번호 (네이버 그리드 컬럼, 같은 타입 수직 스택)
+  /// 호 이름(3501) 또는 층의 일부에 붙인 이름(좌측, 도로변). 비어 있으면 층이 이 공간의 이름이다.
+  name       String?
+  /// 층. 지하는 음수(-2 = B2), 0은 쓰지 않는다. 화면 표기는 한 함수가 만든다.
+  floor      Int?
+  /// 여러 층을 한 공간으로 둘 때의 끝 층 (floor=1, floorEnd=2 → 1~2층)
+  floorEnd   Int?    @map("floor_end")
+  /// 숫자로 안 떨어지는 층의 표시 이름 (반지하, M층, 옥탑). 비어 있으면 floor에서 만든다.
+  floorLabel String? @map("floor_label")
+  /// 건축물대장 전유부 번호. 대장에서 온 호에만 있다.
+  registerPk String? @map("register_pk")
+  lineNo     Int?    @map("line_no") // 라인번호 (네이버 그리드 컬럼, 같은 타입 수직 스택)
 
   // 면적 — SiteUnitType에서 가져오는 것이 정석이나, 타입 미지정 호실용 fallback
   exclusiveAreaM2 Decimal? @map("exclusive_area_m2") @db.Decimal
@@ -197,5 +259,6 @@ model Unit {
   properties   Property[]
 
   @@index([siteId, dongId, floor])
+  @@index([registerPk])
   @@map("units")
 }

@@ -8,44 +8,35 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const GROUP_NAME_MAX_LENGTH = 30;
-/** 그룹을 고치면 소속 연락처를 한 명씩 감사 기록과 함께 바꾸므로 여유를 둔다. */
-const GROUP_REWRITE_TIMEOUT_MS = 60_000;
-
-interface LockedContact {
-  id: string;
-  tags: string[];
-}
 
 /**
- * 사무소가 직접 만드는 연락처 그룹.
- * 소속은 Contact.tags에 그룹 이름으로 저장하고, ContactGroup은 비어 있는 그룹도 남도록 이름만 기억한다.
+ * 사무소가 직접 만드는 연락처 그룹(VIP, 설 선물 등).
  *
- * 태그 쓰기 규칙:
- * - updateMany나 원시 UPDATE를 쓰지 않는다. 연락처 변경이 ActivityLog에 남아야 하기 때문이다.
- * - 배열을 통째로 다시 쓰므로 읽기 전에 행을 잠근다. 잠그지 않으면 동시에 들어온 다른 변경이 사라진다.
- *   FOR UPDATE는 트랜잭션 밖 감사 INSERT의 FK 확인과 충돌할 수 있어, UPDATE와 같은 수준인
- *   FOR NO KEY UPDATE를 쓴다. 교착을 막으려고 항상 id 순서로 잠근다.
+ * 그룹과 태그는 다른 것이다. 소속은 ContactGroupMember의 한 줄이고 태그(ContactTag)와 무관하다.
+ * 태그 칸에 그룹과 같은 글자를 적어도 그룹에 들어가지 않고, 그룹에 넣어도 태그가 생기지 않는다.
+ * 그래서 이름을 바꾸거나 지울 때 연락처를 다시 쓰지 않는다.
+ *
+ * 화면은 그룹을 이름으로 가리킨다(사무소 안에서 이름이 유일하다).
  */
 @Injectable()
 export class ContactGroupsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /** contactIds를 주면 만들기와 넣기를 한 트랜잭션으로 처리해, 그룹만 남는 상태가 생기지 않는다. */
-  async create(officeId: string, rawName: string, contactIds: string[] = []) {
+  async create(
+    officeId: string,
+    rawName: string,
+    contactIds: string[] = [],
+    addedById?: string,
+  ) {
     const name = this.parseNewName(rawName);
-    if (await this.exists(officeId, name)) {
-      throw new ConflictException('이미 있는 그룹입니다.');
-    }
     try {
-      const updated = await this.prisma.$transaction(
-        async (tx) => {
-          await tx.contactGroup.create({ data: { officeId, name } });
-          return contactIds.length > 0
-            ? this.addTag(tx, officeId, name, contactIds)
-            : 0;
-        },
-        { timeout: GROUP_REWRITE_TIMEOUT_MS },
-      );
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const group = await tx.contactGroup.create({
+          data: { officeId, name },
+        });
+        return this.insertMembers(tx, officeId, group.id, contactIds, addedById);
+      });
       return { name, updated };
     } catch (error) {
       throw this.toConflictIfDuplicate(error);
@@ -53,168 +44,109 @@ export class ContactGroupsService {
   }
 
   async rename(officeId: string, rawName: string, rawNewName: string) {
-    const name = await this.requireExisting(officeId, rawName);
+    const group = await this.requireExisting(officeId, rawName);
     const newName = this.parseNewName(rawNewName);
-    if (name === newName) return { name };
-    if (await this.exists(officeId, newName)) {
-      throw new ConflictException('이미 있는 그룹입니다.');
-    }
-
+    if (group.name === newName) return { name: newName };
+    let count: number;
     try {
-      await this.prisma.$transaction(
-        async (tx) => {
-          const members = await this.lockGroupMembers(tx, officeId, name);
-          for (const member of members) {
-            await tx.contact.update({
-              where: { id: member.id },
-              data: {
-                tags: Array.from(
-                  new Set(
-                    member.tags.map((tag) => (tag === name ? newName : tag)),
-                  ),
-                ),
-              },
-            });
-          }
-          await tx.contactGroup.deleteMany({ where: { officeId, name } });
-          await tx.contactGroup.create({ data: { officeId, name: newName } });
-        },
-        { timeout: GROUP_REWRITE_TIMEOUT_MS },
-      );
+      // 읽은 이름이 그대로일 때만 바꾼다. 조건 없이 id로 바꾸면, 같은 그룹을 동시에 바꾼
+      // 두 요청 가운데 먼저 저장된 이름이 말없이 덮인다.
+      ({ count } = await this.prisma.contactGroup.updateMany({
+        where: { id: group.id, officeId, name: group.name },
+        data: { name: newName },
+      }));
     } catch (error) {
       throw this.toConflictIfDuplicate(error);
     }
+    if (count === 0) throw this.changedMeanwhile();
     return { name: newName };
   }
 
-  /** 그룹만 없앤다. 소속 연락처는 그대로 두고 그룹 표시만 뗀다. */
+  /** 그룹만 없앤다. 소속은 함께 지워지고(DB cascade) 연락처는 그대로 남는다. */
   async remove(officeId: string, rawName: string) {
-    const name = await this.requireExisting(officeId, rawName);
-    const removedFrom = await this.prisma.$transaction(
-      async (tx) => {
-        const members = await this.lockGroupMembers(tx, officeId, name);
-        for (const member of members) {
-          await tx.contact.update({
-            where: { id: member.id },
-            data: { tags: member.tags.filter((tag) => tag !== name) },
-          });
-        }
-        await tx.contactGroup.deleteMany({ where: { officeId, name } });
-        return members.length;
-      },
-      { timeout: GROUP_REWRITE_TIMEOUT_MS },
-    );
+    const group = await this.requireExisting(officeId, rawName);
+    const removedFrom = await this.prisma.$transaction(async (tx) => {
+      const count = await tx.contactGroupMember.count({
+        where: { officeId, groupId: group.id },
+      });
+      // 화면이 본 이름의 그룹만 지운다. 그 사이 다른 사람이 이름을 바꿨으면 지우지 않는다.
+      const deleted = await tx.contactGroup.deleteMany({
+        where: { id: group.id, officeId, name: group.name },
+      });
+      if (deleted.count === 0) throw this.changedMeanwhile();
+      return count;
+    });
     return { removedFrom };
   }
 
-  async addMembers(officeId: string, rawName: string, contactIds: string[]) {
-    const name = await this.requireExisting(officeId, rawName);
-    const updated = await this.prisma.$transaction(
-      async (tx) => {
-        await this.rememberGroup(tx, officeId, name);
-        return this.addTag(tx, officeId, name, contactIds);
-      },
-      { timeout: GROUP_REWRITE_TIMEOUT_MS },
+  async addMembers(
+    officeId: string,
+    rawName: string,
+    contactIds: string[],
+    addedById?: string,
+  ) {
+    const group = await this.requireExisting(officeId, rawName);
+    const updated = await this.prisma.$transaction((tx) =>
+      this.insertMembers(tx, officeId, group.id, contactIds, addedById),
     );
     return { updated };
   }
 
+  /** 마지막 사람을 빼도 그룹은 남는다. */
   async removeMembers(officeId: string, rawName: string, contactIds: string[]) {
-    const name = await this.requireExisting(officeId, rawName);
-    const updated = await this.prisma.$transaction(
-      async (tx) => {
-        // 마지막 사람을 빼도 사용자가 관리하던 그룹이 사라지지 않게 이름을 남긴다.
-        await this.rememberGroup(tx, officeId, name);
-        const contacts = await this.lockContacts(tx, officeId, contactIds);
-        const members = contacts.filter(({ tags }) => tags.includes(name));
-        for (const member of members) {
-          await tx.contact.update({
-            where: { id: member.id },
-            data: { tags: member.tags.filter((tag) => tag !== name) },
-          });
-        }
-        return members.length;
-      },
-      { timeout: GROUP_REWRITE_TIMEOUT_MS },
-    );
-    return { updated };
+    const group = await this.requireExisting(officeId, rawName);
+    const { count } = await this.prisma.contactGroupMember.deleteMany({
+      where: { officeId, groupId: group.id, contactId: { in: contactIds } },
+    });
+    return { updated: count };
   }
 
-  private async addTag(
+  /** 이 사무소의 연락처만, 아직 속하지 않은 사람만 넣는다. 새로 들어간 수를 돌려준다. */
+  private async insertMembers(
     tx: Prisma.TransactionClient,
     officeId: string,
-    name: string,
+    groupId: string,
     contactIds: string[],
+    addedById?: string,
   ) {
-    const contacts = await this.lockContacts(tx, officeId, contactIds);
-    const newMembers = contacts.filter(({ tags }) => !tags.includes(name));
-    for (const contact of newMembers) {
-      await tx.contact.update({
-        where: { id: contact.id },
-        data: { tags: [...contact.tags, name] },
-      });
-    }
-    return newMembers.length;
-  }
-
-  private lockContacts(
-    tx: Prisma.TransactionClient,
-    officeId: string,
-    contactIds: string[],
-  ) {
-    return tx.$queryRaw<LockedContact[]>`
-      SELECT "id", "tags"
-      FROM "contacts"
-      WHERE "office_id" = ${officeId}::uuid
-        AND "id" = ANY(${contactIds}::uuid[])
-      ORDER BY "id"
-      FOR NO KEY UPDATE
-    `;
-  }
-
-  private lockGroupMembers(
-    tx: Prisma.TransactionClient,
-    officeId: string,
-    name: string,
-  ) {
-    return tx.$queryRaw<LockedContact[]>`
-      SELECT "id", "tags"
-      FROM "contacts"
-      WHERE "office_id" = ${officeId}::uuid
-        AND ${name}::text = ANY("tags")
-      ORDER BY "id"
-      FOR NO KEY UPDATE
-    `;
-  }
-
-  private rememberGroup(
-    tx: Prisma.TransactionClient,
-    officeId: string,
-    name: string,
-  ) {
-    return tx.contactGroup.createMany({
-      data: [{ officeId, name }],
+    if (contactIds.length === 0) return 0;
+    const contacts = await tx.contact.findMany({
+      where: { officeId, id: { in: contactIds } },
+      select: { id: true },
+    });
+    if (contacts.length === 0) return 0;
+    const { count } = await tx.contactGroupMember.createMany({
+      data: contacts.map(({ id }) => ({
+        officeId,
+        groupId,
+        contactId: id,
+        addedById: addedById ?? null,
+      })),
+      // 같은 사람을 동시에 넣어도 한 줄만 남는다 (group_id, contact_id unique).
       skipDuplicates: true,
     });
-  }
-
-  private async exists(officeId: string, name: string) {
-    const [registered, members] = await Promise.all([
-      this.prisma.contactGroup.count({ where: { officeId, name } }),
-      this.prisma.contact.count({ where: { officeId, tags: { has: name } } }),
-    ]);
-    return registered > 0 || members > 0;
+    return count;
   }
 
   /**
    * 화면이 목록에서 받은 이름을 그대로 보내므로 그대로 찾는다.
-   * 다듬으면 '경합C ' 태그를 지우려다 다른 그룹 '경합C'를 지우게 된다.
+   * 다듬으면 '경합C ' 그룹을 지우려다 다른 그룹 '경합C'를 지우게 된다.
    */
   private async requireExisting(officeId: string, name: string) {
-    if (!name || !(await this.exists(officeId, name))) {
-      throw new NotFoundException('그룹을 찾을 수 없습니다.');
-    }
-    return name;
+    const group = name
+      ? await this.prisma.contactGroup.findFirst({
+          where: { officeId, name },
+          select: { id: true, name: true },
+        })
+      : null;
+    if (!group) throw new NotFoundException('그룹을 찾을 수 없습니다.');
+    return group;
+  }
+
+  private changedMeanwhile() {
+    return new ConflictException(
+      '그 사이 그룹 이름이 바뀌었거나 지워졌습니다. 목록을 새로 고친 뒤 다시 해 주세요.',
+    );
   }
 
   private parseNewName(rawName: string) {
@@ -225,7 +157,7 @@ export class ContactGroupsService {
         `그룹 이름은 ${GROUP_NAME_MAX_LENGTH}자까지 쓸 수 있습니다.`,
       );
     }
-    // 목록 조회의 tags 파라미터가 쉼표로 값을 나누므로 이름에 쉼표가 있으면 찾을 수 없다.
+    // 화면이 고른 그룹을 주소에 쉼표로 이어 적을 수 있어 이름에는 쉼표를 받지 않는다.
     if (name.includes(',')) {
       throw new BadRequestException('그룹 이름에는 쉼표를 쓸 수 없습니다.');
     }

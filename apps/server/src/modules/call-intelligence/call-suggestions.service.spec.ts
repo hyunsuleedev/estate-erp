@@ -7,6 +7,8 @@ const REQUIREMENT = '10000000-0000-4000-8000-000000000006';
 const SITE_OLD = '10000000-0000-4000-8000-000000000008';
 const SITE_NEW = '10000000-0000-4000-8000-000000000009';
 const calledAt = new Date('2026-11-02T05:30:00.000Z');
+/** 값을 견주기 전에 읽은 매물의 수정 시각 */
+const LISTING_VERSION = new Date('2026-11-01T01:00:00.000Z');
 
 function setup(suggestion: Record<string, unknown>) {
   const prisma = {
@@ -22,7 +24,12 @@ function setup(suggestion: Record<string, unknown>) {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       update: jest.fn().mockImplementation(async ({ data }) => ({ id: 'suggestion-1', ...data })),
     },
-    listing: { count: jest.fn().mockResolvedValue(1) },
+    listing: {
+      count: jest.fn().mockResolvedValue(1),
+      findMany: jest
+        .fn()
+        .mockResolvedValue([{ id: LISTING, price: 158000, deposit: null, monthlyRent: null, updatedAt: LISTING_VERSION }]),
+    },
     property: { count: jest.fn().mockResolvedValue(1) },
     buyerRequirement: {
       count: jest.fn().mockResolvedValue(1),
@@ -42,6 +49,7 @@ function setup(suggestion: Record<string, unknown>) {
     buyerIntake: { count: jest.fn().mockResolvedValue(1) },
     site: { count: jest.fn().mockResolvedValue(1) },
     $transaction: jest.fn(),
+    $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
   };
   // 트랜잭션 안에서도 같은 모의 객체를 쓴다
   prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => unknown) => fn(prisma));
@@ -206,11 +214,17 @@ describe('CallSuggestionsService', () => {
         priceChanges: [{ listingId: LISTING, price: 155000 }],
         memo: '집주인 인하 동의',
       },
+      // 제안할 때의 가격이 지금과 같다 → 묻지 않고 반영한다
+      baseValues: { kind: 'listing_prices', listings: { [LISTING]: { price: 158000 } } },
     });
 
     await service.accept('suggestion-1', 'office-1', 'owner-1');
 
-    expect(listings.update).toHaveBeenCalledWith(LISTING, 'office-1', { price: 155000 });
+    expect(listings.update).toHaveBeenCalledWith(LISTING, 'office-1', {
+        price: 155000,
+        // 견준 뒤에 누가 고쳤으면 쓰기가 실패하도록 수정 시각을 조건으로 건다
+        expectedUpdatedAt: LISTING_VERSION,
+      });
     expect(listingIntakes.confirm).toHaveBeenCalledWith(INTAKE, 'office-1', 'owner-1', {
       result: 'price_changed',
       channel: 'phone',
@@ -435,6 +449,196 @@ describe('CallSuggestionsService', () => {
     expect(row).toMatchObject({
       status: 'accepted',
       appliedPayload: expect.objectContaining({ start: '2026-11-04T15:00:00+09:00' }),
+    });
+  });
+  describe('values that changed after the suggestion was made', () => {
+    const priceSuggestion = {
+      type: 'listing_confirm',
+      payload: {
+        intakeId: INTAKE,
+        result: 'price_changed',
+        priceChanges: [{ listingId: LISTING, price: 155000 }],
+        memo: null,
+      },
+      // 제안할 때 15억 8천이었다
+      baseValues: { kind: 'listing_prices', listings: { [LISTING]: { price: 158000 } } },
+    };
+
+    function withCurrentPrice(price: number) {
+      const context = setup(priceSuggestion);
+      (context.prisma.listing as Record<string, unknown>).findMany = jest
+        .fn()
+        .mockResolvedValue([{ id: LISTING, price, deposit: null, monthlyRent: null, updatedAt: LISTING_VERSION }]);
+      (context.prisma.listingIntake as Record<string, unknown>).findFirst = jest.fn().mockResolvedValue(null);
+      return context;
+    }
+
+    it('stops instead of overwriting a price someone edited in the meantime', async () => {
+      // 그 사이 다른 직원이 15억 3천으로 고쳤다
+      const { service, listings, listingIntakes, prisma } = withCurrentPrice(153000);
+
+      const error = (await service
+        .accept('suggestion-1', 'office-1', 'owner-1')
+        .catch((caught: unknown) => caught)) as ConflictException;
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({
+          code: 'SUGGESTION_BASE_CHANGED',
+          changes: [{ label: '가격', was: '158,000만원', now: '153,000만원' }],
+        }),
+      );
+      expect(listings.update).not.toHaveBeenCalled();
+      expect(listingIntakes.confirm).not.toHaveBeenCalled();
+      // 다시 처리할 수 있게 돌려놓는다
+      expect(prisma.callActionSuggestion.update).toHaveBeenLastCalledWith({
+        where: { id: 'suggestion-1' },
+        data: { status: 'pending' },
+      });
+    });
+
+    it('applies when the broker has seen the new value and confirms', async () => {
+      const { service, listings } = withCurrentPrice(153000);
+
+      await service.accept('suggestion-1', 'office-1', 'owner-1', undefined, { force: true });
+
+      expect(listings.update).toHaveBeenCalledWith(LISTING, 'office-1', {
+        price: 155000,
+        // 견준 뒤에 누가 고쳤으면 쓰기가 실패하도록 수정 시각을 조건으로 건다
+        expectedUpdatedAt: LISTING_VERSION,
+      });
+    });
+
+    it('applies without asking when nothing changed', async () => {
+      const { service, listings } = withCurrentPrice(158000);
+
+      await service.accept('suggestion-1', 'office-1', 'owner-1');
+
+      expect(listings.update).toHaveBeenCalledWith(LISTING, 'office-1', {
+        price: 155000,
+        // 견준 뒤에 누가 고쳤으면 쓰기가 실패하도록 수정 시각을 조건으로 건다
+        expectedUpdatedAt: LISTING_VERSION,
+      });
+    });
+
+    it('asks before overwriting when it does not know the value at suggestion time', async () => {
+      // 원래 값이 기록되지 않은 옛 제안: 견줄 수 없다고 그냥 덮어쓰지 않는다
+      const old = setup({ ...priceSuggestion, baseValues: null });
+      (old.prisma.listingIntake as Record<string, unknown>).findFirst = jest.fn().mockResolvedValue(null);
+      const error = (await old.service
+        .accept('suggestion-1', 'office-1', 'owner-1')
+        .catch((caught: unknown) => caught)) as ConflictException;
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({ changes: [{ label: '가격', was: '기록 없음', now: '158,000만원' }] }),
+      );
+      expect(old.listings.update).not.toHaveBeenCalled();
+
+      // 고쳐서 반영하며 제안에 없던 칸(보증금)을 채운 경우도 같다
+      const edited = setup({
+        ...priceSuggestion,
+        baseValues: { kind: 'listing_prices', listings: { [LISTING]: { price: 158000 } } },
+      });
+      (edited.prisma.listingIntake as Record<string, unknown>).findFirst = jest.fn().mockResolvedValue(null);
+      await expect(
+        edited.service.accept('suggestion-1', 'office-1', 'owner-1', {
+          ...priceSuggestion.payload,
+          priceChanges: [{ listingId: LISTING, price: 155000, deposit: 5000 }],
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(edited.listings.update).not.toHaveBeenCalled();
+
+      // 확인하고 다시 누르면 반영한다
+      await old.service.accept('suggestion-1', 'office-1', 'owner-1', undefined, { force: true });
+      expect(old.listings.update).toHaveBeenCalled();
+    });
+
+    it('still compares after an earlier attempt failed, and only forgives prices that attempt wrote itself', async () => {
+      // 앞선 시도가 내용을 기록한 뒤 실패해 되돌아온 제안 (appliedPayload가 남아 있다)
+      const failedBefore = { ...priceSuggestion, appliedPayload: priceSuggestion.payload };
+
+      // 그 사이 다른 사람이 15억 3천으로 고쳤다 → 앞선 시도가 있었어도 멈춘다
+      const edited = setup(failedBefore);
+      (edited.prisma.listing as Record<string, unknown>).findMany = jest
+        .fn()
+        .mockResolvedValue([{ id: LISTING, price: 153000, deposit: null, monthlyRent: null, updatedAt: LISTING_VERSION }]);
+      (edited.prisma.listingIntake as Record<string, unknown>).findFirst = jest.fn().mockResolvedValue(null);
+      await expect(edited.service.accept('suggestion-1', 'office-1', 'owner-1')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(edited.listings.update).not.toHaveBeenCalled();
+
+      // 앞선 시도가 가격까지 쓰고 확인 기록에서 멈춘 경우 (지금 값 = 우리가 쓴 값) → 이어서 마무리한다
+      const ours = setup(failedBefore);
+      (ours.prisma.listing as Record<string, unknown>).findMany = jest
+        .fn()
+        .mockResolvedValue([{ id: LISTING, price: 155000, deposit: null, monthlyRent: null, updatedAt: LISTING_VERSION }]);
+      (ours.prisma.listingIntake as Record<string, unknown>).findFirst = jest.fn().mockResolvedValue(null);
+      await ours.service.accept('suggestion-1', 'office-1', 'owner-1');
+      expect(ours.listingIntakes.confirm).toHaveBeenCalled();
+    });
+
+    it('writes each listing once with every field it checked', async () => {
+      const { service, listings } = setup({
+        ...priceSuggestion,
+        baseValues: { kind: 'listing_prices', listings: { [LISTING]: { price: 158000, deposit: null, monthlyRent: null } } },
+      });
+      await service.accept('suggestion-1', 'office-1', 'owner-1', {
+        ...priceSuggestion.payload,
+        priceChanges: [
+          { listingId: LISTING, deposit: 5000 },
+          { listingId: LISTING, price: 155000 },
+        ],
+      });
+      expect(listings.update).toHaveBeenCalledTimes(1);
+      expect(listings.update).toHaveBeenCalledWith(LISTING, 'office-1', {
+        deposit: 5000,
+        price: 155000,
+        expectedUpdatedAt: LISTING_VERSION,
+      });
+    });
+
+    it('stops when the listing is edited between the check and the write', async () => {
+      const { service, listings, listingIntakes } = withCurrentPrice(158000);
+      // 값은 같았지만 쓰는 순간 수정 시각이 달라져 있다 (그 사이 누가 고침)
+      listings.update.mockRejectedValue(new ConflictException('다른 사용자가 먼저 수정했습니다.'));
+
+      await expect(service.accept('suggestion-1', 'office-1', 'owner-1')).rejects.toThrow(
+        '다른 사용자가 먼저 수정했습니다.',
+      );
+      expect(listings.update).toHaveBeenCalledWith(
+        LISTING,
+        'office-1',
+        expect.objectContaining({ expectedUpdatedAt: LISTING_VERSION }),
+      );
+      expect(listingIntakes.confirm).not.toHaveBeenCalled();
+    });
+
+    it('locks the request row, then compares and writes in one transaction', async () => {
+      const { service, prisma } = setup({
+        type: 'buyer_requirement_update',
+        payload: { buyerReqId: REQUIREMENT, changes: { priceMax: 160000 }, memoAppend: null },
+        baseValues: { kind: 'requirement_fields', fields: { priceMax: 150000 } },
+      });
+      // 잠근 뒤 읽어 보니 그 사이 17억으로 바뀌어 있다
+      prisma.buyerRequirement.findFirst.mockResolvedValue({ priceMax: 170000, memo: null, preferredSites: [] });
+      (prisma.buyerRequirement as Record<string, unknown>).update = jest.fn();
+
+      const error = (await service
+        .accept('suggestion-1', 'office-1', 'owner-1')
+        .catch((caught: unknown) => caught)) as ConflictException;
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({
+          code: 'SUGGESTION_BASE_CHANGED',
+          changes: [{ label: '매매가 상한', was: '150,000만원', now: '170,000만원' }],
+        }),
+      );
+      // 잠금이 견주기보다 먼저다
+      expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.buyerRequirement.findFirst.mock.invocationCallOrder[0],
+      );
+      expect((prisma.buyerRequirement as Record<string, jest.Mock>).update).not.toHaveBeenCalled();
     });
   });
 });

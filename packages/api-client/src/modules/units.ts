@@ -85,8 +85,16 @@ export interface Unit {
   siteId: string;
   dongId: string;
   siteUnitTypeId: string | null;
-  name: string;
+  /** 호 이름 또는 층의 일부에 붙인 이름. 호 없이 층이 단위인 공간은 null (표기는 shared의 formatUnitLabel) */
+  name: string | null;
+  /** 층. 지하는 음수(-2 = B2), 0은 없다 */
   floor: number | null;
+  /** 여러 층을 한 공간으로 둘 때의 끝 층 */
+  floorEnd?: number | null;
+  /** 숫자로 안 떨어지는 층의 표시 이름 (반지하, M층) */
+  floorLabel?: string | null;
+  /** 건축물대장 전유부 번호. 대장에서 온 호에만 있다 */
+  registerPk?: string | null;
   lineNo: number | null;
   exclusiveAreaM2: number | null;
   supplyAreaM2: number | null;
@@ -105,9 +113,12 @@ export interface Unit {
 export interface CreateUnitDto {
   siteId: string;
   dongId: string;
-  name: string;
+  /** 호 이름. 호 없이 층이 단위인 공간은 비우고 층을 준다 */
+  name?: string | null;
   siteUnitTypeId?: string;
-  floor?: number;
+  floor?: number | null;
+  floorEnd?: number | null;
+  floorLabel?: string | null;
   lineNo?: number;
   exclusiveAreaM2?: number;
   supplyAreaM2?: number;
@@ -116,10 +127,12 @@ export interface CreateUnitDto {
 }
 
 export interface UpdateUnitDto {
-  name?: string;
+  name?: string | null;
   dongId?: string;
   siteUnitTypeId?: string | null;
   floor?: number | null;
+  floorEnd?: number | null;
+  floorLabel?: string | null;
   lineNo?: number | null;
   exclusiveAreaM2?: number;
   supplyAreaM2?: number;

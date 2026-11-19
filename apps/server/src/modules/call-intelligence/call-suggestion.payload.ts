@@ -35,6 +35,7 @@ export const SUGGESTIBLE_MATCH_STAGES = [
   MatchStage.BUYER_INTERESTED,
   MatchStage.VIEWING_CONFIRMED,
   MatchStage.VIEWING,
+  MatchStage.BUYER_REVIEWING,
   MatchStage.NEGOTIATING,
   MatchStage.CLOSED,
 ] as const;

@@ -36,6 +36,7 @@ import { createMcpApi } from "./modules/mcp.js";
 import { createRegionsApi } from "./modules/regions.js";
 import { createServiceVendorsApi } from "./modules/service-vendors.js";
 import { createNotificationsApi } from "./modules/notifications.js";
+import { createNoticesApi } from "./modules/notices.js";
 import { createNetworkApi } from "./modules/network.js";
 import { createDashboardApi } from "./modules/dashboard.js";
 import { createActivityLogsApi } from "./modules/activity-logs.js";
@@ -159,6 +160,7 @@ export function createApiClient(config: ApiClientConfig) {
     regions: createRegionsApi(req),
     serviceVendors: createServiceVendorsApi(req),
     notifications: createNotificationsApi(req),
+    notices: createNoticesApi(req),
     network: createNetworkApi(req),
     dashboard: createDashboardApi(req),
     activityLogs: createActivityLogsApi(req),

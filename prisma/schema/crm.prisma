@@ -54,24 +54,24 @@ model Consultation {
 // ============================================================
 
 model BuyerIntake {
-  id               String   @id @default(uuid()) @db.Uuid
-  officeId         String   @map("office_id") @db.Uuid
+  id              String   @id @default(uuid()) @db.Uuid
+  officeId        String   @map("office_id") @db.Uuid
   /// 사용자가 중개 건으로 묶었을 때만 채워진다.
-  brokerageCaseId  String?  @map("brokerage_case_id") @db.Uuid
-  lifecycleStatus  String   @default("open") @map("lifecycle_status") // open, hold, closed
-  receivedAt       DateTime @default(now()) @map("received_at")
-  memo             String?
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  brokerageCaseId String?  @map("brokerage_case_id") @db.Uuid
+  lifecycleStatus String   @default("open") @map("lifecycle_status") // open, hold, closed
+  receivedAt      DateTime @default(now()) @map("received_at")
+  memo            String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  office           Office                    @relation(fields: [officeId], references: [id])
-  brokerageCase    BrokerageCase?            @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Restrict)
-  contacts         BuyerIntakeContact[]
-  requirements     BuyerRequirement[]
-  consultations    Consultation[]
-  caseSteps        BrokerageCaseStep[]
+  office        Office               @relation(fields: [officeId], references: [id])
+  brokerageCase BrokerageCase?       @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Restrict)
+  contacts      BuyerIntakeContact[]
+  requirements  BuyerRequirement[]
+  consultations Consultation[]
+  caseSteps     BrokerageCaseStep[]
   /// 이 구매 의뢰에서 나온 거래
-  deals            Deal[]
+  deals         Deal[]
 
   // 하위 테이블의 복합 FK가 office_id까지 함께 검증한다.
   @@unique([officeId, id])
@@ -195,20 +195,34 @@ model BuyerRequirementRegion {
 // ============================================================
 
 model Match {
-  id              String   @id @default(uuid()) @db.Uuid
-  officeId        String   @map("office_id") @db.Uuid
-  listingId       String   @map("listing_id") @db.Uuid
-  buyerReqId      String   @map("buyer_req_id") @db.Uuid
-  stage           String   @default("suggested") // MatchStage enum
-  closedFromStage String?  @map("closed_from_stage") // 종료 직전 단계 (실패 지점 표시용)
+  id              String  @id @default(uuid()) @db.Uuid
+  officeId        String  @map("office_id") @db.Uuid
+  listingId       String  @map("listing_id") @db.Uuid
+  buyerReqId      String  @map("buyer_req_id") @db.Uuid
+  stage           String  @default("suggested") // MatchStage enum
+  closedFromStage String? @map("closed_from_stage") // 종료 직전 단계 (실패 지점 표시용)
   /// 종료 이유 (MatchClosedReason): manual / other_buyer_contracted / intake_closed / deal_cancelled.
   /// 시스템이 자동 종료한 매칭만 거래 취소 시 되살리기 위해 구분한다.
-  closedReason    String?  @map("closed_reason")
+  closedReason    String? @map("closed_reason")
   /// 자동 종료를 일으킨 거래. 그 거래가 취소되면 이 매칭을 되살리는 기준이다.
-  closedByDealId  String?  @map("closed_by_deal_id") @db.Uuid
+  closedByDealId  String? @map("closed_by_deal_id") @db.Uuid
   memo            String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // ─── 협상하며 적어 두는 합의 조건 (모두 선택) ───────────────
+  // 협상은 여러 날 걸리고 담당자가 바뀔 수 있어서, 거래로 전환하기 전에도 적어 둘 곳이 필요하다.
+  // 이름·단위는 Deal 의 합의 조건과 같다. 거래로 전환할 때 Deal 로 넘기고,
+  // 그 뒤에는 Deal 쪽이 기준이다(여기 값은 전환 시점의 기록으로만 남고 서버가 수정을 막는다).
+  /// 합의된 거래가 (만원) — 매매가 또는 전세금
+  agreedPrice       Int?      @map("agreed_price")
+  /// 월세 보증금 (만원)
+  agreedDeposit     Int?      @map("agreed_deposit")
+  /// 월세 (만원)
+  agreedMonthlyRent Int?      @map("agreed_monthly_rent")
+  /// 합의된 입주일
+  agreedMoveInDate  DateTime? @map("agreed_move_in_date")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   office           Office           @relation(fields: [officeId], references: [id])
   listing          Listing          @relation(fields: [listingId], references: [id])
@@ -717,7 +731,11 @@ model DealParticipant {
   role             String // listing_agent, buying_agent, dual_agent, manager, assistant, closer
   side             String // seller, buyer, both — 어느 측 담당인지
   commissionAmount Int?      @map("commission_amount") // 배분 금액 (만원)
-  commissionRate   Decimal?  @map("commission_rate") @db.Decimal // 배분 비율 (%)
+  /// 이 거래에서만 쓰는 직원 몫 (%). 비어 있으면 User.commissionRate 를 쓴다.
+  commissionRate   Decimal?  @map("commission_rate") @db.Decimal
+  /// 이 거래의 사무소 몫 가운데 이 직원이 맡은 비중 (%). 한 거래의 합은 100.
+  /// 직원 정산은 이 값이 있는 담당자만 계산한다 (DB 제약: 0~100).
+  sharePercent     Int?      @map("share_percent")
   settlementStatus String    @default("unsettled") @map("settlement_status")
   settlementDate   DateTime? @map("settlement_date")
 

@@ -24,12 +24,21 @@ export interface Employee {
   licenseType: string | null;
   /** 공인중개사 자격증 번호 또는 중개사무소 등록 번호 */
   licenseNo: string | null;
-  /** fixed(고정급) | mixed(고정급+수수료) | commission_only(수수료제) */
-  payType: string;
+  /**
+   * 급여 설정(payType·baseSalary·commissionRate)을 이 응답에 담았는지.
+   * 사장님과 본인에게만 true다. false면 세 값은 모두 null이다 — "정하지 않음"이 아니라 "보여 주지 않음"이다.
+   */
+  payVisible: boolean;
+  /** fixed(고정급) | mixed(고정급+수수료) | commission_only(수수료제). payVisible이 false면 null */
+  payType: string | null;
   /** 월 기본급 (만원) */
   baseSalary: number | null;
   /** 개인 수수료 배분율 (%). null이면 Office.commissionConfig 기본값 */
   commissionRate: number | null;
+  /** 직원 정산에서의 구분: freelancer | employee. payVisible이 false면 null */
+  employmentType: string | null;
+  /** 프리랜서에게 줄 때 3.3%를 떼는지. payVisible이 false면 null */
+  withholdTax: boolean | null;
   createdAt: string;
   updatedAt: string;
   counts: EmployeeCounts;
@@ -93,6 +102,9 @@ export interface UpdateEmployeeDto {
   payType?: string;
   baseSalary?: number | null;
   commissionRate?: number | null;
+  /** freelancer | employee */
+  employmentType?: string;
+  withholdTax?: boolean;
 }
 
 export interface EmployeePerformance {

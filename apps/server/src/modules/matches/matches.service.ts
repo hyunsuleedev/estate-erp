@@ -191,10 +191,6 @@ export class MatchesService {
     const buyerInterestedIndex = MATCH_STAGE_ORDER.indexOf(
       MatchStage.BUYER_INTERESTED,
     );
-    const viewingConfirmedIndex = MATCH_STAGE_ORDER.indexOf(
-      MatchStage.VIEWING_CONFIRMED,
-    );
-
     const isCrossingBuyerInterest =
       targetStage !== MatchStage.CLOSED &&
       currentIndex < buyerInterestedIndex &&
@@ -235,25 +231,8 @@ export class MatchesService {
       }
     }
 
-    if (
-      targetStage === MatchStage.VIEWING &&
-      currentIndex >= 0 &&
-      currentIndex < viewingConfirmedIndex
-    ) {
-      throw new BadRequestException(
-        '집주인·점유자와 임장 조율을 먼저 완료해 주세요',
-      );
-    }
-
-    if (
-      targetStage !== MatchStage.CLOSED &&
-      currentIndex >= 0 &&
-      targetIndex > currentIndex + 1
-    ) {
-      throw new BadRequestException(
-        '현재 단계의 다음 업무를 먼저 완료해 주세요',
-      );
-    }
+    // 단계 순서는 강제하지 않는다. 임장 없이 계약으로 가는 경우처럼 실제 업무가 단계를 건너뛰기 때문이다.
+    // 막는 것은 위의 "확인되지 않은 매물을 고객에게 제안하는 일"뿐이다.
 
     const match = await this.prisma.match.update({
       where: { id },
@@ -324,6 +303,55 @@ export class MatchesService {
       }
       throw error;
     }
+  }
+
+  /**
+   * 협상하며 적어 두는 합의 조건. 보낸 칸만 바꾼다(undefined = 변경 없음, null = 비우기).
+   * 거래로 전환한 뒤에는 Deal 의 합의 조건이 기준이므로 여기서는 고치지 못한다.
+   */
+  async updateAgreedTerms(
+    id: string,
+    officeId: string,
+    dto: {
+      agreedPrice?: number | null;
+      agreedDeposit?: number | null;
+      agreedMonthlyRent?: number | null;
+      agreedMoveInDate?: string | null;
+    },
+  ) {
+    const current = await this.prisma.match.findFirst({
+      where: { id, officeId },
+      select: { stage: true },
+    });
+    if (!current) throw new NotFoundException('Match not found');
+    if (normalizeMatchStage(current.stage) === MatchStage.DEAL_CREATED) {
+      throw new ConflictException(
+        '거래로 전환한 매칭입니다. 합의 조건은 거래관리에서 수정해 주세요',
+      );
+    }
+
+    let agreedMoveInDate: Date | null | undefined;
+    if (dto.agreedMoveInDate === null) {
+      agreedMoveInDate = null;
+    } else if (dto.agreedMoveInDate !== undefined) {
+      agreedMoveInDate = new Date(dto.agreedMoveInDate);
+      if (Number.isNaN(agreedMoveInDate.getTime())) {
+        throw new BadRequestException('입주일 형식이 올바르지 않습니다');
+      }
+    }
+
+    const match = await this.prisma.match.update({
+      where: { id },
+      data: {
+        agreedPrice: dto.agreedPrice,
+        agreedDeposit: dto.agreedDeposit,
+        agreedMonthlyRent: dto.agreedMonthlyRent,
+        agreedMoveInDate,
+      },
+      include: this.matchInclude,
+    });
+
+    return this.withPropertyContext(match);
   }
 
   async remove(id: string, officeId: string) {

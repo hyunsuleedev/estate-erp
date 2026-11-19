@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { SiteType } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -131,8 +133,13 @@ export class UnitsService {
       siteId: string;
       dongId: string;
       siteUnitTypeId?: string;
-      name: string;
-      floor?: number;
+      /** 호 이름 또는 층의 일부에 붙인 이름. 호가 없는 공간(상가건물 2층)은 비우고 층만 준다 */
+      name?: string | null;
+      floor?: number | null;
+      /** 여러 층을 한 공간으로 둘 때의 끝 층 (1~2층 통임대) */
+      floorEnd?: number | null;
+      /** 숫자로 안 떨어지는 층의 표시 이름 (반지하, M층) */
+      floorLabel?: string | null;
       lineNo?: number;
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
@@ -142,7 +149,10 @@ export class UnitsService {
       cellType?: string;
     },
   ) {
-    const site = await this.findEditableSite(dto.siteId, officeId);
+    // 공공 건물 아래에도 사무소의 공간을 만들 수 있다. 다가구 · 일반 상가건물처럼 대장에 호가 없는
+    // 건물은 사무소가 층 · 구획을 붙여야 하기 때문이다. 공공 행 자체는 여전히 못 고친다
+    // (만든 공간은 officeId가 붙은 이 사무소만의 것이다).
+    const site = await this.findAccessibleSite(dto.siteId, officeId);
 
     if (UNIT_DISABLED_SITE_TYPES.has(site.type)) {
       throw new BadRequestException('Units are not supported for land sites');
@@ -154,29 +164,69 @@ export class UnitsService {
       );
     }
 
-    await this.findOwnedDong(dto.dongId, officeId, site.id);
+    await this.findDongInSite(dto.dongId, officeId, site.id);
 
     if (dto.siteUnitTypeId) {
       await this.findOwnedSiteUnitType(dto.siteUnitTypeId, site.id, officeId);
     }
 
     this.assertValidLayoutCounts(dto);
-    const data = this.normalizeUnitCell(dto);
+    const space = this.normalizeSpace(dto);
+    const data = this.normalizeUnitCell({ ...dto, ...space });
 
-    return this.prisma.unit.create({
-      data: { officeId, ...data },
-      include: { site: true, dong: true, siteUnitType: true },
+    // 대장에서 온 공공 호가 이미 있으면 같은 이름의 사무소 공간을 또 만들지 않는다 (그 호를 쓰면 된다)
+    if (space.name) {
+      const publicUnit = await this.prisma.unit.findFirst({
+        where: { dongId: dto.dongId, officeId: null, name: space.name },
+        select: { id: true },
+      });
+      if (publicUnit) {
+        throw new ConflictException({
+          message: '이 건물에 같은 이름의 호가 이미 있습니다. 그 호를 사용해 주세요.',
+          unitId: publicUnit.id,
+        });
+      }
+    }
+    const duplicate = await this.prisma.unit.findFirst({
+      where: {
+        officeId,
+        dongId: dto.dongId,
+        name: space.name,
+        floor: space.floor,
+        floorEnd: space.floorEnd,
+      },
+      select: { id: true },
     });
+    if (duplicate) {
+      throw new ConflictException({
+        message: '같은 공간이 이미 있습니다.',
+        unitId: duplicate.id,
+      });
+    }
+
+    try {
+      return await this.prisma.unit.create({
+        data: { officeId, ...data },
+        include: { site: true, dong: true, siteUnitType: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('같은 공간이 이미 있습니다.');
+      }
+      throw error;
+    }
   }
 
   async update(
     id: string,
     officeId: string,
     dto: {
-      name?: string;
+      name?: string | null;
       dongId?: string;
       siteUnitTypeId?: string | null;
       floor?: number | null;
+      floorEnd?: number | null;
+      floorLabel?: string | null;
       lineNo?: number | null;
       exclusiveAreaM2?: number | null;
       supplyAreaM2?: number | null;
@@ -187,7 +237,8 @@ export class UnitsService {
     },
   ) {
     const existingUnit = await this.findOwnedUnit(id, officeId);
-    const site = await this.findEditableSite(existingUnit.siteId, officeId);
+    // 사무소가 만든 공간은 공공 건물 아래에 있어도 그 사무소가 고친다
+    const site = await this.findAccessibleSite(existingUnit.siteId, officeId);
     const nextDongId = dto.dongId ?? existingUnit.dongId;
     const nextSiteUnitTypeId =
       dto.siteUnitTypeId === undefined
@@ -198,14 +249,29 @@ export class UnitsService {
       throw new BadRequestException('Units are not supported for land sites');
     }
 
-    await this.findOwnedDong(nextDongId, officeId, site.id);
+    await this.findDongInSite(nextDongId, officeId, site.id);
 
     if (nextSiteUnitTypeId) {
       await this.findOwnedSiteUnitType(nextSiteUnitTypeId, site.id, officeId);
     }
 
     this.assertValidLayoutCounts(dto);
-    const data = this.normalizeUnitCell(dto);
+    // 이름 · 층 중 하나라도 건드리면 고친 뒤의 모양으로 다시 확인한다
+    const touchesSpace =
+      dto.name !== undefined ||
+      dto.floor !== undefined ||
+      dto.floorEnd !== undefined ||
+      dto.floorLabel !== undefined;
+    const space = touchesSpace
+      ? this.normalizeSpace({
+          name: dto.name !== undefined ? dto.name : existingUnit.name,
+          floor: dto.floor !== undefined ? dto.floor : existingUnit.floor,
+          floorEnd: dto.floorEnd !== undefined ? dto.floorEnd : existingUnit.floorEnd,
+          floorLabel:
+            dto.floorLabel !== undefined ? dto.floorLabel : existingUnit.floorLabel,
+        })
+      : {};
+    const data = this.normalizeUnitCell({ ...dto, ...space });
 
     return this.prisma.unit.update({
       where: { id },
@@ -309,19 +375,57 @@ export class UnitsService {
     })) as T;
   }
 
-  private async findEditableSite(id: string, officeId: string) {
-    const site = await this.prisma.site.findFirst({
+  /**
+   * 공간의 이름과 층을 다듬고 모양을 확인한다 (DB의 CHECK와 같은 규칙을 먼저 알려 주기 위해서다).
+   * - 이름과 층 중 하나는 있어야 한다. 빈 글자 이름은 이름이 없는 것이다.
+   * - 0층은 없다 (지하 1층 = -1, 지상 1층 = 1).
+   * - 끝 층은 시작 층이 있을 때만, 그보다 위다.
+   */
+  private normalizeSpace(dto: {
+    name?: string | null;
+    floor?: number | null;
+    floorEnd?: number | null;
+    floorLabel?: string | null;
+  }) {
+    const name = dto.name?.trim() || null;
+    const floor = dto.floor ?? null;
+    const floorEnd = dto.floorEnd ?? null;
+    const floorLabel = dto.floorLabel?.trim() || null;
+
+    for (const [field, value] of [
+      ['floor', floor],
+      ['floorEnd', floorEnd],
+    ] as const) {
+      if (value !== null && (!Number.isInteger(value) || value === 0)) {
+        throw new BadRequestException(
+          `${field}는 0이 아닌 정수여야 합니다 (지하는 음수: B2 = -2)`,
+        );
+      }
+    }
+    if (!name && floor === null) {
+      throw new BadRequestException('호 이름이나 층 중 하나는 있어야 합니다');
+    }
+    if (floorEnd !== null && (floor === null || floorEnd <= floor)) {
+      throw new BadRequestException('끝 층은 시작 층보다 위여야 합니다');
+    }
+    return { name, floor, floorEnd, floorLabel };
+  }
+
+  /** 그 대지 안의 건물. 공공 건물이거나 이 사무소가 만든 건물이어야 한다 */
+  private async findDongInSite(id: string, officeId: string, siteId: string) {
+    const dong = await this.prisma.dong.findFirst({
       where: {
         id,
-        officeId,
+        siteId,
+        OR: [{ officeId }, { officeId: null }],
       },
     });
 
-    if (!site) {
-      throw new NotFoundException('Site not found');
+    if (!dong) {
+      throw new BadRequestException('Dong does not belong to this site');
     }
 
-    return site;
+    return dong;
   }
 
   private async findAccessibleDong(id: string, officeId: string) {
@@ -337,22 +441,6 @@ export class UnitsService {
 
     if (!dong) {
       throw new NotFoundException('Dong not found');
-    }
-
-    return dong;
-  }
-
-  private async findOwnedDong(id: string, officeId: string, siteId: string) {
-    const dong = await this.prisma.dong.findFirst({
-      where: {
-        id,
-        officeId,
-        siteId,
-      },
-    });
-
-    if (!dong) {
-      throw new BadRequestException('Dong does not belong to this site');
     }
 
     return dong;

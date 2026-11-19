@@ -1,4 +1,5 @@
-import type { ContactCategoryKey, ContactRoleKey } from '@estate-erp/shared';
+import type {
+  ContactTagColor, ContactCategoryKey, ContactRoleKey } from '@estate-erp/shared';
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
 import type { BuyerRequirement } from './buyer-requirements.js';
@@ -42,7 +43,10 @@ export interface Contact {
   phone: string | null;
   phones?: ContactPhone[];
   email: string | null;
+  /** 그 사람에게 붙은 태그의 이름(붙인 순서). 색은 태그 목록(getTags)에서 찾는다. 그룹 소속과는 무관하다. */
   tags: string[];
+  /** 속한 그룹의 이름. 목록 조회와 상세 조회에 포함된다. */
+  groups?: string[];
   memo: string | null;
   createdAt: string;
   updatedAt: string;
@@ -50,6 +54,13 @@ export interface Contact {
   /** 희망조건·매물·세입·거래 데이터에서 계산한 역할. 목록 조회에만 포함된다. */
   roles?: ContactRoleKey[];
   latestConsultation?: ContactLatestConsultation | null;
+}
+
+/** 사무소의 연락처 태그 하나. count는 이 태그가 붙은 연락처 수 */
+export interface ContactTagSummary {
+  name: string;
+  color: ContactTagColor;
+  count: number;
 }
 
 export interface ContactGroupSummary {
@@ -74,7 +85,13 @@ export interface ContactDetail extends Contact {
 export interface ContactsFilter {
   search?: string;
   tags?: string;
-  category?: ContactCategoryKey;
+  /** 그룹 이름. 그 그룹에 속한 연락처만 */
+  group?: string;
+  /**
+   * 분류 하나, 또는 쉼표로 이은 여러 분류("owner,in_deal").
+   * 여러 개면 모두 만족하는 연락처만 돌아온다.
+   */
+  category?: ContactCategoryKey | `${ContactCategoryKey},${string}`;
   hasPropertyContact?: boolean;
   hasBuyerReq?: boolean;
   sortBy?: 'name' | 'createdAt' | 'updatedAt';
@@ -142,6 +159,34 @@ export function createContactsApi(request: RequestFn) {
       request<{ updated: number }>('/contact-groups/members/remove', {
         method: 'POST',
         body: { name, contactIds },
+      }),
+
+    /** 사무소의 태그 목록(만든 순서). 색과 붙은 수를 함께 준다. */
+    getTags: () => request<ContactTagSummary[]>('/contact-tags'),
+
+    /** 태그를 붙인다. 없는 이름이면 서버가 만들고 색을 붙인다. 저장된 이름은 응답의 name을 쓴다. */
+    assignTag: (name: string, contactIds: string[]) =>
+      request<{ name: string; updated: number }>('/contact-tags/assign', {
+        method: 'POST',
+        body: { name, contactIds },
+      }),
+
+    unassignTag: (name: string, contactIds: string[]) =>
+      request<{ updated: number }>('/contact-tags/unassign', {
+        method: 'POST',
+        body: { name, contactIds },
+      }),
+
+    updateTag: (name: string, changes: { newName?: string; color?: ContactTagColor }) =>
+      request<{ name: string }>('/contact-tags', {
+        method: 'PATCH',
+        body: { name, ...changes },
+      }),
+
+    deleteTag: (name: string) =>
+      request<{ removedFrom: number }>('/contact-tags', {
+        method: 'DELETE',
+        params: { name },
       }),
 
     findByPhone: (phone: string) =>

@@ -33,6 +33,7 @@ export class ContactsController {
   findAll(
     @Query('search') search: string,
     @Query('tags') tags: string,
+    @Query('group') group: string,
     @Query('category') category: string,
     @Query('hasPropertyContact') hasPropertyContact: string,
     @Query('hasBuyerReq') hasBuyerReq: string,
@@ -42,16 +43,31 @@ export class ContactsController {
     @Query('limit') limit: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
+    // 분류는 쉼표로 여러 개를 줄 수 있고, 모두 만족하는 연락처만 돌려준다
+    // (예: owner,in_deal = 소유자이면서 거래 진행 중).
+    const categories = category
+      ? Array.from(
+          new Set(
+            category
+              .split(',')
+              .map((key) => key.trim())
+              .filter(Boolean),
+          ),
+        )
+      : [];
     if (
-      category &&
-      !CONTACT_CATEGORY_KEYS.includes(category as ContactCategoryKey)
+      categories.some(
+        (key) => !CONTACT_CATEGORY_KEYS.includes(key as ContactCategoryKey),
+      )
     ) {
       throw new BadRequestException('알 수 없는 연락처 분류입니다.');
     }
     return this.contactsService.findAll(user.officeId, {
       search: search || undefined,
       tags: tags ? tags.split(',') : undefined,
-      category: (category as ContactCategoryKey) || undefined,
+      group: group || undefined,
+      categories:
+        categories.length > 0 ? (categories as ContactCategoryKey[]) : undefined,
       hasPropertyContact: hasPropertyContact === 'true' || undefined,
       hasBuyerReq: hasBuyerReq === 'true' || undefined,
       sortBy: (sortBy as 'name' | 'createdAt' | 'updatedAt') || undefined,
@@ -125,7 +141,7 @@ export class ContactsController {
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.contactsService.create(user.officeId, dto);
+    return this.contactsService.create(user.officeId, dto, user.userId);
   }
 
   @Patch(':id')
@@ -142,7 +158,7 @@ export class ContactsController {
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.contactsService.update(id, user.officeId, dto);
+    return this.contactsService.update(id, user.officeId, dto, user.userId);
   }
 
   @Delete(':id')

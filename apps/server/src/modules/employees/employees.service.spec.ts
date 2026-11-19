@@ -406,6 +406,90 @@ describe('EmployeesService account management (Auth0)', () => {
     });
   });
 
+  describe('employee detail for activity tracking', () => {
+    it('loads only work in progress, most urgent first, so overdue work is never cut off', async () => {
+      const { service, prisma } = setup();
+      await service.findOne('emp-1', 'office-1');
+
+      const calls = prisma.user.findFirst.mock.calls as unknown as Array<
+        [{ include: Record<string, { where?: unknown; orderBy?: unknown; take?: number }> }]
+      >;
+      const { include } = calls[0][0];
+      // 끝난 일이 자리를 채워 밀린 일이 잘리지 않게 한다
+      expect(include.assignedTasks.where).toEqual({
+        status: { notIn: ['completed', 'cancelled'] },
+      });
+      expect(include.assignedTasks.orderBy).toEqual([
+        { dueDate: { sort: 'asc', nulls: 'last' } },
+        { createdAt: 'desc' },
+      ]);
+      expect(include.assignedRequirements.where).toEqual({ status: 'active' });
+      expect(include.assignedRequirements.orderBy).toEqual([
+        { nextContactDate: { sort: 'asc', nulls: 'last' } },
+        { createdAt: 'desc' },
+      ]);
+      // 미정산 거래가 먼저
+      expect(include.dealParticipants.orderBy).toEqual([
+        { settlementStatus: 'desc' },
+        { createdAt: 'desc' },
+      ]);
+      for (const key of ['assignedTasks', 'assignedRequirements', 'dealParticipants']) {
+        expect(include[key].take).toBe(100);
+      }
+    });
+  });
+
+  describe('pay settings belong to the owner', () => {
+    const agent = { userId: 'emp-1', officeId: 'office-1', role: 'agent' };
+
+    it('lets only an owner change pay type, base salary or commission rate', async () => {
+      const { service, prisma } = setup();
+
+      for (const dto of [{ payType: 'fixed' }, { baseSalary: 300 }, { commissionRate: 40 }, { commissionRate: null }]) {
+        await expect(service.update('emp-1', manager, dto)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+      }
+      expect(prisma.user.update).not.toHaveBeenCalled();
+
+      // 매니저는 급여가 아닌 정보는 그대로 고칠 수 있다
+      await service.update('emp-1', manager, { name: '김수정', phone: '01011112222' });
+      expect(prisma.user.update).toHaveBeenCalledTimes(1);
+
+      await service.update('emp-1', owner, { payType: 'fixed', baseSalary: 300, commissionRate: 40 });
+      expect(prisma.user.update).toHaveBeenCalledTimes(2);
+    });
+
+    it('shows pay settings to the owner and to the employee themself, and to nobody else', async () => {
+      const { service } = setup({
+        target: employeeRow({ payType: 'mixed', baseSalary: 250, commissionRate: 45 }),
+      });
+      const employee = await service.findOne('emp-1', 'office-1');
+
+      expect(service.forViewer(owner, employee)).toMatchObject({
+        payType: 'mixed',
+        baseSalary: 250,
+        commissionRate: 45,
+        payVisible: true,
+      });
+      expect(service.forViewer(agent, employee)).toMatchObject({
+        baseSalary: 250,
+        commissionRate: 45,
+        payVisible: true,
+      });
+      for (const viewer of [manager, { userId: 'emp-2', officeId: 'office-1', role: 'agent' }]) {
+        expect(service.forViewer(viewer, employee)).toMatchObject({
+          id: 'emp-1',
+          name: '김직원',
+          payType: null,
+          baseSalary: null,
+          commissionRate: null,
+          payVisible: false,
+        });
+      }
+    });
+  });
+
   describe('tenant scoping and role rules', () => {
     it('looks the target up by id AND the actor’s office in every account operation', async () => {
       const operations: Array<(s: EmployeesService) => Promise<unknown>> = [

@@ -220,7 +220,7 @@ export class LedgerService {
                 site: { select: { name: true } },
                 unit: {
                   select: {
-                    name: true,
+                    name: true, floor: true, floorEnd: true, floorLabel: true,
                     dong: { select: { name: true } },
                   },
                 },

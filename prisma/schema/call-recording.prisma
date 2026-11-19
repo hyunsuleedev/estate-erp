@@ -117,6 +117,15 @@ model CallActionSuggestion {
   /// 분석 결과 안에서의 순서
   seq      Int     @default(0)
 
+  /// 이 제안이 바꾸려는 대상. payload 안의 id를 꺼내 둔 것이다 — 매물·희망조건 쪽에서
+  /// "여기에 걸린 처리 전 제안"을 찾고, 같은 대상의 제안이 겹치는지 알기 위해서다.
+  /// listing_intake / listing / buyer_requirement / buyer_intake / match / property. 대상이 없으면 null.
+  targetType String? @map("target_type")
+  targetId   String? @map("target_id") @db.Uuid
+  /// 제안을 만들 때 대상에 저장돼 있던 값. 반영할 때 지금 값과 다르면
+  /// (그 사이 누가 고쳤으면) 조용히 덮어쓰지 않고 알린다. 덮어쓰는 제안이 아니면 null.
+  baseValues Json?   @map("base_values") @db.JsonB
+
   /// 반영 결과
   appliedEntityType String?   @map("applied_entity_type")
   appliedEntityId   String?   @map("applied_entity_id") @db.Uuid
@@ -136,5 +145,6 @@ model CallActionSuggestion {
   @@index([officeId, status, createdAt])
   @@index([recordingId, seq])
   @@index([consultationId])
+  @@index([officeId, targetType, targetId, status])
   @@map("call_action_suggestions")
 }

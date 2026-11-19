@@ -64,7 +64,7 @@ export class CommissionPaymentService {
                   select: {
                     id: true,
                     site: { select: { name: true } },
-                    unit: { select: { name: true, dong: { select: { name: true } } } },
+                    unit: { select: { name: true, floor: true, floorEnd: true, floorLabel: true, dong: { select: { name: true } } } },
                   },
                 },
               },
@@ -77,9 +77,15 @@ export class CommissionPaymentService {
     });
   }
 
+  /**
+   * 수금 처리. 화면은 지금까지 받은 누적액(만원, 부가세를 뺀 금액)을 보낸다.
+   * 예전에는 그 값으로 청구의 받은 금액·입금일을 덮어써서 앞선 입금의 날짜가 사라졌다.
+   * 이제는 늘어난 만큼을 입금 기록 한 줄로 쌓고, 청구의 받은 금액·입금일·상태는 기록에서 다시 계산한다.
+   */
   async collect(
     id: string,
     officeId: string,
+    userId: string | null,
     data: {
       actualAmount: number;
       method: string;
@@ -87,19 +93,166 @@ export class CommissionPaymentService {
       note?: string;
     },
   ) {
+    if (!Number.isInteger(data.actualAmount) || data.actualAmount <= 0) {
+      throw new BadRequestException('받은 금액은 0보다 큰 정수(만원)여야 합니다.');
+    }
+    const receivedAt = parseMoneyDate(data.paidAt);
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await lockPayment(tx, id, officeId);
+      const before = await sumReceipts(tx, id);
+      const delta = data.actualAmount * WON_PER_MANWON - before.supplyWon;
+      if (delta <= 0) {
+        throw new ConflictException(
+          '이미 그만큼 받은 것으로 적혀 있습니다. 줄이려면 입금 기록을 취소해 주세요.',
+        );
+      }
+      await this.appendReceipt(tx, payment, {
+        supplyWon: delta,
+        amountWon: withVat(delta),
+        receivedAt,
+        method: data.method,
+        memo: data.note,
+        userId,
+      });
+      return refreshPaymentFromReceipts(tx, id);
+    });
+  }
+
+  /** 이 청구의 입금 기록 (취소한 줄 포함, 오래된 것부터) */
+  async listReceipts(officeId: string, paymentId: string) {
     const payment = await this.prisma.commissionPayment.findFirst({
-      where: { id, officeId },
+      where: { id: paymentId, officeId },
+      select: { id: true },
     });
     if (!payment) throw new NotFoundException();
+    return this.prisma.commissionReceipt.findMany({
+      where: { officeId, paymentId },
+      orderBy: [{ receivedAt: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
 
-    return this.prisma.commissionPayment.update({
-      where: { id },
-      data: {
-        actualAmount: data.actualAmount,
+  /** 입금 한 건을 원 단위(부가세 포함)로 기록한다. */
+  async addReceipt(
+    paymentId: string,
+    officeId: string,
+    userId: string | null,
+    data: { amountWon: number; receivedAt?: string; method?: string; memo?: string },
+  ) {
+    if (!Number.isInteger(data.amountWon) || data.amountWon <= 0) {
+      throw new BadRequestException('받은 금액은 0보다 큰 정수(원)여야 합니다.');
+    }
+    const receivedAt = parseMoneyDate(data.receivedAt);
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await lockPayment(tx, paymentId, officeId);
+      await this.appendReceipt(tx, payment, {
+        supplyWon: withoutVat(data.amountWon),
+        amountWon: data.amountWon,
+        receivedAt,
         method: data.method,
-        paidAt: data.paidAt ? new Date(data.paidAt) : new Date(),
-        status: data.actualAmount < payment.expectedAmount ? 'partial' : 'collected',
-        note: data.note,
+        memo: data.memo,
+        userId,
+      });
+      return refreshPaymentFromReceipts(tx, paymentId);
+    });
+  }
+
+  /**
+   * 돌려준 돈을 기록한다. 지난 입금 기록은 그대로 두고 음수 줄을 하나 더한다.
+   * 이미 정산한 돈을 돌려준 경우 이 줄이 다음 정산에서 직원 몫을 깎는다.
+   */
+  async refund(
+    paymentId: string,
+    officeId: string,
+    userId: string | null,
+    data: { amountWon: number; refundedAt?: string; memo?: string },
+  ) {
+    if (!Number.isInteger(data.amountWon) || data.amountWon <= 0) {
+      throw new BadRequestException('돌려준 금액은 0보다 큰 정수(원)여야 합니다.');
+    }
+    const receivedAt = parseMoneyDate(data.refundedAt);
+    return this.prisma.$transaction(async (tx) => {
+      await lockPayment(tx, paymentId, officeId, { anyStatus: true });
+      const before = await sumReceipts(tx, paymentId);
+      if (data.amountWon > before.amountWon) {
+        throw new ConflictException('받은 돈보다 많이 돌려줄 수 없습니다.');
+      }
+      await tx.commissionReceipt.create({
+        data: {
+          officeId,
+          paymentId,
+          kind: 'refund',
+          receivedAt,
+          amountWon: -data.amountWon,
+          // 전부 돌려주면 남는 금액이 정확히 0이 되게 한다 (반올림 차이를 남기지 않는다)
+          supplyWon: -(data.amountWon === before.amountWon ? before.supplyWon : withoutVat(data.amountWon)),
+          memo: data.memo,
+          createdById: userId,
+        },
+      });
+      return refreshPaymentFromReceipts(tx, paymentId);
+    });
+  }
+
+  /** 잘못 넣은 입금 기록을 취소한다. 정산에 들어간 줄은 취소할 수 없다. */
+  async voidReceipt(
+    receiptId: string,
+    officeId: string,
+    userId: string | null,
+    reason?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const receipt = await tx.commissionReceipt.findFirst({ where: { id: receiptId, officeId } });
+      if (!receipt) throw new NotFoundException();
+      await lockPayment(tx, receipt.paymentId, officeId, { anyStatus: true });
+      const { count } = await tx.commissionReceipt.updateMany({
+        where: { id: receiptId, officeId, voidedAt: null, settlementId: null },
+        data: { voidedAt: new Date(), voidedById: userId, voidReason: reason?.trim() || null },
+      });
+      if (count === 0) {
+        throw new ConflictException(
+          receipt.settlementId
+            ? '이미 정산에 들어간 입금은 취소할 수 없습니다. 돌려준 돈으로 기록해 주세요.'
+            : '이미 취소한 입금입니다.',
+        );
+      }
+      const after = await sumReceipts(tx, receipt.paymentId);
+      if (after.amountWon < 0) {
+        throw new ConflictException('이 입금을 취소하면 돌려준 돈이 받은 돈보다 많아집니다.');
+      }
+      return refreshPaymentFromReceipts(tx, receipt.paymentId);
+    });
+  }
+
+  private async appendReceipt(
+    tx: Prisma.TransactionClient,
+    payment: LockedPayment,
+    input: {
+      supplyWon: number;
+      amountWon: number;
+      receivedAt: Date;
+      method?: string;
+      memo?: string;
+      userId: string | null;
+    },
+  ) {
+    const before = await sumReceipts(tx, payment.id);
+    const limit = payment.expectedAmount * WON_PER_MANWON;
+    if (before.supplyWon + input.supplyWon > limit) {
+      throw new ConflictException(
+        `남은 금액보다 많습니다. 더 받을 수 있는 금액은 부가세를 빼고 ${(limit - before.supplyWon).toLocaleString('ko-KR')}원입니다.`,
+      );
+    }
+    await tx.commissionReceipt.create({
+      data: {
+        officeId: payment.officeId,
+        paymentId: payment.id,
+        kind: 'receipt',
+        receivedAt: input.receivedAt,
+        amountWon: input.amountWon,
+        supplyWon: input.supplyWon,
+        method: input.method?.trim() || null,
+        memo: input.memo?.trim() || null,
+        createdById: input.userId,
       },
     });
   }
@@ -357,4 +510,88 @@ export class CommissionPaymentService {
       },
     });
   }
+}
+
+/* ───────── 입금 기록에서 청구의 받은 금액을 다시 계산한다 ───────── */
+
+export const WON_PER_MANWON = 10_000;
+/** 부가세 10%. 직원과 나누는 금액은 항상 부가세를 뺀 금액이다. */
+const withVat = (supplyWon: number) => Math.round(supplyWon * 1.1);
+const withoutVat = (amountWon: number) => Math.round(amountWon / 1.1);
+
+/** 돈을 받을 수 있는 청구 상태 */
+const COLLECTABLE_STATUSES = new Set(['pending', 'partial', 'overdue', 'collected']);
+
+export interface LockedPayment {
+  id: string;
+  officeId: string;
+  status: string;
+  expectedAmount: number;
+}
+
+function parseMoneyDate(value: string | undefined): Date {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) throw new BadRequestException('날짜 형식이 올바르지 않습니다.');
+  if (date.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+    throw new BadRequestException('앞날의 날짜로는 기록할 수 없습니다.');
+  }
+  return date;
+}
+
+/**
+ * 청구 줄을 잠근다. 같은 청구에 동시에 들어온 수금·취소가 서로의 합계를 모른 채 쓰는 일을 막는다.
+ * 트랜잭션 안에서만 뜻이 있다.
+ */
+export async function lockPayment(
+  tx: Prisma.TransactionClient,
+  id: string,
+  officeId: string,
+  options: { anyStatus?: boolean } = {},
+): Promise<LockedPayment> {
+  const rows = await tx.$queryRaw<
+    Array<{ id: string; office_id: string; status: string; expected_amount: number }>
+  >`SELECT id, office_id, status, expected_amount FROM commission_payments WHERE id = ${id}::uuid AND office_id = ${officeId}::uuid FOR UPDATE`;
+  const row = rows[0];
+  if (!row) throw new NotFoundException();
+  if (!options.anyStatus && !COLLECTABLE_STATUSES.has(row.status)) {
+    throw new ConflictException(`이 상태(${row.status})의 청구에는 입금을 기록할 수 없습니다.`);
+  }
+  return { id: row.id, officeId: row.office_id, status: row.status, expectedAmount: row.expected_amount };
+}
+
+export async function sumReceipts(tx: Prisma.TransactionClient, paymentId: string) {
+  const sum = await tx.commissionReceipt.aggregate({
+    where: { paymentId, voidedAt: null },
+    _sum: { amountWon: true, supplyWon: true },
+  });
+  return { amountWon: sum._sum.amountWon ?? 0, supplyWon: sum._sum.supplyWon ?? 0 };
+}
+
+/**
+ * 청구의 받은 금액(만원)·입금일·받은 방법·상태를 입금 기록에서 다시 채운다.
+ * 이 네 칸은 예전 화면이 읽는 값이라 남겨 두었고, 이제는 사람이 직접 고치지 않는다.
+ * 면제·취소·작성중인 청구의 상태는 건드리지 않는다.
+ */
+export async function refreshPaymentFromReceipts(tx: Prisma.TransactionClient, paymentId: string) {
+  const payment = await tx.commissionPayment.findUniqueOrThrow({ where: { id: paymentId } });
+  const sum = await sumReceipts(tx, paymentId);
+  const latest = await tx.commissionReceipt.findFirst({
+    where: { paymentId, voidedAt: null, kind: 'receipt' },
+    orderBy: [{ receivedAt: 'desc' }, { createdAt: 'desc' }],
+  });
+  let status = payment.status;
+  if (COLLECTABLE_STATUSES.has(payment.status)) {
+    if (sum.supplyWon >= payment.expectedAmount * WON_PER_MANWON) status = 'collected';
+    else if (sum.supplyWon > 0) status = 'partial';
+    else status = 'pending';
+  }
+  return tx.commissionPayment.update({
+    where: { id: paymentId },
+    data: {
+      actualAmount: sum.supplyWon > 0 ? Math.round(sum.supplyWon / WON_PER_MANWON) : null,
+      paidAt: sum.supplyWon > 0 ? (latest?.receivedAt ?? payment.paidAt) : null,
+      method: latest?.method ?? payment.method,
+      status,
+    },
+  });
 }

@@ -128,7 +128,7 @@ export interface MatchCreateSuggestionPayload {
 
 export interface MatchStageSuggestionPayload {
   matchId: string;
-  stage: 'buyerInterested' | 'viewingConfirmed' | 'viewing' | 'negotiating' | 'closed';
+  stage: 'buyerInterested' | 'viewingConfirmed' | 'viewing' | 'buyerReviewing' | 'negotiating' | 'closed';
 }
 
 export interface ListingConfirmSuggestionPayload {
@@ -154,6 +154,23 @@ export interface CallSuggestionPayloadByType {
 }
 
 /** 통화 분석이 제안한 업무. 사람이 확인한 뒤 반영한다. */
+export type CallSuggestionTargetType =
+  | 'listing_intake'
+  | 'listing'
+  | 'buyer_requirement'
+  | 'buyer_intake'
+  | 'match'
+  | 'property';
+
+/** 반영하려는데 제안한 뒤 값이 바뀌어 있을 때 서버가 알려 주는 차이 */
+export interface CallSuggestionBaseChange {
+  label: string;
+  was: string;
+  now: string;
+}
+
+export const CALL_SUGGESTION_BASE_CHANGED = 'SUGGESTION_BASE_CHANGED';
+
 export interface CallActionSuggestion {
   id: string;
   recordingId?: string;
@@ -165,6 +182,9 @@ export interface CallActionSuggestion {
   evidence: string | null;
   payload: CallSuggestionPayloadByType[CallSuggestionTypeValue];
   seq: number;
+  /** 이 제안이 바꾸려는 대상 (없으면 null). 예전 서버는 보내지 않는다. */
+  targetType?: CallSuggestionTargetType | null;
+  targetId?: string | null;
   appliedEntityType: string | null;
   appliedEntityId: string | null;
   /** 실제로 반영한 내용 (고쳐서 반영했으면 고친 내용) */
@@ -285,19 +305,30 @@ export function createCallRecordingsApi(request: RequestFn) {
         { method: 'POST' },
       ),
 
-    listSuggestions: (params?: { recordingId?: string; status?: string }) =>
+    /** targetType + targetId를 함께 주면 그 대상(매물 의뢰·희망조건 등)에 걸린 제안만 온다 */
+    listSuggestions: (params?: {
+      recordingId?: string;
+      status?: string;
+      targetType?: CallSuggestionTargetType;
+      targetId?: string;
+    }) =>
       request<CallActionSuggestion[]>('/call-suggestions', {
         params: params as Record<string, string | undefined>,
       }),
 
-    /** 제안 반영. payload를 주면 고친 내용으로 반영한다. */
+    /**
+     * 제안 반영. payload를 주면 고친 내용으로 반영한다.
+     * 제안한 뒤 대상의 값이 바뀌었으면 409(code: SUGGESTION_BASE_CHANGED, changes)로 멈춘다.
+     * 달라진 값을 사람이 보고 다시 반영할 때 force를 준다.
+     */
     acceptSuggestion: <T extends CallSuggestionTypeValue>(
       id: string,
       payload?: CallSuggestionPayloadByType[T],
+      options?: { force?: boolean },
     ) =>
       request<CallActionSuggestion>(`/call-suggestions/${id}/accept`, {
         method: 'POST',
-        body: payload ? { payload } : {},
+        body: { ...(payload ? { payload } : {}), ...(options?.force ? { force: true } : {}) },
       }),
 
     dismissSuggestion: (id: string) =>

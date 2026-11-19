@@ -19,6 +19,7 @@ import {
   parseCallAnalysis,
   stripEvidenceLines,
 } from './analysis/call-analysis.parser';
+import { readSuggestionBaseValues, suggestionTarget } from './call-suggestion.target';
 import {
   DEFAULT_GEMINI_ANALYSIS_MODEL,
   generateAnalysisJson,
@@ -330,6 +331,12 @@ export class CallIntelligenceService {
         where: { recordingId: recording.id, status: CallSuggestionStatus.PENDING },
       });
       if (parsed.suggestions.length > 0) {
+        // 덮어쓰는 제안은 지금 저장된 값을 함께 적어 둔다 (반영할 때 그 사이 바뀌었는지 견준다)
+        const baseValues = await Promise.all(
+          parsed.suggestions.map((suggestion) =>
+            readSuggestionBaseValues(tx, recording.officeId, suggestion.type, suggestion.payload),
+          ),
+        );
         await tx.callActionSuggestion.createMany({
           data: parsed.suggestions.map((suggestion, index) => ({
             officeId: recording.officeId,
@@ -342,6 +349,8 @@ export class CallIntelligenceService {
             evidence: suggestion.evidence,
             payload: suggestion.payload as unknown as Prisma.InputJsonValue,
             seq: index,
+            ...(suggestionTarget(suggestion.type, suggestion.payload) ?? {}),
+            ...(baseValues[index] ? { baseValues: baseValues[index] as unknown as Prisma.InputJsonValue } : {}),
           })),
         });
       }

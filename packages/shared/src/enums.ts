@@ -30,14 +30,18 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
  *
  * relationType은 `relatedContactId`가 `contactId`에게 어떤 관계인지를 뜻한다.
  * 예: contactId=자녀, relatedContactId=어머니, relationType=parent.
+ *
+ * 의뢰가 끝나도 변하지 않는 관계(가족)만 둔다. 법무사·세무사·대리인은 의뢰마다 달라지므로
+ * 여기 두지 않고 매물 관계자(PropertyContact.role)에 적는다 (사용자 결정 2026-11-18).
+ * 사위·조카처럼 목록에 없는 관계는 `other`와 보충 이름으로 적는다.
  */
 export const ContactRelationType = {
   PARENT: 'parent',
   SPOUSE: 'spouse',
   CHILD: 'child',
   SIBLING: 'sibling',
-  LAWYER: 'lawyer',
-  TAX_AGENT: 'tax_agent',
+  GRANDPARENT: 'grandparent',
+  GRANDCHILD: 'grandchild',
   OTHER: 'other',
 } as const;
 export type ContactRelationType =
@@ -86,6 +90,35 @@ export const CONTACT_CATEGORY_LABELS: Record<ContactCategoryKey, string> = {
   no_phone: '전화번호 없음',
 };
 
+/**
+ * 연락처 태그의 색. 값은 색 이름이고 실제 색(글자 · 배경)은 화면이 정한다.
+ * 새 태그에는 서버가 아직 덜 쓰인 색을 붙이고, 사용자가 나중에 바꿀 수 있다.
+ */
+export const CONTACT_TAG_COLORS = [
+  'gray',
+  'brown',
+  'orange',
+  'yellow',
+  'green',
+  'blue',
+  'purple',
+  'pink',
+  'red',
+] as const;
+export type ContactTagColor = (typeof CONTACT_TAG_COLORS)[number];
+export const CONTACT_TAG_COLOR_LABELS: Record<ContactTagColor, string> = {
+  gray: '회색',
+  brown: '갈색',
+  orange: '주황',
+  yellow: '노랑',
+  green: '초록',
+  blue: '파랑',
+  purple: '보라',
+  pink: '분홍',
+  red: '빨강',
+};
+export const CONTACT_TAG_NAME_MAX_LENGTH = 30;
+
 /** 구매 의뢰 안에서 Contact가 맡는 업무상 역할. 가족관계와는 별개다. */
 export const BuyerIntakeContactRole = {
   BUYER: 'buyer',
@@ -102,8 +135,11 @@ export const BUYER_INTAKE_CONTACT_ROLES = Object.values(
   BuyerIntakeContactRole,
 );
 
-/** 반대쪽 Contact에서 조회할 때만 사용하는 파생 관계 유형. */
-export type ContactRelationDisplayType = ContactRelationType | 'client';
+/**
+ * 반대쪽 Contact에서 볼 때의 관계 유형. 모든 관계가 같은 목록 안에서 뒤집히므로
+ * 저장하는 유형과 같다.
+ */
+export type ContactRelationDisplayType = ContactRelationType;
 
 export const CONTACT_RELATION_INVERSE_TYPES: Record<
   ContactRelationType,
@@ -113,8 +149,8 @@ export const CONTACT_RELATION_INVERSE_TYPES: Record<
   child: 'parent',
   spouse: 'spouse',
   sibling: 'sibling',
-  lawyer: 'client',
-  tax_agent: 'client',
+  grandparent: 'grandchild',
+  grandchild: 'grandparent',
   other: 'other',
 };
 
@@ -126,10 +162,9 @@ export const CONTACT_RELATION_TYPE_LABELS: Record<
   spouse: '배우자',
   child: '자녀',
   sibling: '형제자매',
-  lawyer: '법무사',
-  tax_agent: '세무사',
+  grandparent: '조부모',
+  grandchild: '손주',
   other: '기타',
-  client: '의뢰인',
 };
 
 export function invertContactRelationType(
@@ -431,6 +466,12 @@ export const MatchStage = {
   BUYER_INTERESTED: 'buyerInterested',
   VIEWING_CONFIRMED: 'viewingConfirmed',
   VIEWING: 'viewing',
+  /**
+   * 고객 검토 — 방문은 마쳤고, 고객이 본 집들을 놓고 고민하는 동안.
+   * 고객은 보통 여러 집을 보고 고르므로 이 기간이 며칠에서 몇 주 이어진다.
+   * 임장(일정을 잡고 동행하는 일)과 하는 일이 달라 단계를 따로 둔다.
+   */
+  BUYER_REVIEWING: 'buyerReviewing',
   NEGOTIATING: 'negotiating',
   DEAL_CREATED: 'dealCreated',
   CLOSED: 'closed',
@@ -443,6 +484,7 @@ export const MATCH_STAGE_ORDER = [
   MatchStage.BUYER_INTERESTED,
   MatchStage.VIEWING_CONFIRMED,
   MatchStage.VIEWING,
+  MatchStage.BUYER_REVIEWING,
   MatchStage.NEGOTIATING,
   MatchStage.DEAL_CREATED,
   MatchStage.CLOSED,

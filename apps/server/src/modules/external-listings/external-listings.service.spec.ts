@@ -30,7 +30,7 @@ describe('ExternalListingsService', () => {
       site: {
         findFirst: jest.fn(),
       },
-      officeAdvertisement: {
+      advertisementComparison: {
         findMany: jest.fn(),
       },
       $transaction: jest.fn(),
@@ -75,12 +75,22 @@ describe('ExternalListingsService', () => {
         _count: { listings: 1 },
       },
     ]);
-    prisma.officeAdvertisement.findMany.mockResolvedValue([
+    prisma.advertisementComparison.findMany.mockResolvedValue([
+      // 광고의 네이버 번호와 같은 줄은 저장된 표시(isMine)와 상관없이 내 광고다
       {
-        source: 'naver',
         articleNo: '100',
+        isMine: false,
         articleConfirmYmd: '20260721',
         ranking: 2,
+        advertisement: { naverArticleNo: '100' },
+      },
+      // 같은 번호가 다른 내 광고의 비교에 경쟁 광고로 들어 있는 줄은 쓰지 않는다
+      {
+        articleNo: '100',
+        isMine: false,
+        articleConfirmYmd: '20260101',
+        ranking: 9,
+        advertisement: { naverArticleNo: '999' },
       },
     ]);
 
@@ -94,17 +104,18 @@ describe('ExternalListingsService', () => {
       offerRanking: 2,
       ownerVerified: true,
     });
-    expect(prisma.officeAdvertisement.findMany).toHaveBeenCalledWith({
+    expect(prisma.advertisementComparison.findMany).toHaveBeenCalledWith({
       where: {
         officeId: 'office-1',
-        isMine: true,
         isActive: true,
         articleNo: { in: ['100'] },
       },
       select: {
         articleNo: true,
+        isMine: true,
         articleConfirmYmd: true,
         ranking: true,
+        advertisement: { select: { naverArticleNo: true } },
       },
     });
   });
@@ -138,7 +149,7 @@ describe('ExternalListingsService', () => {
         _count: { listings: 1 },
       },
     ]);
-    prisma.officeAdvertisement.findMany.mockResolvedValue([]);
+    prisma.advertisementComparison.findMany.mockResolvedValue([]);
 
     const [group] = await service.findAllGroups('office-1', {
       transactionType: 'sale',
@@ -232,7 +243,7 @@ describe('ExternalListingsService', () => {
         startedAt: sessionStartedAt,
       },
     ]);
-    prisma.officeAdvertisement.findMany.mockResolvedValue([]);
+    prisma.advertisementComparison.findMany.mockResolvedValue([]);
 
     const groups = await service.findAllGroups('office-1', {
       transactionType: 'sale',
@@ -1078,7 +1089,7 @@ describe('ExternalListingsService', () => {
         transactionType: 'sale',
       });
       context.prisma.externalListingGroup.findMany.mockResolvedValue([]);
-      context.prisma.officeAdvertisement.findMany.mockResolvedValue([]);
+      context.prisma.advertisementComparison.findMany.mockResolvedValue([]);
       return context;
     }
 

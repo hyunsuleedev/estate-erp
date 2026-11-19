@@ -22,10 +22,13 @@ import {
   buyerIntakeContactsInclude,
   withBuyerRequirementContact,
 } from '../buyer-requirements/buyer-requirement.presenter';
+import { CONTACT_CATEGORY_KEYS, type ContactCategoryKey, formatUnitLabel } from '@estate-erp/shared';
 import {
-  CONTACT_CATEGORY_KEYS,
-  type ContactCategoryKey,
-} from '@estate-erp/shared';
+  CONTACT_TAG_NAMES_INCLUDE,
+  setContactTags,
+  toTagNames,
+  withTagNames,
+} from './contact-tags.service';
 import {
   CONTACT_ROLE_INCLUDE,
   CONTACT_ROLE_INTAKE_SELECT,
@@ -36,7 +39,11 @@ import {
 export interface ContactSearchQuery {
   search?: string;
   tags?: string[];
+  /** 그룹 이름. 그 그룹에 속한 연락처만 */
+  group?: string;
   category?: ContactCategoryKey;
+  /** 여러 분류를 모두 만족하는 연락처만 (목록 화면의 필터 칩) */
+  categories?: ContactCategoryKey[];
   hasPropertyContact?: boolean;
   hasBuyerReq?: boolean;
   sortBy?: 'name' | 'createdAt' | 'updatedAt';
@@ -61,6 +68,17 @@ export interface ContactWriteInput {
   memo?: string | null;
 }
 
+/** 연락처가 속한 그룹의 이름만 읽는다. */
+const CONTACT_GROUP_NAMES_INCLUDE = {
+  select: { group: { select: { name: true } } },
+} satisfies Prisma.Contact$groupMembershipsArgs;
+
+function toGroupNames(memberships: Array<{ group: { name: string } }>) {
+  return memberships
+    .map(({ group }) => group.name)
+    .sort((left, right) => left.localeCompare(right, 'ko'));
+}
+
 @Injectable()
 export class ContactsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -79,13 +97,24 @@ export class ContactsService {
       ];
     }
 
-    if (query.tags && query.tags.length > 0) {
-      where.tags = { hasEvery: query.tags };
+    const tagNames = (query.tags ?? []).map((name) => name.trim()).filter(Boolean);
+
+    if (query.group) {
+      where.groupMemberships = { some: { group: { name: query.group } } };
     }
 
-    if (query.category) {
-      // 검색의 OR와 섞이지 않도록 AND로 묶는다.
-      where.AND = [contactCategoryWhere(query.category)];
+    const categories = [
+      ...(query.category ? [query.category] : []),
+      ...(query.categories ?? []),
+    ];
+    if (categories.length > 0 || tagNames.length > 0) {
+      // 검색의 OR와 섞이지 않도록 AND로 묶는다. 여러 분류와 여러 태그는 모두 만족해야 한다.
+      where.AND = [
+        ...categories.map((key) => contactCategoryWhere(key)),
+        ...tagNames.map((name) => ({
+          tagAssignments: { some: { tag: { name } } },
+        })),
+      ];
     }
 
     if (query.hasPropertyContact) {
@@ -123,6 +152,8 @@ export class ContactsService {
             },
           },
           phones: this.contactPhonesInclude(),
+          groupMemberships: CONTACT_GROUP_NAMES_INCLUDE,
+          tagAssignments: CONTACT_TAG_NAMES_INCLUDE,
           consultations: {
             orderBy: { createdAt: 'desc' },
             take: 1,
@@ -149,10 +180,14 @@ export class ContactsService {
           tenants,
           dealsAsBuyer,
           dealsAsSeller,
+          groupMemberships,
+          tagAssignments,
           _count,
           ...contact
         }) => ({
           ...withPrimaryPhone(contact),
+          tags: toTagNames(tagAssignments),
+          groups: toGroupNames(groupMemberships),
           _count: {
             ..._count,
             buyerRequirements: (buyerIntakeContacts ?? []).reduce(
@@ -175,44 +210,31 @@ export class ContactsService {
     };
   }
 
-  /** 사이드바의 분류별 건수와 그룹 목록. 그룹은 만들어 둔 이름과 실제 쓰는 태그를 합친다. */
+  /** 사이드바의 분류별 건수와 그룹 목록. 그룹은 만들어 둔 것만 나오고, 태그는 그룹이 아니다. */
   async getCategorySummary(officeId: string) {
     const now = new Date();
-    const [total, categoryCounts, tagRows, registeredGroups] = await Promise.all(
-      [
-        this.prisma.contact.count({ where: { officeId } }),
-        Promise.all(
-          CONTACT_CATEGORY_KEYS.map((key) =>
-            this.prisma.contact.count({
-              where: { officeId, AND: [contactCategoryWhere(key, now)] },
-            }),
-          ),
+    const [total, categoryCounts, groups] = await Promise.all([
+      this.prisma.contact.count({ where: { officeId } }),
+      Promise.all(
+        CONTACT_CATEGORY_KEYS.map((key) =>
+          this.prisma.contact.count({
+            where: { officeId, AND: [contactCategoryWhere(key, now)] },
+          }),
         ),
-        this.prisma.$queryRaw<Array<{ tag: string; count: number }>>`
-          SELECT tag, COUNT(*)::int AS count
-          FROM "contacts", unnest("tags") AS tag
-          WHERE "office_id" = ${officeId}::uuid
-          GROUP BY tag
-        `,
-        this.prisma.contactGroup.findMany({
-          where: { officeId },
-          select: { name: true },
-        }),
-      ],
-    );
-
-    const groupCounts = new Map<string, number>(
-      registeredGroups.map(({ name }) => [name, 0]),
-    );
-    for (const { tag, count } of tagRows) groupCounts.set(tag, count);
+      ),
+      this.prisma.contactGroup.findMany({
+        where: { officeId },
+        select: { name: true, _count: { select: { members: true } } },
+      }),
+    ]);
 
     return {
       total,
       counts: Object.fromEntries(
         CONTACT_CATEGORY_KEYS.map((key, index) => [key, categoryCounts[index]]),
       ) as Record<ContactCategoryKey, number>,
-      groups: [...groupCounts]
-        .map(([name, count]) => ({ name, count }))
+      groups: groups
+        .map(({ name, _count }) => ({ name, count: _count.members }))
         .sort((left, right) => left.name.localeCompare(right.name, 'ko')),
     };
   }
@@ -222,6 +244,8 @@ export class ContactsService {
       where: { id, officeId },
       include: {
         phones: this.contactPhonesInclude(),
+        groupMemberships: CONTACT_GROUP_NAMES_INCLUDE,
+        tagAssignments: CONTACT_TAG_NAMES_INCLUDE,
         propertyContacts: { include: { property: { include: { site: true } } } },
         buyerIntakeContacts: {
           include: {
@@ -251,8 +275,11 @@ export class ContactsService {
           withBuyerRequirementContact({ ...requirement, buyerIntake }),
         ),
     );
+    const { groupMemberships, tagAssignments, ...contactFields } = contact;
     return {
-      ...withPrimaryPhone(contact),
+      ...withPrimaryPhone(contactFields),
+      tags: toTagNames(tagAssignments),
+      groups: toGroupNames(groupMemberships),
       buyerRequirements,
       relationsAsMain: contact.relationsAsMain.map((relation) =>
         withContactRelationPerspective(
@@ -278,15 +305,17 @@ export class ContactsService {
   async create(
     officeId: string,
     dto: ContactWriteInput & { name: string },
+    actorId?: string,
   ) {
     const { phones } = this.prepareContactPhones(dto);
     try {
-      const contact = await this.prisma.contact.create({
+      // 연락처와 태그를 함께 만든다. 태그가 틀려 실패하면 연락처도 남지 않는다.
+      const contact = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.contact.create({
         data: {
           officeId,
           name: dto.name,
           email: dto.email ?? null,
-          tags: dto.tags ?? [],
           memo: dto.memo ?? null,
           phones: phones.length > 0
             ? {
@@ -297,9 +326,20 @@ export class ContactsService {
               }
             : undefined,
         },
-        include: { phones: this.contactPhonesInclude() },
+          select: { id: true },
+        });
+        if (dto.tags !== undefined) {
+          await setContactTags(tx, officeId, created.id, dto.tags, actorId);
+        }
+        return tx.contact.findUniqueOrThrow({
+          where: { id: created.id },
+          include: {
+            phones: this.contactPhonesInclude(),
+            tagAssignments: CONTACT_TAG_NAMES_INCLUDE,
+          },
+        });
       });
-      return withPrimaryPhone(contact);
+      return withPrimaryPhone(withTagNames(contact));
     } catch (error) {
       this.rethrowPhoneConflict(error);
     }
@@ -309,6 +349,7 @@ export class ContactsService {
     id: string,
     officeId: string,
     dto: ContactWriteInput,
+    actorId?: string,
   ) {
     await this.findOne(id, officeId);
     const shouldReplacePhones = dto.phones !== undefined || dto.phone !== undefined;
@@ -317,7 +358,6 @@ export class ContactsService {
     const data: Prisma.ContactUpdateInput = {
       ...(dto.name !== undefined && { name: dto.name }),
       ...(dto.email !== undefined && { email: dto.email }),
-      ...(dto.tags !== undefined && { tags: dto.tags }),
       ...(dto.memo !== undefined && { memo: dto.memo }),
       ...(shouldReplacePhones && {
         phones: {
@@ -331,12 +371,20 @@ export class ContactsService {
     };
 
     try {
-      const contact = await this.prisma.contact.update({
-        where: { id },
-        data,
-        include: { phones: this.contactPhonesInclude() },
+      const contact = await this.prisma.$transaction(async (tx) => {
+        if (dto.tags !== undefined) {
+          await setContactTags(tx, officeId, id, dto.tags, actorId);
+        }
+        return tx.contact.update({
+          where: { id },
+          data,
+          include: {
+            phones: this.contactPhonesInclude(),
+            tagAssignments: CONTACT_TAG_NAMES_INCLUDE,
+          },
+        });
       });
-      return withPrimaryPhone(contact);
+      return withPrimaryPhone(withTagNames(contact));
     } catch (error) {
       this.rethrowPhoneConflict(error);
     }
@@ -357,7 +405,7 @@ export class ContactsService {
         id: true,
         name: true,
         phones: this.contactPhonesSelect(),
-        tags: true,
+        tagAssignments: CONTACT_TAG_NAMES_INCLUDE,
         propertyContacts: {
           where: { role: 'owner', status: 'active' },
           take: 3,
@@ -366,7 +414,7 @@ export class ContactsService {
             property: {
               select: {
                 site: { select: { name: true } },
-                unit: { select: { name: true, dong: { select: { name: true, isPlaceholder: true } } } },
+                unit: { select: { name: true, floor: true, floorEnd: true, floorLabel: true, dong: { select: { name: true, isPlaceholder: true } } } },
               },
             },
           },
@@ -388,13 +436,13 @@ export class ContactsService {
       name: c.name,
       phone: withPrimaryPhone(c).phone,
       phones: c.phones,
-      tags: c.tags,
+      tags: toTagNames(c.tagAssignments),
       ownedProperties: c.propertyContacts.map((pc) => {
         const site = pc.property.site;
         const unit = pc.property.unit;
         const dong = unit?.dong;
         const unitLabel = unit
-          ? `${dong && !dong.isPlaceholder ? dong.name + ' ' : ''}${unit.name}호`
+          ? `${dong && !dong.isPlaceholder ? dong.name + ' ' : ''}${formatUnitLabel(unit)}`
           : null;
         return { siteName: site.name, unitLabel };
       }),
@@ -423,7 +471,7 @@ export class ContactsService {
         id: true,
         name: true,
         phones: this.contactPhonesSelect(),
-        tags: true,
+        tagAssignments: CONTACT_TAG_NAMES_INCLUDE,
         propertyContacts: {
           where: { role: 'owner', status: 'active' },
           take: 3,
@@ -432,7 +480,7 @@ export class ContactsService {
             property: {
               select: {
                 site: { select: { name: true } },
-                unit: { select: { name: true, dong: { select: { name: true, isPlaceholder: true } } } },
+                unit: { select: { name: true, floor: true, floorEnd: true, floorLabel: true, dong: { select: { name: true, isPlaceholder: true } } } },
               },
             },
           },
@@ -454,13 +502,13 @@ export class ContactsService {
       name: c.name,
       phone: withPrimaryPhone(c).phone,
       phones: c.phones,
-      tags: c.tags,
+      tags: toTagNames(c.tagAssignments),
       ownedProperties: c.propertyContacts.map((pc) => {
         const site = pc.property.site;
         const unit = pc.property.unit;
         const dong = unit?.dong;
         const unitLabel = unit
-          ? `${dong && !dong.isPlaceholder ? dong.name + ' ' : ''}${unit.name}호`
+          ? `${dong && !dong.isPlaceholder ? dong.name + ' ' : ''}${formatUnitLabel(unit)}`
           : null;
         return { siteName: site.name, unitLabel };
       }),

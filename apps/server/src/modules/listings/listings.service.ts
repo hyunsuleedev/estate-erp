@@ -181,6 +181,8 @@ interface ListingFilterSite {
   type: string;
   roadAddress: string | null;
   jibunAddress: string | null;
+  /** 법정동 코드. 화면이 지역 선택에 맞춰 단지 목록을 좁히는 데 쓴다 */
+  wardCode: string | null;
   listingCount: number;
   propertyCount: number;
 }
@@ -518,6 +520,7 @@ export class ListingsService {
                 type: true,
                 roadAddress: true,
                 jibunAddress: true,
+                wardCode: true,
               },
             },
           },
@@ -561,6 +564,7 @@ export class ListingsService {
         type: site.type,
         roadAddress: site.roadAddress,
         jibunAddress: site.jibunAddress,
+        wardCode: site.wardCode ?? null,
         listingCount: site.listingCount,
         propertyCount: site.propertyCount,
       }))

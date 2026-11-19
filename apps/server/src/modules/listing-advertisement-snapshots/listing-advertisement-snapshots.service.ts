@@ -6,8 +6,23 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import {
+  inferOfficeAdvertisementFloorExposureMode,
+  OfficeAdvertisementFloorExposureMode,
+} from "@estate-erp/shared";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import {
+  assertValidAdvertisementRawFields,
+  getAdvertisementLinkLevel,
+  resolveAdvertisementLink,
+} from "../listing-advertisements/advertisement-link";
+import {
+  advertisementStateChanged,
+  findSameAdvertisement,
+  mergeAdvertisements,
+  recordAdvertisementHistory,
+} from "../listing-advertisements/advertisement-identity";
 
 const ACTIVE_SESSION_STATUS = "processing";
 const SHA_256_PATTERN = /^[0-9a-f]{64}$/;
@@ -31,8 +46,16 @@ export interface BeginListingAdvertisementSnapshotDto {
 export interface SubmitListingAdvertisementSnapshotItemDto {
   sessionId: string;
   raw: JsonRecord;
+  /**
+   * 이 광고가 우리 데이터의 어디까지 연결되는지. 아는 가장 깊은 단계 하나만 보낸다
+   * (매물 > 관리 공간 > 건물). 아무것도 못 찾았으면 셋 다 비운다 — 광고는 매물 없이도 저장된다.
+   */
   listingId?: string | null;
+  propertyId?: string | null;
+  siteId?: string | null;
+  /** 어떻게 그 연결을 정했는지. 매물에 연결할 때는 꼭 적는다. */
   resolution?: JsonRecord | null;
+  /** 광고 자체를 읽지 못했을 때만. 연결을 못 찾은 것은 오류가 아니다. */
   error?: string | null;
 }
 
@@ -56,6 +79,37 @@ export function hashCanonicalJson(value: unknown): string {
   return createHash("sha256")
     .update(JSON.stringify(canonicalize(value)))
     .digest("hex");
+}
+
+/** 글자나 숫자로 온 값을 다듬은 글자로. 그 밖의 모양과 빈 글은 null */
+function rawText(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return text ? text : null;
+}
+
+const TRANSACTION_TYPE_BY_TEXT: Record<string, string> = {
+  sale: "sale",
+  매매: "sale",
+  jeonse: "jeonse",
+  전세: "jeonse",
+  monthly: "monthly",
+  월세: "monthly",
+  반전세: "monthly",
+  단기임대: "monthly",
+};
+
+/** CP가 적은 거래유형("월세")을 우리 값으로. 모르는 말이면 null (추측하지 않는다) */
+function normalizeTransactionType(value: unknown): string | null {
+  const text = rawText(value);
+  return text ? (TRANSACTION_TYPE_BY_TEXT[text.toLowerCase()] ?? null) : null;
+}
+
+/** 층 표기에서 노출 방식을 읽는다(네이버 비교 쪽과 같은 규칙). 알 수 없으면 null */
+function deriveFloorExposure(floorText: string | null): string | null {
+  const mode = inferOfficeAdvertisementFloorExposureMode(floorText);
+  return mode === OfficeAdvertisementFloorExposureMode.UNKNOWN ? null : mode;
 }
 
 function asInputJson(value: unknown): Prisma.InputJsonValue {
@@ -168,9 +222,13 @@ export class ListingAdvertisementSnapshotsService {
 
     const listingId = dto.listingId?.trim() || null;
     const errorMessage = dto.error?.trim() || null;
-    if ((listingId === null) === (errorMessage === null)) {
+    const hasLink = Boolean(
+      listingId || dto.propertyId?.trim() || dto.siteId?.trim(),
+    );
+    // 결과는 둘 중 하나다: 읽었다(연결은 찾은 만큼, 못 찾았어도 된다) / 광고를 읽지 못했다(error).
+    if (errorMessage && (hasLink || dto.resolution != null)) {
       throw new BadRequestException(
-        "submit exactly one outcome: listingId with resolution, or error",
+        "an item with an error cannot carry a link or resolution",
       );
     }
     if (listingId && !isRecord(dto.resolution)) {
@@ -178,10 +236,8 @@ export class ListingAdvertisementSnapshotsService {
         "resolution must be an object when listingId is submitted",
       );
     }
-    if (errorMessage && dto.resolution != null) {
-      throw new BadRequestException(
-        "resolution must be omitted when an error is submitted",
-      );
+    if (dto.resolution != null && !isRecord(dto.resolution)) {
+      throw new BadRequestException("resolution must be an object");
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -212,31 +268,30 @@ export class ListingAdvertisementSnapshotsService {
         );
       }
 
-      const listing = listingId
+      // 준 연결을 확인하고 위 단계(관리 공간 · 건물)를 채운다. 서로 어긋나면 거절한다.
+      const link = errorMessage
+        ? { listingId: null, propertyId: null, siteId: null, transactionType: null }
+        : await resolveAdvertisementLink(tx, officeId, dto);
+      const listing = link.listingId
         ? await tx.listing.findFirst({
-            where: { id: listingId, officeId },
-            select: {
-              id: true,
-              propertyId: true,
-              intakeId: true,
-              transactionType: true,
-            },
+            where: { id: link.listingId, officeId },
+            select: { id: true, intakeId: true },
           })
         : null;
-      if (listingId && !listing) {
-        throw new NotFoundException("listing not found");
-      }
 
-      const status = listing ? "resolved" : "failed";
-      const resolution = listing
-        ? asInputJson({
-            ...(dto.resolution as JsonRecord),
-            listingId: listing.id,
-            propertyId: listing.propertyId,
-            intakeId: listing.intakeId,
-            transactionType: listing.transactionType,
-          })
-        : null;
+      // resolved = 읽어서 넣을 수 있는 항목(연결 단계와 무관). failed = 광고를 읽지 못함.
+      const status = errorMessage ? "failed" : "resolved";
+      const resolution = errorMessage
+        ? null
+        : asInputJson({
+            ...((dto.resolution as JsonRecord | null | undefined) ?? {}),
+            linkLevel: getAdvertisementLinkLevel(link),
+            listingId: link.listingId,
+            propertyId: link.propertyId,
+            siteId: link.siteId,
+            intakeId: listing?.intakeId ?? null,
+            transactionType: link.transactionType,
+          });
       const submittedAt = new Date();
 
       const item = existing
@@ -244,7 +299,9 @@ export class ListingAdvertisementSnapshotsService {
             where: { id: existing.id },
             data: {
               status,
-              listingId: listing?.id ?? null,
+              listingId: link.listingId,
+              propertyId: link.propertyId,
+              siteId: link.siteId,
               resolution: resolution ?? Prisma.DbNull,
               error: errorMessage,
               submittedById: userId,
@@ -260,7 +317,9 @@ export class ListingAdvertisementSnapshotsService {
               status,
               raw: asInputJson(prepared.raw),
               itemHash: prepared.itemHash,
-              listingId: listing?.id ?? null,
+              listingId: link.listingId,
+              propertyId: link.propertyId,
+              siteId: link.siteId,
               ...(resolution ? { resolution } : {}),
               error: errorMessage,
               submittedById: userId,
@@ -409,7 +468,8 @@ export class ListingAdvertisementSnapshotsService {
       const unresolved = items.filter((item) => item.status !== "resolved");
       if (unresolved.length > 0) {
         throw new ConflictException({
-          message: "all snapshot items must be resolved before completion",
+          // 매물에 연결하지 못한 광고는 막지 않는다. 막는 것은 읽지 못한 광고(error)뿐이다.
+          message: "items submitted with an error must be resubmitted before completion",
           unresolved: unresolved.map((item) => ({
             id: item.id,
             externalAdId: item.externalAdId,
@@ -438,20 +498,35 @@ export class ListingAdvertisementSnapshotsService {
         );
       }
 
-      if (items.some((item) => !item.listingId)) {
-        throw new ConflictException(
-          "a resolved snapshot item no longer has a listing",
-        );
-      }
-      const listingIds = items.map((item) => item.listingId as string);
+      // 한 매물에 같은 채널의 게재 중 광고는 하나다. 매물이 없는 광고는 이 검사에 들지 않는다.
+      const listingIds = items.flatMap((item) =>
+        item.listingId ? [item.listingId] : [],
+      );
       if (new Set(listingIds).size !== listingIds.length) {
         throw new ConflictException(
           "multiple current CP advertisements resolved to the same listing",
         );
       }
+      // 제출한 뒤 지워진 관리 공간 · 건물을 가리키지 않게 다시 확인한다
+      const links = new Map<string, Awaited<ReturnType<typeof resolveAdvertisementLink>>>();
+      for (const item of items) {
+        try {
+          links.set(
+            item.id,
+            await resolveAdvertisementLink(tx, officeId, item),
+          );
+        } catch {
+          throw new ConflictException({
+            message:
+              "a submitted item points at a listing, property, or site that no longer exists; resubmit it",
+            externalAdId: item.externalAdId,
+          });
+        }
+      }
       const externalAdIds = items.map((item) => item.externalAdId);
 
-      const staleResult = await tx.listingAdvertisement.updateMany({
+      // 이번 수집에 없는 광고는 종료한다. 줄은 그대로 두고, 종료된 때를 이력에 남긴다.
+      const staleAdvertisements = await tx.listingAdvertisement.findMany({
         where: {
           officeId,
           channel: session.channel,
@@ -466,80 +541,107 @@ export class ListingAdvertisementSnapshotsService {
               }
             : {}),
         },
-        data: { status: "ended", endedAt: session.observedAt },
       });
-
-      const existingAdvertisements =
-        externalAdIds.length === 0
-          ? []
-          : await tx.listingAdvertisement.findMany({
-              where: {
-                officeId,
-                channel: session.channel,
-                status: "active",
-                externalAdId: { in: externalAdIds },
-              },
-            });
-      const existingByExternalAdId = new Map(
-        existingAdvertisements.map((advertisement) => [
-          advertisement.externalAdId,
-          advertisement,
-        ]),
-      );
+      for (const stale of staleAdvertisements) {
+        const ended = await tx.listingAdvertisement.update({
+          where: { id: stale.id },
+          data: { status: "ended", endedAt: session.observedAt },
+        });
+        await recordAdvertisementHistory(tx, ended, {
+          observedAt: session.observedAt,
+          source: "cp_sync",
+          snapshotSessionId: session.id,
+        });
+      }
+      const staleResult = { count: staleAdvertisements.length };
 
       let createdAdvertisements = 0;
       let updatedAdvertisements = 0;
+      // 이번 회차에서 이미 고친 줄. 같은 매물 · 채널로 이어진 CP 광고가 둘이면 두 번째가 여기에 걸린다.
+      const touched = new Map<string, string>();
       for (const item of items) {
         const raw = this.requireRecord(item.raw, item.externalAdId);
+        const link = links.get(item.id)!;
         const data = this.toAdvertisementData(
-          item.listingId as string,
           item.externalAdId,
           session.observedAt,
           raw,
         );
-        const existing = existingByExternalAdId.get(item.externalAdId);
+        const foundLink = getAdvertisementLinkLevel(link) !== "none";
+        // 같은 광고를 찾는다: 열쇠(매물 + 채널 / 관리 공간 + 채널 + 거래유형), 없으면 CP 광고 번호.
+        // 종료돼 있던 줄도 같은 광고면 그 줄이 다시 게재 중으로 돌아온다(재광고 · 다시 게재는 새 줄이 아니다).
+        const same = await findSameAdvertisement(tx, officeId, {
+          channel: session.channel,
+          externalAdId: item.externalAdId,
+          listingId: link.listingId,
+          propertyId: link.propertyId,
+          transactionType: link.transactionType ?? data.transactionType,
+        });
+        if (
+          same.byKey &&
+          same.byExternalAdId &&
+          same.byKey.id !== same.byExternalAdId.id &&
+          !touched.has(same.byKey.id)
+        ) {
+          // 연결 없이 들어와 있던 줄이 이 매물 · 채널의 광고였다
+          same.byKey = await mergeAdvertisements(tx, same.byExternalAdId, same.byKey);
+        }
+        const existing = same.byKey ?? same.byExternalAdId;
+        if (existing && touched.has(existing.id)) {
+          throw new ConflictException(
+            `CP 광고 ${touched.get(existing.id)}와 ${item.externalAdId}가 같은 매물 · 같은 채널에 이어져 있습니다. 한 매물의 한 채널 광고는 하나입니다. 연결을 확인해 주세요.`,
+          );
+        }
         if (existing) {
-          const priceChanged = this.advertisedPriceChanged(existing, data);
-          await tx.listingAdvertisement.update({
+          const updated = await tx.listingAdvertisement.update({
             where: { id: existing.id },
             data: {
               ...data,
-              ...(priceChanged && {
-                priceHistories: {
-                  create: {
-                    officeId,
-                    snapshotSessionId: session.id,
-                    advertisedPrice: data.advertisedPrice,
-                    advertisedDeposit: data.advertisedDeposit,
-                    advertisedMonthlyRent: data.advertisedMonthlyRent,
-                    observedAt: session.observedAt,
-                    source: "cp_sync",
-                  },
-                },
+              // 종료돼 있었다면 다시 게재 중으로
+              status: "active",
+              endedAt: null,
+              source: "cp_sync",
+              // 이번 수집이 연결을 찾지 못했다고 해서, 사람이 화면에서 이어 둔 연결을 지우지 않는다.
+              // 이번에 찾은 것이 있을 때만 그것으로 바꾼다.
+              ...(foundLink && {
+                listingId: link.listingId,
+                propertyId: link.propertyId,
+                siteId: link.siteId,
               }),
+              transactionType:
+                (foundLink ? link.transactionType : null) ??
+                data.transactionType ??
+                existing.transactionType,
             },
           });
+          if (advertisementStateChanged(existing, updated)) {
+            await recordAdvertisementHistory(tx, updated, {
+              observedAt: session.observedAt,
+              source: "cp_sync",
+              snapshotSessionId: session.id,
+            });
+          }
+          touched.set(updated.id, item.externalAdId);
           updatedAdvertisements += 1;
         } else {
-          await tx.listingAdvertisement.create({
+          const created = await tx.listingAdvertisement.create({
             data: {
               officeId,
               channel: session.channel,
               firstSeenAt: session.observedAt,
               ...data,
-              priceHistories: {
-                create: {
-                  officeId,
-                  snapshotSessionId: session.id,
-                  advertisedPrice: data.advertisedPrice,
-                  advertisedDeposit: data.advertisedDeposit,
-                  advertisedMonthlyRent: data.advertisedMonthlyRent,
-                  observedAt: session.observedAt,
-                  source: "cp_sync",
-                },
-              },
+              listingId: link.listingId,
+              propertyId: link.propertyId,
+              siteId: link.siteId,
+              transactionType: link.transactionType ?? data.transactionType,
             },
           });
+          await recordAdvertisementHistory(tx, created, {
+            observedAt: session.observedAt,
+            source: "cp_sync",
+            snapshotSessionId: session.id,
+          });
+          touched.set(created.id, item.externalAdId);
           createdAdvertisements += 1;
         }
       }
@@ -738,13 +840,42 @@ export class ListingAdvertisementSnapshotsService {
   }
 
   private toAdvertisementData(
-    listingId: string,
     externalAdId: string,
     observedAt: Date,
     raw: JsonRecord,
   ) {
+    // 수집기(Reader)가 CP 화면에서 읽은 글자를 그대로 남긴다. 이 칸들은 연결과 상관없이 저장하고,
+    // 읽을 수 없는 모양이면 버리지 않고 비워 둔다(가격처럼 틀리면 안 되는 값이 아니다).
+    const floorText = rawText(raw.floorText ?? raw.floor);
+    const fullAddress = rawText(raw.fullAddress);
+    // 한 줄 주소는 도로명("…로 12", "…길 3")인지 지번인지 모양으로만 가른다
+    const fullAddressIsRoad = fullAddress ? /(로|길)\s*\d/.test(fullAddress) : false;
+    const fields = {
+      transactionType: normalizeTransactionType(raw.transactionType),
+      rawJibunAddress:
+        rawText(raw.jibunAddress) ?? (fullAddressIsRoad ? null : fullAddress),
+      rawRoadAddress:
+        rawText(raw.roadAddress) ?? (fullAddressIsRoad ? fullAddress : null),
+      rawSiteName: rawText(raw.siteName ?? raw.complexName),
+      rawDong: rawText(raw.dong),
+      rawHo: rawText(raw.ho),
+      rawFloorText: floorText,
+      rawAreaM2:
+        typeof raw.areaM2 === "number" && Number.isFinite(raw.areaM2) && raw.areaM2 > 0
+          ? raw.areaM2
+          : null,
+      floorExposure:
+        rawText(raw.floorExposure) ?? deriveFloorExposure(floorText),
+    };
+    try {
+      assertValidAdvertisementRawFields(fields);
+    } catch (error) {
+      throw new ConflictException(
+        `submitted advertisement ${externalAdId} is invalid: ${(error as Error).message}`,
+      );
+    }
     return {
-      listingId,
+      ...fields,
       status: "active",
       source: "cp_sync",
       advertisedPrice: this.nullableInteger(raw.advertisedPrice),

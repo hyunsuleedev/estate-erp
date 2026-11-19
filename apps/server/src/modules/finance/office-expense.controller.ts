@@ -9,6 +9,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -29,6 +31,8 @@ export class OfficeExpenseController {
   }
 
   @Post()
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   create(
     @CurrentUser() user: CurrentUserPayload,
     @Body()
@@ -46,6 +50,8 @@ export class OfficeExpenseController {
   }
 
   @Patch(':id')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   update(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
@@ -65,6 +71,8 @@ export class OfficeExpenseController {
   }
 
   @Delete(':id')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
   remove(
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,

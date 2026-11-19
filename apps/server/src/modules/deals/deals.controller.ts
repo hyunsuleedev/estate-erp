@@ -5,6 +5,8 @@ import {
   Patch,
   Delete,
   Param,
+  Query,
+  BadRequestException,
   Body,
   UseGuards,
 } from '@nestjs/common';
@@ -24,8 +26,23 @@ export class DealsController {
   constructor(private readonly dealsService: DealsService) {}
 
   @Get()
-  findAll(@CurrentUser() user: CurrentUserPayload) {
-    return this.dealsService.findAll(user.officeId);
+  findAll(@CurrentUser() user: CurrentUserPayload, @Query('scope') scope?: string) {
+    return this.dealsService.findAll(user.officeId, scope === 'active');
+  }
+
+  @Get('views/archive')
+  findArchive(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('kind') kind: string,
+    @Query('q') q?: string,
+    @Query('since') since?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    if (kind !== 'closed' && kind !== 'cancelled') throw new BadRequestException('종료 구분을 확인하세요.');
+    if (cursor && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(cursor)) throw new BadRequestException('잘못된 페이지입니다.');
+    const from = since ? new Date(since) : undefined;
+    if (from && !Number.isFinite(from.getTime())) throw new BadRequestException('기간을 확인하세요.');
+    return this.dealsService.findArchive(user.officeId, kind, q?.trim(), from, cursor);
   }
 
   @Get(':id')

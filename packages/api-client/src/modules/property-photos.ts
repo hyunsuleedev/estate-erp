@@ -29,7 +29,8 @@ export interface PropertyPhoto {
     id: string;
     site: { name: string };
     unit?: {
-      name: string;
+      /** 호 이름. 호 없이 층이 단위인 공간은 null */
+      name: string | null;
       dong?: { name: string };
       siteUnitType?: { name: string } | null;
     } | null;

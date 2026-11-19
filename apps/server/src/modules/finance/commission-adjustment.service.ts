@@ -1,8 +1,15 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  WON_PER_MANWON,
+  lockPayment,
+  refreshPaymentFromReceipts,
+  sumReceipts,
+} from './commission-payment.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -38,7 +45,7 @@ export class CommissionAdjustmentService {
                     property: {
                       select: {
                         site: { select: { name: true } },
-                        unit: { select: { name: true } },
+                        unit: { select: { name: true, floor: true, floorEnd: true, floorLabel: true } },
                       },
                     },
                   },
@@ -113,8 +120,11 @@ export class CommissionAdjustmentService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.commissionAdjustment.update({
-        where: { id },
+      // 청구 줄을 잠그고 지금 값을 다시 읽는다. 요청한 뒤 돈이 더 들어왔을 수 있다.
+      const payment = await lockPayment(tx, adj.paymentId, officeId, { anyStatus: true });
+      // 같은 조정을 동시에 두 번 승인해도 한 번만 적용되게 한다
+      const { count } = await tx.commissionAdjustment.updateMany({
+        where: { id, officeId, status: 'requested' },
         data: {
           status: 'approved',
           decidedById: deciderUserId,
@@ -122,26 +132,34 @@ export class CommissionAdjustmentService {
           decisionNote,
         },
       });
+      if (count === 0) throw new BadRequestException('이미 처리된 조정입니다.');
+      const updated = await tx.commissionAdjustment.findUniqueOrThrow({ where: { id } });
+      const current = await tx.commissionPayment.findUniqueOrThrow({ where: { id: payment.id } });
 
-      // CommissionPayment 에 반영
-      const payment = adj.payment;
       if (adj.type === 'discount') {
         const nextExpected = Math.max(0, payment.expectedAmount + adj.amount);
-        // actualAmount 가 이미 있으면 유지 (이미 일부 수금), 없으면 새 expected 설정
+        const received = await sumReceipts(tx, payment.id);
+        if (received.supplyWon > nextExpected * WON_PER_MANWON) {
+          throw new ConflictException(
+            '이미 받은 돈이 할인한 뒤의 청구액보다 많습니다. 반려한 뒤 남은 금액 안에서 다시 요청해 주세요.',
+          );
+        }
         await tx.commissionPayment.update({
           where: { id: payment.id },
           data: {
             expectedAmount: nextExpected,
-            note: `${payment.note ? payment.note + ' · ' : ''}조정 ${updated.code}: ${adj.reason}`,
+            note: `${current.note ? current.note + ' · ' : ''}조정 ${updated.code}: ${adj.reason}`,
           },
         });
+        // 할인으로 남은 돈이 없어졌으면 수금완료가 된다. 상태는 입금 기록에서 다시 계산한다.
+        await refreshPaymentFromReceipts(tx, payment.id);
       } else {
         // waive / bad_debt
         await tx.commissionPayment.update({
           where: { id: payment.id },
           data: {
             status: 'waived',
-            note: `${payment.note ? payment.note + ' · ' : ''}${adj.type === 'bad_debt' ? '대손' : '면제'} ${updated.code}: ${adj.reason}`,
+            note: `${current.note ? current.note + ' · ' : ''}${adj.type === 'bad_debt' ? '대손' : '면제'} ${updated.code}: ${adj.reason}`,
           },
         });
       }
