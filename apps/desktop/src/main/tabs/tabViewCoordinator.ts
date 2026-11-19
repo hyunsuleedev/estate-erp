@@ -19,6 +19,7 @@ export type TabViewHost = Pick<
   | 'reparent'
   | 'settleMove'
   | 'hasUnsavedWork'
+  | 'hasActiveTransfer'
   | 'hasTab'
   | 'getHostId'
   | 'getActiveTabId'
@@ -158,6 +159,10 @@ export class TabViewCoordinator implements TabViewsPort {
 
   hasUnsavedWork(windowId: number, tabId: TabId): boolean {
     return this.host.hasUnsavedWork(windowId, tabId);
+  }
+
+  hasActiveTransfer(windowId: number, tabId: TabId): boolean {
+    return this.host.hasActiveTransfer(windowId, tabId);
   }
 
   /** 창이 닫혔다. 그 창의 순번 기록을 지운다. */

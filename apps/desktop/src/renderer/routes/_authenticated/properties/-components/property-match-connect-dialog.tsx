@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, Loader2, Plus, Search } from 'lucide-react';
 import type { BuyerRequirement, Match } from '@estate-erp/api-client';
-import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
+import { MatchStage, normalizeMatchStage, formatFloorRange } from '@estate-erp/shared';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/contacts';
@@ -170,7 +170,7 @@ export function PropertyMatchConnectDialog({
   const location = [
     property?.site?.name,
     withSuffix(property?.unit?.dong?.name, '동'),
-    withSuffix(property?.unit?.name, '호'),
+    property?.unit?.name ? withSuffix(property.unit.name, '호') : formatFloorRange(property?.unit ?? {}),
   ]
     .filter((part) => part && part !== '-')
     .join(' ');

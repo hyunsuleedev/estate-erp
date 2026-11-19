@@ -1,3 +1,4 @@
+import { formatPropertySpaceLabel } from "./-registration-space";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   keepPreviousData,
@@ -60,12 +61,15 @@ import type {
 } from "@estate-erp/api-client";
 import {
   formatPrice,
+  formatUnitLabel,
+  formatUnitName,
   IntakeClosedReason,
   IntakeConfirmationState,
   IntakeLifecycleStatus,
   ListingAvailability,
   MatchStage,
   normalizeMatchStage,
+
 } from "@estate-erp/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -182,9 +186,22 @@ import {
   type PropertyMapClusterSource,
 } from "./-property-map-utils";
 import {
+  IntakeConfirmDialog,
   PropertyBulkActions,
   PropertyRowActions,
 } from "./-property-intake-actions";
+import {
+  getConfirmCellModel,
+  type ConfirmCellTone,
+} from "./-components/property-confirm-cell-state";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   PropertyMatchPanel,
   estimatePropertyMatchPanelHeight,
@@ -562,6 +579,9 @@ function PropertiesPage() {
     useState<ResumeClosedPrompt | null>(null);
   const [closeIntakePrompt, setCloseIntakePrompt] =
     useState<CloseIntakePrompt | null>(null);
+  // 확인 칸의 "자세히 기록"이 여는 확인 기록 창의 대상.
+  const [confirmDialogIntake, setConfirmDialogIntake] =
+    useState<ListingIntake | null>(null);
   const [reactivateListingPrompt, setReactivateListingPrompt] =
     useState<ReactivateListingPrompt | null>(null);
   const [viewMode, setViewMode] = useState<PropertyViewMode>("list");
@@ -618,6 +638,41 @@ function PropertiesPage() {
             getSiteTypeLabel(site.type),
           meta: `${site.propertyCount.toLocaleString()}건`,
         })),
+    [filterSites],
+  );
+  // 지역 선택 → 단지 목록. 법정동 코드는 앞자리가 시도(2)·시군구(5)라서 앞부분만 견준다.
+  // 서버가 코드를 주지 않으면(옛 서버) 좁히지 않고 전체 단지를 그대로 보여 준다.
+  const canScopeSitesByRegion = filterSites.some((site) => site.wardCode);
+  const siteRegionPrefix = canScopeSitesByRegion
+    ? propertyFilters.wardCode ||
+      propertyFilters.districtCode ||
+      propertyFilters.provinceCode
+    : "";
+  const regionSiteFilterOptions = useMemo<MultiSelectOption[]>(() => {
+    if (!siteRegionPrefix) return siteFilterOptions;
+    const siteIdsInRegion = new Set(
+      filterSites
+        .filter((site) => site.wardCode?.startsWith(siteRegionPrefix))
+        .map((site) => site.id),
+    );
+    // 이미 고른 단지는 지역 밖이어도 남긴다(저장해 둔 필터 등) — 목록에서 사라지면 해제할 수 없다
+    return siteFilterOptions.filter(
+      (option) =>
+        siteIdsInRegion.has(option.value) ||
+        propertyFilters.siteIds.includes(option.value),
+    );
+  }, [filterSites, siteFilterOptions, siteRegionPrefix, propertyFilters.siteIds]);
+  /** 지역을 바꿀 때, 고른 단지 가운데 새 지역 밖의 것은 뺀다 — 지역과 단지가 서로 어긋난 채 남지 않게 */
+  const keepSiteIdsInRegion = useCallback(
+    (siteIds: string[], regionPrefix: string) => {
+      if (!regionPrefix || !filterSites.some((site) => site.wardCode)) return siteIds;
+      const kept = siteIds.filter((siteId) =>
+        filterSites
+          .find((site) => site.id === siteId)
+          ?.wardCode?.startsWith(regionPrefix),
+      );
+      return kept.length === siteIds.length ? siteIds : kept;
+    },
     [filterSites],
   );
   const { data: provinces = [] } = useQuery({
@@ -1042,11 +1097,19 @@ function PropertiesPage() {
         | "no_answer"
         | "pending",
     ) => {
-      confirmMutation.mutate({
-        intakeId,
-        result,
-        expectedUpdatedAt: intakeUpdatedAtById.get(intakeId),
-      });
+      confirmMutation.mutate(
+        {
+          intakeId,
+          result,
+          expectedUpdatedAt: intakeUpdatedAtById.get(intakeId),
+        },
+        {
+          onSuccess: () => {
+            if (result === "alive") toast.success("오늘 유효함으로 기록했습니다.");
+            if (result === "no_answer") toast.success("오늘 부재중으로 기록했습니다.");
+          },
+        },
+      );
     },
     [confirmMutation, intakeUpdatedAtById],
   );
@@ -1069,7 +1132,7 @@ function PropertiesPage() {
       const propertyLabel = [
         group.property?.site?.name,
         getDongName(group.property),
-        group.property?.unit?.name,
+        formatPropertySpaceLabel(group.property?.unit, group.property?.site?.type),
       ]
         .filter((part) => part && part !== "-")
         .join(" ");
@@ -1219,23 +1282,42 @@ function PropertiesPage() {
     },
     [],
   );
-  const handleProvinceFilterChange = useCallback((value: string) => {
-    setPropertyFilters((prev) => ({
-      ...prev,
-      provinceCode: value,
-      districtCode: "",
-      wardCode: "",
-    }));
-    setPage(1);
-  }, []);
-  const handleDistrictFilterChange = useCallback((value: string) => {
-    setPropertyFilters((prev) => ({
-      ...prev,
-      districtCode: value,
-      wardCode: "",
-    }));
-    setPage(1);
-  }, []);
+  const handleProvinceFilterChange = useCallback(
+    (value: string) => {
+      setPropertyFilters((prev) => ({
+        ...prev,
+        provinceCode: value,
+        districtCode: "",
+        wardCode: "",
+        siteIds: keepSiteIdsInRegion(prev.siteIds, value),
+      }));
+      setPage(1);
+    },
+    [keepSiteIdsInRegion],
+  );
+  const handleDistrictFilterChange = useCallback(
+    (value: string) => {
+      setPropertyFilters((prev) => ({
+        ...prev,
+        districtCode: value,
+        wardCode: "",
+        siteIds: keepSiteIdsInRegion(prev.siteIds, value || prev.provinceCode),
+      }));
+      setPage(1);
+    },
+    [keepSiteIdsInRegion],
+  );
+  const handleWardFilterChange = useCallback(
+    (value: string) => {
+      setPropertyFilters((prev) => ({
+        ...prev,
+        wardCode: value,
+        siteIds: keepSiteIdsInRegion(prev.siteIds, value || prev.districtCode),
+      }));
+      setPage(1);
+    },
+    [keepSiteIdsInRegion],
+  );
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -1486,7 +1568,7 @@ function PropertiesPage() {
               >
                 <button
                   type="button"
-                  aria-label={`${group.property?.site?.name ?? "매물"} ${getDongName(group.property)}동 ${group.property?.unit?.name ?? ""}호 상세 ${inspectorAction}`}
+                  aria-label={`${group.property?.site?.name ?? "매물"} ${getDongName(group.property)}동 ${formatUnitLabel(group.property?.unit)} 상세 ${inspectorAction}`}
                   aria-expanded={isCurrentInspector}
                   aria-controls={isCurrentInspector ? "property-inspector" : undefined}
                   title={isCurrentInspector ? "사이드 보기 닫기" : "사이드 보기에서 열기"}
@@ -1532,7 +1614,7 @@ function PropertiesPage() {
         enableSorting: true,
         cell: ({ row }) => (
           <span className="truncate text-[14px] font-medium leading-[21px] text-foreground">
-            {row.original.property?.unit?.name ?? ""}
+            {formatPropertySpaceLabel(row.original.property?.unit, row.original.property?.site?.type)}
           </span>
         ),
       },
@@ -1620,12 +1702,20 @@ function PropertiesPage() {
                   label="확인"
                 />
               ),
-              size: 112,
+              size: 120,
               enableSorting: true,
               cell: ({ row }) => (
                 <IntakeConfirmationCell
                   intake={row.original.representative}
                   onConfirm={handleIntakeConfirm}
+                  // 유효하지 않으면 의뢰를 종료한다. 매물상태를 종료로 바꿀 때와 같은 길을 타서,
+                  // 종결 사유를 묻고 진행 중인 거래가 있으면 함께 처리한다.
+                  onClose={() =>
+                    handleRowStatusSave(row.original, ListingAvailability.CLOSED)
+                  }
+                  onDetail={() =>
+                    setConfirmDialogIntake(row.original.representative)
+                  }
                   isPending={
                     confirmMutation.isPending &&
                     confirmMutation.variables?.intakeId ===
@@ -2043,7 +2133,7 @@ function PropertiesPage() {
                 <ToolbarRegionColumn
                   ariaLabel="법정동"
                   value={propertyFilters.wardCode}
-                  onChange={(value) => updatePropertyFilter("wardCode", value)}
+                  onChange={handleWardFilterChange}
                   options={wardOptions}
                   hint={
                     propertyFilters.districtCode
@@ -2052,12 +2142,29 @@ function PropertiesPage() {
                   }
                 />
                 <div className="flex min-h-0 min-w-0 flex-col">
+                  {/* 왼쪽 세 칸과 같은 머리글 — 지금 보이는 단지가 어느 지역의 것인지 적는다 */}
+                  <p className="flex shrink-0 items-baseline gap-1.5 px-3.5 pb-1 pt-3 text-[11px] font-medium text-[#a3a09a]">
+                    <span className="min-w-0 truncate">
+                      {siteRegionPrefix && selectedRegionName
+                        ? `${selectedRegionName} 단지`
+                        : "단지"}
+                    </span>
+                    {!isFilterSitesLoading && (
+                      <span className="shrink-0 font-normal tabular-nums">
+                        {regionSiteFilterOptions.length.toLocaleString()}
+                      </span>
+                    )}
+                  </p>
                   <ChecklistFilterPanel
-                    options={siteFilterOptions}
+                    options={regionSiteFilterOptions}
                     selected={propertyFilters.siteIds}
                     onChange={(values) => updatePropertyFilter("siteIds", values)}
                     searchPlaceholder="단지명 또는 주소 검색"
-                    emptyText="일치하는 단지가 없습니다."
+                    emptyText={
+                      siteRegionPrefix && regionSiteFilterOptions.length === 0
+                        ? "이 지역에 매물이 있는 단지가 없습니다."
+                        : "일치하는 단지가 없습니다."
+                    }
                     isLoading={isFilterSitesLoading}
                     listClassName="max-h-none min-h-0 flex-1"
                   />
@@ -2065,7 +2172,9 @@ function PropertiesPage() {
               </div>
               <div className="flex items-center gap-2 border-t border-border py-2 pl-3.5 pr-2.5">
                 <span className="min-w-0 flex-1 text-xs text-muted-foreground">
-                  단지를 고르지 않으면 지역 전체에서 찾습니다.
+                  {selectedRegionName
+                    ? `단지를 고르지 않으면 ${selectedRegionName} 전체에서 찾습니다.`
+                    : "단지를 고르지 않으면 모든 지역에서 찾습니다."}
                 </span>
                 {propertyFilters.provinceCode && (
                   <button
@@ -2504,6 +2613,16 @@ function PropertiesPage() {
             onConfirm={() =>
               reactivateListingMutation.mutate(reactivateListingPrompt)
             }
+          />
+        )}
+        {confirmDialogIntake && (
+          <IntakeConfirmDialog
+            key={confirmDialogIntake.id}
+            intake={confirmDialogIntake}
+            open
+            onOpenChange={(open) => {
+              if (!open) setConfirmDialogIntake(null);
+            }}
           />
         )}
         {closeIntakePrompt && (
@@ -3905,7 +4024,7 @@ function buildPropertyInspectorModel({
     property.unit?.dong && !property.unit.dong.isPlaceholder
       ? property.unit.dong.name.replace(/\s*동$/, "")
       : null;
-  const ho = property.unit?.name ? property.unit.name.replace(/\s*호$/, "") : null;
+  const ho = formatPropertySpaceLabel(property.unit, property.site?.type) || null;
   const address =
     property.site?.roadAddress ?? property.site?.jibunAddress ?? null;
   const subline = [
@@ -5470,39 +5589,38 @@ function ActiveDealListingConnector({
   );
 }
 
-function getConfirmFreshness(checkedAt: string | null) {
-  const days = checkedAt ? getDaysSince(checkedAt) : null;
-  if (days == null) {
-    return {
-      dot: "bg-muted-foreground/40",
-      date: "text-muted-foreground",
-      relative: "text-muted-foreground/70",
-    };
-  }
-  if (days <= 7) {
-    return {
-      dot: "bg-success",
-      date: "text-foreground",
-      relative: "text-muted-foreground",
-    };
-  }
-  if (days <= 30) {
-    return {
-      dot: "bg-warning",
-      date: "text-warning",
-      relative: "text-warning/80",
-    };
-  }
-  return {
+const CONFIRM_TONE_CLASSES: Record<
+  ConfirmCellTone,
+  { dot: string; date: string; relative: string }
+> = {
+  none: {
+    dot: "bg-muted-foreground/40",
+    date: "text-muted-foreground",
+    relative: "text-muted-foreground/70",
+  },
+  fresh: {
+    dot: "bg-success",
+    date: "text-foreground",
+    relative: "text-muted-foreground",
+  },
+  aging: {
+    dot: "bg-warning",
+    date: "text-warning",
+    relative: "text-warning/80",
+  },
+  stale: {
     dot: "bg-destructive",
     date: "text-destructive",
     relative: "text-destructive/80",
-  };
-}
+  },
+};
 
+// 무엇을 보여 줄지는 -components/property-confirm-cell-state.ts 가 정한다(확인된 날, 마지막 시도).
 function IntakeConfirmationCell({
   intake,
   onConfirm,
+  onClose,
+  onDetail,
   isPending,
 }: {
   intake: ListingIntake;
@@ -5510,40 +5628,93 @@ function IntakeConfirmationCell({
     intakeId: string,
     result: "alive" | "price_changed" | "unavailable" | "no_answer" | "pending",
   ) => void;
+  /** 유효하지 않음: 종결 사유를 묻는 의뢰 종료 창을 연다. */
+  onClose: () => void;
+  /** 자세히 기록: 연락 방법·가격 변경·메모를 적는 확인 기록 창을 연다. */
+  onDetail: () => void;
   isPending?: boolean;
 }) {
-  const checkedAt = intake.lastCheckedAt ?? intake.lastVerifiedAt;
-  const freshness = getConfirmFreshness(checkedAt);
+  const model = getConfirmCellModel(intake);
+  const tone = CONFIRM_TONE_CLASSES[model.tone];
 
   return (
     <div
-      className="flex h-9 min-w-0 items-center gap-1.5"
+      className="relative flex h-9 min-w-0 items-center gap-1.5"
+      title={model.title}
       onClick={(event) => event.stopPropagation()}
     >
-      <span className={cn("size-[7px] shrink-0 rounded-full", freshness.dot)} />
+      <span className={cn("size-[7px] shrink-0 rounded-full", tone.dot)} />
       <div className="flex min-w-0 flex-col leading-tight">
         <span
           className={cn(
             "truncate text-[13px] font-[450] leading-4 tabular-nums",
-            freshness.date,
+            tone.date,
           )}
         >
-          {checkedAt ? formatDateShort(checkedAt) : "-"}
+          {model.date}
         </span>
-        <span className={cn("truncate text-[11px] leading-[14px]", freshness.relative)}>
-          {checkedAt ? formatDaysAgo(checkedAt) : ""}
+        <span
+          className={cn(
+            "min-h-[14px] truncate text-[11px] leading-[14px]",
+            // 마지막에 한 일은 경고색이 아니라 먹색으로 둔다. 매물의 상태는 윗줄의 색이 말한다.
+            model.attempt ? "text-muted-foreground-strong" : tone.relative,
+          )}
+        >
+          {model.relative}
         </span>
       </div>
-      <button
-        type="button"
-        title="오늘로 확인 갱신"
-        aria-label="오늘로 확인 갱신"
-        disabled={isPending}
-        className="ml-auto flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-foreground focus-visible:opacity-100 disabled:opacity-40 group-hover:opacity-100"
-        onClick={() => onConfirm(intake.id, "alive")}
-      >
-        <RefreshCw className={cn("size-3.5", isPending && "animate-spin")} />
-      </button>
+      {!model.closed && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            {/*
+              단추는 글자 자리를 차지하지 않고, 줄에 올렸을 때 오른쪽 끝을 덮으며 나타난다
+              (단지 칸의 "열기"와 같은 방식). 자리를 따로 잡아 두면 "부재중 · 3일 전"이 잘린다.
+            */}
+            <button
+              type="button"
+              title="확인 기록"
+              aria-label="확인 기록"
+              disabled={isPending}
+              className="absolute right-0 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-white text-muted-foreground opacity-0 shadow-[0_0_0_4px_#fff] transition-opacity hover:bg-secondary hover:text-foreground focus-visible:opacity-100 disabled:opacity-40 group-hover:opacity-100 data-[state=open]:bg-secondary data-[state=open]:text-foreground data-[state=open]:opacity-100"
+            >
+              <RefreshCw className={cn("size-3.5", isPending && "animate-spin")} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+              오늘 연락한 결과
+            </DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => onConfirm(intake.id, "alive")}>
+              <span className="size-[7px] shrink-0 rounded-full bg-success" />
+              유효함
+              <span className="ml-auto text-xs text-muted-foreground">
+                오늘 확인됨
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onConfirm(intake.id, "no_answer")}>
+              <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/50" />
+              부재중
+              <span className="ml-auto text-xs text-muted-foreground">
+                연락 안 됨
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onClose}>
+              <span className="size-[7px] shrink-0 rounded-full bg-destructive" />
+              유효하지 않음…
+              <span className="ml-auto text-xs text-muted-foreground">
+                의뢰 종료
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onDetail}>
+              자세히 기록…
+              <span className="ml-auto text-xs text-muted-foreground">
+                가격 변경 · 메모
+              </span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }
@@ -6742,12 +6913,12 @@ function getMapBounds(points: PropertyMapPoint[]) {
 
 /** 지도 목록의 동·호 표시: "101동 3404호" (단일동 건물은 호만) */
 function getPropertyMapUnitLabel(property?: ListingProperty) {
-  if (!property?.unit) return "";
+  if (!property?.unit) return formatPropertySpaceLabel(null, property?.site?.type);
   const dongName = getDongName(property);
-  const unitName = property.unit.name.replace(/\s*호$/, "");
+  const unitLabel = formatUnitLabel(property.unit);
   return [
     dongName && dongName !== "-" ? `${dongName}동` : null,
-    unitName && unitName !== "-" ? `${unitName}호` : null,
+    unitLabel && unitLabel !== "-호" ? unitLabel : null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -6877,7 +7048,7 @@ function getPropertySheetUnitLabel(property: Property) {
     property.unit?.dong && !property.unit.dong.isPlaceholder
       ? property.unit.dong.name
       : "";
-  return [dongName, property.unit?.name].filter(Boolean).join(" ");
+  return [dongName, formatUnitName(property.unit)].filter(Boolean).join(" ");
 }
 
 function comparePropertyListing(a: PropertyListing, b: PropertyListing) {

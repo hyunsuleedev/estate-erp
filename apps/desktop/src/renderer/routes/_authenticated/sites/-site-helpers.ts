@@ -281,7 +281,7 @@ export function getSiteGroupKeys(officeSites: OfficeSite[], groupBy: SiteGroupMo
 }
 
 export function parseUnitPlacement(unit: Unit): { floor: number | null; lineNo: number | null } {
-  const digits = unit.name.replace(/\D/g, '');
+  const digits = (unit.name ?? '').replace(/\D/g, '');
   const fallbackFloor = digits.length >= 3 ? Number.parseInt(digits.slice(0, -2), 10) : null;
   const fallbackLineNo = digits.length >= 2 ? Number.parseInt(digits.slice(-2), 10) : null;
 

@@ -1,4 +1,12 @@
 import {
+  advertisementTransactionType,
+  changeRequestSummary,
+  pendingChangeRequests,
+} from "./my-ads-link";
+import { draftLines, flagBlockReason } from "./my-ads-modes";
+import { useMyAdsTableState } from "./my-ads-table-context";
+import {
+  useId,
   useMemo,
   useState,
   type CSSProperties,
@@ -21,6 +29,7 @@ import {
   Pencil,
   RotateCcw,
   Scale,
+  Send,
   ServerCog,
   X,
 } from "lucide-react";
@@ -109,9 +118,9 @@ type CompetitorView = CompetitorTableRow & {
 };
 
 function buildAnalysis(advertisement: ListingAdvertisementWithListing) {
-  const group = advertisement.officeAdvertisementGroup;
+  const group = advertisement.comparison;
   const comparison = analyzeOfficeAdvertisementComparison(advertisement);
-  const transactionType = advertisement.listing?.transactionType;
+  const transactionType = advertisementTransactionType(advertisement) ?? undefined;
   const rows = (group?.advertisements ?? [])
     .filter((comparedAdvertisement) => comparedAdvertisement.isActive)
     .map((comparedAdvertisement): CompetitorView => {
@@ -204,6 +213,7 @@ export function AdvertisementAnalysisPanel({
     () => buildAnalysis(advertisement),
     [advertisement],
   );
+  const panelId = useId();
   const { user } = useAuth();
   const { preferences, updatePreferences } = useCompetitorTablePreferences(
     user?.office?.id ?? "local",
@@ -211,6 +221,16 @@ export function AdvertisementAnalysisPanel({
   );
   const [previewWidths, setPreviewWidths] =
     useState<CompetitorColumnWidths | null>(null);
+  // 매물관리의 매칭 펼침처럼 한 번에 한 탭만 본다: 판단(비교 분석) / 근거가 되는 광고 목록(비교 광고)
+  // 탭은 화면이 들고 있다: 변경 요청 모드에서 칸을 고치면 그 줄이 펼쳐지며 요청 탭이 열린다
+  const {
+    panelTab: activeTab,
+    onPanelTabChange: setActiveTab,
+    drafts,
+  } = useMyAdsTableState();
+  const requestCount =
+    draftLines(advertisement, drafts[advertisement.id]).length +
+    pendingChangeRequests(advertisement).length;
   const layout = getCompetitorTableLayout(previewWidths ?? preferences.widths);
   const sortedRows = useMemo(
     () => sortCompetitorRows(rows, preferences.sort),
@@ -222,48 +242,14 @@ export function AdvertisementAnalysisPanel({
     .filter(Boolean)
     .join(" ");
 
-  const metrics = [
-    {
-      label: "노출 순위",
-      value:
-        comparison.ownRanking != null
-          ? `${comparison.ownRanking}/${comparison.totalCount ?? "?"}위`
-          : "분석 대기",
-      detail: summary.rankingDetail,
-    },
-    {
-      label: "네이버 층 노출",
-      value: comparison.ownFloorInfo ?? "확인 불가",
-      detail:
-        comparison.ownFloorExposureMode === "exact"
-          ? "정확한 층 공개"
-          : comparison.ownFloorExposureMode === "band"
-            ? comparison.exactFloorCompetitorCount > 0
-              ? `구간만 공개 · 정확히 공개한 경쟁 광고 ${comparison.exactFloorCompetitorCount}건`
-              : "저·중·고 구간만 공개"
-            : "층 노출 방식 미확인",
-    },
-    {
-      label: "내 광고가",
-      value: advertisementPriceLabel(advertisement),
-      detail: summary.priceDetail,
-    },
-    {
-      label: "네이버 확인",
-      value:
-        formatYmd(main?.articleConfirmYmd) ??
-        formatDate(advertisement.lastCheckedAt),
-      detail: advertisement.lastCheckedAt
-        ? `분석 ${formatDateTime(advertisement.lastCheckedAt)}`
-        : "분석 이력 없음",
-    },
-  ];
-  const facts = [
-    { label: "가격 경쟁", value: summary.priceCompetition },
-    { label: "CP사", value: cpChannelLabel(advertisement.channel) },
-    { label: "CP 광고번호", value: advertisement.externalAdId ?? "—" },
-    { label: "네이버 번호", value: advertisement.naverArticleNo ?? "—" },
-  ];
+  const floorExposureDetail =
+    comparison.ownFloorExposureMode === "exact"
+      ? "정확한 층 공개"
+      : comparison.ownFloorExposureMode === "band"
+        ? comparison.exactFloorCompetitorCount > 0
+          ? `구간만 공개 · 정확히 공개한 경쟁 광고 ${comparison.exactFloorCompetitorCount}건`
+          : "저·중·고 구간만 공개"
+        : "층 노출 방식 미확인";
 
   return (
     <div
@@ -287,31 +273,58 @@ export function AdvertisementAnalysisPanel({
           비교 표가 그보다 넓으면 아래 overflow-x-auto 안에서 가로로 스크롤한다. */}
       <div className="sticky left-6 w-[calc(100cqw-40px)] min-w-0 max-w-[1120px]">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <BarChart3
-              aria-hidden="true"
-              className="size-4 shrink-0 text-muted-foreground"
-            />
-            <h3 className="shrink-0 text-[14px] font-medium leading-5 text-foreground">
-              네이버 비교 분석
-            </h3>
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <div role="tablist" aria-label="네이버 비교" className="flex shrink-0 items-center gap-1">
+              <AnalysisPanelTabButton
+                id={`${panelId}-tab-analysis`}
+                controls={`${panelId}-analysis`}
+                icon={<BarChart3 />}
+                label="비교 분석"
+                active={activeTab === "analysis"}
+                onSelect={() => setActiveTab("analysis")}
+              />
+              <AnalysisPanelTabButton
+                id={`${panelId}-tab-ads`}
+                controls={`${panelId}-ads`}
+                icon={<Megaphone />}
+                label="비교 광고"
+                // 경쟁 광고 수만 센다(표의 "내 광고" 줄은 빼고)
+                count={summary.competitorCount}
+                active={activeTab === "ads"}
+                onSelect={() => setActiveTab("ads")}
+              />
+              <AnalysisPanelTabButton
+                id={`${panelId}-tab-requests`}
+                controls={`${panelId}-requests`}
+                icon={<Send />}
+                label="요청"
+                // 작성 중인 것과 걸려 있는 것을 함께 센다. 없으면 수를 붙이지 않는다
+                count={requestCount > 0 ? requestCount : undefined}
+                active={activeTab === "requests"}
+                onSelect={() => setActiveTab("requests")}
+              />
+            </div>
             <span
-              className="truncate text-[13px] leading-5 text-muted-foreground"
+              className="ml-1.5 truncate text-[13px] leading-5 text-muted-foreground"
               title={locationLabel}
             >
               {locationLabel}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              className="h-7 gap-1 px-2.5 text-[13px] font-normal"
-              onClick={onEditAdvertisement}
-            >
-              <Pencil className="size-3.5" />
-              {/* 수동 광고는 CP에 실체가 없어 업무 요청 없이 원장을 바로 고친다 */}
-              {advertisement.source === "manual" ? "광고 수정" : "가격 수정안 작성"}
-            </Button>
+            {/* 직접 입력한 광고는 채널 · 날짜까지 고치는 수정 창이 따로 있다.
+                값만 고치거나 바꿔 달라고 하는 것은 위쪽의 기록 수정 · 변경 요청으로 한다. */}
+            {advertisement.source === "manual" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 px-2.5 text-[13px] font-normal"
+                onClick={onEditAdvertisement}
+              >
+                <Pencil className="size-3.5" />
+                광고 수정
+              </Button>
+            )}
             {advertisement.url && (
               <Button
                 variant="outline"
@@ -348,55 +361,93 @@ export function AdvertisementAnalysisPanel({
             )}
           </div>
         </div>
-        <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">
-          현재 시점의 순위·가격·층 노출을 함께 비교합니다. 과거 순위 변화는
-          저장하지 않습니다.
-        </p>
-
-        <section aria-label="판단" className="mt-3">
-          <div className="flex items-start gap-2">
-            <span
-              data-analysis-signal={signal.kind}
-              className={cn(STATUS_CLASS_NAME, "mt-px shrink-0", signal.className)}
-            >
-              <StatusDot />
-              {signal.label}
-            </span>
-            <p className="min-w-0 text-[14px] font-[450] leading-[22px] text-foreground">
-              {signal.detail}
-            </p>
-          </div>
-          <dl className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-[13px] leading-5">
-            {facts.map((fact) => (
-              <div key={fact.label} className="flex min-w-0 items-baseline gap-1.5">
-                <dt className="shrink-0 text-muted-foreground">{fact.label}</dt>
-                <dd
-                  className="min-w-0 truncate tabular-nums text-foreground"
-                  title={fact.value}
+        {activeTab === "analysis" && (
+        <div
+          role="tabpanel"
+          id={`${panelId}-analysis`}
+          aria-labelledby={`${panelId}-tab-analysis`}
+          data-my-ads-analysis-tab="analysis"
+        >
+        {/* 매물관리 매칭 펼침의 카드와 같은 틀: 왼쪽은 판단과 그 근거, 오른쪽은 견준 내 광고 */}
+        <div className="mt-3 grid max-w-[940px] items-start gap-4 lg:grid-cols-2">
+          <AnalysisCard
+            label="비교 결과"
+            head={
+              <>
+                <span className="font-semibold">비교 결과</span>
+                <span
+                  data-analysis-signal={signal.kind}
+                  className={cn(STATUS_CLASS_NAME, "shrink-0", signal.className)}
                 >
-                  {fact.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          {group?.memo && (
-            <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
-              메모: {group.memo}
-            </p>
-          )}
-        </section>
+                  <StatusDot />
+                  {signal.label}
+                </span>
+                {advertisement.lastCheckedAt && (
+                  <span className="truncate text-xs tabular-nums text-muted-foreground">
+                    {formatDateTime(advertisement.lastCheckedAt)} 읽음
+                  </span>
+                )}
+              </>
+            }
+          >
+            <AnalysisRow icon={<Scale />} label="판단" multiline>
+              {signal.detail}
+            </AnalysisRow>
+            <AnalysisRow icon={<Hash />} label="노출 순위" sub={summary.rankingDetail}>
+              {comparison.ownRanking != null
+                ? `${comparison.ownRanking}/${comparison.totalCount ?? "?"}위`
+                : null}
+            </AnalysisRow>
+            <AnalysisRow icon={<WonCircleIcon />} label="가격 경쟁">
+              {summary.priceCompetition}
+            </AnalysisRow>
+            <AnalysisRow icon={<Layers />} label="층 노출" sub={floorExposureDetail}>
+              {comparison.ownFloorInfo}
+            </AnalysisRow>
+            <AnalysisRow icon={<CalendarCheck />} label="확인일">
+              {formatYmd(main?.articleConfirmYmd)}
+            </AnalysisRow>
+          </AnalysisCard>
 
-        <dl className="mt-4 grid grid-cols-4 gap-x-6">
-          {metrics.map((metric) => (
-            <AnalysisMetric key={metric.label} {...metric} />
-          ))}
-        </dl>
+          <AnalysisCard
+            label="내 광고"
+            head={
+              <>
+                <span className="font-semibold">내 광고</span>
+                <span className={cn(TAG_CLASS_NAME, "shrink-0 bg-[#f1f1ef] text-[#5f5e5b]")}>
+                  {cpChannelLabel(advertisement.channel)}
+                </span>
+              </>
+            }
+          >
+            <AnalysisRow icon={<WonCircleIcon />} label="광고가">
+              <span className="font-medium">{advertisementPriceLabel(advertisement)}</span>
+            </AnalysisRow>
+            <AnalysisRow icon={<Hash />} label="CP 광고번호">
+              {advertisement.externalAdId}
+            </AnalysisRow>
+            <AnalysisRow icon={<ExternalLink />} label="네이버 번호">
+              {advertisement.naverArticleNo}
+            </AnalysisRow>
+            <AnalysisRow icon={<Pencil />} label="메모" multiline>
+              {advertisement.memo?.trim() || null}
+            </AnalysisRow>
+          </AnalysisCard>
+        </div>
 
-        <div className="mt-4 flex h-7 items-center gap-1.5 text-[13px]">
-          <span className="font-medium text-foreground">비교 광고</span>
-          {/* 경쟁 광고 수만 센다(표의 "내 광고" 줄은 빼고). */}
-          <span className="tabular-nums text-muted-foreground">
-            {summary.competitorCount}
+        </div>
+        )}
+
+        {activeTab === "ads" && (
+        <div
+          role="tabpanel"
+          id={`${panelId}-ads`}
+          aria-labelledby={`${panelId}-tab-ads`}
+          data-my-ads-analysis-tab="ads"
+        >
+        <div className="mt-2 flex h-7 items-center gap-1.5 text-[13px]">
+          <span className="text-muted-foreground">
+            네이버에서 같은 집으로 보이는 광고입니다.
           </span>
           <span className="flex-1" />
           <CompetitorSortControl
@@ -469,8 +520,235 @@ export function AdvertisementAnalysisPanel({
             </div>
           </div>
         </div>
+        </div>
+        )}
+
+        {activeTab === "requests" && (
+          <div
+            role="tabpanel"
+            id={`${panelId}-requests`}
+            aria-labelledby={`${panelId}-tab-requests`}
+            data-my-ads-analysis-tab="requests"
+          >
+            <RequestsTab advertisement={advertisement} />
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+/**
+ * 요청 탭. 왼쪽은 아직 보내지 않은 것(변경 요청 모드에서 표의 칸을 고치면 쌓인다),
+ * 오른쪽은 보내서 처리를 기다리는 것이다. 표의 요청 칸은 "있다"만 알리고 내용은 여기서 본다.
+ */
+function RequestsTab({
+  advertisement,
+}: {
+  advertisement: ListingAdvertisementWithListing;
+}) {
+  const {
+    mode,
+    drafts,
+    onDropDraft,
+    onToggleDraftFlag,
+    onCancelRequest,
+    cancellingRequestIds,
+  } = useMyAdsTableState();
+  const draft = drafts[advertisement.id];
+  const lines = draftLines(advertisement, draft);
+  const pending = pendingChangeRequests(advertisement);
+  const isManual = advertisement.source === "manual";
+  const canDraft = mode === "request" && !isManual;
+
+  return (
+    <div className="mt-3 grid max-w-[940px] items-start gap-4 lg:grid-cols-2">
+      <AnalysisCard
+        label="보낼 요청"
+        head={
+          <>
+            <span className="font-semibold">보낼 요청</span>
+            {lines.length > 0 && (
+              <span className="text-xs text-muted-foreground">아직 보내지 않음</span>
+            )}
+          </>
+        }
+        footer={
+          canDraft ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-0.5 text-[12.5px] text-muted-foreground">
+                값 없이 요청
+              </span>
+              {(["readvertise", "takedown"] as const).map((flag) => {
+                const blocked = flagBlockReason(advertisement, flag);
+                return (
+                  <Button
+                    key={flag}
+                    variant="outline"
+                    size="sm"
+                    className="h-[26px] gap-1 px-2.5 text-[12.5px] font-normal"
+                    aria-pressed={Boolean(draft?.[flag])}
+                    disabled={blocked !== null}
+                    title={blocked ?? undefined}
+                    onClick={() => onToggleDraftFlag(advertisement, flag)}
+                  >
+                    {draft?.[flag] && <Check className="size-3" />}
+                    {flag === "readvertise" ? "재광고" : "내리기"}
+                  </Button>
+                );
+              })}
+            </div>
+          ) : undefined
+        }
+      >
+        {lines.length > 0 ? (
+          lines.map((line) => (
+            <AnalysisRow
+              key={line.key}
+              icon={<Send />}
+              label={line.label}
+              action={
+                <button
+                  type="button"
+                  aria-label={`${line.label} 요청 빼기`}
+                  onClick={() => onDropDraft(advertisement.id, line.key)}
+                  className={rowActionClassName}
+                >
+                  빼기
+                </button>
+              }
+            >
+              <span className="text-info">{line.text}</span>
+            </AnalysisRow>
+          ))
+        ) : (
+          <p className="px-2 pb-1.5 pt-1 text-[13.5px] leading-5 text-muted-foreground">
+            {isManual
+              ? "직접 입력한 광고는 요청할 곳이 없습니다. 기록 수정으로 고쳐 주세요."
+              : mode === "request"
+                ? "위 줄의 가격 · 월세 · 층 노출 칸을 눌러 바꿀 값을 적으세요."
+                : "위쪽의 \"변경 요청\"을 누르면 여기에서 요청을 만들 수 있습니다."}
+          </p>
+        )}
+      </AnalysisCard>
+
+      <AnalysisCard
+        label="걸려 있는 요청"
+        head={
+          <>
+            <span className="font-semibold">걸려 있는 요청</span>
+            {pending.length > 0 && (
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {pending.length}건
+              </span>
+            )}
+          </>
+        }
+      >
+        {pending.length > 0 ? (
+          pending.map((request) => (
+            <AnalysisRow
+              key={request.id}
+              icon={<Send />}
+              label={REQUEST_KIND_LABELS[request.kind] ?? request.kind}
+              sub={[
+                request.fulfilled === true ? "반영된 것이 확인됨" : null,
+                request.task?.assignedToId ? "직원에게 맡김" : "에이전트",
+                formatDate(request.createdAt),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              action={
+                <button
+                  type="button"
+                  aria-label={`${changeRequestSummary(request)} 요청 거두기`}
+                  disabled={cancellingRequestIds.has(request.id)}
+                  onClick={() => onCancelRequest(request)}
+                  className={rowActionClassName}
+                >
+                  거두기
+                </button>
+              }
+            >
+              {changeRequestSummary(request)}
+            </AnalysisRow>
+          ))
+        ) : (
+          <p className="px-2 pb-1.5 pt-1 text-[13.5px] leading-5 text-muted-foreground">
+            처리를 기다리는 요청이 없습니다.
+          </p>
+        )}
+      </AnalysisCard>
+    </div>
+  );
+}
+
+const REQUEST_KIND_LABELS: Record<string, string> = {
+  price: "가격",
+  floor_exposure: "층 노출",
+  readvertise: "재광고",
+  takedown: "내리기",
+};
+
+const rowActionClassName =
+  "mr-1 h-6 shrink-0 rounded-[5px] px-2 text-[12.5px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-40";
+
+type AnalysisPanelTab = "analysis" | "ads" | "requests";
+
+/** 매물관리 매칭 펼침의 탭과 같은 모양(알약, 28px) */
+function AnalysisPanelTabButton({
+  id,
+  controls,
+  icon,
+  label,
+  count,
+  active,
+  onSelect,
+}: {
+  id: string;
+  controls: string;
+  icon: ReactNode;
+  label: string;
+  count?: number;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={id}
+      aria-selected={active}
+      aria-controls={active ? controls : undefined}
+      onClick={onSelect}
+      className={cn(
+        "inline-flex h-7 items-center gap-1.5 rounded-full px-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+        active
+          ? "bg-foreground/[0.07] font-medium text-foreground"
+          : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "shrink-0 [&>svg]:size-3.5",
+          active ? "[&>svg]:text-foreground/70" : "[&>svg]:text-[#a3a09a]",
+        )}
+      >
+        {icon}
+      </span>
+      {label}
+      {count !== undefined && (
+        <span
+          className={cn(
+            "tabular-nums",
+            active ? "text-muted-foreground" : "text-muted-foreground/60",
+          )}
+        >
+          {count}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -484,30 +762,86 @@ const columnIcons: Record<CompetitorColumnId, ReactNode> = {
   comparison: <Scale />,
 };
 
-function AnalysisMetric({
+/** 매물관리 매칭 펼침의 카드와 같은 틀(흰 판 · 옅은 테두리 · 속성 줄) */
+function AnalysisCard({
   label,
-  value,
-  detail,
+  head,
+  children,
+  footer,
 }: {
+  /** 화면 낭독기용 이름 */
   label: string;
-  value: string;
-  detail: string;
+  head: ReactNode;
+  children: ReactNode;
+  /** 선으로 나눈 아래 칸 */
+  footer?: ReactNode;
 }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-[13px] leading-5 text-muted-foreground">{label}</dt>
+    <section
+      aria-label={label}
+      className="min-w-0 overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(42,28,0,0.09),0_2px_4px_rgba(25,25,25,0.04),0_10px_20px_-12px_rgba(25,25,25,0.12)]"
+    >
+      <div className="flex min-h-[42px] items-center gap-2 px-3.5 pb-1 pt-2.5 text-sm">
+        {head}
+      </div>
+      <dl className="px-1.5 pb-2">{children}</dl>
+      {footer && (
+        <div className="border-t border-border bg-muted/50 px-2.5 py-2">{footer}</div>
+      )}
+    </section>
+  );
+}
+
+/** 속성 줄: 아이콘 + 이름 | 값(+ 흐린 덧붙임). 값이 없으면 "비어 있음" */
+function AnalysisRow({
+  icon,
+  label,
+  sub,
+  multiline,
+  action,
+  children,
+}: {
+  icon: ReactNode;
+  label: string;
+  /** 줄 오른쪽 끝의 버튼 (빼기 · 거두기) */
+  action?: ReactNode;
+  /** 값 뒤에 흐리게 덧붙이는 설명 */
+  sub?: string | null;
+  multiline?: boolean;
+  children: ReactNode;
+}) {
+  const isEmpty = children == null || children === "";
+  return (
+    <div
+      className={cn(
+        "grid items-center rounded-md hover:bg-foreground/[0.03]",
+        action
+          ? "grid-cols-[112px_minmax(0,1fr)_auto]"
+          : "grid-cols-[112px_minmax(0,1fr)] items-start",
+      )}
+    >
+      <dt className="flex min-h-8 items-center gap-2 px-2 text-sm text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-sidebar-icon">
+        {icon}
+        {label}
+      </dt>
       <dd
-        className="mt-0.5 truncate text-[14px] font-medium leading-[22px] tabular-nums text-foreground"
-        title={value}
+        className={cn(
+          "min-h-8 px-2 py-[5.5px] text-sm tabular-nums text-foreground",
+          multiline
+            ? "whitespace-pre-wrap break-words"
+            : "flex flex-wrap items-center gap-x-2 gap-y-0.5",
+        )}
       >
-        {value}
+        {isEmpty ? (
+          <span className="text-muted-foreground/70">비어 있음</span>
+        ) : (
+          children
+        )}
+        {sub && !isEmpty && (
+          <span className="text-[13px] text-muted-foreground">{sub}</span>
+        )}
       </dd>
-      <dd
-        className="truncate text-[13px] leading-5 text-muted-foreground"
-        title={detail}
-      >
-        {detail}
-      </dd>
+      {action}
     </div>
   );
 }

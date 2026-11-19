@@ -1,3 +1,4 @@
+import { advertisementPlace, advertisementTransactionType } from "./my-ads-link";
 import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -7,9 +8,11 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
+  ClipboardList,
   DoorOpen,
   Eye,
   Hash,
+  Home,
   Layers3,
   Link2,
   Megaphone,
@@ -27,6 +30,7 @@ import { getCanonicalLocation } from "./my-ads-format";
 import { advertisementCheckedAtTime } from "./my-ads-sort";
 import {
   advertisementLocationLabel,
+  MY_ADS_INSPECTOR_ID,
   myAdsAnalysisPanelId,
 } from "./my-ads-location";
 import {
@@ -39,12 +43,14 @@ import {
 import {
   AdvertisementExposurePeriodCell,
   CellText,
+  ChangeRequestCell,
   ComparisonSignalCell,
   CpAdvertisementCell,
   EmptyCellValue,
   FloorExposureCell,
   InlineMonthlyRentCell,
   InlinePriceCell,
+  LinkStatusCell,
   NaverAdvertisementCell,
   PropertyTableTransactionBadge,
   TableHeaderLabel,
@@ -53,6 +59,7 @@ import {
 } from "./my-ads-cells";
 import { myAdsRankingPendingLabel } from "./my-ads-manual-ad-state";
 import { useMyAdsTableState } from "./my-ads-table-context";
+import { RowOpenButton } from "@/components/domain";
 
 /** 열 기본 너비·최소·최대는 저장값 검사(my-ads-table-state.ts)와 한곳에서 정한다. */
 function columnWidth(id: MyAdsResizableColumnId) {
@@ -79,6 +86,76 @@ function LocationText({
   );
 }
 
+/** CP가 적은 글에서 온 값의 색. 우리 데이터로 확인된 값과 눈으로 갈린다 */
+const fromAdTextClassName = "text-muted-foreground";
+
+/** 동 · 층 · 호. 관리 공간과 이어지지 않은 광고는 CP가 적은 글을 흐리게 보여 준다 */
+function AdvertisementLocationText({
+  advertisement,
+  part,
+  className,
+}: {
+  advertisement: ListingAdvertisementWithListing;
+  part: "dong" | "floor" | "ho";
+  className?: string;
+}) {
+  const location = getCanonicalLocation(advertisement);
+  const value = location[part];
+  if (!value) return <EmptyCellValue />;
+  return (
+    <CellText
+      title={location.isUnitFromAd ? `CP 표기: ${value}` : value}
+      className={cn(className, location.isUnitFromAd && fromAdTextClassName)}
+    >
+      {value}
+    </CellText>
+  );
+}
+
+/**
+ * 단지 칸. 매물관리 표와 같다: 이름은 그 매물로 가는 링크이고, 줄에 올리면 뜨는 "열기"가 옆 상세 패널을 연다.
+ * 열림 상태는 표 상태 컨텍스트에서 읽는다(열 정의가 열림에 따라 바뀌지 않게).
+ */
+function SiteCell({
+  advertisement,
+}: {
+  advertisement: ListingAdvertisementWithListing;
+}) {
+  const { peekId, onTogglePeek } = useMyAdsTableState();
+  const location = getCanonicalLocation(advertisement);
+  const siteName = location.site;
+  const place = advertisementPlace(advertisement);
+  return (
+    <>
+      {place ? (
+        <Link
+          to="/properties/$id"
+          params={{ id: place.id }}
+          title={siteName}
+          onClick={(event) => event.stopPropagation()}
+          className="block truncate font-medium text-foreground hover:text-info hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/35"
+        >
+          {siteName}
+        </Link>
+      ) : (
+        // 우리 데이터에서 찾지 못한 건물은 CP가 적은 이름을 흐리게 보여 준다
+        <CellText
+          title={location.isSiteFromAd ? `CP 표기: ${siteName}` : siteName}
+          className={cn("font-medium", location.isSiteFromAd && fromAdTextClassName)}
+        >
+          {siteName}
+        </CellText>
+      )}
+      <RowOpenButton
+        label={advertisementLocationLabel(advertisement)}
+        current={peekId === advertisement.id}
+        controls={MY_ADS_INSPECTOR_ID}
+        onToggle={() => onTogglePeek(advertisement)}
+      />
+    </>
+  );
+}
+
 /** 랭킹 칸의 펼침 버튼. 펼침 상태는 표 상태 컨텍스트에서 읽는다(열 정의가 펼침에 따라 바뀌지 않게). */
 function AnalysisToggleButton({
   advertisement,
@@ -87,7 +164,7 @@ function AnalysisToggleButton({
 }) {
   const { expandedIds, onToggleExpanded } = useMyAdsTableState();
   const ranking =
-    advertisement.officeAdvertisementGroup?.mainAdvertisement?.ranking;
+    advertisement.comparison?.mainAdvertisement?.ranking;
   const comparison = analyzeOfficeAdvertisementComparison(advertisement);
   const expanded = expandedIds.has(advertisement.id);
   const rankingLabel =
@@ -144,25 +221,7 @@ export function buildColumns({
           label="단지"
         />
       ),
-      cell: ({ row }) => {
-        const advertisement = row.original;
-        const siteName = getCanonicalLocation(advertisement).site;
-        return advertisement.listing ? (
-          <Link
-            to="/properties/$id"
-            params={{ id: advertisement.listing.propertyId }}
-            title={siteName}
-            onClick={(event) => event.stopPropagation()}
-            className="block truncate font-medium text-foreground hover:text-info hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/35"
-          >
-            {siteName}
-          </Link>
-        ) : (
-          <CellText title={siteName} className="font-medium">
-            {siteName}
-          </CellText>
-        );
-      },
+      cell: ({ row }) => <SiteCell advertisement={row.original} />,
     },
     {
       id: "dong",
@@ -171,8 +230,9 @@ export function buildColumns({
         <TableHeaderLabel icon={<Hash className="size-4" />} label="동" />
       ),
       cell: ({ row }) => (
-        <LocationText
-          value={getCanonicalLocation(row.original).dong}
+        <AdvertisementLocationText
+          advertisement={row.original}
+          part="dong"
           className="font-medium"
         />
       ),
@@ -184,8 +244,9 @@ export function buildColumns({
         <TableHeaderLabel icon={<Layers3 className="size-4" />} label="층" />
       ),
       cell: ({ row }) => (
-        <LocationText
-          value={getCanonicalLocation(row.original).floor}
+        <AdvertisementLocationText
+          advertisement={row.original}
+          part="floor"
           className="tabular-nums"
         />
       ),
@@ -197,8 +258,9 @@ export function buildColumns({
         <TableHeaderLabel icon={<DoorOpen className="size-4" />} label="호" />
       ),
       cell: ({ row }) => (
-        <LocationText
-          value={getCanonicalLocation(row.original).ho}
+        <AdvertisementLocationText
+          advertisement={row.original}
+          part="ho"
           className="font-medium"
         />
       ),
@@ -214,15 +276,23 @@ export function buildColumns({
       ),
     },
     {
+      id: "link",
+      ...columnWidth("link"),
+      header: () => (
+        <TableHeaderLabel icon={<Home className="size-4" />} label="매물" />
+      ),
+      cell: ({ row }) => <LinkStatusCell advertisement={row.original} />,
+    },
+    {
       id: "transaction",
       ...columnWidth("transaction"),
       header: () => (
         <TableHeaderLabel icon={<Tag className="size-4" />} label="거래" />
       ),
       cell: ({ row }) =>
-        row.original.listing?.transactionType ? (
+        advertisementTransactionType(row.original) ? (
           <PropertyTableTransactionBadge
-            transactionType={row.original.listing.transactionType}
+            transactionType={advertisementTransactionType(row.original) ?? ""}
           />
         ) : (
           <EmptyCellValue />
@@ -308,6 +378,17 @@ export function buildColumns({
           },
         ] satisfies ColumnDef<ListingAdvertisementWithListing, unknown>[])
       : []),
+    {
+      id: "request",
+      ...columnWidth("request"),
+      header: () => (
+        <TableHeaderLabel
+          icon={<ClipboardList className="size-4" />}
+          label="요청"
+        />
+      ),
+      cell: ({ row }) => <ChangeRequestCell advertisement={row.original} />,
+    },
     {
       id: "ranking",
       ...columnWidth("ranking"),

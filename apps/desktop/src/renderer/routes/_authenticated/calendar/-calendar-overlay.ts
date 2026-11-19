@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { CommissionPayment, Contract } from '@estate-erp/api-client';
@@ -35,7 +36,7 @@ export interface OverlayItem {
 function contractPlaceLabel(contract: Contract) {
   const property = contract.deal?.listing?.property;
   const site = property?.site?.name ?? null;
-  const unit = property?.unit?.name ?? null;
+  const unit = formatUnitName(property?.unit) || null;
   if (site) return unit ? `${site} ${unit}` : site;
 
   const buyer = contract.buyerContact?.name;

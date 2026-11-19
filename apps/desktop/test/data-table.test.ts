@@ -1162,8 +1162,21 @@ describe('desktop data table', () => {
     assert.match(panelSource, /<MatchConvertDialog/);
     assert.match(panelSource, /buildViewingCalendarEventPayload/);
     assert.match(panelSource, /api\.matches\.updateStage/);
-    // 메모는 매물 표와 같은 공통 셀 편집기를 쓴다.
-    assert.match(panelSource, /<EditableCell/);
+    // 줄의 메모 칸은 고객 조건의 메모를 읽기 전용으로 보여 준다(여러 매칭이 함께 쓰는 글이라 여기서 고치지 않는다).
+    assert.match(panelSource, /<BuyerMemoCell match=\{match\} dim=\{dim\} \/>/);
+    assert.match(panelSource, /const memo = match\.buyerRequirement\?\.memo\?\.trim\(\) \?\? '';/);
+    assert.doesNotMatch(panelSource, /<EditableCell/);
+    // 이 매칭만의 메모는 펼친 "진행" 카드에서 눌러서 고친다. 저장에 실패하면 입력을 닫지 않는다.
+    assert.match(panelSource, /label="매칭 메모" multiline>\s*<MatchMemoField/);
+    assert.match(panelSource, /if \(event\.nativeEvent\.isComposing\) return;/);
+    // 쓰는 중인 매칭 메모는 패널이 들고 있다(저장 실패 뒤 카드를 접어도 글이 남는다)
+    assert.match(panelSource, /const \[memoDrafts, setMemoDrafts\] = useState<Record<string, string>>\(\{\}\);/);
+    assert.match(panelSource, /memoDraft=\{memoDrafts\[match\.id\] \?\? null\}/);
+    // 저장도 패널이 한다. 보낸 뒤 더 고친 글은 먼저 보낸 저장이 끝나도 지우지 않는다
+    assert.match(panelSource, /if \(memoDraftsRef\.current\[match\.id\] === draft\) setMemoDraft\(match\.id, null\);/);
+    assert.match(panelSource, /savingMemoIdsRef\.current\.has\(match\.id\)\) return;/);
+    assert.match(panelSource, /onCommitMemo=\{\(\) => void commitMemoDraft\(match\)\}/);
+    assert.doesNotMatch(panelSource, /const \[draft, setDraft\] = useState<string \| null>\(null\);\s*const savingRef/);
     assert.match(pageSource, /_count: listing\._count/);
     assert.match(clientSource, /activeAdvertisementCount\?: number/);
     assert.match(clientSource, /_count\?: \{ matches: number \}/);

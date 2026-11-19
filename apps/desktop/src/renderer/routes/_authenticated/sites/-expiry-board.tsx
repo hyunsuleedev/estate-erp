@@ -2,6 +2,7 @@
  * 만기/변동 뷰 — 내부 CRM(Tenant 계약 종료일) 기반 임대차 만기 추적 +
  * 외부 신호(등기변동/거래 AI) 정보 구조 자리.
  */
+import { formatUnitName } from '@estate-erp/shared';
 import { useMemo } from 'react';
 import { CalendarClock, FileSearch, TrendingUp } from 'lucide-react';
 import type { Unit, UnitTenant } from '@estate-erp/api-client';
@@ -82,7 +83,7 @@ export function ExpiryBoard({
                   )}
                 >
                   <span className="w-28 shrink-0 text-[13px] font-medium tabular-nums">
-                    {getDongName(unit.dongId)} {unit.name}
+                    {getDongName(unit.dongId)} {formatUnitName(unit)}
                   </span>
                   <span className="min-w-0 truncate text-[13px]">{tenant.contact.name}</span>
                   <span className="text-[12px] tabular-nums text-muted-foreground">

@@ -7,14 +7,9 @@ import { Check, Search, UserRound } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatPhone } from '@/lib/format';
 import {
-  hasContactTagsChanged,
-  mergeContactTags,
   normalizePhone,
-  splitContactTags,
-  stringifyContactTags,
 } from '@/lib/contacts';
 import { cn } from '@/lib/utils';
-import { ContactGroupSelector } from '@/components/contacts/contact-group-selector';
 import {
   ContactPhonesEditor,
   toEditablePhones,
@@ -37,6 +32,11 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { relationTypeLabels, type RelationItem } from './-detail-cards';
+import { diffContactGroups } from './-contact-categories';
+import { ContactTagsField, useContactTagColors } from './-contact-tag-picker';
+import { diffContactTags } from './-contact-tags';
+import { ContactTagChip } from '@/components/contacts/contact-tag-chip';
+import { ContactGroupPicker } from './-contact-group-picker';
 
 /**
  * 연락처 상세 — 연락처 자체를 다루는 다이얼로그 (수정 / 관계 추가).
@@ -73,42 +73,58 @@ export function ContactEditDialog({
   const [name, setName] = useState('');
   const [phones, setPhones] = useState<EditablePhone[]>([]);
   const [email, setEmail] = useState('');
-  const [groupTags, setGroupTags] = useState<string[]>([]);
-  const [customTagsInput, setCustomTagsInput] = useState('');
+  // 태그도 그룹처럼 창을 연 때의 값과 비교해 바꾼 것만 붙이고 뗀다.
+  const [initialTags, setInitialTags] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  // 그룹은 창을 연 때의 소속과 비교해 바꾼 것만 보낸다. 창을 연 사이 다른 직원이 넣은 그룹을 빼지 않는다.
+  const [initialGroups, setInitialGroups] = useState<string[]>([]);
+  const [groups, setGroups] = useState<string[]>([]);
   const [memo, setMemo] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open) return;
-    const { groupTags: groups, customTags } = splitContactTags(contact.tags);
     setName(contact.name);
     setPhones(toEditablePhones(contact));
     setEmail(contact.email ?? '');
-    setGroupTags(groups);
-    setCustomTagsInput(stringifyContactTags(customTags));
+    setInitialTags(contact.tags);
+    setTags(contact.tags);
+    setInitialGroups(contact.groups ?? []);
+    setGroups(contact.groups ?? []);
     setMemo(contact.memo ?? '');
     setError('');
   }, [open, contact]);
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const phoneInputs = toPhoneInputs(phones);
-      return api.contacts.update(contact.id, {
+      await api.contacts.update(contact.id, {
         name: name.trim(),
         phone: firstPhoneValue(phones) || undefined,
         phones: phoneInputs,
         // 빈 입력은 null로 보내 기존 값을 지운다 (undefined는 "변경 없음"으로 처리됨)
         email: email.trim() || null,
-        // 그룹 소속이 태그에 있으므로 바꾼 때만 보낸다. 폼을 연 사이 들어간 그룹을 덮어쓰지 않는다.
-        ...(hasContactTagsChanged(contact.tags, groupTags, customTagsInput) && {
-          tags: mergeContactTags(groupTags, customTagsInput),
-        }),
         memo: memo.trim() || null,
       });
+      // 그룹과 태그는 연락처와 따로 저장된다. 연락처는 이미 저장됐으므로 실패한 것만 알려 준다.
+      // 통째로 덮지 않고 바꾼 것만 붙이고 떼어, 창을 연 사이 다른 직원이 넣은 것을 지우지 않는다.
+      const { added, removed } = diffContactGroups(initialGroups, groups);
+      const tagChanges = diffContactTags(initialTags, tags);
+      const results = await Promise.allSettled([
+        ...added.map((name) => api.contacts.addGroupMembers(name, [contact.id])),
+        ...removed.map((name) => api.contacts.removeGroupMembers(name, [contact.id])),
+        ...tagChanges.added.map((name) => api.contacts.assignTag(name, [contact.id])),
+        ...tagChanges.removed.map((name) => api.contacts.unassignTag(name, [contact.id])),
+      ]);
+      return { groupFailures: results.filter(({ status }) => status === 'rejected').length };
     },
-    onSuccess: async () => {
+    onSuccess: async ({ groupFailures }) => {
       await queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      toast.success('연락처가 수정되었습니다.');
+      if (groupFailures > 0) {
+        toast.warning('연락처는 수정했지만 그룹 · 태그 변경 일부가 저장되지 않았습니다.');
+      } else {
+        toast.success('연락처가 수정되었습니다.');
+      }
       onOpenChange(false);
     },
     onError: () => {
@@ -160,30 +176,12 @@ export function ContactEditDialog({
             <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
           </FormField>
 
-          <FormField label="그룹 / 태그">
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">그룹</p>
-                <ContactGroupSelector
-                  selectedTags={groupTags}
-                  onToggle={(tag) => {
-                    setGroupTags((previous) =>
-                      previous.includes(tag)
-                        ? previous.filter((item) => item !== tag)
-                        : [...previous, tag],
-                    );
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">추가 태그</p>
-                <Input
-                  value={customTagsInput}
-                  onChange={(event) => setCustomTagsInput(event.target.value)}
-                  placeholder="예: VIP, 소개, 재연락"
-                />
-              </div>
-            </div>
+          <FormField label="그룹">
+            <ContactGroupPicker selected={groups} onChange={setGroups} />
+          </FormField>
+
+          <FormField label="태그">
+            <ContactTagsField value={tags} onChange={setTags} />
           </FormField>
 
           <FormField label="메모">
@@ -586,19 +584,25 @@ export function RelationEditDialog({
   );
 }
 
-/** 그룹/태그 뱃지 묶음 (상세 헤더용) */
-export function ContactTagBadges({ tags }: { tags: string[] }) {
-  const { groupTags, customTags } = splitContactTags(tags);
-  if (groupTags.length === 0 && customTags.length === 0) return null;
+/** 그룹(테두리 꼬리표)과 태그(색 꼬리표) 묶음 (상세 헤더용) */
+export function ContactTagBadges({
+  tags,
+  groups = [],
+}: {
+  tags: string[];
+  groups?: string[];
+}) {
+  const colors = useContactTagColors();
+  if (groups.length === 0 && tags.length === 0) return null;
   return (
     <>
-      {groupTags.map((tag) => (
-        <Badge key={`group-${tag}`}>{tag}</Badge>
-      ))}
-      {customTags.map((tag) => (
-        <Badge key={`tag-${tag}`} variant="secondary">
-          {tag}
+      {groups.map((name) => (
+        <Badge key={`group-${name}`} variant="outline">
+          {name}
         </Badge>
+      ))}
+      {tags.map((tag) => (
+        <ContactTagChip key={`tag-${tag}`} name={tag} color={colors.get(tag)} />
       ))}
     </>
   );

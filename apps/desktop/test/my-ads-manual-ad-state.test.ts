@@ -106,7 +106,7 @@ function advertisement(overrides: Partial<ListingAdvertisementWithListing> = {})
     createdAt: at,
     updatedAt: at,
     listing: listing(),
-    officeAdvertisementGroup: null,
+    comparison: null,
     ...overrides,
   };
 }
@@ -244,8 +244,9 @@ describe("manual ad payload", () => {
     const existing = advertisement({ externalAdId: "E-1" });
     const owner = listing();
     const base = initialMyAdsManualAdDraft(owner, existing);
-    assert.throws(() => buildMyAdsManualAdPayload(owner, { ...base, externalAdId: "E-2" }, existing), /새 광고로 등록/);
-    assert.throws(() => buildMyAdsManualAdPayload(owner, { ...base, externalAdId: "" }, existing), /새 광고로 등록/);
+    // 재광고해도 같은 줄이다: CP 광고번호가 바뀌면 그 줄의 번호를 고친다(새 광고로 넣지 않는다)
+    assert.equal(buildMyAdsManualAdPayload(owner, { ...base, externalAdId: "E-2" }, existing).externalAdId, "E-2");
+    assert.equal(buildMyAdsManualAdPayload(owner, { ...base, externalAdId: "" }, existing).externalAdId, null);
   });
 });
 
@@ -406,7 +407,7 @@ describe("manual ads in the my-ads table", () => {
     };
     const compared = advertisement({
       naverArticleNo: "2612345678",
-      officeAdvertisementGroup: {
+      comparison: {
         id: "g-1", officeId: "office-1", listingAdvertisementId: "ad-1", mainAdvertisementId: own.id, memo: null,
         ownPrice: 155000, ownDeposit: null, ownMonthlyRent: null, relatedPriceMin: null, relatedPriceMax: null,
         relatedCount: 0, firstSeenAt: at, lastSeenAt: at, lastSyncedAt: at, createdAt: at, updatedAt: at,

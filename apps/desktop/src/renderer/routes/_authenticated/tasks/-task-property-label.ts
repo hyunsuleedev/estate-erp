@@ -1,3 +1,4 @@
+import { formatFloorRange } from '@estate-erp/shared';
 import type { Task } from '@estate-erp/api-client';
 
 function withSuffix(value: string, suffix: string) {
@@ -13,7 +14,9 @@ export function getPropertyLabel(task: Task): string {
       ? withSuffix(dongName, '동')
       : null;
   const unitName = unit?.name?.trim();
-  const unitLabel = unitName && unitName !== '-' ? withSuffix(unitName, '호') : null;
+  // 호 없이 층이 단위인 공간은 층이 이름이다
+  const unitLabel =
+    unitName && unitName !== '-' ? withSuffix(unitName, '호') : formatFloorRange(unit ?? {}) || null;
 
   return [siteName, dongLabel, unitLabel].filter(Boolean).join(' ') || '매물';
 }

@@ -20,7 +20,7 @@ function assertDealDetailSheetScrolls(source: string, label: string) {
   );
   assert.match(
     source,
-    /role="tabpanel" className="min-h-0 flex-1 overflow-y-auto/,
+    /role="tabpanel"[\s\S]{0,300}className="min-h-0 flex-1 overflow-y-auto/,
     `${label} tab panel must be the flex child that actually scrolls`,
   );
   assert.doesNotMatch(

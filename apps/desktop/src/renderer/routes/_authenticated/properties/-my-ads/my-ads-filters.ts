@@ -1,3 +1,9 @@
+import {
+  advertisementSite,
+  advertisementTransactionType,
+  isAdvertisementUnlinked,
+  pendingChangeRequests,
+} from "./my-ads-link";
 import type { ListingAdvertisementWithListing } from "@estate-erp/api-client";
 import { analyzeOfficeAdvertisementComparison } from "@estate-erp/api-client";
 import { formatMoney } from "@/lib/format";
@@ -135,7 +141,7 @@ export function advertisementMatchesFilters(
   filters: MyAdsFilterState,
 ): boolean {
   const location = getCanonicalLocation(advertisement);
-  const siteId = advertisement.listing?.property?.site?.id ?? null;
+  const siteId = advertisementSite(advertisement)?.id ?? null;
 
   if (filters.siteIds.length > 0 && !filters.siteIds.includes(siteId ?? "")) {
     return false;
@@ -158,7 +164,7 @@ export function advertisementMatchesFilters(
   }
   if (
     filters.transactionType !== "all" &&
-    advertisement.listing?.transactionType !== filters.transactionType
+    advertisementTransactionType(advertisement) !== filters.transactionType
   ) {
     return false;
   }
@@ -181,7 +187,7 @@ export function advertisementMatchesFilters(
   }
   if (
     !advertisementAmountMatchesRange(
-      advertisement.listing?.transactionType === "monthly"
+      advertisementTransactionType(advertisement) === "monthly"
         ? advertisement.advertisedMonthlyRent
         : null,
       filters.monthlyRentMin,
@@ -192,7 +198,7 @@ export function advertisementMatchesFilters(
   }
 
   const main =
-    advertisement.officeAdvertisementGroup?.mainAdvertisement ?? null;
+    advertisement.comparison?.mainAdvertisement ?? null;
   if (
     filters.verification !== "all" &&
     verificationMethodFilterKey(main?.verificationTypeCode ?? null) !==
@@ -316,6 +322,10 @@ export function advertisementMatchesView(
   view: MyAdsView,
 ): boolean {
   if (view === "all") return true;
+  if (view === "unlinked") return isAdvertisementUnlinked(advertisement);
+  if (view === "requested") {
+    return pendingChangeRequests(advertisement).length > 0;
+  }
 
   const signal = getAnalysisSignal(advertisement);
   if (view === "comparison_pending") {

@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import type {
   CallRecordingAnalysis,
   CallRecordingMessage,
+  Consultation,
   CreateConsultationDto,
 } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
@@ -37,6 +38,7 @@ export function ConvertConsultationDialog({
   contact,
   analysis,
   messages,
+  onConverted,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -44,6 +46,8 @@ export function ConvertConsultationDialog({
   contact: { id: string; name: string; phone: string | null };
   analysis: CallRecordingAnalysis | null;
   messages: CallRecordingMessage[];
+  /** 만든 상담 기록을 이어서 열 때 */
+  onConverted?: (consultation: Consultation) => void;
 }) {
   const queryClient = useQueryClient();
   const [type, setType] = useState('phone');
@@ -68,11 +72,12 @@ export function ConvertConsultationDialog({
       };
       return api.consultations.create(dto);
     },
-    onSuccess: () => {
+    onSuccess: (consultation) => {
       toast.success('상담 기록이 생성되었습니다');
       void queryClient.invalidateQueries({ queryKey: ['call-recordings'] });
       void queryClient.invalidateQueries({ queryKey: ['consultations'] });
       onOpenChange(false);
+      onConverted?.(consultation);
     },
     onError: () => toast.error('상담 전환에 실패했습니다'),
   });

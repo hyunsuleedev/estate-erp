@@ -5,12 +5,14 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { CheckSquare, RotateCcw } from 'lucide-react';
 import { api } from '@/lib/api';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState, StatusBadge } from '@/components/domain';
+import { StatusBadge } from '@/components/domain';
+import {
+  EmptyText,
+  RetryNote,
+  SectionTitle,
+} from '../properties/-components/property-inspector-view';
 import { cn } from '@/lib/utils';
 import { formatDday } from '@/lib/format';
 
@@ -53,47 +55,25 @@ export function UnitTasksSection({ propertyIds }: { propertyIds: Set<string> }) 
 
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          <CheckSquare className="size-3" />
-          후속 작업
-        </h3>
-        <Badge variant="secondary" className="text-[10px] font-normal">
-          {unitTasks.length}건
-        </Badge>
-      </div>
+      <SectionTitle count={unitTasks.length || undefined}>후속 작업</SectionTitle>
       {propertyIds.size === 0 ? (
-        <p className="rounded-lg border border-dashed px-4 py-3 text-xs text-muted-foreground">
-          관리호수(Property)로 등록하면 이 호실에 후속 작업을 연결할 수 있습니다.
-        </p>
+        <EmptyText>관리호수로 등록하면 이 호실에 후속 작업을 연결할 수 있습니다.</EmptyText>
       ) : tasksQuery.isLoading ? (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {Array.from({ length: 2 }).map((_, index) => (
-            <Skeleton key={index} className="h-10 w-full rounded-lg" />
+            <Skeleton key={index} className="h-9 w-full" />
           ))}
         </div>
       ) : tasksQuery.isError ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-6 text-center">
-          <p className="text-xs text-muted-foreground">후속 작업을 불러오지 못했습니다</p>
-          <Button variant="outline" size="sm" onClick={() => tasksQuery.refetch()}>
-            <RotateCcw className="size-3.5" />
-            다시 시도
-          </Button>
-        </div>
+        <RetryNote onRetry={() => void tasksQuery.refetch()}>후속 작업을 불러오지 못했습니다.</RetryNote>
       ) : unitTasks.length > 0 ? (
-        <div className="overflow-hidden rounded-lg border border-border/60">
-          {unitTasks.slice(0, 8).map((task, index) => (
-            <div
-              key={task.id}
-              className={cn(
-                'flex flex-wrap items-center gap-2 px-4 py-2.5',
-                index > 0 && 'border-t border-border/40',
-              )}
-            >
+        <div className="divide-y divide-[#f1f0ec]">
+          {unitTasks.slice(0, 8).map((task) => (
+            <div key={task.id} className="flex min-h-10 items-center gap-2.5 py-2">
               <StatusBadge kind="taskStatus" status={task.status} size="sm" />
               <span
                 className={cn(
-                  'min-w-0 flex-1 truncate text-[13px]',
+                  'min-w-0 flex-1 truncate text-[13px] text-[#2f2e2a]',
                   (task.status === 'completed' || task.status === 'cancelled') &&
                     'text-muted-foreground line-through',
                 )}
@@ -101,35 +81,33 @@ export function UnitTasksSection({ propertyIds }: { propertyIds: Set<string> }) 
                 {task.title}
               </span>
               {task.assignedTo && (
-                <span className="text-[11px] text-muted-foreground">{task.assignedTo.name}</span>
+                <span className="shrink-0 text-[12px] text-muted-foreground">{task.assignedTo.name}</span>
               )}
               {task.dueDate && (
-                <Badge
+                <span
                   className={cn(
-                    'text-[10px] font-medium tabular-nums',
+                    'inline-flex shrink-0 items-center rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5 tabular-nums',
                     dueTone(task.dueDate, task.status),
                   )}
                 >
                   {formatDday(task.dueDate)}
-                </Badge>
+                </span>
               )}
             </div>
           ))}
           {unitTasks.length > 8 && (
-            <div className="border-t border-border/40 px-4 py-2 text-center">
-              <Button variant="ghost" size="xs" asChild>
-                <Link to="/tasks">전체 {unitTasks.length}건 업무 페이지에서 보기</Link>
-              </Button>
+            <div className="py-2">
+              <Link
+                to="/tasks"
+                className="text-[12px] text-muted-foreground hover:text-foreground"
+              >
+                전체 {unitTasks.length}건 업무 페이지에서 보기
+              </Link>
             </div>
           )}
         </div>
       ) : (
-        <EmptyState
-          icon={CheckSquare}
-          title="연결된 후속 작업이 없습니다"
-          description="업무 페이지에서 이 호실의 매물을 연결해 Task를 만들 수 있습니다"
-          className="rounded-lg border border-dashed py-6"
-        />
+        <EmptyText>연결된 후속 작업이 없습니다. 업무 페이지에서 이 호실의 매물을 연결해 만들 수 있습니다.</EmptyText>
       )}
     </section>
   );

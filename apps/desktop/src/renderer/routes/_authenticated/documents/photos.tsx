@@ -1,3 +1,4 @@
+import { formatUnitLabel } from '@estate-erp/shared';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -132,7 +133,7 @@ function PhotoSearchPage() {
               p.site.name,
               p.unit?.siteUnitType?.name,
               p.unit?.dong?.name,
-              p.unit?.name && `${p.unit.name}호`,
+              formatUnitLabel(p.unit),
             ]
               .filter(Boolean)
               .join(' ')

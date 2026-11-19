@@ -42,6 +42,7 @@ const MATCH_STAGE_LABEL: Record<string, string> = {
   buyerInterested: '고객 관심',
   viewingConfirmed: '임장 조율',
   viewing: '임장',
+  buyerReviewing: '고객 검토',
   negotiating: '협상',
   closed: '매칭 종료',
 };
@@ -134,6 +135,207 @@ function requirementLines(fields: BuyerRequirementSuggestionFields, labels: Reco
     fields.siteIds?.length ? `희망 단지 ${fields.siteIds.map((id) => labels[id] ?? '단지').join(', ')}` : null,
     fields.urgency === 'urgent' ? '급함' : null,
   ].filter((line): line is string => !!line);
+}
+
+// ----------------------------------------------------------------
+// 제안의 세 부류: 무엇을 쓰느냐에 따라 확인하는 방식이 다르다
+// ----------------------------------------------------------------
+
+/**
+ * - followUp: 할 일 · 일정. 가볍게 만들고 지울 수 있다 → 목록에서 한 번에 만든다.
+ * - requirement: 희망조건의 값. 틀린 숫자가 섞일 수 있다 → 항목별로 골라서 저장한다.
+ * - decision: 매칭 · 매물 확인. 다른 기록에 연쇄 효과가 있다 → 무슨 일이 일어나는지 읽고 직접 실행한다.
+ */
+export type SuggestionGroup = 'followUp' | 'requirement' | 'decision';
+
+export const SUGGESTION_GROUP_ORDER: SuggestionGroup[] = ['followUp', 'requirement', 'decision'];
+
+export const SUGGESTION_GROUP_LABEL: Record<SuggestionGroup, string> = {
+  followUp: '할 일 · 일정',
+  requirement: '희망조건',
+  decision: '직접 확인할 변경',
+};
+
+export function suggestionGroupOf(type: CallSuggestionTypeValue): SuggestionGroup {
+  if (type === 'task' || type === 'calendar_event') return 'followUp';
+  if (type === 'buyer_requirement_create' || type === 'buyer_requirement_update') return 'requirement';
+  return 'decision';
+}
+
+/** 버튼에는 "반영"이 아니라 누르면 일어나는 일을 적는다 */
+export const SUGGESTION_ACTION_LABEL: Record<CallSuggestionTypeValue, string> = {
+  task: '할 일 만들기',
+  calendar_event: '일정 만들기',
+  buyer_requirement_create: '희망조건 등록',
+  buyer_requirement_update: '희망조건 고치기',
+  match_create: '매칭 만들기',
+  match_stage: '단계 바꾸기',
+  listing_confirm: '확인 처리',
+};
+
+/** 직접 확인할 변경: 실행하면 무엇이 바뀌는지 (연쇄 효과까지) */
+export function describeSuggestionEffect(
+  suggestion: Pick<CallActionSuggestion, 'type' | 'payload'>,
+): string | null {
+  switch (suggestion.type) {
+    case 'match_create':
+      return '이 고객의 희망조건과 매물을 매칭으로 묶습니다. 희망매물 화면에 새 줄이 생깁니다.';
+    case 'match_stage': {
+      const { stage } = suggestion.payload as CallSuggestionPayloadByType['match_stage'];
+      return stage === 'closed'
+        ? '매칭을 종료합니다. 종료한 매칭은 진행 목록에서 빠집니다.'
+        : `매칭 단계를 "${MATCH_STAGE_LABEL[stage] ?? stage}"(으)로 바꿉니다.`;
+    }
+    case 'listing_confirm': {
+      const { result } = suggestion.payload as CallSuggestionPayloadByType['listing_confirm'];
+      if (result === 'unavailable') return '의뢰를 종료합니다. 매물이 진행 목록에서 빠지고 걸려 있던 매칭도 영향을 받습니다.';
+      if (result === 'price_changed') return '매물 가격을 바꾸고 오늘 확인한 것으로 기록합니다. 가격 이력에 남습니다.';
+      return '오늘 소유자에게 확인한 것으로 기록합니다. 가격은 그대로 둡니다.';
+    }
+    default:
+      return null;
+  }
+}
+
+/** 의뢰 종료 · 매칭 종료처럼 되돌리기 번거로운 변경인지 */
+export function isHeavySuggestion(suggestion: Pick<CallActionSuggestion, 'type' | 'payload'>): boolean {
+  if (suggestion.type === 'match_stage') {
+    return (suggestion.payload as CallSuggestionPayloadByType['match_stage']).stage === 'closed';
+  }
+  if (suggestion.type === 'listing_confirm') {
+    return (suggestion.payload as CallSuggestionPayloadByType['listing_confirm']).result === 'unavailable';
+  }
+  return false;
+}
+
+// ----------------------------------------------------------------
+// 희망조건: 항목별 "지금 값 → 통화에서 들은 값"
+// ----------------------------------------------------------------
+
+type RequirementFieldKey = keyof BuyerRequirementSuggestionFields;
+
+export interface RequirementFieldRow {
+  /** 줄 이름 (체크 상태의 키) */
+  key: string;
+  /** 이 줄이 묶는 값들 (최소·최대는 한 줄로 본다) */
+  fieldKeys: RequirementFieldKey[];
+  label: string;
+  /** 통화에서 들은 값 */
+  proposed: string;
+  /** 지금 저장된 값. 없거나 모르면 null */
+  current: string | null;
+  /** 이미 있는 값을 다른 값으로 바꾸는 줄인지 (빈 칸을 채우는 것과 구분) */
+  changesExisting: boolean;
+  /** 빼고 저장할 수 없는 줄 (새 희망조건의 거래 유형) */
+  locked: boolean;
+}
+
+const URGENCY_LABEL: Record<string, string> = { urgent: '급함', normal: '보통', flexible: '여유 있음' };
+const SITE_TYPE_LABEL: Record<string, string> = {
+  apartment: '아파트',
+  officetel: '오피스텔',
+  villa: '빌라',
+  house: '단독주택',
+  commercial: '상가',
+  land: '토지',
+  living_accommodation: '생활숙박시설',
+};
+
+/** 저장된 희망조건에서 비교에 쓰는 값 (없으면 지금 값을 모르는 것으로 본다) */
+export type RequirementCurrentValues = {
+  [K in Exclude<RequirementFieldKey, 'siteIds'>]?: BuyerRequirementSuggestionFields[K] | null;
+};
+
+function requirementValueText(
+  key: string,
+  fields: RequirementCurrentValues & { siteIds?: string[] },
+  labels: Record<string, string>,
+): string {
+  switch (key) {
+    case 'transactionType':
+      return fields.transactionType ? (TRANSACTION_LABEL[fields.transactionType] ?? fields.transactionType) : '';
+    case 'siteTypes':
+      return (fields.siteTypes ?? []).map((type) => SITE_TYPE_LABEL[type] ?? type).join(', ');
+    case 'price':
+      return rangeText(fields.priceMin, fields.priceMax, formatManwonText) ?? '';
+    case 'deposit':
+      return rangeText(fields.depositMin, fields.depositMax, formatManwonText) ?? '';
+    case 'monthlyRent':
+      return rangeText(fields.monthlyRentMin, fields.monthlyRentMax, formatManwonText) ?? '';
+    case 'area':
+      return rangeText(fields.areaMin, fields.areaMax, pyeong) ?? '';
+    case 'moveInDate':
+      return fields.moveInDate ? formatSuggestionWhen(fields.moveInDate.slice(0, 10)) : '';
+    case 'urgency':
+      return fields.urgency ? (URGENCY_LABEL[fields.urgency] ?? fields.urgency) : '';
+    case 'siteIds':
+      return (fields.siteIds ?? []).map((id) => labels[id] ?? '단지').join(', ');
+    default:
+      return '';
+  }
+}
+
+const REQUIREMENT_ROWS: Array<{ key: string; label: string; fieldKeys: RequirementFieldKey[] }> = [
+  { key: 'transactionType', label: '거래 유형', fieldKeys: ['transactionType'] },
+  { key: 'siteTypes', label: '매물 유형', fieldKeys: ['siteTypes'] },
+  { key: 'price', label: '매매가', fieldKeys: ['priceMin', 'priceMax'] },
+  { key: 'deposit', label: '보증금', fieldKeys: ['depositMin', 'depositMax'] },
+  { key: 'monthlyRent', label: '월세', fieldKeys: ['monthlyRentMin', 'monthlyRentMax'] },
+  { key: 'area', label: '면적', fieldKeys: ['areaMin', 'areaMax'] },
+  { key: 'moveInDate', label: '입주', fieldKeys: ['moveInDate'] },
+  { key: 'siteIds', label: '희망 단지', fieldKeys: ['siteIds'] },
+  { key: 'urgency', label: '급한 정도', fieldKeys: ['urgency'] },
+];
+
+/**
+ * 제안이 담은 희망조건 값을 줄로 나눈다.
+ * @param current 고치는 제안이면 지금 저장된 값 (아직 못 읽었으면 null — 그때는 비교하지 않는다)
+ * @param isCreate 새로 등록하는 제안이면 거래 유형은 뺄 수 없다
+ */
+export function requirementFieldRows(
+  fields: BuyerRequirementSuggestionFields,
+  labels: Record<string, string>,
+  current: RequirementCurrentValues | null,
+  isCreate: boolean,
+): RequirementFieldRow[] {
+  return REQUIREMENT_ROWS.filter((row) => row.fieldKeys.some((key) => fields[key] !== undefined))
+    .map((row) => {
+      const proposed = requirementValueText(row.key, fields, labels);
+      // 희망 단지는 기존 목록에 더하는 것이라 지금 값과 견주지 않는다
+      const currentText = current && row.key !== 'siteIds' ? requirementValueText(row.key, current, labels) : '';
+      return {
+        key: row.key,
+        fieldKeys: row.fieldKeys,
+        label: row.label,
+        proposed: row.key === 'siteIds' ? `${proposed} 추가` : proposed || '비움',
+        current: currentText || null,
+        changesExisting: Boolean(currentText) && currentText !== proposed,
+        locked: isCreate && row.key === 'transactionType',
+      };
+    })
+    // 지금 값과 같은 줄은 바꿀 것이 없다
+    .filter((row) => !(row.current !== null && !row.changesExisting));
+}
+
+/** 처음에 체크해 둘 줄: 빈 칸을 채우는 줄은 넣고, 이미 있는 값을 바꾸는 줄은 사람이 고르게 둔다 */
+export function defaultIncludedRequirementRows(rows: readonly RequirementFieldRow[]): string[] {
+  return rows.filter((row) => row.locked || !row.changesExisting).map((row) => row.key);
+}
+
+/**
+ * 체크한 줄의 값만 남긴다. 그 밖의 값은 하나도 보내지 않는다:
+ * 체크를 뺀 줄은 물론, 화면에 보이지 않은 줄(지금 값과 같아 보여 숨긴 줄 — 평으로 반올림하면 같아도
+ * 실제 값은 다를 수 있다)도 보내지 않는다. 사람이 보고 고른 것만 저장한다.
+ */
+export function pickRequirementFields(
+  fields: BuyerRequirementSuggestionFields,
+  rows: readonly RequirementFieldRow[],
+  includedKeys: readonly string[],
+): BuyerRequirementSuggestionFields {
+  const kept = new Set<string>(
+    rows.filter((row) => row.locked || includedKeys.includes(row.key)).flatMap((row) => row.fieldKeys),
+  );
+  return Object.fromEntries(Object.entries(fields).filter(([key]) => kept.has(key))) as BuyerRequirementSuggestionFields;
 }
 
 /** 카드 본문 줄 */

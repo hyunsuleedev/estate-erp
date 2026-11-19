@@ -1,3 +1,4 @@
+import { formatPropertySpaceLabel } from '../-registration-space';
 import type {
   Consultation,
   Deal,
@@ -234,14 +235,13 @@ export function getUnitIdentity(property: Property): UnitIdentity {
   const unit = property.unit as DetailUnit | null | undefined;
   const dongName =
     unit?.dong && !unit.dong.isPlaceholder ? unit.dong.name.trim() : null;
-  const hoName = unit?.name?.trim() || null;
   const region = [site?.ward?.district?.name, site?.ward?.name]
     .filter(Boolean)
     .join(' ');
   return {
     siteName: site?.name ?? '매물',
     dong: dongName ? (/동$/.test(dongName) ? dongName : `${dongName}동`) : null,
-    ho: hoName ? (/호$/.test(hoName) ? hoName : `${hoName}호`) : null,
+    ho: formatPropertySpaceLabel(unit, site?.type) || null,
     eyebrow: [
       site?.type ? (siteTypeLabels[site.type] ?? site.type) : null,
       region || null,

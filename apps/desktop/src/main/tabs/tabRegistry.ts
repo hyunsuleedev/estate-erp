@@ -34,6 +34,7 @@ import type {
   CreateTabInput,
   TabStep,
   TabWorkspaceEnv,
+  TabWorkspaceState,
 } from '../../common/tabs/tabWorkspace';
 import { planTabDrop, type ScreenPoint, type TabDropScene } from './tabDrop';
 
@@ -64,6 +65,11 @@ export interface TabViewsPort {
    * 화면이 없으면 false다.
    */
   hasUnsavedWork(windowId: number, tabId: TabId): boolean;
+  /**
+   * 탭 화면이 파일을 올리는 중이라고 알렸는지. 닫으면 올리던 요청이 조용히 끊기므로 닫기를 막는다.
+   * 구현하지 않은 쪽(시험용 등)은 올리는 중이 없다고 본다.
+   */
+  hasActiveTransfer?(windowId: number, tabId: TabId): boolean;
 }
 
 /** 탭을 놓은 자리에 맞춰 창을 둘 곳. */
@@ -332,20 +338,22 @@ export class TabRegistry {
         this.step(windowId, workspace.activateTab(state, action.tabId));
         return;
       case 'close':
-        this.step(windowId, workspace.closeTab(state, action.tabId, this.env));
+        this.closeStep(windowId, state, workspace.closeTab(state, action.tabId, this.env));
         return;
       case 'close-others':
-        this.step(windowId, workspace.closeOtherTabs(state, action.tabId, this.env));
+        this.closeStep(windowId, state, workspace.closeOtherTabs(state, action.tabId, this.env));
         return;
       case 'close-left':
-        this.step(
+        this.closeStep(
           windowId,
+          state,
           workspace.closeTabsOnSide(state, action.tabId, 'left', this.env),
         );
         return;
       case 'close-right':
-        this.step(
+        this.closeStep(
           windowId,
+          state,
           workspace.closeTabsOnSide(state, action.tabId, 'right', this.env),
         );
         return;
@@ -412,7 +420,7 @@ export class TabRegistry {
           return;
         case 'close-tab':
           if (state.activeTabId) {
-            this.step(windowId, workspace.closeTab(state, state.activeTabId, this.env));
+            this.closeStep(windowId, state, workspace.closeTab(state, state.activeTabId, this.env));
           }
           return;
         case 'reopen-closed-tab':
@@ -488,7 +496,7 @@ export class TabRegistry {
           return;
         }
         case 'close':
-          this.step(windowId, workspace.closeTab(state, tabId, this.env));
+          this.closeStep(windowId, state, workspace.closeTab(state, tabId, this.env));
           return;
         case 'update-title':
           this.step(windowId, workspace.updateTabTitle(state, tabId, action.title));
@@ -804,16 +812,16 @@ export class TabRegistry {
           this.commitWindow(windowId, reopenLastClosedTabs(record.tabs, this.env));
           return;
         case TAB_MENU.close:
-          this.step(windowId, workspace.closeTab(state, tabId, this.env));
+          this.closeStep(windowId, state, workspace.closeTab(state, tabId, this.env));
           return;
         case TAB_MENU.closeOthers:
-          this.step(windowId, workspace.closeOtherTabs(state, tabId, this.env));
+          this.closeStep(windowId, state, workspace.closeOtherTabs(state, tabId, this.env));
           return;
         case TAB_MENU.closeLeft:
-          this.step(windowId, workspace.closeTabsOnSide(state, tabId, 'left', this.env));
+          this.closeStep(windowId, state, workspace.closeTabsOnSide(state, tabId, 'left', this.env));
           return;
         case TAB_MENU.closeRight:
-          this.step(windowId, workspace.closeTabsOnSide(state, tabId, 'right', this.env));
+          this.closeStep(windowId, state, workspace.closeTabsOnSide(state, tabId, 'right', this.env));
           return;
         default:
           return;
@@ -1007,6 +1015,30 @@ export class TabRegistry {
    */
   private queueToast(windowId: number, toast: WindowToast): void {
     this.pendingToasts.push({ windowId, toast });
+  }
+
+  /**
+   * 탭을 닫는 변경. 닫히려는 탭 가운데 파일을 올리는 중인 것이 있으면 닫지 않고 알린다.
+   * 탭 화면이 없어지면 올리던 요청이 조용히 끊기고, 사용자는 올라간 줄 안다.
+   * 올리기는 길어야 몇 분이라 "닫을까요?"를 묻지 않고 막는다 — 끝난 뒤에 닫으면 된다.
+   */
+  private closeStep(windowId: number, state: TabWorkspaceState, step: TabStep<void>): void {
+    const remaining = step.patch?.tabs;
+    if (remaining) {
+      const kept = new Set(remaining.map((tab) => tab.id));
+      const uploading = state.tabs.some(
+        (tab) => !kept.has(tab.id) && this.host.views.hasActiveTransfer?.(windowId, tab.id) === true,
+      );
+      if (uploading) {
+        this.host.showToast(windowId, {
+          level: 'warning',
+          message: '파일을 올리는 중이라 탭을 닫지 않았습니다',
+          description: '지금 닫으면 올리기가 중단됩니다. 다 올라간 뒤에 닫아 주세요.',
+        });
+        return;
+      }
+    }
+    this.step(windowId, step);
   }
 
   private step<R>(

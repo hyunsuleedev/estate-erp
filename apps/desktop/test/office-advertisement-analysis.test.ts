@@ -82,7 +82,7 @@ function listingAdvertisement(
       propertyId: "property-1",
       transactionType,
     } as ListingAdvertisementWithListing["listing"],
-    officeAdvertisementGroup: {
+    comparison: {
       id: "group-1",
       officeId: "office-1",
       listingAdvertisementId: "listing-ad-1",

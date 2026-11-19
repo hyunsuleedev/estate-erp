@@ -1,10 +1,18 @@
 import type { ListingAdvertisementWithListing } from "@estate-erp/api-client";
 import { cpChannelLabel } from "./my-ads-format";
 
-export type MyAdsView = "all" | "comparison_pending" | "attention";
+export type MyAdsView =
+  | "all"
+  | "unlinked"
+  | "requested"
+  | "comparison_pending"
+  | "attention";
 
 export const viewTabs: Array<{ value: MyAdsView; label: string }> = [
   { value: "all", label: "전체" },
+  // 매물과 이어지지 않은 광고, 바꿔 달라고 요청해 두고 아직 처리되지 않은 광고
+  { value: "unlinked", label: "연결 안 됨" },
+  { value: "requested", label: "요청 중" },
   { value: "comparison_pending", label: "비교 대기" },
   { value: "attention", label: "검토 필요" },
 ];
@@ -120,22 +128,6 @@ export const comparisonFilterOptions: MyAdsFilterOption[] = [
   { value: "pending", label: "비교 대기" },
   { value: "clear", label: "즉시 경고 없음" },
 ];
-
-export type AdvertisementActionDraft = {
-  advertisement: ListingAdvertisementWithListing;
-  advertisedPrice: string;
-  advertisedDeposit: string;
-  advertisedMonthlyRent: string;
-  republishAfterSave: boolean;
-};
-
-/** 표에서 인라인으로 고친 광고 조건 (거래유형에 따라 쓰는 칸이 다르다) */
-export type InlinePriceEdit = {
-  advertisedPrice: string;
-  advertisedDeposit: string;
-  advertisedMonthlyRent: string;
-  republishAfterSave: boolean;
-};
 
 export type AnalysisSignal = {
   kind:

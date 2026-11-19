@@ -1,48 +1,50 @@
 /**
- * 호실 상세 다이얼로그 — 개요/소유자·세입자/상담 타임라인/등기 문서 탭 + 후속 작업 CTA.
+ * 호실 상세 패널 — 개요/소유자·세입자/상담 타임라인/등기 문서 탭 + 후속 작업 CTA.
+ * 매물관리의 상세 패널과 같은 방식으로 페이지 오른쪽에 열린다 (화면을 덮는 창이 아니다).
  */
-import { useMemo, useState } from 'react';
+import { formatUnitName } from '@estate-erp/shared';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+  useRef,
+} from 'react';
+import { useInspectorFocus } from '@/hooks/use-inspector-focus';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import {
-  Building2,
-  Calendar,
+  ChevronRight,
+  ExternalLink,
   FileText,
   Home,
   Layers,
-  MapPin,
   MessageSquarePlus,
   MoreHorizontal,
   Pencil,
-  RotateCcw,
+  Plus,
   Ruler,
   ScrollText,
   Trash2,
-  User,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Dong, SiteDetail, Unit } from '@estate-erp/api-client';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ConfirmDialog, EmptyState, EntityChip, StatusBadge } from '@/components/domain';
+import {
+  ConfirmDialog,
+  EntityChip,
+  StatusBadge,
+  InspectorTabs,
+  inspectorTabIds,
+  type InspectorTabItem,
+} from '@/components/domain';
 import { cn } from '@/lib/utils';
 import { formatArea, formatDate, formatDateTime, formatDday, formatPhone } from '@/lib/format';
 import {
@@ -54,6 +56,13 @@ import {
   siteTypeLabels,
   tenantStatusLabels,
 } from './-site-helpers';
+import {
+  EmptyText,
+  PropertyInspectorToolbar,
+  RetryNote,
+  SectionTitle,
+  TextAction,
+} from '../properties/-components/property-inspector-view';
 import { UnitConsultDialog, UnitEditDialog } from './-unit-dialogs';
 import { UnitTasksSection } from './-unit-tasks-section';
 import { getListingAvailability } from "@/lib/listing-status";
@@ -66,45 +75,98 @@ const DOC_STATUS_META: Record<string, { label: string; className: string }> = {
 
 const REGISTRY_COST = 700;
 
-export function UnitDetailDialog({
+export const UNIT_INSPECTOR_WIDTH = 584;
+
+/** Esc가 패널이 아니라 떠 있는 대화상자·메뉴를 닫아야 하는 경우 */
+const OVERLAY_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"], [data-slot="popover-content"], [data-slot="dropdown-menu-content"]';
+
+/**
+ * 호실 상세 패널. 미끄러져 들어오고 나가는 움직임은 app.css의
+ * [data-property-inspector] 규칙을 그대로 쓴다 (매물관리·거래관리·문서관리 패널과 같다).
+ */
+export function UnitDetailPanel({
   unit,
   site,
   dongs,
+  closing,
+  animate,
   onClose,
+  onExited,
 }: {
-  unit: Unit | null;
-  site: SiteDetail | null;
+  unit: Unit;
+  site: SiteDetail;
   dongs: Dong[];
-  onClose: () => void;
+  /** 닫히는 중: 미끄러져 나간 뒤 onExited가 불린다 */
+  closing: boolean;
+  /** 미끄러지는 움직임을 쓸지 (키보드로 열고 닫을 때는 쓰지 않는다) */
+  animate: boolean;
+  onClose: (animate?: boolean) => void;
+  onExited: () => void;
 }) {
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showConsult, setShowConsult] = useState(false);
 
+  const panelRef = useRef<HTMLElement>(null);
+  // 키보드로 열었을 때(미끄러짐 없이 열림)만 포커스를 패널로 옮긴다
+  useInspectorFocus(panelRef, !animate, unit.id);
+
+  useEffect(() => {
+    if (!closing) return;
+    // 숨은 탭이나 모션 줄이기 설정에서는 transitionend가 오지 않을 수 있다.
+    const timer = window.setTimeout(
+      onExited,
+      !animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 240,
+    );
+    return () => window.clearTimeout(timer);
+  }, [closing, animate, onExited]);
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (document.querySelector(OVERLAY_SELECTOR)) return;
+      event.preventDefault();
+      onClose(false);
+    };
+    window.addEventListener('keydown', handleWindowKeyDown, true);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown, true);
+  }, [onClose]);
+
   return (
     <>
-      <Dialog
-        open={!!unit && !!site}
-        onOpenChange={(open) => {
-          if (!open) onClose();
+      <aside
+        ref={panelRef}
+        tabIndex={-1}
+        id="unit-inspector"
+        data-unit-inspector
+        data-property-inspector
+        data-state={closing ? 'closed' : 'open'}
+        data-motion={animate ? 'slide' : 'none'}
+        inert={closing}
+        aria-hidden={closing || undefined}
+        aria-label="호실 상세 패널"
+        className="absolute inset-y-0 right-0 z-50 flex min-h-0 flex-col border-l border-border bg-white shadow-[-2px_0_8px_rgba(0,0,0,0.03)] outline-none"
+        style={{ width: UNIT_INSPECTOR_WIDTH, maxWidth: '100%' }}
+        onTransitionEnd={(event) => {
+          if (closing && event.target === event.currentTarget && event.propertyName === 'transform') {
+            onExited();
+          }
         }}
       >
-        <DialogContent className="max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-5xl">
-          {unit && site && (
-            <UnitDetailBody
-              unit={unit}
-              site={site}
-              dongs={dongs}
-              onEdit={() => setShowEdit(true)}
-              onDelete={() => setShowDelete(true)}
-              onAddConsult={() => setShowConsult(true)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+        <UnitDetailBody
+          key={unit.id}
+          unit={unit}
+          site={site}
+          dongs={dongs}
+          onClose={onClose}
+          onEdit={() => setShowEdit(true)}
+          onDelete={() => setShowDelete(true)}
+          onAddConsult={() => setShowConsult(true)}
+        />
+      </aside>
 
-      {unit && site && (
-        <>
+      <>
           <UnitEditDialog
             open={showEdit}
             onOpenChange={setShowEdit}
@@ -124,10 +186,9 @@ export function UnitDetailDialog({
             onOpenChange={setShowDelete}
             unit={unit}
             site={site}
-            onDeleted={onClose}
+            onDeleted={() => onClose(false)}
           />
-        </>
-      )}
+      </>
     </>
   );
 }
@@ -170,8 +231,8 @@ function UnitDeleteConfirm({
       title="호실 삭제"
       description={
         propertyCount > 0
-          ? `'${unit.name}' 호실에 연결된 관리호수가 ${propertyCount}건 있습니다. 연결 데이터가 있으면 삭제가 거부될 수 있습니다.`
-          : `'${unit.name}' 호실을 삭제합니다. 이 작업은 되돌릴 수 없습니다.`
+          ? `'${formatUnitName(unit)}' 호실에 연결된 관리호수가 ${propertyCount}건 있습니다. 연결 데이터가 있으면 삭제가 거부될 수 있습니다.`
+          : `'${formatUnitName(unit)}' 호실을 삭제합니다. 이 작업은 되돌릴 수 없습니다.`
       }
       confirmLabel="삭제"
       destructive
@@ -187,6 +248,7 @@ function UnitDetailBody({
   unit,
   site,
   dongs,
+  onClose,
   onEdit,
   onDelete,
   onAddConsult,
@@ -194,6 +256,7 @@ function UnitDetailBody({
   unit: Unit;
   site: SiteDetail;
   dongs: Dong[];
+  onClose: (animate?: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
   onAddConsult: () => void;
@@ -201,7 +264,7 @@ function UnitDetailBody({
   const queryClient = useQueryClient();
   const dong = dongs.find((item) => item.id === unit.dongId);
   const dongName = dong && !dong.isPlaceholder ? dong.name : '';
-  const unitLabel = `${dongName ? `${dongName} ` : ''}${unit.name}`;
+  const unitLabel = `${dongName ? `${dongName} ` : ''}${formatUnitName(unit)}`;
 
   const properties = unit.properties ?? [];
   const primaryProperty = properties[0];
@@ -278,79 +341,41 @@ function UnitDetailBody({
   const roomCount = unit.roomCount ?? unit.siteUnitType?.roomCount;
   const bathRoomCount = unit.bathRoomCount ?? unit.siteUnitType?.bathRoomCount;
 
-  return (
-    <>
-      <DialogHeader className="border-b px-6 py-5 text-left">
-        <div className="flex flex-wrap items-center gap-2">
-          <Home className="size-4 text-muted-foreground" />
-          <DialogTitle className="text-base">{unitLabel}</DialogTitle>
-          <Badge variant="outline" className="text-[10px] font-normal">
-            {siteTypeLabels[site.type] ?? site.type}
-          </Badge>
-          <Badge className={cn('text-[10px] font-medium', occupancyMeta.badgeClass)}>
-            {occupancyMeta.label}
-          </Badge>
-          {primaryProperty && (
-            <Badge variant="outline" className="text-[10px] font-medium">
-              관리호수
-            </Badge>
-          )}
-          {unit.siteUnitType?.name && (
-            <Badge variant="secondary" className="text-[10px] font-normal">
-              {unit.siteUnitType.name}
-            </Badge>
-          )}
-        </div>
-        <DialogDescription className="flex items-center gap-1 text-xs">
-          <MapPin className="size-3" />
-          {site.name} · {site.roadAddress || site.jibunAddress || '-'}
-        </DialogDescription>
-      </DialogHeader>
+  const consultationCount = consultationsQuery.data?.pagination.total ?? consultations.length;
+  const [tab, setTab] = useState<UnitInspectorTab>('summary');
+  const tabs: Array<InspectorTabItem<UnitInspectorTab>> = [
+    { value: 'summary', label: '요약' },
+    { value: 'people', label: '소유자·세입자', count: ownerContacts.length + tenants.length },
+    { value: 'consultations', label: '상담', count: consultationCount },
+    { value: 'documents', label: '등기·문서', count: unitDocuments.length },
+  ];
+  const stats = [
+    exclusiveArea ? { icon: Ruler, text: `전용 ${formatArea(exclusiveArea)}` } : null,
+    unit.floor != null ? { icon: Layers, text: `${unit.floor}층${unit.isPiloti ? ' · 필로티' : ''}` } : null,
+    roomCount != null || bathRoomCount != null
+      ? { icon: Home, text: `방 ${roomCount ?? '—'} · 욕실 ${bathRoomCount ?? '—'}` }
+      : null,
+  ].filter((stat): stat is { icon: typeof Ruler; text: string } => stat !== null);
+  const newListingSearch = { siteId: site.id, dongId: unit.dongId, unitId: unit.id };
 
-      {/* 액션 바 */}
-      <div className="border-b px-6 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {!primaryProperty && (
-            <Button
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => registerManagedUnitMutation.mutate()}
-              disabled={registerManagedUnitMutation.isPending}
-            >
-              <Home className="mr-1.5 size-3.5" />
-              {registerManagedUnitMutation.isPending ? '등록 중...' : '관리호수로 등록'}
-            </Button>
-          )}
-          <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
-            <Link
-              to="/properties/new"
-              search={{ siteId: site.id, dongId: unit.dongId, unitId: unit.id }}
-            >
-              <FileText className="mr-1.5 size-3.5" />
-              매물 의뢰 등록
-            </Link>
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onAddConsult}>
-            <MessageSquarePlus className="mr-1.5 size-3.5" />
-            상담 추가
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => issueMutation.mutate()}
-            disabled={issueMutation.isPending}
-          >
-            <ScrollText className="mr-1.5 size-3.5" />
-            {issueMutation.isPending ? '요청 중...' : `등기 열람 요청 (${REGISTRY_COST}원)`}
-          </Button>
-          {/* 공공 단지의 호실은 바꿀 수 없다 — 직접 등록한 단지에만 보인다 */}
-          {canEditSiteStructure(site) && (
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-white">
+      {/* 호실은 전체 화면이 따로 없어서 "새 탭으로 확장"은 두지 않는다 */}
+      <PropertyInspectorToolbar
+        onClose={onClose}
+        showExpand={false}
+        headerActions={
+          /* 공공 단지의 호실은 바꿀 수 없다 — 직접 등록한 단지에만 보인다 */
+          canEditSiteStructure(site) && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8" aria-label="호실 메뉴">
+                <button
+                  type="button"
+                  aria-label="호실 메뉴"
+                  className="inline-grid size-6 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
                   <MoreHorizontal className="size-4" />
-                </Button>
+                </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={onEdit}>
@@ -363,456 +388,451 @@ function UnitDetailBody({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-          <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span>매물 {listingsWithProperty.length}건</span>
-            <span>·</span>
-            <span>상담 {consultationsQuery.data?.pagination.total ?? consultations.length}건</span>
-            <span>·</span>
-            <span>최근 발급 {latestDocument ? formatDate(latestDocument.issuedAt) : '—'}</span>
+          )
+        }
+      />
+
+      {/* 머리 영역: 호실 이름 → 단지·주소 → 핵심 수치 → 상태 */}
+      <div className="shrink-0 px-6 pb-4">
+        <h2 className="text-[23px] font-bold leading-[1.25] tracking-[-0.025em] text-[#2f2e2a]">
+          {unitLabel}
+        </h2>
+        <div className="mt-1 flex min-w-0 items-center gap-x-1.5 text-[12.5px] text-muted-foreground">
+          <span className="shrink-0">{site.name}</span>
+          <span className="text-[#c9c7c1]">·</span>
+          <span className="truncate">{site.roadAddress || site.jibunAddress || '-'}</span>
+        </div>
+
+        {stats.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-foreground">
+            {stats.map((stat) => (
+              <span key={stat.text} className="inline-flex items-center gap-1.5">
+                <stat.icon className="size-3.5 text-[#a9a7a1]" />
+                {stat.text}
+              </span>
+            ))}
           </div>
+        )}
+
+        <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
+          <HeaderChip className={occupancyMeta.badgeClass}>{occupancyMeta.label}</HeaderChip>
+          {primaryProperty && (
+            <HeaderChip className="bg-[#eef3ed] text-[#44745a]">관리호수</HeaderChip>
+          )}
+          <HeaderChip className="bg-[#f1f1ef] text-[#5f5e5b]">
+            {siteTypeLabels[site.type] ?? site.type}
+          </HeaderChip>
+          {unit.siteUnitType?.name && (
+            <HeaderChip className="bg-[#f1f1ef] text-[#5f5e5b]">{unit.siteUnitType.name}</HeaderChip>
+          )}
         </div>
       </div>
 
-      <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b px-6 py-2">
-          <TabsList variant="line" className="h-8">
-            <TabsTrigger value="overview" className="px-3 text-xs">
-              개요
-            </TabsTrigger>
-            <TabsTrigger value="people" className="px-3 text-xs">
-              소유자/세입자
-            </TabsTrigger>
-            <TabsTrigger value="consultations" className="px-3 text-xs">
-              상담
-            </TabsTrigger>
-            <TabsTrigger value="documents" className="px-3 text-xs">
-              등기/문서
-            </TabsTrigger>
-          </TabsList>
-        </div>
+      <InspectorTabs
+        idPrefix="unit-inspector"
+        ariaLabel="호실 상세 구역"
+        tabs={tabs}
+        value={tab}
+        onChange={setTab}
+      />
 
-        <ScrollArea className="flex-1">
-          {/* ── 개요 ── */}
-          <TabsContent value="overview" className="p-6">
-            <div className="space-y-6">
-              <section>
-                <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  기본 정보
-                </h3>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                  <OverviewField icon={Building2} label="단지" value={site.name} />
-                  <OverviewField
-                    icon={Ruler}
-                    label="전용면적"
-                    value={exclusiveArea ? formatArea(exclusiveArea) : '—'}
-                  />
-                  <OverviewField
-                    icon={Ruler}
-                    label="공급면적"
-                    value={supplyArea ? formatArea(supplyArea) : '—'}
-                  />
-                  <OverviewField
-                    icon={Layers}
-                    label="층 / 라인"
-                    value={`${unit.floor != null ? `${unit.floor}층` : '—'} / ${
-                      unit.lineNo != null ? `${unit.lineNo}라인` : '—'
-                    }${unit.isPiloti ? ' · 필로티' : ''}`}
-                  />
-                  <OverviewField
-                    icon={Home}
-                    label="방 / 욕실"
-                    value={
-                      roomCount != null || bathRoomCount != null
-                        ? `방 ${roomCount ?? '—'} / 욕실 ${bathRoomCount ?? '—'}`
-                        : '—'
-                    }
-                  />
-                </div>
-              </section>
-
-              <Separator />
-
-              <section>
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    등록 매물
-                  </h3>
-                  <Badge variant="secondary" className="text-[10px] font-normal">
-                    {listingsWithProperty.length}건
-                  </Badge>
-                </div>
-                {listingsWithProperty.length > 0 ? (
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    {listingsWithProperty.map(({ listing, propertyId }) => (
-                      <div key={listing.id} className="rounded-lg border p-4">
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <StatusBadge kind="transactionType" status={listing.transactionType} size="sm" />
-                          <span className="text-sm font-medium tabular-nums">
-                            {formatListingPrice(listing)}
-                          </span>
-                          <StatusBadge kind="listingAvailability" status={getListingAvailability(listing)} size="sm" />
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[11px] text-muted-foreground">
-                            최근 수정 {formatDate(listing.updatedAt)}
-                          </span>
-                          <Button variant="ghost" size="xs" asChild>
-                            <Link to="/properties/$id" params={{ id: propertyId }}>
-                              매물 상세 열기
-                            </Link>
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState
-                    icon={FileText}
-                    title="등록된 매물 의뢰가 없습니다"
-                    description="이 관리호수에서 매도·임대 의뢰를 접수할 수 있습니다"
-                    action={
-                      <Button size="sm" variant="outline" asChild>
-                        <Link
-                          to="/properties/new"
-                          search={{ siteId: site.id, dongId: unit.dongId, unitId: unit.id }}
-                        >
-                          매물 의뢰 등록
-                        </Link>
-                      </Button>
-                    }
-                    className="rounded-lg border border-dashed py-8"
-                  />
-                )}
-              </section>
-
-              <Separator />
-
-              <UnitTasksSection propertyIds={propertyIds} />
-            </div>
-          </TabsContent>
-
-          {/* ── 소유자/세입자 ── */}
-          <TabsContent value="people" className="p-6">
-            <div className="grid gap-6 lg:grid-cols-2">
-              <section>
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    <User className="size-3" />
-                    소유자
-                  </h3>
-                  <Badge variant="secondary" className="text-[10px] font-normal">
-                    {ownerContacts.length}
-                  </Badge>
-                </div>
-                {ownerContacts.length > 0 ? (
-                  <div className="space-y-2">
-                    {ownerContacts.map((pc) => (
-                      <div key={pc.id} className="rounded-lg border p-3">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <EntityChip
-                            kind="contact"
-                            id={pc.contact.id}
-                            label={pc.contact.name}
-                            sublabel={pc.contact.phone ? formatPhone(pc.contact.phone) : undefined}
-                          />
-                          {pc.shareRatio != null && (
-                            <Badge variant="outline" className="text-[10px] font-normal tabular-nums">
-                              지분 {Number(pc.shareRatio)}%
-                            </Badge>
-                          )}
-                          {pc.isResident && (
-                            <Badge className="bg-success-soft text-[10px] font-medium text-success">
-                              실거주
-                            </Badge>
-                          )}
-                          {pc.isPrimary && (
-                            <Badge variant="secondary" className="text-[10px] font-normal">
-                              주연락처
-                            </Badge>
-                          )}
-                          {ownerContacts.length > 1 && (
-                            <Badge variant="outline" className="text-[10px] font-normal">
-                              공동소유
-                            </Badge>
-                          )}
-                        </div>
-                        {pc.memo && (
-                          <p className="mt-2 text-xs text-muted-foreground">{pc.memo}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState
-                    icon={User}
-                    title="연결된 소유자가 없습니다"
-                    className="rounded-lg border border-dashed py-8"
-                  />
-                )}
-              </section>
-
-              <section>
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    <Home className="size-3" />
-                    세입자
-                  </h3>
-                  <Badge variant="secondary" className="text-[10px] font-normal">
-                    {tenants.length}
-                  </Badge>
-                </div>
-                {tenants.length > 0 ? (
-                  <div className="space-y-2">
-                    {tenants.map((tenant) => (
-                      <div key={tenant.id} className="rounded-lg border p-3">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <EntityChip
-                            kind="contact"
-                            id={tenant.contact.id}
-                            label={tenant.contact.name}
-                            sublabel={
-                              tenant.contact.phone ? formatPhone(tenant.contact.phone) : undefined
-                            }
-                          />
-                          <Badge variant="secondary" className="text-[10px] font-normal">
-                            {tenantStatusLabels[tenant.status] ?? tenant.status}
-                          </Badge>
-                          {tenant.contractEnd && (
-                            <Badge variant="outline" className="text-[10px] font-normal tabular-nums">
-                              만기 {formatDday(tenant.contractEnd)}
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
-                          <div className="tabular-nums">
-                            보증금/월세: {formatListingPrice({
-                              transactionType: 'monthly',
-                              price: null,
-                              deposit: tenant.deposit,
-                              monthlyRent: tenant.monthlyRent,
-                            })}
-                          </div>
-                          <div className="tabular-nums">
-                            계약기간: {formatDate(tenant.contractStart)} ~ {formatDate(tenant.contractEnd)}
-                          </div>
-                          {tenant.moveOutDate && (
-                            <div className="tabular-nums">퇴거 예정: {formatDate(tenant.moveOutDate)}</div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState
-                    icon={Home}
-                    title="연결된 세입자가 없습니다"
-                    className="rounded-lg border border-dashed py-8"
-                  />
-                )}
-              </section>
-            </div>
-          </TabsContent>
-
-          {/* ── 상담 ── */}
-          <TabsContent value="consultations" className="p-6">
+      <div
+        role="tabpanel"
+        id={inspectorTabIds('unit-inspector', tab).panel}
+        aria-labelledby={inspectorTabIds('unit-inspector', tab).tab}
+        tabIndex={0}
+        className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 pt-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        {/* ── 요약 ── */}
+        {tab === 'summary' && (
+          <div className="space-y-7">
             <section>
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  <Calendar className="size-3" />
-                  상담 타임라인
-                </h3>
-                <Button variant="outline" size="xs" onClick={onAddConsult}>
-                  <MessageSquarePlus className="size-3" />
-                  상담 추가
-                </Button>
-              </div>
-              {consultationsQuery.isLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 3 }).map((_, index) => (
-                    <Skeleton key={index} className="h-16 w-full rounded-lg" />
-                  ))}
-                </div>
-              ) : consultationsQuery.isError ? (
-                <QueryErrorBox
-                  message="상담 기록을 불러오지 못했습니다"
-                  onRetry={() => consultationsQuery.refetch()}
+              <SectionTitle>기본 정보</SectionTitle>
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+                <FactRow label="단지" value={site.name} />
+                <FactRow
+                  label="층 / 라인"
+                  value={
+                    unit.floor != null || unit.lineNo != null
+                      ? `${unit.floor != null ? `${unit.floor}층` : '—'} / ${
+                          unit.lineNo != null ? `${unit.lineNo}라인` : '—'
+                        }${unit.isPiloti ? ' · 필로티' : ''}`
+                      : null
+                  }
                 />
-              ) : consultations.length > 0 ? (
-                <div className="space-y-2">
-                  {consultations.map((consultation) => (
-                    <div key={consultation.id} className="rounded-lg border p-4">
-                      <div className="mb-1 flex flex-wrap items-center gap-2">
-                        <Badge variant="outline" className="text-[10px] font-normal">
-                          {consultationTypeLabels[consultation.type] ?? consultation.type}
-                        </Badge>
-                        <span className="text-[11px] tabular-nums text-muted-foreground">
-                          {formatDateTime(consultation.createdAt)}
-                        </span>
-                        {consultation.contact && (
-                          <span className="text-[11px] text-muted-foreground">
-                            {consultation.contact.name}
-                          </span>
-                        )}
-                        {consultation.createdBy && (
-                          <span className="ml-auto text-[11px] text-muted-foreground">
-                            기록 {consultation.createdBy.name}
-                          </span>
-                        )}
-                      </div>
-                      <p className="whitespace-pre-wrap text-sm">{consultation.content}</p>
+                <FactRow label="전용면적" value={exclusiveArea ? formatArea(exclusiveArea) : null} />
+                <FactRow label="공급면적" value={supplyArea ? formatArea(supplyArea) : null} />
+                <FactRow
+                  label="방 / 욕실"
+                  value={
+                    roomCount != null || bathRoomCount != null
+                      ? `방 ${roomCount ?? '—'} / 욕실 ${bathRoomCount ?? '—'}`
+                      : null
+                  }
+                />
+                <FactRow
+                  label="최근 발급"
+                  value={latestDocument ? formatDate(latestDocument.issuedAt) : null}
+                />
+              </dl>
+            </section>
+
+            <section>
+              <SectionTitle
+                count={listingsWithProperty.length || undefined}
+                action={
+                  <Link
+                    to="/properties/new"
+                    search={newListingSearch}
+                    className={textActionClassName}
+                  >
+                    <Plus />
+                    매물 의뢰 등록
+                  </Link>
+                }
+              >
+                등록 매물
+              </SectionTitle>
+              {listingsWithProperty.length > 0 ? (
+                <div className="divide-y divide-[#f1f0ec]">
+                  {listingsWithProperty.map(({ listing, propertyId }) => (
+                    <div key={listing.id} className="flex min-h-11 items-center gap-2.5 py-2">
+                      <StatusBadge kind="transactionType" status={listing.transactionType} size="sm" />
+                      <span className="min-w-0 truncate text-[13px] font-semibold tabular-nums text-[#2f2e2a]">
+                        {formatListingPrice(listing)}
+                      </span>
+                      <StatusBadge
+                        kind="listingAvailability"
+                        status={getListingAvailability(listing)}
+                        size="sm"
+                      />
+                      <span className="ml-auto shrink-0 text-[12px] tabular-nums text-[#a9a7a1]">
+                        수정 {formatDate(listing.updatedAt)}
+                      </span>
+                      <Link
+                        to="/properties/$id"
+                        params={{ id: propertyId }}
+                        aria-label="매물 상세 열기"
+                        className="inline-flex shrink-0 items-center gap-0.5 rounded-full px-2 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
+                      >
+                        매물 상세
+                        <ChevronRight className="size-3" />
+                      </Link>
                     </div>
                   ))}
                 </div>
               ) : (
-                <EmptyState
-                  icon={Calendar}
-                  title="상담 기록이 없습니다"
-                  description="이 호실 맥락으로 첫 상담을 기록해보세요"
-                  action={
-                    <Button size="sm" variant="outline" onClick={onAddConsult}>
-                      상담 추가
-                    </Button>
-                  }
-                  className="rounded-lg border border-dashed py-8"
-                />
+                <EmptyText>등록된 매물 의뢰가 없습니다. 이 호실의 매도·임대 의뢰를 접수할 수 있습니다.</EmptyText>
               )}
             </section>
-          </TabsContent>
 
-          {/* ── 등기/문서 ── */}
-          <TabsContent value="documents" className="p-6">
+            <UnitTasksSection propertyIds={propertyIds} />
+          </div>
+        )}
+
+        {/* ── 소유자·세입자 ── */}
+        {tab === 'people' && (
+          <div className="space-y-7">
             <section>
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  <ScrollText className="size-3" />
-                  발급 이력
-                </h3>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={() => issueMutation.mutate()}
-                  disabled={issueMutation.isPending}
-                >
-                  <ScrollText className="size-3" />
-                  등기부등본 발급
-                </Button>
-              </div>
-              {documentsQuery.isLoading ? (
-                <div className="space-y-2">
-                  {Array.from({ length: 3 }).map((_, index) => (
-                    <Skeleton key={index} className="h-12 w-full rounded-lg" />
+              <SectionTitle count={ownerContacts.length || undefined}>소유자</SectionTitle>
+              {ownerContacts.length > 0 ? (
+                <div className="divide-y divide-[#f1f0ec]">
+                  {ownerContacts.map((pc) => (
+                    <div key={pc.id} className="py-2.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <EntityChip
+                          kind="contact"
+                          id={pc.contact.id}
+                          label={pc.contact.name}
+                          sublabel={pc.contact.phone ? formatPhone(pc.contact.phone) : undefined}
+                        />
+                        {pc.isPrimary && (
+                          <HeaderChip className="bg-[#f1f1ef] text-[#5f5e5b]">주연락처</HeaderChip>
+                        )}
+                        {pc.isResident && (
+                          <HeaderChip className="bg-[#eef3ed] text-[#44745a]">실거주</HeaderChip>
+                        )}
+                        {ownerContacts.length > 1 && (
+                          <HeaderChip className="bg-[#f1f1ef] text-[#5f5e5b]">공동소유</HeaderChip>
+                        )}
+                        {pc.shareRatio != null && (
+                          <span className="text-[12px] tabular-nums text-muted-foreground">
+                            지분 {Number(pc.shareRatio)}%
+                          </span>
+                        )}
+                      </div>
+                      {pc.memo && (
+                        <p className="mt-1.5 text-[12.5px] leading-[1.6] text-muted-foreground">{pc.memo}</p>
+                      )}
+                    </div>
                   ))}
                 </div>
-              ) : documentsQuery.isError ? (
-                <QueryErrorBox
-                  message="발급 이력을 불러오지 못했습니다"
-                  onRetry={() => documentsQuery.refetch()}
-                />
-              ) : unitDocuments.length > 0 ? (
-                <div className="space-y-2">
-                  {unitDocuments.map((doc, index) => {
-                    const statusMeta = DOC_STATUS_META[doc.status] ?? {
-                      label: doc.status,
-                      className: 'bg-neutral-soft text-muted-foreground',
-                    };
-                    return (
-                      <div
-                        key={doc.id}
-                        className="flex flex-wrap items-center gap-2 rounded-lg border px-4 py-3"
-                      >
-                        <FileText className="size-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-sm font-medium">{doc.title}</span>
-                            {index === 0 && (
-                              <Badge variant="secondary" className="text-[10px] font-normal">
-                                최신
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-[11px] tabular-nums text-muted-foreground">
-                            발급일 {formatDate(doc.issuedAt)}
-                            {doc.requestedBy ? ` · ${doc.requestedBy.name}` : ''}
-                            {doc.cost > 0 ? ` · ${doc.cost.toLocaleString()}원` : ' · 무료'}
-                          </div>
-                        </div>
-                        <div className="ml-auto flex items-center gap-2">
-                          <Badge className={cn('text-[10px] font-medium', statusMeta.className)}>
-                            {statusMeta.label}
-                          </Badge>
-                          {doc.fileUrl && (
-                            <Button variant="ghost" size="xs" asChild>
-                              <a href={doc.fileUrl} target="_blank" rel="noreferrer">
-                                열기
-                              </a>
-                            </Button>
-                          )}
-                        </div>
+              ) : (
+                <EmptyText>연결된 소유자가 없습니다.</EmptyText>
+              )}
+            </section>
+
+            <section>
+              <SectionTitle count={tenants.length || undefined}>세입자</SectionTitle>
+              {tenants.length > 0 ? (
+                <div className="divide-y divide-[#f1f0ec]">
+                  {tenants.map((tenant) => (
+                    <div key={tenant.id} className="py-2.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <EntityChip
+                          kind="contact"
+                          id={tenant.contact.id}
+                          label={tenant.contact.name}
+                          sublabel={tenant.contact.phone ? formatPhone(tenant.contact.phone) : undefined}
+                        />
+                        <HeaderChip className="bg-[#f1f1ef] text-[#5f5e5b]">
+                          {tenantStatusLabels[tenant.status] ?? tenant.status}
+                        </HeaderChip>
+                        {tenant.contractEnd && (
+                          <HeaderChip className="bg-[#fbf3db] text-[#9f6b00]">
+                            만기 {formatDday(tenant.contractEnd)}
+                          </HeaderChip>
+                        )}
                       </div>
-                    );
-                  })}
+                      <dl className="mt-2.5 grid grid-cols-2 gap-x-6 gap-y-2">
+                        <FactRow
+                          label="보증금/월세"
+                          value={formatListingPrice({
+                            transactionType: 'monthly',
+                            price: null,
+                            deposit: tenant.deposit,
+                            monthlyRent: tenant.monthlyRent,
+                          })}
+                        />
+                        <FactRow
+                          label="계약기간"
+                          value={`${formatDate(tenant.contractStart)} ~ ${formatDate(tenant.contractEnd)}`}
+                        />
+                        {tenant.moveOutDate && (
+                          <FactRow label="퇴거 예정" value={formatDate(tenant.moveOutDate)} />
+                        )}
+                      </dl>
+                    </div>
+                  ))}
                 </div>
               ) : (
-                <EmptyState
-                  icon={ScrollText}
-                  title="발급한 등기 문서가 없습니다"
-                  description={`등기부등본 발급(${REGISTRY_COST}원)으로 이 호실의 권리관계를 확인하세요`}
-                  action={
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => issueMutation.mutate()}
-                      disabled={issueMutation.isPending}
-                    >
-                      등기부등본 발급
-                    </Button>
-                  }
-                  className="rounded-lg border border-dashed py-8"
-                />
+                <EmptyText>연결된 세입자가 없습니다.</EmptyText>
               )}
-              <p className="mt-3 text-[11px] text-muted-foreground">
-                외부 발급 API 연동 전까지는 발급 요청이 '발급중' 상태로 기록됩니다. 전체 이력은
-                자료실에서 확인할 수 있습니다.
-              </p>
             </section>
-          </TabsContent>
-        </ScrollArea>
-      </Tabs>
-    </>
+          </div>
+        )}
+
+        {/* ── 상담 ── */}
+        {tab === 'consultations' && (
+          <section>
+            <SectionTitle
+              count={consultationCount || undefined}
+              action={<TextAction icon={<Plus />} label="상담 기록" onClick={onAddConsult} />}
+            >
+              상담
+            </SectionTitle>
+            {consultationsQuery.isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <Skeleton key={index} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : consultationsQuery.isError ? (
+              <RetryNote onRetry={() => void consultationsQuery.refetch()}>
+                상담 기록을 불러오지 못했습니다.
+              </RetryNote>
+            ) : consultations.length > 0 ? (
+              <ol className="divide-y divide-[#f1f0ec]">
+                {consultations.map((consultation) => (
+                  <li key={consultation.id} className="py-2.5">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-muted-foreground">
+                      <span className="font-medium text-[#2f2e2a]">
+                        {consultationTypeLabels[consultation.type] ?? consultation.type}
+                      </span>
+                      {consultation.contact && <span>{consultation.contact.name}</span>}
+                      <span className="tabular-nums text-[#a9a7a1]">
+                        {formatDateTime(consultation.createdAt)}
+                      </span>
+                      {consultation.createdBy && (
+                        <span className="ml-auto text-[#a9a7a1]">기록 {consultation.createdBy.name}</span>
+                      )}
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-[13px] leading-[1.6] text-[#2f2e2a]">
+                      {consultation.content}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <EmptyText>상담 기록이 없습니다. 이 호실 맥락으로 첫 상담을 기록해 보세요.</EmptyText>
+            )}
+          </section>
+        )}
+
+        {/* ── 등기·문서 ── */}
+        {tab === 'documents' && (
+          <section>
+            <SectionTitle
+              count={unitDocuments.length || undefined}
+              action={
+                <TextAction
+                  icon={<ScrollText />}
+                  label={issueMutation.isPending ? '요청 중...' : `등기 열람 요청 (${REGISTRY_COST}원)`}
+                  onClick={() => {
+                    if (!issueMutation.isPending) issueMutation.mutate();
+                  }}
+                />
+              }
+            >
+              발급 이력
+            </SectionTitle>
+            {documentsQuery.isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <Skeleton key={index} className="h-9 w-full" />
+                ))}
+              </div>
+            ) : documentsQuery.isError ? (
+              <RetryNote onRetry={() => void documentsQuery.refetch()}>
+                발급 이력을 불러오지 못했습니다.
+              </RetryNote>
+            ) : unitDocuments.length > 0 ? (
+              <div className="divide-y divide-[#f1f0ec]">
+                {unitDocuments.map((doc, index) => {
+                  const statusMeta = DOC_STATUS_META[doc.status] ?? {
+                    label: doc.status,
+                    className: 'bg-neutral-soft text-muted-foreground',
+                  };
+                  return (
+                    <div key={doc.id} className="flex items-center gap-2.5 py-2.5">
+                      <FileText className="size-3.5 shrink-0 text-[#a9a7a1]" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-[13px] font-medium text-[#2f2e2a]">{doc.title}</span>
+                          {index === 0 && (
+                            <HeaderChip className="bg-[#f1f1ef] text-[#5f5e5b]">최신</HeaderChip>
+                          )}
+                        </div>
+                        <div className="mt-0.5 text-[12px] tabular-nums text-[#a9a7a1]">
+                          발급일 {formatDate(doc.issuedAt)}
+                          {doc.requestedBy ? ` · ${doc.requestedBy.name}` : ''}
+                          {doc.cost > 0 ? ` · ${doc.cost.toLocaleString()}원` : ' · 무료'}
+                        </div>
+                      </div>
+                      <HeaderChip className={statusMeta.className}>{statusMeta.label}</HeaderChip>
+                      {doc.fileUrl && (
+                        <a
+                          href={doc.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`${doc.title} 열기`}
+                          className="inline-grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
+                        >
+                          <ExternalLink className="size-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <EmptyText>
+                발급한 등기 문서가 없습니다. 등기 열람 요청({REGISTRY_COST}원)으로 이 호실의 권리관계를
+                확인하세요.
+              </EmptyText>
+            )}
+            <p className="mt-3 text-[12px] leading-[1.6] text-[#a9a7a1]">
+              외부 발급 API 연동 전까지는 발급 요청이 '발급중' 상태로 기록됩니다. 전체 이력은 자료실에서
+              확인할 수 있습니다.
+            </p>
+          </section>
+        )}
+      </div>
+
+      {/* 아래 막대: 이 호실에서 바로 시작하는 일 (매물 상세 패널의 아래 막대와 같은 자리) */}
+      <div className="flex shrink-0 items-center gap-1 border-t border-[#ecebe8] px-6 py-3">
+        <button type="button" className={barButtonClassName} onClick={onAddConsult}>
+          <MessageSquarePlus className="size-3.5" />
+          상담 추가
+        </button>
+        <button
+          type="button"
+          className={barButtonClassName}
+          disabled={issueMutation.isPending}
+          onClick={() => issueMutation.mutate()}
+        >
+          <ScrollText className="size-3.5" />
+          {issueMutation.isPending ? '요청 중...' : '등기 열람 요청'}
+        </button>
+        {primaryProperty ? (
+          <Link
+            to="/properties/new"
+            search={newListingSearch}
+            className={cn(barButtonClassName, 'ml-auto bg-[#2f2e2a] px-4 font-medium text-white hover:bg-[#1f1e1b] hover:text-white')}
+          >
+            <FileText className="size-3.5" />
+            매물 의뢰 등록
+          </Link>
+        ) : (
+          <>
+            <Link to="/properties/new" search={newListingSearch} className={cn(barButtonClassName, 'ml-auto')}>
+              <FileText className="size-3.5" />
+              매물 의뢰 등록
+            </Link>
+            <button
+              type="button"
+              disabled={registerManagedUnitMutation.isPending}
+              className={cn(barButtonClassName, 'bg-[#2f2e2a] px-4 font-medium text-white hover:bg-[#1f1e1b] hover:text-white')}
+              onClick={() => registerManagedUnitMutation.mutate()}
+            >
+              <Home className="size-3.5" />
+              {registerManagedUnitMutation.isPending ? '등록 중...' : '관리호수로 등록'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
 // ── 소형 보조 컴포넌트 ──────────────────────────────────────────
 
-function OverviewField({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Building2;
-  label: string;
-  value: string;
-}) {
+type UnitInspectorTab = 'summary' | 'people' | 'consultations' | 'documents';
+
+const barButtonClassName =
+  'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground disabled:opacity-50';
+
+/** 구역 제목 오른쪽의 글자 버튼 (매물 상세 패널의 TextAction과 같은 모양, 링크용) */
+const textActionClassName =
+  'inline-flex items-center gap-1 text-[12px] font-normal text-muted-foreground hover:text-foreground [&_svg]:size-3';
+
+/** 작은 상태 칩 (매물 상세 패널의 StatusChip과 같은 모양) */
+function HeaderChip({ className, children }: { className: string; children: ReactNode }) {
   return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-        <Icon className="size-3" />
-        {label}
-      </div>
-      <div className="truncate text-sm font-medium">{value}</div>
-    </div>
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center whitespace-nowrap rounded-[4px] px-1.5 py-0.5 text-[12px] font-medium leading-5',
+        className,
+      )}
+    >
+      {children}
+    </span>
   );
 }
 
-function QueryErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
+/** 이름 + 값 한 줄. 매물 상세 패널의 "매물 정보" 줄과 같은 모양이다. */
+function FactRow({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-6 text-center">
-      <p className="text-xs text-muted-foreground">{message}</p>
-      <Button variant="outline" size="sm" onClick={onRetry}>
-        <RotateCcw className="size-3.5" />
-        다시 시도
-      </Button>
+    <div className="flex min-w-0 items-baseline gap-3">
+      <dt className="w-[68px] shrink-0 text-[12.5px] text-muted-foreground">{label}</dt>
+      <dd
+        className={cn(
+          'min-w-0 truncate text-[13px]',
+          value ? 'font-medium tabular-nums text-[#2f2e2a]' : 'text-[#c9c7c1]',
+        )}
+      >
+        {value || '-'}
+      </dd>
     </div>
   );
 }

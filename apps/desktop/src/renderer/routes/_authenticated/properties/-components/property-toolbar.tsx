@@ -722,7 +722,7 @@ export function ToolbarRegionColumn({
  * 동·호 버블 안의 한 칸. 바탕과 모서리는 버블이 맡고, 여기는 숫자 입력과 단위만 둔다.
  * 두 칸의 너비는 같고 고정이다. 값이 없는 칸의 단위는 옅게 보인다.
  */
-function SoftUnitSegment({
+export function SoftUnitSegment({
   value,
   onChange,
   suffix,

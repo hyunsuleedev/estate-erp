@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import { Fragment, useMemo } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import type { Unit } from '@estate-erp/api-client';
@@ -89,7 +90,7 @@ export function UnitLayoutBoard({
             <div className="flex flex-wrap justify-center gap-1.5">
               {allUnits.slice(0, 16).map((unit) => (
                 <Badge key={unit.id} variant="secondary" className="text-[10px] font-normal">
-                  {unit.name}
+                  {formatUnitName(unit)}
                 </Badge>
               ))}
               {allUnits.length > 16 && (
@@ -273,7 +274,7 @@ export function UnitLayoutBoard({
                                 isOccupancyDimmed(unit) && 'opacity-25',
                               )}
                             >
-                              <span className="text-sm font-semibold leading-none">{unit.name}</span>
+                              <span className="text-sm font-semibold leading-none">{formatUnitName(unit)}</span>
                               <span
                                 className={cn(
                                   'mt-1 text-[10px] leading-none',
@@ -324,7 +325,7 @@ export function UnitLayoutBoard({
                             isOccupancyDimmed(unit) && 'opacity-25',
                           )}
                         >
-                          {unit.name}
+                          {formatUnitName(unit)}
                           {occupancy && (
                             <span className="ml-1 text-[10px] opacity-70">
                               {OCCUPANCY_META[occupancy].label}

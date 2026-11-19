@@ -6,7 +6,7 @@
  * - 2행 "좁히기": 관리호수/전체 알약 탭 · 필터 칩(타입 · 소유자 · 등록 매물) · "+ 필터"(세입자 · 상담) · 초기화
  */
 import { useRef, useState, type ReactNode, type RefObject } from 'react';
-import { Building2, Check, ChevronDown, Search, X } from 'lucide-react';
+import { Building2, Check, ChevronDown, Hash, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/popover';
 import {
   ChecklistFilterPanel,
+  SoftUnitSegment,
   ToolbarFilterChip,
 } from '../properties/-components/property-toolbar';
 import {
@@ -33,6 +34,8 @@ export function UnitSearchBar({
   selectedDongIds,
   onDongChange,
   totalUnitCount,
+  unitNo,
+  onUnitNoChange,
   query,
   onQueryChange,
   searchRef,
@@ -43,6 +46,9 @@ export function UnitSearchBar({
   selectedDongIds: string[];
   onDongChange: (dongIds: string[]) => void;
   totalUnitCount: number;
+  /** 호수만 찾는 칸의 값 (숫자) */
+  unitNo: string;
+  onUnitNoChange: (value: string) => void;
   query: string;
   onQueryChange: (value: string) => void;
   searchRef: RefObject<HTMLInputElement | null>;
@@ -61,16 +67,17 @@ export function UnitSearchBar({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      {/* 동 범위: 매물관리의 지역·단지와 같은 필터 칩. 고르기 전엔 테두리 없이, 고르면 파란 알약 */}
+      {/* 동 범위: 매물관리의 지역·단지와 같은 자리의 필터 칩. 동은 늘 고르는 필터라 골라도
+          파란 알약으로 강조하지 않는다 — 배경 없이 글자만 진하게 하고 × 로 해제한다 */}
       {hasDongs && (
         <PopoverAnchor asChild>
           <div
             className={cn(
               'inline-flex h-[30px] max-w-[220px] shrink-0 items-center rounded-full text-[13px] transition-colors',
               dongSummary
-                ? 'bg-[rgba(35,131,226,0.1)] text-[#2383e2] hover:bg-[rgba(35,131,226,0.15)]'
+                ? 'text-foreground hover:bg-[rgba(60,52,40,0.06)]'
                 : 'text-[#6f6c66] hover:bg-[rgba(60,52,40,0.06)] hover:text-foreground',
-              open && !dongSummary && 'bg-[rgba(60,52,40,0.06)] text-foreground',
+              open && 'bg-[rgba(60,52,40,0.06)] text-foreground',
             )}
           >
             <PopoverTrigger asChild>
@@ -84,10 +91,10 @@ export function UnitSearchBar({
               >
                 <Building2
                   aria-hidden="true"
-                  className={cn('size-3.5 shrink-0', !dongSummary && 'text-[#a3a09a]')}
+                  className="size-3.5 shrink-0 text-[#a3a09a]"
                 />
                 {dongSummary ? (
-                  <span className="min-w-0 truncate font-semibold">{dongSummary}</span>
+                  <span className="min-w-0 truncate font-medium">{dongSummary}</span>
                 ) : (
                   <>
                     <span className="shrink-0">동</span>
@@ -101,7 +108,7 @@ export function UnitSearchBar({
                 type="button"
                 aria-label="동 범위 해제"
                 onClick={() => onDongChange([])}
-                className="mr-0.5 inline-flex size-[22px] shrink-0 items-center justify-center rounded-full text-[#2383e2] transition-colors hover:bg-[rgba(35,131,226,0.18)]"
+                className="mr-0.5 inline-flex size-[22px] shrink-0 items-center justify-center rounded-full text-[#a3a09a] transition-colors hover:bg-[rgba(60,52,40,0.1)] hover:text-foreground"
               >
                 <X className="size-3" />
               </button>
@@ -109,8 +116,42 @@ export function UnitSearchBar({
           </div>
         </PopoverAnchor>
       )}
+      {/* 호수 찾기: 매물관리의 동·호 버블에서 호 칸만 가져왔다. 동은 왼쪽 동 범위 칩이 맡는다.
+          비어 있으면 옅은 회색 버블, 값이 있으면 설정된 필터처럼 파란 버블 + × */}
+      <div
+        role="group"
+        aria-label="호수"
+        className={cn(
+          'flex h-[30px] shrink-0 items-center rounded-full pl-2.5 text-[13px] transition-colors focus-within:shadow-[inset_0_0_0_1.5px_#2383e2]',
+          unitNo
+            ? 'bg-[rgba(35,131,226,0.1)] pr-0.5 text-[#2383e2]'
+            : 'bg-[rgba(60,52,40,0.045)] text-foreground hover:bg-[rgba(60,52,40,0.08)] focus-within:hover:bg-[rgba(60,52,40,0.045)]',
+          disabled && 'pointer-events-none opacity-50',
+        )}
+      >
+        <Hash
+          aria-hidden="true"
+          className={cn('size-3.5 shrink-0', !unitNo && 'text-[#a3a09a]')}
+        />
+        <SoftUnitSegment
+          value={unitNo}
+          onChange={onUnitNoChange}
+          suffix="호"
+          className="w-[84px] pl-2"
+        />
+        {unitNo && (
+          <button
+            type="button"
+            aria-label="호수 지우기"
+            onClick={() => onUnitNoChange('')}
+            className="inline-flex size-[22px] shrink-0 items-center justify-center rounded-full text-[#2383e2] transition-colors hover:bg-[rgba(35,131,226,0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/40"
+          >
+            <X className="size-3" />
+          </button>
+        )}
+      </div>
       <label
-        title={searchExpanded ? undefined : '호수 · 이름 · 전화 · 상담 검색 ( / )'}
+        title={searchExpanded ? undefined : '이름 · 전화 · 상담 검색 ( / )'}
         className={cn(
           'flex h-[30px] items-center overflow-hidden rounded-full transition-[width,background-color] duration-150 motion-reduce:transition-none',
           // 펼쳐졌을 때는 줄 폭이 모자라면 먼저 줄어든다(최소 140px). 오른쪽 보기 전환이 밀려 잘리지 않게 한다.
@@ -136,8 +177,8 @@ export function UnitSearchBar({
               else event.currentTarget.blur();
             }
           }}
-          placeholder={searchExpanded ? '호수 · 이름 · 전화 · 상담' : undefined}
-          aria-label="호수, 이름, 전화번호, 상담 내용 검색"
+          placeholder={searchExpanded ? '이름 · 전화 · 상담' : undefined}
+          aria-label="이름, 전화번호, 상담 내용 검색"
           disabled={disabled}
           className={cn(
             'bg-transparent p-0 text-[13px] text-foreground outline-none placeholder:text-[#a3a09a]',

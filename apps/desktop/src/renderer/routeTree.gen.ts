@@ -48,6 +48,7 @@ import { Route as AuthenticatedDocumentsPhotosRouteImport } from './routes/_auth
 import { Route as AuthenticatedDealsIdRouteImport } from './routes/_authenticated/deals/$id'
 import { Route as AuthenticatedContactsNewRouteImport } from './routes/_authenticated/contacts/new'
 import { Route as AuthenticatedContactsIdRouteImport } from './routes/_authenticated/contacts/$id'
+import { Route as AuthenticatedConsultationsIdRouteImport } from './routes/_authenticated/consultations/$id'
 import { Route as AuthenticatedCashflowPartnerCommissionsRouteImport } from './routes/_authenticated/cashflow/partner-commissions'
 import { Route as AuthenticatedCashflowMySettlementRouteImport } from './routes/_authenticated/cashflow/my-settlement'
 import { Route as AuthenticatedCashflowLedgerRouteImport } from './routes/_authenticated/cashflow/ledger'
@@ -276,6 +277,12 @@ const AuthenticatedContactsIdRoute = AuthenticatedContactsIdRouteImport.update({
   path: '/contacts/$id',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedConsultationsIdRoute =
+  AuthenticatedConsultationsIdRouteImport.update({
+    id: '/consultations/$id',
+    path: '/consultations/$id',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedCashflowPartnerCommissionsRoute =
   AuthenticatedCashflowPartnerCommissionsRouteImport.update({
     id: '/cashflow/partner-commissions',
@@ -345,6 +352,7 @@ export interface FileRoutesByFullPath {
   '/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
   '/cashflow/my-settlement': typeof AuthenticatedCashflowMySettlementRoute
   '/cashflow/partner-commissions': typeof AuthenticatedCashflowPartnerCommissionsRoute
+  '/consultations/$id': typeof AuthenticatedConsultationsIdRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/new': typeof AuthenticatedContactsNewRoute
   '/deals/$id': typeof AuthenticatedDealsIdRoute
@@ -393,6 +401,7 @@ export interface FileRoutesByTo {
   '/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
   '/cashflow/my-settlement': typeof AuthenticatedCashflowMySettlementRoute
   '/cashflow/partner-commissions': typeof AuthenticatedCashflowPartnerCommissionsRoute
+  '/consultations/$id': typeof AuthenticatedConsultationsIdRoute
   '/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/contacts/new': typeof AuthenticatedContactsNewRoute
   '/deals/$id': typeof AuthenticatedDealsIdRoute
@@ -444,6 +453,7 @@ export interface FileRoutesById {
   '/_authenticated/cashflow/ledger': typeof AuthenticatedCashflowLedgerRoute
   '/_authenticated/cashflow/my-settlement': typeof AuthenticatedCashflowMySettlementRoute
   '/_authenticated/cashflow/partner-commissions': typeof AuthenticatedCashflowPartnerCommissionsRoute
+  '/_authenticated/consultations/$id': typeof AuthenticatedConsultationsIdRoute
   '/_authenticated/contacts/$id': typeof AuthenticatedContactsIdRoute
   '/_authenticated/contacts/new': typeof AuthenticatedContactsNewRoute
   '/_authenticated/deals/$id': typeof AuthenticatedDealsIdRoute
@@ -494,6 +504,7 @@ export interface FileRouteTypes {
     | '/cashflow/ledger'
     | '/cashflow/my-settlement'
     | '/cashflow/partner-commissions'
+    | '/consultations/$id'
     | '/contacts/$id'
     | '/contacts/new'
     | '/deals/$id'
@@ -542,6 +553,7 @@ export interface FileRouteTypes {
     | '/cashflow/ledger'
     | '/cashflow/my-settlement'
     | '/cashflow/partner-commissions'
+    | '/consultations/$id'
     | '/contacts/$id'
     | '/contacts/new'
     | '/deals/$id'
@@ -592,6 +604,7 @@ export interface FileRouteTypes {
     | '/_authenticated/cashflow/ledger'
     | '/_authenticated/cashflow/my-settlement'
     | '/_authenticated/cashflow/partner-commissions'
+    | '/_authenticated/consultations/$id'
     | '/_authenticated/contacts/$id'
     | '/_authenticated/contacts/new'
     | '/_authenticated/deals/$id'
@@ -909,6 +922,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedContactsIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/consultations/$id': {
+      id: '/_authenticated/consultations/$id'
+      path: '/consultations/$id'
+      fullPath: '/consultations/$id'
+      preLoaderRoute: typeof AuthenticatedConsultationsIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/cashflow/partner-commissions': {
       id: '/_authenticated/cashflow/partner-commissions'
       path: '/cashflow/partner-commissions'
@@ -997,6 +1017,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedCashflowLedgerRoute: typeof AuthenticatedCashflowLedgerRoute
   AuthenticatedCashflowMySettlementRoute: typeof AuthenticatedCashflowMySettlementRoute
   AuthenticatedCashflowPartnerCommissionsRoute: typeof AuthenticatedCashflowPartnerCommissionsRoute
+  AuthenticatedConsultationsIdRoute: typeof AuthenticatedConsultationsIdRoute
   AuthenticatedContactsIdRoute: typeof AuthenticatedContactsIdRoute
   AuthenticatedContactsNewRoute: typeof AuthenticatedContactsNewRoute
   AuthenticatedDealsIdRoute: typeof AuthenticatedDealsIdRoute
@@ -1045,6 +1066,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedCashflowMySettlementRoute,
   AuthenticatedCashflowPartnerCommissionsRoute:
     AuthenticatedCashflowPartnerCommissionsRoute,
+  AuthenticatedConsultationsIdRoute: AuthenticatedConsultationsIdRoute,
   AuthenticatedContactsIdRoute: AuthenticatedContactsIdRoute,
   AuthenticatedContactsNewRoute: AuthenticatedContactsNewRoute,
   AuthenticatedDealsIdRoute: AuthenticatedDealsIdRoute,

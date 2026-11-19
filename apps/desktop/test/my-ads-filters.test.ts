@@ -117,7 +117,7 @@ function ad(options: AdOptions = {}): ListingAdvertisementWithListing {
         },
       },
     },
-    officeAdvertisementGroup: own
+    comparison: own
       ? {
           id: "group-1",
           mainAdvertisementId: own.id,

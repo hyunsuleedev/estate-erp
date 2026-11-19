@@ -1,3 +1,4 @@
+import { formatUnitName } from "@estate-erp/shared";
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -423,7 +424,7 @@ export function MatchSection({
                       <p className="truncate text-sm font-semibold">
                         {site?.name ?? "매물"}
                         {dongName ? ` ${dongName}` : ""}
-                        {unit?.name ? ` ${unit.name}` : ""}
+                        {formatUnitName(unit) ? ` ${formatUnitName(unit)}` : ""}
                       </p>
                       {address && (
                         <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">

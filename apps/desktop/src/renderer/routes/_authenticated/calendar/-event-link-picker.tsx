@@ -1,3 +1,4 @@
+import { formatUnitName } from "@estate-erp/shared";
 import { useDeferredValue, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -103,7 +104,10 @@ export function linksFromEvent(event: CalendarEvent): EventLinks {
 function propertyLabel(property: {
   site?: { name: string } | null;
   unit?: {
-    name: string;
+    name: string | null;
+    floor?: number | null;
+    floorEnd?: number | null;
+    floorLabel?: string | null;
     dong?: { name: string; isPlaceholder?: boolean } | null;
   } | null;
 }) {
@@ -111,7 +115,7 @@ function propertyLabel(property: {
     property.unit?.dong && !property.unit.dong.isPlaceholder
       ? property.unit.dong.name
       : null;
-  return [property.site?.name ?? "매물", dongName, property.unit?.name]
+  return [property.site?.name ?? "매물", dongName, formatUnitName(property.unit)]
     .filter(Boolean)
     .join(" ");
 }

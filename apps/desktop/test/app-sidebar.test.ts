@@ -70,7 +70,8 @@ describe("desktop app sidebar", () => {
     }
     assert.equal(navConfigSource.includes('label: "매물관리"'), true);
     assert.equal(navConfigSource.includes('label: "광고관리"'), true);
-    assert.equal(navConfigSource.includes('label: "광고노트"'), true);
+    // 광고노트는 메뉴에서 뺐다 (화면 코드는 남아 있고 주소로 들어오면 내광고관리로 간다)
+    assert.equal(navConfigSource.includes('label: "광고노트"'), false);
     assert.equal(navConfigSource.includes('label: "내광고관리"'), true);
     assert.equal(navConfigSource.includes('label: "자동화흐름"'), false);
     assert.equal(navConfigSource.includes('label: "수집단지"'), false);

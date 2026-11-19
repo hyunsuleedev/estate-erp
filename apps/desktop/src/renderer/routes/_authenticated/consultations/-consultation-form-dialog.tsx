@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -346,7 +347,7 @@ function PropertySearchField({ onSelect }: { onSelect: (property: PickedEntity) 
         <CommandGroup>
           {properties.map((item) => {
             const dongName = item.unit?.dong && !item.unit.dong.isPlaceholder ? item.unit.dong.name : null;
-            const unitLabel = [dongName, item.unit?.name].filter(Boolean).join(' ');
+            const unitLabel = [dongName, formatUnitName(item.unit)].filter(Boolean).join(' ');
             const label = [item.site?.name, unitLabel].filter(Boolean).join(' ') || '이름 없는 매물';
             return (
               <CommandItem key={item.id} value={item.id} onSelect={() => onSelect({ id: item.id, label })} className="items-start">

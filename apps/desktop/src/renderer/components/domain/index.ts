@@ -17,4 +17,6 @@ export { EntityChip, type EntityChipProps, type EntityChipKind } from './entity-
 export { ConfirmDialog, type ConfirmDialogProps } from './confirm-dialog';
 export { DetailField, type DetailFieldProps } from './detail-field';
 export { RowOpenButton, type RowOpenButtonProps } from './row-open-button';
+export { ContactNameBadge, ContactNameChip, type ContactNameChipProps } from './contact-name-chip';
 export { WonCircleIcon } from './won-circle-icon';
+export { InspectorTabs, inspectorTabIds, type InspectorTabItem } from './inspector-tabs';

@@ -10,6 +10,9 @@ export const TRANSIENT_EDITOR_SELECTOR = [
 /** 페이지가 명시적으로 표시한 저장 전 변경. */
 export const EXPLICIT_DIRTY_SELECTOR = '[data-native-tab-dirty="true"]';
 
+/** 파일을 서버로 올리는 중이라는 표시. 이 표시가 있는 탭은 닫히지 않는다. */
+export const ACTIVE_TRANSFER_SELECTOR = '[data-native-tab-transfer="true"]';
+
 /** 셸 renderer 안에서 직접 그려진(legacy) 탭 화면의 영역. */
 const SHELL_TAB_CONTENT_SELECTOR = '[data-native-tab-legacy-fallback]';
 

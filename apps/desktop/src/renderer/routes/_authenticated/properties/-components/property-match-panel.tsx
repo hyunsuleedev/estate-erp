@@ -1,5 +1,5 @@
 import {
-  useEffect, useMemo, useRef, useState,
+  useCallback, useEffect, useId, useMemo, useRef, useState,
   type CSSProperties, type ReactNode,
 } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -11,7 +11,9 @@ import {
 } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
+  AlignLeft,
   ArrowRight,
+  CalendarDays,
   Check,
   ChevronRight,
   CircleAlert,
@@ -19,6 +21,7 @@ import {
   GitBranch,
   Loader2,
   Megaphone,
+  MessageSquare,
   PencilLine,
   Phone,
   Plus,
@@ -31,6 +34,7 @@ import type {
   ActivityLog,
   Match,
   MatchDealLink,
+  UpdateMatchAgreedTermsDto,
 } from '@estate-erp/api-client';
 import {
   DealStage,
@@ -47,9 +51,16 @@ import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { PropertyPanelSelectionCheckbox as MatchSelectionCheckbox } from './property-panel-selection-checkbox';
 import { Input } from '@/components/ui/input';
-import { StatusBadge } from '@/components/domain';
-import { EditableCell } from '@/components/data-table';
-import { CellTableNavigationProvider } from '@/components/data-table/cell-navigation';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ContactNameChip, StatusBadge } from '@/components/domain';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,18 +73,19 @@ import { MatchConvertDialog } from '../../wanted-properties/-match-convert-dialo
 import {
   buildViewingCalendarEventPayload,
   buyerProgressStages,
+  formatMatchPrice,
   formatViewingEventTime,
   getActiveDealLink,
   getDealProgressNodeState,
   getDealProgressStages,
   getDealStageLabel,
-  getDefaultViewingStartDate,
   getElapsedDays,
   getMatchStageActionCopy,
   getMatchStageBlockReason,
   getMatchStageDotClass,
   getMatchStageHeaderClass,
   getMatchStageLabel,
+  getMatchTitle,
   getNextMatchStage,
   getProgressNodeState,
   getUpcomingViewingEvent,
@@ -87,7 +99,13 @@ import {
   computeBudgetFit,
   formatBuyerArea,
   formatBuyerBudget,
+  formatDateOnly,
+  formatEokInput,
+  parseEokInput,
+  parseManwonInput,
+  toDateInputValue,
 } from './property-match-format';
+import { formatDateTime, formatMoney } from '@/lib/format';
 import { PropertyMatchConnectDialog } from './property-match-connect-dialog';
 import {
   MatchTableColumnHeader, MatchTableSortControl,
@@ -195,6 +213,8 @@ type StageHistory = {
   enteredAt: Partial<Record<string, string>>;
   /** 지금 단계에 들어온 시각. 기록으로 확인되지 않으면 null (추정하지 않는다) */
   since: string | null;
+  /** 이 매칭의 활동 로그를 빠짐없이 받았는지. 받았을 때만 "날짜가 없는 지난 단계 = 건너뜀"으로 읽는다. */
+  complete: boolean;
   events: { id: string; at: string; text: string }[];
 };
 
@@ -292,6 +312,7 @@ function buildStageHistory(
   return {
     enteredAt,
     since: enteredAt[current] ?? null,
+    complete,
     events: events.reverse(),
   };
 }
@@ -334,8 +355,12 @@ const STAGE_GUIDE: Record<string, { next: string; title: string }> = {
     title: '집주인과 방문 일정을 조율하세요',
   },
   [MatchStage.VIEWING]: {
-    next: '방문 일정 잡기',
-    title: '방문을 진행하고 결과를 남기세요',
+    next: '방문 진행',
+    title: '방문을 마쳤으면 방문 완료로 넘기세요',
+  },
+  [MatchStage.BUYER_REVIEWING]: {
+    next: '고객 반응 확인',
+    title: '고객이 본 집들을 놓고 검토 중입니다. 반응을 확인하세요',
   },
   [MatchStage.NEGOTIATING]: {
     next: '가격·입주일 협의',
@@ -356,6 +381,10 @@ type PanelActions = {
   isScheduling: boolean;
   onStageChange: (matchId: string, stage: string) => void;
   onScheduleViewing: (match: Match, startLocalValue: string) => void;
+  /** 협상 중 합의 조건 저장. 보낸 칸만 바뀐다. */
+  onSaveAgreedTerms: (match: Match, terms: UpdateMatchAgreedTermsDto) => void;
+  /** 저장이 실패할 때마다 바뀐다 — 입력칸을 서버 값으로 다시 그리는 데 쓴다 */
+  agreedTermsResetKey: number;
 };
 
 export function PropertyMatchPanel({
@@ -552,6 +581,21 @@ export function PropertyMatchPanel({
     },
   });
 
+  const [agreedTermsResetKey, setAgreedTermsResetKey] = useState(0);
+  const agreedTermsMutation = useMutation({
+    mutationFn: ({ match, terms }: { match: Match; terms: UpdateMatchAgreedTermsDto }) =>
+      api.matches.updateAgreedTerms(match.id, terms),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || '합의 조건 저장에 실패했습니다.');
+      // 저장되지 않은 값이 저장된 것처럼 입력칸에 남지 않도록, 서버 값을 다시 받고 입력칸을 새로 그린다.
+      setAgreedTermsResetKey((key) => key + 1);
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    },
+  });
+
   const handleStageChange = (matchId: string, stage: string) => {
     // 단계 변경이나 방문 일정 저장이 끝나기 전에는 다른 단계 변경을 받지 않는다.
     // (일정 저장은 끝나면서 임장 단계로 옮기므로, 그 사이의 종료가 덮어써진다.)
@@ -584,6 +628,8 @@ export function PropertyMatchPanel({
       if (stageMutation.isPending || viewingScheduleMutation.isPending) return;
       viewingScheduleMutation.mutate({ match, startLocalValue });
     },
+    onSaveAgreedTerms: (match, terms) => agreedTermsMutation.mutate({ match, terms }),
+    agreedTermsResetKey,
   };
 
   const { won, rest, closed } = useMemo(() => {
@@ -623,6 +669,50 @@ export function PropertyMatchPanel({
   const convertMatch =
     matches.find((match) => match.id === convertMatchId) ?? null;
 
+  /**
+   * 쓰는 중인 매칭 메모와 그 저장. 펼친 카드가 아니라 패널이 맡는다.
+   * - 저장에 실패한 뒤 카드를 접거나 다른 고객을 펼쳐도 쓴 글이 남고, 다시 펼치면 입력칸이 그 글로 열린다.
+   * - 저장하는 동안 카드를 접었다 펼쳐 글을 더 고쳐도, 먼저 보낸 저장이 끝나면서 새 글을 지우지 않는다
+   *   (카드가 저장을 맡으면 접힌 카드는 "그 뒤에 고쳤는지"를 알 수 없다).
+   */
+  const [memoDrafts, setMemoDrafts] = useState<Record<string, string>>({});
+  // 저장이 끝났을 때 "지금 글"과 견주려고 가장 새 값을 바로 읽을 수 있게 둔다
+  const memoDraftsRef = useRef(memoDrafts);
+  const savingMemoIdsRef = useRef(new Set<string>());
+  const setMemoDraft = useCallback((matchId: string, draft: string | null) => {
+    const current = memoDraftsRef.current;
+    if (draft === null ? !(matchId in current) : current[matchId] === draft) return;
+    const next = { ...current };
+    if (draft === null) delete next[matchId];
+    else next[matchId] = draft;
+    memoDraftsRef.current = next;
+    setMemoDrafts(next);
+  }, []);
+  const saveMemo = memoMutation.mutateAsync;
+  const commitMemoDraft = useCallback(
+    async (match: Match) => {
+      const draft = memoDraftsRef.current[match.id];
+      // 같은 매칭의 저장이 나가 있으면 또 보내지 않는다. 글은 그대로 남아 끝난 뒤 다시 저장할 수 있다.
+      if (draft === undefined || savingMemoIdsRef.current.has(match.id)) return;
+      const next = draft.trim();
+      if (next === (match.memo?.trim() ?? '')) {
+        setMemoDraft(match.id, null);
+        return;
+      }
+      savingMemoIdsRef.current.add(match.id);
+      try {
+        await saveMemo({ match, memo: next || null });
+        // 보낸 뒤 더 고쳤으면 그 글을 남긴다
+        if (memoDraftsRef.current[match.id] === draft) setMemoDraft(match.id, null);
+      } catch {
+        // 알림은 저장 쪽이 띄운다. 글은 그대로 둔다.
+      } finally {
+        savingMemoIdsRef.current.delete(match.id);
+      }
+    },
+    [saveMemo, setMemoDraft],
+  );
+
   const renderRow = (match: Match, dim: boolean) => (
     <MatchRow
       key={match.id}
@@ -639,9 +729,9 @@ export function PropertyMatchPanel({
       onToggle={() =>
         setOpenMatchId((current) => (current === match.id ? null : match.id))
       }
-      onSaveMemo={(memo) =>
-        memoMutation.mutateAsync({ match, memo }).then(() => undefined)
-      }
+      onCommitMemo={() => void commitMemoDraft(match)}
+      memoDraft={memoDrafts[match.id] ?? null}
+      onMemoDraftChange={(draft) => setMemoDraft(match.id, draft)}
     />
   );
 
@@ -901,7 +991,9 @@ function MatchRow({
   actions,
   isSavingMemo,
   onToggle,
-  onSaveMemo,
+  onCommitMemo,
+  memoDraft,
+  onMemoDraftChange,
 }: {
   match: Match;
   history: StageHistory | undefined;
@@ -913,7 +1005,11 @@ function MatchRow({
   actions: PanelActions;
   isSavingMemo: boolean;
   onToggle: () => void;
-  onSaveMemo: (memo: string | null) => Promise<void>;
+  /** 쓰는 중인 매칭 메모를 저장한다 */
+  onCommitMemo: () => void;
+  /** 쓰는 중인 매칭 메모. 없으면 null */
+  memoDraft: string | null;
+  onMemoDraftChange: (draft: string | null) => void;
 }) {
   const buyer = match.buyerRequirement;
   const buyerName = buyer?.contact?.name ?? '구매자 미상';
@@ -1076,20 +1172,8 @@ function MatchRow({
             <StageMenu match={match} dim={dim} actions={actions} />
           </div>
 
-          {/* 편집기가 칸 전체를 덮도록 칸 여백은 버튼 안으로 옮긴다 */}
-          <div
-            role="cell"
-            className="min-w-0 !px-0"
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-          >
-            <MatchMemoCell
-              match={match}
-              buyerName={buyerName}
-              isSaving={isSavingMemo}
-              dim={dim}
-              onSave={onSaveMemo}
-            />
+          <div role="cell" className="min-w-0 py-[7.5px]">
+            <BuyerMemoCell match={match} dim={dim} />
           </div>
 
           <div role="cell" className={cn('truncate', dim && 'text-muted-foreground')}>
@@ -1105,6 +1189,10 @@ function MatchRow({
           fit={fit}
           days={days}
           actions={actions}
+          isSavingMemo={isSavingMemo}
+          onCommitMemo={onCommitMemo}
+          memoDraft={memoDraft}
+          onMemoDraftChange={onMemoDraftChange}
         />
       )}
     </>
@@ -1123,6 +1211,7 @@ const STAGE_PICKER_GROUPS = [
     stages: [
       MatchStage.VIEWING_CONFIRMED,
       MatchStage.VIEWING,
+      MatchStage.BUYER_REVIEWING,
       MatchStage.NEGOTIATING,
     ],
   },
@@ -1332,61 +1421,94 @@ function StageMenu({
   );
 }
 
-// ── 줄에서 바로 고치는 메모 ─────────────────────────────────────────────────
-// 매물 표의 의뢰 메모와 같은 편집기(EditableCell)를 쓴다: 누르면 칸 위에
-// 떠오르는 입력 상자, Enter 저장 · Shift+Enter 줄바꿈 · Esc 취소 · 바깥 클릭 저장.
+// ── 줄의 고객 메모 ──────────────────────────────────────────────────────────
+// 줄을 훑으며 알고 싶은 것은 "이 고객이 무엇을 원하는 사람인가"다. 그래서 줄에는 고객 조건의
+// 메모를 보여 준다. 이 메모는 그 고객의 모든 매칭과 희망매물 화면이 함께 쓰므로 여기서 고치지 않는다
+// (한 집의 표에서 고친 글이 다른 곳까지 바뀌지 않게). 이 매칭만의 메모는 펼친 "진행" 카드에서 고친다.
 
-function MatchMemoCell({
+function BuyerMemoCell({ match, dim }: { match: Match; dim: boolean }) {
+  const memo = match.buyerRequirement?.memo?.trim() ?? '';
+  if (!memo) return null;
+  return (
+    <span
+      data-property-match-buyer-memo
+      title={memo}
+      className={cn(
+        'line-clamp-2 min-w-0 whitespace-normal break-words text-[14px] font-[450] leading-[21px]',
+        dim ? 'text-muted-foreground' : 'text-foreground',
+      )}
+    >
+      {memo}
+    </span>
+  );
+}
+
+// ── 펼친 카드의 매칭 메모 (눌러서 고치기) ───────────────────────────────────
+// Enter 저장 · Shift+Enter 줄바꿈 · Esc 취소 · 바깥을 누르면 저장.
+// 저장에 실패하면 입력을 닫지 않는다(쓴 글을 잃지 않고 다시 저장할 수 있게).
+
+function MatchMemoField({
   match,
-  buyerName,
   isSaving,
-  dim,
-  onSave,
+  onCommit,
+  draft,
+  onDraftChange,
 }: {
   match: Match;
-  buyerName: string;
   isSaving: boolean;
-  dim: boolean;
-  onSave: (memo: string | null) => Promise<void>;
+  /** 지금 글을 저장한다. 저장과 "보낸 뒤 더 고쳤는지" 확인은 패널이 한다 */
+  onCommit: () => void;
+  /** 쓰는 중인 글. 패널이 들고 있어 카드를 접어도 남는다. null이면 입력칸이 닫혀 있다 */
+  draft: string | null;
+  onDraftChange: (draft: string | null) => void;
 }) {
-  const memo = match.memo?.trim() ?? '';
+  const saved = match.memo?.trim() ?? '';
+  const setDraft = onDraftChange;
+  const commit = onCommit;
+  const buyerName = match.buyerRequirement?.contact?.name ?? '구매자';
+
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        data-property-match-memo
+        aria-label={`${buyerName} 매칭 메모${saved ? '' : ' 추가'}`}
+        onClick={() => setDraft(saved)}
+        className="-mx-1.5 -my-1 block w-[calc(100%+12px)] rounded-md px-1.5 py-1 text-left text-sm transition-colors hover:bg-foreground/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      >
+        {saved ? (
+          <span className="whitespace-pre-wrap break-words">{saved}</span>
+        ) : (
+          <EmptyValue />
+        )}
+      </button>
+    );
+  }
 
   return (
-    // This nested table has its own controls; Escape should return to this
-    // memo trigger rather than the parent property's spreadsheet selection.
-    <CellTableNavigationProvider value={null}>
-      <EditableCell
-        recordId={match.id}
-        field="matchMemo"
-        value={match.memo ?? ''}
-        onSave={async (_recordId, _field, newValue) => {
-          const next = String(newValue ?? '').trim();
-          if (next === memo) return;
-          await onSave(next || null);
-        }}
-        editType="text"
-        ariaLabel={`${buyerName} 매칭 메모`}
-        multiline
-        commitOnBlur
-        activation="click"
-        portalAnchor="self"
-        editorChrome="floating"
-        hoverHighlight={false}
-        className="min-h-9 rounded-none px-2.5 py-[7.5px] text-[14px] font-[450] leading-[21px] focus-visible:ring-inset focus-visible:ring-offset-0"
-      >
-        <span
-          data-property-match-memo
-          className={cn(
-            'line-clamp-2 min-w-0 w-full whitespace-normal break-words',
-            memo
-              ? dim ? 'text-muted-foreground' : 'text-foreground'
-              : 'text-transparent group-hover/row:text-muted-foreground group-focus-within/row:text-muted-foreground',
-          )}
-        >
-          {isSaving ? '저장 중…' : memo || '메모 추가'}
-        </span>
-      </EditableCell>
-    </CellTableNavigationProvider>
+    <textarea
+      autoFocus
+      rows={Math.min(6, Math.max(2, draft.split('\n').length))}
+      value={draft}
+      aria-label={`${buyerName} 매칭 메모`}
+      aria-busy={isSaving}
+      placeholder="이 집에 대한 이 고객의 반응, 약속한 것"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        // 한글을 조합하는 중의 Enter는 글자를 확정하는 키다
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          commit();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          setDraft(null);
+        }
+      }}
+      className="-mx-1.5 -my-1 block w-[calc(100%+12px)] resize-none rounded-md border-0 bg-white px-1.5 py-1 text-sm leading-[21px] shadow-none outline-none ring-2 ring-ring/40 placeholder:text-muted-foreground/70"
+    />
   );
 }
 
@@ -1405,6 +1527,7 @@ function PathStep({
   className,
   title,
   current,
+  done,
   onClick,
 }: {
   label: string;
@@ -1413,11 +1536,16 @@ function PathStep({
   className: string;
   title?: string;
   current?: boolean;
+  /** 확정해서 끝낸 단계 — 이름 앞에 체크를 붙인다 */
+  done?: boolean;
   onClick?: () => void;
 }) {
   const content = (
     <>
-      <span className="max-w-full truncate">{label}</span>
+      <span className="flex max-w-full items-center gap-1">
+        {done && <Check className="size-3 shrink-0" strokeWidth={2.4} aria-hidden="true" />}
+        <span className="truncate">{label}</span>
+      </span>
       <span className="min-h-[13px] whitespace-nowrap text-[11px] font-normal tabular-nums opacity-80">
         {sub}
       </span>
@@ -1467,6 +1595,13 @@ function PathStep({
 const positionOf = (index: number, length: number) =>
   index === 0 ? 'first' : index === length - 1 ? 'last' : 'middle';
 
+/**
+ * 단계 띠. 색이 뜻하는 것:
+ * - 초록 + 체크: 확정해서 끝낸 단계 (지금 단계가 무엇이든 한 가지 색)
+ * - 단계 색 + 굵은 글씨: 지금 단계. 들어왔을 뿐 아직 끝난 것이 아니다
+ * - 회색: 아직 오지 않은 단계, 그리고 거치지 않고 건너뛴 단계("건너뜀")
+ * 임장 없이 계약으로 가는 경우가 있어 띠를 눌러 어느 단계로든 옮길 수 있다.
+ */
 function MatchStagePath({
   match,
   history,
@@ -1496,8 +1631,15 @@ function MatchStagePath({
             ? null
             : getMatchStageBlockReason(match, candidate);
         const date = formatMonthDay(history?.enteredAt[candidate]);
-        const sub =
-          state === 'current' && !isConverted
+        // 지나온 자리인데 들어온 기록이 없으면 거치지 않고 건너뛴 단계다.
+        // 로그를 다 받지 못했으면 판단하지 않는다(끝낸 단계로 둔다).
+        const isSkipped =
+          state === 'completed' &&
+          Boolean(history?.complete) &&
+          !history?.enteredAt[candidate];
+        const sub = isSkipped
+          ? '건너뜀'
+          : state === 'current' && !isConverted
             ? [date, formatElapsed(days)].filter(Boolean).join(' · ')
             : state === 'failed'
               ? [date, '여기서 종료'].filter(Boolean).join(' · ')
@@ -1510,6 +1652,7 @@ function MatchStagePath({
             sub={sub}
             position={positionOf(index, buyerProgressStages.length)}
             current={isCurrent}
+            done={state === 'completed' && !isSkipped}
             title={
               blockReason ??
               (isClosed
@@ -1523,11 +1666,15 @@ function MatchStagePath({
             className={cn(
               isCurrent
                 ? cn('font-semibold', getMatchStageHeaderClass(candidate))
-                : state === 'completed'
-                  ? 'bg-foreground/[0.07] text-muted-foreground'
-                  : state === 'failed'
-                    ? 'bg-destructive-soft font-semibold text-destructive'
-                    : 'bg-foreground/[0.035] text-muted-foreground/60',
+                : isSkipped
+                  ? 'bg-foreground/[0.035] text-muted-foreground'
+                  : state === 'completed'
+                    ? isClosed
+                      ? 'bg-foreground/[0.07] text-muted-foreground'
+                      : 'bg-success-soft/60 text-success'
+                    : state === 'failed'
+                      ? 'bg-destructive-soft font-semibold text-destructive'
+                      : 'bg-foreground/[0.035] text-muted-foreground/60',
               blockReason && 'cursor-not-allowed opacity-55',
             )}
             onClick={
@@ -1586,13 +1733,486 @@ function DealStagePath({
   );
 }
 
-function DetailLabel({ children }: { children: ReactNode }) {
+// ── 펼친 영역의 카드 (Notion 카드: 흰 판 + 옅은 테두리, 안은 "아이콘 + 이름 | 값" 속성 줄) ──
+// 왼쪽 "진행"과 오른쪽 "고객 조건"이 같은 틀을 쓴다. 문장으로 안내하지 않고 속성 줄로 보여 준다.
+
+function DetailCard({
+  label,
+  head,
+  children,
+  footer,
+}: {
+  /** 화면 낭독기용 이름 */
+  label: string;
+  head: ReactNode;
+  children: ReactNode;
+  /** 선으로 나눈 아래 칸 */
+  footer?: ReactNode;
+}) {
   return (
-    <div className="mb-1.5 mt-3.5 text-[11.5px] text-muted-foreground">
-      {children}
+    <section
+      aria-label={label}
+      className="min-w-0 overflow-hidden rounded-[10px] bg-white shadow-[0_0_0_1px_rgba(42,28,0,0.09),0_2px_4px_rgba(25,25,25,0.04),0_10px_20px_-12px_rgba(25,25,25,0.12)]"
+    >
+      <div className="flex min-h-[42px] items-center gap-2 px-3.5 pb-1 pt-2.5 text-sm">
+        {head}
+      </div>
+      <dl className="px-1.5 pb-2">{children}</dl>
+      {footer && (
+        <div className="border-t border-border bg-muted/50 px-1.5 py-1.5">{footer}</div>
+      )}
+    </section>
+  );
+}
+
+function PropertyRow({
+  icon,
+  label,
+  children,
+  multiline,
+}: {
+  icon: ReactNode;
+  label: string;
+  children: ReactNode;
+  multiline?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[112px_minmax(0,1fr)] items-start rounded-md hover:bg-foreground/[0.03]">
+      <dt className="flex min-h-8 items-center gap-2 px-2 text-sm text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-sidebar-icon">
+        {icon}
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          'min-h-8 px-2 py-[5.5px] text-sm tabular-nums text-foreground',
+          multiline
+            ? 'whitespace-pre-wrap break-words'
+            : 'flex flex-wrap items-center gap-1.5',
+        )}
+      >
+        {children}
+      </dd>
     </div>
   );
 }
+
+/** 값이 없는 속성 — Notion의 "비어 있음" */
+function EmptyValue({ children = '비어 있음' }: { children?: ReactNode }) {
+  return <span className="text-muted-foreground/70">{children}</span>;
+}
+
+/**
+ * 속성 줄 안의 입력칸 — 평소에는 글처럼 보이고, 올리거나 고칠 때만 칸이 드러난다.
+ * 테두리는 색이 아니라 두께로 없앤다(app.css의 전역 테두리 색 규칙이 색 클래스보다 앞선다).
+ */
+const quietInputClassName =
+  'h-7 rounded-md border-0 bg-transparent px-1.5 text-sm tabular-nums shadow-none transition-colors hover:bg-foreground/[0.05] focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-ring/40 aria-invalid:ring-2 aria-invalid:ring-destructive/40';
+
+/** 속성 값 자리의 누를 수 있는 글 (눌러서 고치기) */
+const valueButtonClassName =
+  '-mx-1.5 inline-flex h-7 items-center rounded-md px-1.5 text-sm tabular-nums transition-colors hover:bg-foreground/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50';
+
+function BuyerConditionCard({
+  match,
+  fit,
+}: {
+  match: Match;
+  fit: { label: string; over: boolean } | null;
+}) {
+  const buyer = match.buyerRequirement;
+  const area = formatBuyerArea(buyer);
+  const buyerMemo = buyer?.memo?.trim();
+
+  return (
+    <DetailCard
+      label="고객 조건"
+      head={
+        <>
+          {buyer?.contact?.id ? (
+            <span className="-ml-1 flex min-w-0 font-semibold">
+              <ContactNameChip contactId={buyer.contact.id} name={buyer.contact.name} />
+            </span>
+          ) : (
+            <span className="font-semibold">{buyer?.contact?.name ?? '구매자 미상'}</span>
+          )}
+          <span className="shrink-0 text-xs text-muted-foreground">고객 조건</span>
+        </>
+      }
+    >
+      {buyer?.transactionType && (
+        <PropertyRow icon={<Tag />} label="거래">
+          <StatusBadge kind="transactionType" status={buyer.transactionType} size="sm" />
+        </PropertyRow>
+      )}
+      <PropertyRow icon={<WonCircleIcon />} label="예산">
+        {formatBuyerBudget(buyer)}
+        {fit && (
+          <span
+            className={cn(
+              'inline-flex h-5 items-center gap-1.5 rounded-full px-2 text-xs',
+              'before:size-2 before:rounded-full before:bg-current',
+              fit.over
+                ? 'bg-destructive-soft text-destructive-strong'
+                : 'bg-success-soft text-success',
+            )}
+          >
+            {fit.label}
+          </span>
+        )}
+      </PropertyRow>
+      {area && (
+        <PropertyRow icon={<Ruler />} label="면적">
+          {area}
+        </PropertyRow>
+      )}
+      {buyer?.moveInDate && (
+        <PropertyRow icon={<CalendarDays />} label="입주">
+          {formatMonthDay(buyer.moveInDate)}
+        </PropertyRow>
+      )}
+      {buyerMemo && (
+        <PropertyRow icon={<AlignLeft />} label="고객 메모" multiline>
+          {buyerMemo}
+        </PropertyRow>
+      )}
+    </DetailCard>
+  );
+}
+
+// ── 방문 일시 고르기 (달력 + 시간, 다른 화면의 날짜 칸과 같은 Popover) ───────
+
+/** 30분 단위 시간 — 오전 7시부터 밤 10시까지 */
+const VIEWING_TIME_OPTIONS = Array.from({ length: 31 }, (_, index) => {
+  const minutes = 7 * 60 + index * 30;
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+});
+
+const toDateKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+/**
+ * 값은 "YYYY-MM-DDTHH:mm"(이 PC의 시각) 또는 빈 글.
+ * 날짜와 시간을 둘 다 골라 "적용"을 눌러야 값이 바뀐다 — 고르다 만 값이 저장되지 않게 한다.
+ */
+function ViewingTimePicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [dateKey, setDateKey] = useState('');
+  const [time, setTime] = useState('');
+  const today = useMemo(() => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return start;
+  }, []);
+
+  // 열 때마다 지금 값에서 시작한다(닫으며 버린 선택이 남지 않게)
+  const handleOpenChange = (next: boolean) => {
+    if (next) {
+      setDateKey(value.slice(0, 10));
+      setTime(value.slice(11, 16));
+    }
+    setOpen(next);
+  };
+
+  const selected = dateKey ? new Date(`${dateKey}T00:00`) : undefined;
+  // 저장된 시각이 30분 단위가 아니어도 목록에서 고를 수 있게 넣어 둔다
+  const timeOptions = time && !VIEWING_TIME_OPTIONS.includes(time)
+    ? [...VIEWING_TIME_OPTIONS, time].sort()
+    : VIEWING_TIME_OPTIONS;
+  const picked = dateKey && time ? `${dateKey}T${time}` : '';
+  // 오늘 날짜에서 이미 지난 시각은 고르지 못한다(지난 방문은 "예정된 방문"으로 잡히지 않는다)
+  const isPast = picked !== '' && new Date(picked).getTime() < Date.now();
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={value ? `방문 일시 ${formatDateTime(value)}, 눌러서 변경` : '방문 일시 정하기'}
+          className={valueButtonClassName}
+        >
+          {value ? formatDateTime(value) : <EmptyValue />}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <Calendar
+          mode="single"
+          selected={selected}
+          defaultMonth={selected ?? today}
+          disabled={{ before: today }}
+          onSelect={(date) => setDateKey(date ? toDateKey(date) : '')}
+        />
+        <div className="flex items-center gap-2 border-t border-border p-2">
+          <Select value={time} onValueChange={setTime}>
+            <SelectTrigger size="sm" aria-label="방문 시간" className="h-8 w-[108px] tabular-nums">
+              <SelectValue placeholder="시간" />
+            </SelectTrigger>
+            <SelectContent className="max-h-64">
+              {timeOptions.map((option) => (
+                <SelectItem key={option} value={option} className="tabular-nums">
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" role={isPast ? 'alert' : undefined}>
+            {isPast ? '지난 시각입니다' : !dateKey ? '날짜를 고르세요' : !time ? '시간을 고르세요' : ''}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8"
+            disabled={!picked || isPast || picked === value}
+            onClick={() => {
+              onChange(picked);
+              setOpen(false);
+            }}
+          >
+            적용
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ── 이 고객이 함께 보고 있는 다른 매물 (고객 검토 단계) ────────────────────
+
+/** 고객이 실제로 보았거나 보러 갈 매물 — 임장부터 협상까지 */
+const COMPARED_STAGES: string[] = [
+  MatchStage.VIEWING,
+  MatchStage.BUYER_REVIEWING,
+  MatchStage.NEGOTIATING,
+];
+
+/**
+ * 고객은 여러 집을 보고 고른다. 같은 희망조건으로 진행 중인 다른 매물을 보여 줘서
+ * 중개사가 "이 고객이 지금 어떤 집들을 놓고 고민하는지"를 한 번에 보게 한다.
+ */
+function BuyerOtherMatches({ match }: { match: Match }) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['matches', 'buyer-compared', match.buyerReqId],
+    queryFn: () =>
+      api.matches.findAll({
+        buyerReqId: match.buyerReqId,
+        stage: COMPARED_STAGES.join(','),
+      }),
+    staleTime: 30_000,
+  });
+  const others = (data ?? []).filter((other) => other.id !== match.id);
+
+  if (isLoading) return <EmptyValue>불러오는 중…</EmptyValue>;
+  if (isError) return <span role="alert" className="text-muted-foreground">불러오지 못했습니다</span>;
+  if (others.length === 0) return <EmptyValue>이 매물만 보고 있습니다</EmptyValue>;
+
+  return (
+    <ul className="w-full">
+      {others.map((other) => (
+        <li key={other.id} className="flex min-h-7 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate">{getMatchTitle(other)}</span>
+          <span className="shrink-0 text-muted-foreground">{formatMatchPrice(other)}</span>
+          <StatusBadge kind="matchStage" status={other.stage} size="sm" />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ── 합의 조건 (협상 단계에서 적어 둔다. 모두 선택) ─────────────────────────
+
+/**
+ * 금액 한 칸. 칸을 벗어나거나 Enter를 누르면 저장한다.
+ * 읽을 수 없는 글은 저장하지 않고 그대로 남겨 고치게 한다(추측해서 숫자로 바꾸지 않는다).
+ */
+function AgreedAmountField({
+  label,
+  unit,
+  saved,
+  disabled,
+  onSave,
+  onValidityChange,
+}: {
+  label: string;
+  unit: '억' | '만원';
+  /** 서버에 저장된 값 (만원) */
+  saved: number | null;
+  disabled: boolean;
+  onSave: (manwon: number | null) => void;
+  onValidityChange: (valid: boolean) => void;
+}) {
+  const toText = (manwon: number | null) =>
+    unit === '억' ? formatEokInput(manwon) : manwon == null ? '' : String(manwon);
+  const parse = unit === '억' ? parseEokInput : parseManwonInput;
+  const [text, setText] = useState(() => toText(saved));
+  const parsed = parse(text);
+  const invalid = Number.isNaN(parsed);
+  const hintId = useId();
+
+  // 서버 값이 바뀌면(저장 완료·다른 사람의 수정) 입력칸을 맞춘다. 저장 실패는 칸을 새로 그려서 되돌린다.
+  // 다만 지금 고치고 있는 글이 같은 값을 뜻하면 그대로 둔다("31.50"을 "31.5"로 바꿔 치지 않는다).
+  useEffect(() => {
+    setText((current) => (parse(current) === saved ? current : toText(saved)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved]);
+
+  useEffect(() => {
+    onValidityChange(!invalid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invalid]);
+
+  const commit = () => {
+    if (invalid || parsed === saved) return;
+    onSave(parsed);
+  };
+
+  return (
+    <PropertyRow icon={<WonCircleIcon />} label={label}>
+      <span className="-mx-1.5 mr-1 inline-flex items-center gap-1">
+        <Input
+          inputMode="decimal"
+          autoComplete="off"
+          placeholder="비어 있음"
+          aria-label={`${label}(${unit})`}
+          aria-invalid={invalid || undefined}
+          aria-describedby={hintId}
+          value={text}
+          disabled={disabled}
+          className={cn(quietInputClassName, 'w-[76px] placeholder:text-muted-foreground/70')}
+          onChange={(event) => setText(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) commit();
+          }}
+        />
+        <span className="text-muted-foreground">{unit}</span>
+      </span>
+      {/* 적은 숫자를 풀어서 보여 준다 — 31.5 → 31억 5,000만 */}
+      <span
+        id={hintId}
+        role={invalid ? 'alert' : undefined}
+        className={cn(
+          'text-xs',
+          invalid ? 'text-destructive-strong' : 'text-muted-foreground',
+        )}
+      >
+        {invalid
+          ? `숫자로 적어 주세요 (예: ${unit === '억' ? '31.5' : '5000'})`
+          : parsed != null && unit === '억'
+            ? formatMoney(parsed)
+            : ''}
+      </span>
+    </PropertyRow>
+  );
+}
+
+function AgreedTermsFields({
+  match,
+  disabled,
+  onSave,
+  onValidityChange,
+}: {
+  match: Match;
+  disabled: boolean;
+  onSave: (terms: UpdateMatchAgreedTermsDto) => void;
+  /** 읽을 수 없는 금액이 남아 있으면 거래전환을 막기 위해 알린다 */
+  onValidityChange: (valid: boolean) => void;
+}) {
+  const isMonthly = match.listing?.transactionType === 'monthly';
+  const savedMoveIn = toDateInputValue(match.agreedMoveInDate);
+  const [moveIn, setMoveIn] = useState(savedMoveIn);
+  const [validity, setValidity] = useState({ first: true, second: true });
+
+  useEffect(() => {
+    setMoveIn(savedMoveIn);
+  }, [savedMoveIn]);
+
+  useEffect(() => {
+    onValidityChange(validity.first && validity.second);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [validity.first, validity.second]);
+
+  return (
+    <>
+      {isMonthly ? (
+        <>
+          <AgreedAmountField
+            label="합의 보증금"
+            unit="만원"
+            saved={match.agreedDeposit}
+            disabled={disabled}
+            onSave={(agreedDeposit) => onSave({ agreedDeposit })}
+            onValidityChange={(valid) =>
+              setValidity((current) => ({ ...current, first: valid }))
+            }
+          />
+          <AgreedAmountField
+            label="합의 월세"
+            unit="만원"
+            saved={match.agreedMonthlyRent}
+            disabled={disabled}
+            onSave={(agreedMonthlyRent) => onSave({ agreedMonthlyRent })}
+            onValidityChange={(valid) =>
+              setValidity((current) => ({ ...current, second: valid }))
+            }
+          />
+        </>
+      ) : (
+        <AgreedAmountField
+          label="합의 가격"
+          unit="억"
+          saved={match.agreedPrice}
+          disabled={disabled}
+          onSave={(agreedPrice) => onSave({ agreedPrice })}
+          onValidityChange={(valid) =>
+            setValidity((current) => ({ ...current, first: valid }))
+          }
+        />
+      )}
+      <PropertyRow icon={<CalendarDays />} label="합의 입주일">
+        <Input
+          type="date"
+          aria-label="합의 입주일"
+          value={moveIn}
+          disabled={disabled}
+          className={cn(
+            quietInputClassName,
+            '-mx-1.5 w-[150px]',
+            !moveIn && 'text-muted-foreground/70',
+          )}
+          onChange={(event) => setMoveIn(event.target.value)}
+          onBlur={() => {
+            if (moveIn !== savedMoveIn) onSave({ agreedMoveInDate: moveIn || null });
+          }}
+        />
+      </PropertyRow>
+    </>
+  );
+}
+
+/** 저장된 합의 조건을 한 줄로. 아무것도 없으면 빈 글 */
+function formatAgreedTerms(match: Match) {
+  const isMonthly = match.listing?.transactionType === 'monthly';
+  const amount = isMonthly
+    ? [
+        match.agreedDeposit != null ? `보증금 ${formatMoney(match.agreedDeposit)}` : null,
+        match.agreedMonthlyRent != null ? `월세 ${formatMoney(match.agreedMonthlyRent)}` : null,
+      ]
+    : [match.agreedPrice != null ? formatMoney(match.agreedPrice) : null];
+  const moveIn = formatDateOnly(match.agreedMoveInDate);
+  return [...amount, moveIn ? `입주 ${moveIn}` : null].filter(Boolean).join(' · ');
+}
+
+// ── 펼친 영역 ───────────────────────────────────────────────────────────────
+// 단계 띠 아래에 카드 두 장: 왼쪽 "진행"(이 매칭에서 지금 다루는 것과 버튼), 오른쪽 "고객 조건".
+// 안내는 문장이 아니라 "다음 할 일" 속성 한 줄로 둔다.
 
 function MatchDetail({
   match,
@@ -1600,15 +2220,22 @@ function MatchDetail({
   fit,
   days,
   actions,
+  isSavingMemo,
+  onCommitMemo,
+  memoDraft,
+  onMemoDraftChange,
 }: {
   match: Match;
   history: StageHistory | undefined;
   fit: { label: string; over: boolean } | null;
   days: number | null;
   actions: PanelActions;
+  isSavingMemo: boolean;
+  onCommitMemo: () => void;
+  memoDraft: string | null;
+  onMemoDraftChange: (draft: string | null) => void;
 }) {
   const navigate = useNavigate();
-  const buyer = match.buyerRequirement;
   const stage = normalizeMatchStage(match.stage);
   const isClosed = stage === MatchStage.CLOSED;
   const isConverted = stage === MatchStage.DEAL_CREATED;
@@ -1618,16 +2245,16 @@ function MatchDetail({
   const blockReason =
     nextStage && !isConverted ? getMatchStageBlockReason(match, nextStage) : null;
   const upcomingViewing = getUpcomingViewingEvent(match);
-  const canSchedule =
-    stage === MatchStage.VIEWING_CONFIRMED || stage === MatchStage.VIEWING;
-  const [viewingStart, setViewingStart] = useState(() =>
-    toDateTimeLocalInputValue(
-      upcomingViewing
-        ? new Date(upcomingViewing.start)
-        : getDefaultViewingStartDate(),
-    ),
-  );
-  const [showHistory, setShowHistory] = useState(false);
+  // 방문 날짜는 임장 조율에서 한 번만 정한다(정하고 확정 = 임장으로).
+  // 임장에서는 정해진 날짜를 글로 보여 주고, 눌렀을 때만 입력칸을 연다.
+  const isArrangingViewing = stage === MatchStage.VIEWING_CONFIRMED;
+  const isViewing = stage === MatchStage.VIEWING;
+  const isReviewing = stage === MatchStage.BUYER_REVIEWING;
+  // 정해진 방문이 없으면 비워 둔다. 고르지 않은 날짜를 미리 넣어 두면 그대로 확정될 수 있다.
+  const savedViewingStart = () =>
+    upcomingViewing ? toDateTimeLocalInputValue(new Date(upcomingViewing.start)) : '';
+  const [viewingStart, setViewingStart] = useState(savedViewingStart);
+  const [areTermsValid, setAreTermsValid] = useState(true);
   const disabled = actions.isUpdating || actions.isScheduling;
   const resumeStage = match.closedFromStage
     ? normalizeMatchStage(match.closedFromStage)
@@ -1635,24 +2262,100 @@ function MatchDetail({
   const closedReason = match.closedReason
     ? (MATCH_CLOSED_REASON_LABELS as Record<string, string>)[match.closedReason]
     : null;
-  const area = formatBuyerArea(buyer);
+  const agreedSummary = formatAgreedTerms(match);
+  const elapsed = formatElapsed(days);
   const openDeal = () => {
     if (deal) navigate({ to: '/deals', search: { dealId: deal.id } });
   };
 
-  const title = isClosed
-    ? `종료된 매칭입니다${closedReason ? ` · ${closedReason}` : ''}`
+  // 단계가 바뀌면 고치던 방문 날짜는 버린다(저장하지 않은 값이 다른 단계의 입력칸에 남지 않게).
+  useEffect(() => {
+    setViewingStart(savedViewingStart());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, upcomingViewing?.id, upcomingViewing?.start]);
+
+  // "다음 할 일" — 문장으로 지시하지 않고 할 일의 이름만 적는다
+  const nextTask = isClosed
+    ? null
     : isConverted
       ? deal
-        ? `거래관리에서 ${getDealStageLabel(deal.stage)} 단계를 진행 중입니다`
-        : '연결된 거래가 없습니다'
-      : (STAGE_GUIDE[stage]?.title ?? getMatchStageLabel(stage));
+        ? `거래관리 · ${getDealStageLabel(deal.stage)}`
+        : null
+      : isViewing && upcomingViewing
+        ? '방문 진행'
+        : isViewing
+          ? '방문 마무리'
+          : (STAGE_GUIDE[stage]?.next ?? null);
+
+  const footer = (
+    <div className="flex flex-wrap items-center gap-1 px-1.5">
+      {isClosed ? (
+        <Button
+          type="button"
+          size="sm"
+          className="h-7"
+          disabled={disabled}
+          onClick={() => actions.onStageChange(match.id, resumeStage)}
+        >
+          {getMatchStageLabel(resumeStage)}에서 다시 진행
+        </Button>
+      ) : isConverted ? (
+        deal && (
+          <Button type="button" size="sm" className="h-7" onClick={openDeal}>
+            거래관리 열기
+            <ArrowRight className="size-3.5" />
+          </Button>
+        )
+      ) : isArrangingViewing ? (
+        // 날짜를 정하는 것이 곧 이 단계의 확정이다 — 일정을 저장하면서 임장으로 넘어간다.
+        // 방문 없이 가려면 단계 띠에서 뒤 단계를 누른다.
+        <Button
+          type="button"
+          size="sm"
+          className="h-7"
+          disabled={disabled || !viewingStart || Boolean(blockReason)}
+          title={!viewingStart ? '방문 일시를 먼저 정해 주세요' : undefined}
+          onClick={() => actions.onScheduleViewing(match, viewingStart)}
+        >
+          <Check className="size-3.5" />
+          {actionCopy?.confirmLabel ?? '방문 일정 확정'}
+        </Button>
+      ) : (
+        nextStage && (
+          <Button
+            type="button"
+            size="sm"
+            className="h-7"
+            disabled={
+              disabled ||
+              Boolean(blockReason) ||
+              (stage === MatchStage.NEGOTIATING && !areTermsValid)
+            }
+            onClick={() => actions.onStageChange(match.id, nextStage)}
+          >
+            <Check className="size-3.5" />
+            {actionCopy?.confirmLabel ?? `${getMatchStageLabel(stage)} 확정`}
+          </Button>
+        )
+      )}
+      {!isClosed && !isConverted && (
+        <button
+          type="button"
+          disabled={disabled}
+          className="h-7 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-destructive-soft hover:text-destructive-strong disabled:opacity-50"
+          onClick={() => actions.onStageChange(match.id, MatchStage.CLOSED)}
+        >
+          {actionCopy?.closeLabel ?? '매칭 종료'}
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div
       id={`property-match-detail-${match.id}`}
       data-property-match-detail={match.id}
-      className="border-b border-border pb-4 pl-[34px] pr-2.5 pt-2"
+      className="border-b border-border pb-5 pl-[34px] pr-2.5 pt-2"
     >
       <MatchStagePath
         match={match}
@@ -1661,198 +2364,109 @@ function MatchDetail({
         actions={actions}
       />
 
-      <div className="mt-2 grid gap-x-14 lg:grid-cols-[minmax(300px,420px)_minmax(260px,1fr)]">
-        <div className="min-w-0">
-          <h4 className="mt-2 text-sm font-semibold text-foreground">{title}</h4>
+      <div className="mt-3.5 grid max-w-[940px] items-start gap-4 lg:grid-cols-2">
+        <DetailCard
+          label="진행"
+          head={
+            <>
+              <span className="font-semibold">진행</span>
+              <StatusBadge kind="matchStage" status={stage} size="sm" />
+              {!isClosed && !isConverted && elapsed && (
+                <span className="text-xs tabular-nums text-muted-foreground">{elapsed}</span>
+              )}
+            </>
+          }
+          footer={footer}
+        >
+          {nextTask && (
+            <PropertyRow icon={<CircleDashed />} label="다음 할 일">
+              {nextTask}
+            </PropertyRow>
+          )}
+
+          {isClosed && (
+            <PropertyRow icon={<CircleAlert />} label="종료 사유">
+              {closedReason ?? <EmptyValue />}
+            </PropertyRow>
+          )}
+
+          {isArrangingViewing && (
+            <PropertyRow icon={<CalendarDays />} label="방문 일시">
+              {/* 고른 값은 아래 "방문 일정 확정"을 누를 때 저장된다 */}
+              <ViewingTimePicker
+                value={viewingStart}
+                disabled={disabled}
+                onChange={setViewingStart}
+              />
+            </PropertyRow>
+          )}
+
+          {isViewing && (
+            <PropertyRow icon={<CalendarDays />} label="방문 일시">
+              {/* 임장 단계에서는 고르는 즉시 일정을 고친다.
+                  보여 주는 값은 늘 저장된 일정이다 — 고른 값을 먼저 보여 주면 저장이 실패했을 때
+                  저장된 것처럼 남고, 같은 값을 다시 고를 수 없어 재시도가 막힌다. */}
+              <ViewingTimePicker
+                value={savedViewingStart()}
+                disabled={disabled}
+                onChange={(next) => {
+                  if (next) actions.onScheduleViewing(match, next);
+                }}
+              />
+            </PropertyRow>
+          )}
+
+          {isReviewing && (
+            <PropertyRow icon={<GitBranch />} label="다른 매물">
+              <BuyerOtherMatches match={match} />
+            </PropertyRow>
+          )}
+
+          {stage === MatchStage.NEGOTIATING && (
+            <AgreedTermsFields
+              key={actions.agreedTermsResetKey}
+              match={match}
+              disabled={disabled}
+              onSave={(terms) => actions.onSaveAgreedTerms(match, terms)}
+              onValidityChange={setAreTermsValid}
+            />
+          )}
+
+          {isConverted && agreedSummary && (
+            <PropertyRow icon={<WonCircleIcon />} label="합의 조건">
+              {agreedSummary}
+            </PropertyRow>
+          )}
+
+          {/* 이 고객 × 이 집에만 해당하는 기록. 고객 조건의 메모(오른쪽 카드)와 다르다 */}
+          <PropertyRow icon={<MessageSquare />} label="매칭 메모" multiline>
+            <MatchMemoField
+              match={match}
+              isSaving={isSavingMemo}
+              onCommit={onCommitMemo}
+              draft={memoDraft}
+              onDraftChange={onMemoDraftChange}
+            />
+          </PropertyRow>
+
+          {isConverted && deal && (
+            <div className="px-2 pb-1 pt-1.5">
+              <DealStagePath deal={deal} onOpen={openDeal} />
+            </div>
+          )}
 
           {blockReason && (
             <div
               role="alert"
-              className="mt-2.5 flex gap-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning-strong"
+              className="mx-2 mb-1 mt-1.5 flex gap-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning-strong"
             >
               <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
               <span>{blockReason}</span>
             </div>
           )}
+        </DetailCard>
 
-          {isConverted && deal && (
-            <>
-              <DetailLabel>
-                거래 진행{' '}
-                <span className="text-muted-foreground/70">
-                  · 여기서는 보기만 · 누르면 거래관리로 이동
-                </span>
-              </DetailLabel>
-              <DealStagePath deal={deal} onOpen={openDeal} />
-            </>
-          )}
-
-          {canSchedule && (
-            <>
-              <DetailLabel>
-                방문 일정
-                {upcomingViewing && (
-                  <span className="text-muted-foreground/70">
-                    {' '}
-                    · 예정 {formatViewingEventTime(upcomingViewing)}
-                  </span>
-                )}
-              </DetailLabel>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="datetime-local"
-                  aria-label="방문 일시"
-                  value={viewingStart}
-                  disabled={disabled}
-                  className="h-8 w-[220px] text-[13px]"
-                  onChange={(event) => setViewingStart(event.target.value)}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 shadow-none"
-                  disabled={disabled || !viewingStart}
-                  onClick={() => actions.onScheduleViewing(match, viewingStart)}
-                >
-                  {upcomingViewing
-                    ? '일정 변경'
-                    : shouldMoveToViewingOnSchedule(stage)
-                      ? '일정 잡고 임장으로'
-                      : '일정 저장'}
-                </Button>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="min-w-0">
-          <DetailLabel>고객 조건</DetailLabel>
-          <dl className="grid grid-cols-[44px_1fr] gap-y-1 text-[12.5px] tabular-nums">
-            {buyer?.transactionType && (
-              <>
-                <dt className="text-muted-foreground/70">거래</dt>
-                <dd>
-                  {getStatusMeta('transactionType', buyer.transactionType).label}
-                </dd>
-              </>
-            )}
-            <dt className="text-muted-foreground/70">예산</dt>
-            <dd>
-              {formatBuyerBudget(buyer)}
-              {fit && (
-                <span className={cn(fit.over && 'text-destructive')}>
-                  {' · '}
-                  {fit.label}
-                </span>
-              )}
-            </dd>
-            {area && (
-              <>
-                <dt className="text-muted-foreground/70">면적</dt>
-                <dd>{area}</dd>
-              </>
-            )}
-            {buyer?.moveInDate && (
-              <>
-                <dt className="text-muted-foreground/70">입주</dt>
-                <dd>{formatMonthDay(buyer.moveInDate)}</dd>
-              </>
-            )}
-            {buyer?.memo?.trim() && (
-              <>
-                <dt className="text-muted-foreground/70">기타</dt>
-                <dd className="whitespace-pre-wrap">{buyer.memo.trim()}</dd>
-              </>
-            )}
-          </dl>
-
-          {match.memo?.trim() && (
-            <>
-              <DetailLabel>매칭 메모</DetailLabel>
-              <p className="whitespace-pre-wrap text-[12.5px] text-foreground">
-                {match.memo.trim()}
-              </p>
-            </>
-          )}
-
-          {history && history.events.length > 0 && (
-            <div className="mt-3.5 text-xs text-muted-foreground">
-              <button
-                type="button"
-                aria-expanded={showHistory}
-                className="-ml-1.5 inline-flex h-6 items-center gap-1 rounded px-1.5 hover:bg-foreground/[0.06] hover:text-foreground"
-                onClick={() => setShowHistory((value) => !value)}
-              >
-                <ChevronRight
-                  className={cn(
-                    'size-3 transition-transform',
-                    showHistory && 'rotate-90',
-                  )}
-                />
-                전체 이력 {history.events.length}건
-              </button>
-              {showHistory && (
-                <ul className="mt-1">
-                  {history.events.map((event) => (
-                    <li key={event.id} className="flex h-6 items-center gap-2.5">
-                      <time className="w-12 shrink-0 tabular-nums text-muted-foreground/70">
-                        {formatMonthDay(event.at)}
-                      </time>
-                      {event.text}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 flex items-center gap-2.5">
-        {!isClosed && !isConverted && (
-          <button
-            type="button"
-            disabled={disabled}
-            className="h-7 rounded px-2 text-xs text-muted-foreground hover:bg-destructive-soft hover:text-destructive disabled:opacity-50"
-            onClick={() => actions.onStageChange(match.id, MatchStage.CLOSED)}
-          >
-            {actionCopy?.closeLabel ?? '매칭 종료'}
-          </button>
-        )}
-        <span className="flex-1" />
-        {isClosed ? (
-          <Button
-            type="button"
-            size="sm"
-            className="h-[30px]"
-            disabled={disabled}
-            onClick={() => actions.onStageChange(match.id, resumeStage)}
-          >
-            {getMatchStageLabel(resumeStage)}에서 다시 진행
-          </Button>
-        ) : isConverted ? (
-          deal && (
-            <Button type="button" size="sm" className="h-[30px]" onClick={openDeal}>
-              거래관리 열기
-              <ArrowRight className="size-3.5" />
-            </Button>
-          )
-        ) : (
-          nextStage && (
-            <Button
-              type="button"
-              size="sm"
-              className="h-[30px]"
-              disabled={disabled || Boolean(blockReason)}
-              onClick={() => actions.onStageChange(match.id, nextStage)}
-            >
-              {actionCopy?.progressLabel ??
-                `다음: ${getMatchStageLabel(nextStage)}`}
-              <ArrowRight className="size-3.5" />
-            </Button>
-          )
-        )}
+        <BuyerConditionCard match={match} fit={fit} />
       </div>
     </div>
   );

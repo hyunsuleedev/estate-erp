@@ -1,5 +1,17 @@
+import {
+  ADVERTISEMENT_LINK_DETAILS,
+  ADVERTISEMENT_LINK_LABELS,
+  advertisementLinkLevel,
+  advertisementPlace,
+  advertisementRawLocationLabel,
+  advertisementTransactionType,
+  changeRequestSummary,
+  pendingChangeRequests,
+} from "./my-ads-link";
+import { Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactNode, SVGProps } from "react";
-import { ExternalLink, RotateCcw } from "lucide-react";
+import { ExternalLink, RotateCcw, X } from "lucide-react";
 import type { ListingAdvertisementWithListing } from "@estate-erp/api-client";
 import { analyzeOfficeAdvertisementComparison } from "@estate-erp/api-client";
 import { cn } from "@/lib/utils";
@@ -25,14 +37,15 @@ import {
 } from "./my-ads-manual-ad-state";
 import { advertisementExposureElapsedDays } from "./my-ads-filters";
 import { advertisementLocationLabel } from "./my-ads-location";
-import {
-  inlineEditBase,
-  inlineMoneyEditLabel,
-  isInlineEditDirty,
-  sanitizeManwonInput,
-} from "./my-ads-drafts";
+import { sanitizeManwonInput } from "./my-ads-drafts";
 import { useMyAdsTableState } from "./my-ads-table-context";
-import type { InlinePriceEdit } from "./my-ads-types";
+import {
+  currentAmount,
+  editBlockReason,
+  fieldLabel,
+  isDraftEmpty,
+  isValueAsked,
+} from "./my-ads-modes";
 
 /** 매물관리 표 머리와 같은 13px/400 글자, 16px 아이콘(#8e8b86). 색은 머리 칸(정렬·hover)을 따른다. */
 export function TableHeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
@@ -99,6 +112,107 @@ export function EmptyCellValue() {
   return <span className="text-muted-foreground">—</span>;
 }
 
+/**
+ * 매물 칸. 광고가 우리 매물과 이어졌는지, 아니면 어디서 끊겼는지를 말한다.
+ * 이어진 광고는 매물로 가고, 끊긴 광고는 눌러서 연결 창을 연다.
+ */
+export function LinkStatusCell({
+  advertisement,
+}: {
+  advertisement: ListingAdvertisementWithListing;
+}) {
+  const { onOpenLink } = useMyAdsTableState();
+  const level = advertisementLinkLevel(advertisement);
+  const label = ADVERTISEMENT_LINK_LABELS[level];
+  const place = advertisementPlace(advertisement);
+
+  if (level === "listing") {
+    const pill = (
+      <span
+        className={cn(
+          PROPERTY_TABLE_STATUS_PILL_CLASS_NAME,
+          PROPERTY_TABLE_PILL_TONES.success,
+        )}
+      >
+        <span className={PROPERTY_TABLE_STATUS_DOT_CLASS_NAME} />
+        {label}
+      </span>
+    );
+    return place ? (
+      <Link
+        to="/properties/$id"
+        params={{ id: place.id }}
+        title="매물 열기"
+        onClick={(event) => event.stopPropagation()}
+        className="inline-flex max-w-full rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/35"
+      >
+        {pill}
+      </Link>
+    ) : (
+      pill
+    );
+  }
+
+  const rawLocation = advertisementRawLocationLabel(advertisement);
+  return (
+    <button
+      type="button"
+      title={`${ADVERTISEMENT_LINK_DETAILS[level]}${rawLocation ? ` CP 표기: ${rawLocation}` : ""}`}
+      aria-label={`${advertisementLocationLabel(advertisement)} ${label}, 매물 연결`}
+      aria-haspopup="dialog"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenLink(advertisement);
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      className={cn(
+        PROPERTY_TABLE_STATUS_PILL_CLASS_NAME,
+        "min-w-0 transition-colors hover:brightness-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/35",
+        level === "property"
+          ? PROPERTY_TABLE_PILL_TONES.warning
+          : PROPERTY_TABLE_PILL_TONES.danger,
+      )}
+    >
+      <span className={PROPERTY_TABLE_STATUS_DOT_CLASS_NAME} />
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+/**
+ * 요청 칸. 요청이 있다는 것만 표시한다 — 무엇을 요청했는지는 줄을 펼친 요청 탭에서 본다.
+ * 작성 중인 초안이 있으면 "작성 중", 보낸 요청이 걸려 있으면 "요청 중"(둘 이상이면 수를 붙인다).
+ */
+export function ChangeRequestCell({
+  advertisement,
+}: {
+  advertisement: ListingAdvertisementWithListing;
+}) {
+  const { drafts } = useMyAdsTableState();
+  const requests = pendingChangeRequests(advertisement);
+  const isDrafting = !isDraftEmpty(drafts[advertisement.id]);
+  if (!isDrafting && requests.length === 0) return <EmptyCellValue />;
+  return (
+    <span
+      data-my-ads-request-marker={isDrafting ? "draft" : "pending"}
+      title={
+        requests.length > 0
+          ? requests.map((request) => changeRequestSummary(request)).join("\n")
+          : "아직 보내지 않은 요청이 있습니다."
+      }
+      className={cn(
+        PROPERTY_TABLE_STATUS_PILL_CLASS_NAME,
+        isDrafting
+          ? PROPERTY_TABLE_PILL_TONES.neutralStrong
+          : PROPERTY_TABLE_PILL_TONES.info,
+      )}
+    >
+      <span aria-hidden="true" className={PROPERTY_TABLE_STATUS_DOT_CLASS_NAME} />
+      {isDrafting ? "작성 중" : `요청 중${requests.length > 1 ? ` ${requests.length}` : ""}`}
+    </span>
+  );
+}
+
 export function PropertyTableTransactionBadge({
   transactionType,
 }: {
@@ -123,7 +237,9 @@ export function CpAdvertisementCell({
   advertisement: ListingAdvertisementWithListing;
 }) {
   const provider = cpChannelLabel(advertisement.channel);
-  const tag = (
+  // 직접 입력한 광고인지 CP에서 읽어 온 광고인지는 여기에 표시하지 않는다. 줄마다 붙는 "수동" 태그는
+  // 이 칸의 질문(어느 CP사인가)과 상관없는 소음이었다. 출처는 옆 상세 패널의 "출처" 줄에서 본다.
+  return (
     <span
       title={
         advertisement.externalAdId
@@ -139,25 +255,6 @@ export function CpAdvertisementCell({
       <span className="truncate">{provider}</span>
     </span>
   );
-  if (!isManualAdvertisement(advertisement)) return tag;
-
-  // 수동 등록 광고: CP 읽기로 확인된 광고가 아니라 사용자가 적어 넣은 광고다.
-  // 칸이 좁으면 "수동"은 남기고 채널 이름 쪽을 말줄임한다(칸 밖으로 넘치지 않는다).
-  return (
-    <span className="flex min-w-0 max-w-full items-center gap-1 overflow-hidden">
-      {tag}
-      <span
-        title="직접 입력한 광고입니다. 수정은 업무 요청 없이 바로 저장됩니다."
-        className={cn(
-          PROPERTY_TABLE_TAG_CLASS_NAME,
-          "shrink-0",
-          PROPERTY_TABLE_PILL_TONES.neutral,
-        )}
-      >
-        수동
-      </span>
-    </span>
-  );
 }
 
 export function NaverAdvertisementCell({
@@ -170,7 +267,7 @@ export function NaverAdvertisementCell({
   }
 
   const isActive =
-    advertisement.officeAdvertisementGroup?.mainAdvertisement?.isActive ?? true;
+    advertisement.comparison?.mainAdvertisement?.isActive ?? true;
   const exposure = isActive ? "게재 중" : "미노출";
 
   return (
@@ -202,7 +299,7 @@ export function VerificationMethodCell({
   advertisement: ListingAdvertisementWithListing;
 }) {
   const code =
-    advertisement.officeAdvertisementGroup?.mainAdvertisement
+    advertisement.comparison?.mainAdvertisement
       ?.verificationTypeCode;
   if (!code) return <EmptyCellValue />;
 
@@ -261,7 +358,7 @@ export function FloorExposureCell({
   advertisement: ListingAdvertisementWithListing;
 }) {
   const main =
-    advertisement.officeAdvertisementGroup?.mainAdvertisement ?? null;
+    advertisement.comparison?.mainAdvertisement ?? null;
   const comparison = analyzeOfficeAdvertisementComparison(advertisement);
   const exposureMode = main ? comparison.ownFloorExposureMode : "unknown";
   const exposureLabel =
@@ -285,13 +382,15 @@ export function FloorExposureCell({
         ? "저·중·고 구간만 노출"
         : "층 노출 방식 미확인";
 
-  return (
+  const { mode, drafts, onToggleFloorRequest } = useMyAdsTableState();
+  const asked = isValueAsked(advertisement, drafts[advertisement.id], "floorExposure");
+  const content = (
     <span
       title={`${exposureDescription}${
         disadvantage
           ? ` · 정확한 층을 공개한 경쟁 광고 ${comparison.exactFloorCompetitorCount}건`
           : ""
-      }`}
+      }${asked ? " · 변경 요청이 있습니다. 펼쳐서 요청 탭을 보세요." : ""}`}
       // 칸이 좁으면 "불리"는 남기고 알약 글자를 말줄임한다(칸 밖으로 넘치지 않는다).
       className="inline-flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden whitespace-nowrap"
     >
@@ -311,6 +410,32 @@ export function FloorExposureCell({
         </span>
       )}
     </span>
+  );
+  // 변경 요청 모드에서만 누를 수 있다. 기록 수정으로는 고치지 않는다(읽어 온 값이다).
+  if (mode !== "request") return asked ? <span className={askedValueClassName}>{content}</span> : content;
+  const blocked = editBlockReason(advertisement, "floorExposure", "request");
+  if (blocked) {
+    return (
+      <span title={blocked} className="cursor-not-allowed opacity-60">
+        {content}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-my-ads-cell="floorExposure"
+      aria-label={`${advertisementLocationLabel(advertisement)} 층 노출 변경 요청${asked ? " 빼기" : ""}`}
+      aria-pressed={drafts[advertisement.id]?.floorExposure !== undefined}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggleFloorRequest(advertisement);
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      className={cn(editableCellButtonClassName, asked && askedValueClassName)}
+    >
+      {content}
+    </button>
   );
 }
 
@@ -338,88 +463,86 @@ export function inlinePrimaryAmountName(transactionType: string): string {
   return "가격";
 }
 
-const changedValueClassName =
-  "rounded-[4px] bg-warning-soft/70 px-1.5 ring-1 ring-inset ring-warning/25";
+/** 바꿔 달라고 한 값: 줄만 긋는다. 무엇으로 바꾸는지는 펼친 요청 탭에서 본다 */
+const askedValueClassName =
+  "text-muted-foreground line-through decoration-muted-foreground/70";
+
+/** 모드에 들어왔을 때 칸이 버튼이 된다. 칸 전체가 눌리고, 올리면 테두리로 고칠 수 있음을 알린다 */
+const editableCellButtonClassName =
+  "-mx-1.5 flex h-7 min-w-0 max-w-[calc(100%+12px)] cursor-text items-center rounded-[4px] px-1.5 text-left transition-shadow hover:shadow-[inset_0_0_0_1px_rgba(35,131,226,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/35";
 
 /**
- * 선택·수정값은 열 정의가 아니라 표 상태 컨텍스트에서 읽는다(my-ads-table-context.ts).
- * 수동 등록 광고는 CP 작업 업무로 보낼 수 없어 입력칸을 열지 않고 "상세 편집"에서 바로 고친다.
+ * 금액 칸(가격/보증금 · 월세). 평소에는 읽기 전용이다.
+ * 기록 수정 모드에서는 눌러 고치면 바로 저장되고, 변경 요청 모드에서는 값은 그대로 두고 초안에 적는다.
+ * 요청(작성 중이든 보낸 것이든)이 걸린 값에는 줄만 긋는다.
  */
-function useInlineEditCell(advertisement: ListingAdvertisementWithListing) {
-  const { selectedIds, inlineEdits, onInlineEditChange, onInlineEditReset } =
-    useMyAdsTableState();
-  return {
-    selected:
-      selectedIds.has(advertisement.id) && !isManualAdvertisement(advertisement),
-    edit: inlineEdits[advertisement.id],
-    onChange: (patch: Partial<InlinePriceEdit>) =>
-      onInlineEditChange(advertisement, patch),
-    onReset: () => onInlineEditReset(advertisement.id),
-  };
+function MoneyCell({
+  advertisement,
+  field,
+  label,
+}: {
+  advertisement: ListingAdvertisementWithListing;
+  field: "primary" | "monthlyRent";
+  label: string;
+}) {
+  const { mode, editingCell, drafts, onStartEdit } = useMyAdsTableState();
+  const asked = isValueAsked(advertisement, drafts[advertisement.id], field);
+  const isEditing =
+    editingCell?.id === advertisement.id && editingCell.field === field;
+
+  if (isEditing) {
+    return <MoneyCellEditor advertisement={advertisement} field={field} />;
+  }
+  const text = (
+    <span
+      title={asked ? `${label} · 변경 요청이 있습니다. 펼쳐서 요청 탭을 보세요.` : label}
+      className={cn(
+        "min-w-0 truncate whitespace-nowrap tabular-nums",
+        asked && askedValueClassName,
+      )}
+    >
+      {label}
+    </span>
+  );
+  if (!mode) return text;
+  const blocked = editBlockReason(advertisement, field, mode);
+  if (blocked) {
+    return (
+      <span title={blocked} className="block cursor-not-allowed truncate opacity-60">
+        {text}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-my-ads-cell={field}
+      aria-label={`${advertisementLocationLabel(advertisement)} ${fieldLabel(advertisement, field)} ${
+        mode === "edit" ? "고치기" : "변경 요청"
+      }`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onStartEdit(advertisement, field);
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
+      className={editableCellButtonClassName}
+    >
+      {text}
+    </button>
+  );
 }
 
-/**
- * 가격/보증금 셀. 행을 선택하면 입력칸이 열리고, 원래 값과 달라지면 노란
- * 배경으로 표시한다 (이실장과 같은 조작감이되 셀마다 확인창을 띄우지는 않는다).
- */
 export function InlinePriceCell({
   advertisement,
 }: {
   advertisement: ListingAdvertisementWithListing;
 }) {
-  const { selected, edit, onChange, onReset } = useInlineEditCell(advertisement);
-  const base = inlineEditBase(advertisement);
-  const current = edit ?? base;
-  const transactionType = advertisement.listing?.transactionType ?? "sale";
-  const primaryKey =
-    transactionType === "monthly" || transactionType === "jeonse"
-      ? "advertisedDeposit"
-      : "advertisedPrice";
-  const draftChanged = edit ? isInlineEditDirty(advertisement, edit) : false;
-  const primaryChanged = current[primaryKey] !== base[primaryKey];
-
-  if (!selected) {
-    const label = edit
-      ? inlineMoneyEditLabel(current[primaryKey])
-      : advertisementPrimaryAmountLabel(advertisement);
-    return (
-      <span className="flex min-w-0 items-center gap-1">
-        <span
-          title={label}
-          className={cn(
-            "min-w-0 truncate whitespace-nowrap tabular-nums",
-            primaryChanged && changedValueClassName,
-          )}
-        >
-          {label}
-        </span>
-        {draftChanged && (
-          <InlineDraftResetButton
-            advertisement={advertisement}
-            onReset={onReset}
-          />
-        )}
-      </span>
-    );
-  }
-
   return (
-    <div className="flex items-center gap-1">
-      <InlineMoneyInput
-        value={current[primaryKey]}
-        changed={primaryChanged}
-        ariaLabel={`${advertisementLocationLabel(advertisement)} ${inlinePrimaryAmountName(
-          transactionType,
-        )}`}
-        onChange={(value) => onChange({ [primaryKey]: value })}
-      />
-      {draftChanged && (
-        <InlineDraftResetButton
-          advertisement={advertisement}
-          onReset={onReset}
-        />
-      )}
-    </div>
+    <MoneyCell
+      advertisement={advertisement}
+      field="primary"
+      label={advertisementPrimaryAmountLabel(advertisement)}
+    />
   );
 }
 
@@ -428,64 +551,15 @@ export function InlineMonthlyRentCell({
 }: {
   advertisement: ListingAdvertisementWithListing;
 }) {
-  const { selected, edit, onChange } = useInlineEditCell(advertisement);
-  if (advertisement.listing?.transactionType !== "monthly") {
+  if (advertisementTransactionType(advertisement) !== "monthly") {
     return <EmptyCellValue />;
   }
-
-  const base = inlineEditBase(advertisement);
-  const current = edit ?? base;
-  const changed = current.advertisedMonthlyRent !== base.advertisedMonthlyRent;
-
-  if (!selected) {
-    const label = edit
-      ? inlineMoneyEditLabel(current.advertisedMonthlyRent)
-      : advertisementMonthlyRentLabel(advertisement);
-    return (
-      <span
-        title={label}
-        className={cn(
-          "block max-w-full truncate whitespace-nowrap tabular-nums",
-          changed && cn("inline-block", changedValueClassName),
-        )}
-      >
-        {label}
-      </span>
-    );
-  }
-
   return (
-    <InlineMoneyInput
-      value={current.advertisedMonthlyRent}
-      changed={changed}
-      ariaLabel={`${advertisementLocationLabel(advertisement)} 월세`}
-      onChange={(value) => onChange({ advertisedMonthlyRent: value })}
+    <MoneyCell
+      advertisement={advertisement}
+      field="monthlyRent"
+      label={advertisementMonthlyRentLabel(advertisement)}
     />
-  );
-}
-
-function InlineDraftResetButton({
-  advertisement,
-  onReset,
-}: {
-  advertisement: ListingAdvertisementWithListing;
-  onReset: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title="이 행의 변경 초안 취소"
-      aria-label={`${advertisementLocationLabel(advertisement)} 변경 초안 취소`}
-      onClick={(event) => {
-        event.stopPropagation();
-        onReset();
-      }}
-      onDoubleClick={(event) => event.stopPropagation()}
-      className="inline-flex h-5 shrink-0 items-center gap-0.5 rounded-[4px] border border-warning/30 bg-[#fbf3db] px-1.5 text-[11px] font-medium leading-none text-[#8f6b1f] hover:bg-warning-soft/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning/30"
-    >
-      <RotateCcw aria-hidden="true" className="size-2.5" />
-      변경 초안
-    </button>
   );
 }
 
@@ -535,40 +609,93 @@ const stopTableHandling = (
 };
 
 /**
- * 만원 단위 금액 입력칸. type="number"는 포커스된 칸 위에서 휠을 굴리면 값이 바뀌고
- * (2000 → 1999) 위·아래 화살표로도 값이 바뀌어 모르는 사이 변경 초안이 생긴다.
+ * 금액 칸의 입력칸. Enter 확정 · Esc 취소 · 바깥을 누르면 확정.
+ * 받을 수 없는 값이면 닫지 않고 이유를 보여 준다. 기록 수정의 저장이 실패해도 닫지 않는다(쓴 값을 잃지 않게).
+ *
+ * type="number"는 포커스된 칸 위에서 휠을 굴리면 값이 바뀌고(2000 → 1999) 위 · 아래 화살표로도 값이 바뀐다.
  * 그래서 숫자 자판만 띄우는 텍스트 칸으로 두고, 숫자(와 천 단위 쉼표)만 받는다.
  */
-function InlineMoneyInput({
-  value,
-  changed,
-  ariaLabel,
-  onChange,
+function MoneyCellEditor({
+  advertisement,
+  field,
 }: {
-  value: string;
-  changed: boolean;
-  ariaLabel: string;
-  onChange: (value: string) => void;
+  advertisement: ListingAdvertisementWithListing;
+  field: "primary" | "monthlyRent";
 }) {
+  const { mode, drafts, onCommitEdit, onCancelEdit, editorCommitRef } =
+    useMyAdsTableState();
+  // 변경 요청은 이미 적어 둔 값에서, 기록 수정은 지금 값에서 시작한다
+  const [text, setText] = useState(() => {
+    const drafted = mode === "request" ? drafts[advertisement.id]?.[field] : undefined;
+    const start = drafted ?? currentAmount(advertisement, field);
+    return start == null ? "" : String(start);
+  });
+  const [problem, setProblem] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
+  const textRef = useRef(text);
+  textRef.current = text;
+
+  const commit = useCallback(async (): Promise<boolean> => {
+    if (savingRef.current) return false;
+    savingRef.current = true;
+    setIsSaving(true);
+    try {
+      const reason = await onCommitEdit(advertisement, field, textRef.current);
+      if (reason) setProblem(reason);
+      return reason === null;
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
+    }
+  }, [advertisement, field, onCommitEdit]);
+
+  // 모드를 바꾸거나 요청을 보내기 전에 화면이 이 칸을 먼저 확정하게 한다
+  useEffect(() => {
+    editorCommitRef.current = commit;
+    return () => {
+      if (editorCommitRef.current === commit) editorCommitRef.current = null;
+    };
+  }, [commit, editorCommitRef]);
+
   return (
     <Input
+      autoFocus
       type="text"
       inputMode="numeric"
       autoComplete="off"
       spellCheck={false}
-      value={value}
-      aria-label={ariaLabel}
+      value={text}
+      readOnly={isSaving}
+      aria-busy={isSaving}
+      aria-invalid={problem ? true : undefined}
+      title={problem ?? undefined}
+      aria-label={`${advertisementLocationLabel(advertisement)} ${fieldLabel(advertisement, field)} (만원)`}
+      onFocus={(event) => event.currentTarget.select()}
       onClick={stopTableHandling}
       onDoubleClick={stopTableHandling}
-      onKeyDown={stopTableHandling}
+      onKeyDown={(event) => {
+        stopTableHandling(event);
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void commit();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          onCancelEdit();
+        }
+      }}
+      onBlur={() => void commit()}
       onChange={(event) => {
         // 숫자가 아닌 글자가 섞이면 이전 값을 그대로 둔다(친 글자가 들어가지 않는다).
         const next = sanitizeManwonInput(event.target.value);
-        if (next !== null && next !== value) onChange(next);
+        if (next === null) return;
+        setText(next);
+        setProblem(null);
       }}
       className={cn(
         "h-7 w-full min-w-0 px-1.5 text-right text-[13px] tabular-nums",
-        changed && "border-warning bg-warning-soft font-semibold",
+        problem && "border-destructive ring-1 ring-destructive/40",
       )}
     />
   );

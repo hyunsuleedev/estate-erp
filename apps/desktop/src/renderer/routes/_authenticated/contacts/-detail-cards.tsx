@@ -5,6 +5,7 @@ import {
   CONTACT_RELATION_TYPE_LABELS,
   sqmToPyeong,
   type ContactRelationType,
+  formatUnitName,
 } from '@estate-erp/shared';
 import { Link2, Pencil, Trash2 } from 'lucide-react';
 import { formatDate, formatDateTime, formatMoney, formatPhone } from '@/lib/format';
@@ -128,7 +129,7 @@ export function formatRegionSummary(requirement: BuyerRequirement) {
 export function PropertyContactCard({ propertyContact }: { propertyContact: PropertyContact }) {
   const title = propertyContact.property?.site?.name ?? '연결 매물';
   const subtitle = [
-    propertyContact.property?.unit?.name,
+    formatUnitName(propertyContact.property?.unit),
     propertyContact.property?.site?.roadAddress || propertyContact.property?.site?.jibunAddress,
   ]
     .filter(Boolean)
@@ -232,7 +233,7 @@ export function ConsultationCard({ consultation }: { consultation: Consultation 
             id={consultation.property.id}
             label={[
               consultation.property.site?.name ?? '매물',
-              consultation.property.unit?.name,
+              formatUnitName(consultation.property.unit),
             ]
               .filter(Boolean)
               .join(' ')}

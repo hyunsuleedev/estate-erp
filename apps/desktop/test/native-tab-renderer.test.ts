@@ -148,6 +148,32 @@ describe('renderer surface role', () => {
 });
 
 describe('native tab retention', () => {
+  it('reports an upload in progress and clears it even in a hidden tab', () => {
+    // 올리는 중이 아니면 보고 내용이 예전과 같다 (칸을 넣지 않는다)
+    assert.equal(
+      'transferring' in
+        createNativeTabRetentionUpdate(0, { transientEditor: false, explicitDirty: false, transferring: false }).reasons,
+      false,
+    );
+    const uploading = createNativeTabRetentionUpdate(0, {
+      transientEditor: false,
+      explicitDirty: false,
+      transferring: true,
+    });
+    assert.equal(uploading.protected, true);
+    assert.equal(uploading.reasons.transferring, true);
+
+    // 보이지 않는 탭에서는 애니메이션 프레임이 돌지 않는다. 타이머로도 상태를 읽어야
+    // 뒤에 있는 탭에서 올리기가 끝났을 때 "올리는 중"이 풀려 탭을 닫을 수 있다.
+    const reporter = readFileSync(
+      new URL('../src/renderer/features/tabs/native/NativeTabRetentionReporter.tsx', import.meta.url),
+      'utf8',
+    );
+    assert.match(reporter, /scheduledFrame = window\.requestAnimationFrame\(read\);/);
+    assert.match(reporter, /scheduledTimer = window\.setTimeout\(read, 250\);/);
+    assert.match(reporter, /'data-native-tab-transfer',/);
+  });
+
   it('keeps mutation, transient editor, and dirty reasons independent', () => {
     assert.deepEqual(
       createNativeTabRetentionUpdate(0, {

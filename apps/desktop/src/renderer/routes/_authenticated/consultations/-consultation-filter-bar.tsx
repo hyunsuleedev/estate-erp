@@ -1,10 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { formatUnitLabel as formatSharedUnitLabel } from '@estate-erp/shared';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Building2, Search, SlidersHorizontal, X } from 'lucide-react';
+import { Building2, CalendarDays, Link2, PenLine, RotateCcw, UserRound, Waypoints, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Dong, Site, Unit } from '@estate-erp/api-client';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -15,246 +15,196 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  ToolbarFilterChip,
+  ToolbarSelectPanel,
+  toolbarGhostButtonClassName,
+} from '../properties/-components/property-toolbar';
 import { getInitial } from './-consultation-badges';
 import {
-  getConsultationFilterChips,
   type ConsultationEntityFilters,
   type ConsultationFilterOption,
   type ConsultationQuickFilter,
 } from './-consultation-view-utils';
 
-export function ConsultationFilterBar({
-  filters,
-  sortOrder,
-  onFiltersChange,
-  onSortOrderChange,
-  onReset,
-}: {
-  filters: ConsultationEntityFilters;
-  sortOrder: 'asc' | 'desc';
-  onFiltersChange: (updater: (current: ConsultationEntityFilters) => ConsultationEntityFilters) => void;
-  onSortOrderChange: (value: 'asc' | 'desc') => void;
-  onReset: () => void;
-}) {
-  const chips = getConsultationFilterChips(filters);
-  const hasActiveFilters = chips.length > 0;
+const TYPE_OPTIONS = [
+  { value: 'phone', label: '전화' },
+  { value: 'visit', label: '방문' },
+  { value: 'online', label: '온라인' },
+];
 
-  const setQuickFilter = (quickFilter: ConsultationQuickFilter) => {
-    onFiltersChange((current) => ({ ...current, quickFilter }));
-  };
+/** 무엇에 연결된 상담인지 */
+const CONTEXT_OPTIONS = [
+  { value: 'property', label: '매물 연결' },
+  { value: 'listingIntake', label: '의뢰 연결' },
+  { value: 'buyerRequirement', label: '구매요건 연결' },
+  { value: 'unlinked', label: '연결 없음' },
+];
 
-  const clearChip = (key: string) => {
-    onFiltersChange((current) => {
-      if (key === 'q') return { ...current, q: '' };
-      if (key === 'quickFilter') return { ...current, quickFilter: 'all' };
-      if (key === 'contact') return { ...current, contact: null };
-      if (key === 'property') return { ...current, site: null, dong: null, unit: null };
-      if (key === 'type') return { ...current, type: null };
-      if (key === 'createdBy') return { ...current, createdBy: null };
-      if (key === 'dateRange') return { ...current, dateFrom: null, dateTo: null };
-      return current;
-    });
-  };
-
-  return (
-    <div className="space-y-0">
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-        <div className="flex items-center gap-1 rounded-md bg-muted/80 px-2">
-          <Search className="size-3.5 text-muted-foreground" />
-          <Input
-            type="text"
-            value={filters.q ?? ''}
-            onChange={(event) => onFiltersChange((current) => ({ ...current, q: event.target.value }))}
-            placeholder="상담 내용 검색..."
-            className="h-8 w-44 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0"
-          />
-          {filters.q && (
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() => onFiltersChange((current) => ({ ...current, q: '' }))}
-            >
-              <X className="size-3" />
-            </button>
-          )}
-        </div>
-
-        <div className="h-4 w-px bg-border/50" />
-
-        <QuickFilterButton active={filters.quickFilter === 'all'} onClick={() => setQuickFilter('all')}>
-          전체
-        </QuickFilterButton>
-        <QuickFilterButton active={filters.quickFilter === 'actionRequired'} onClick={() => setQuickFilter('actionRequired')}>
-          후속 필요
-        </QuickFilterButton>
-        <QuickFilterButton active={filters.quickFilter === 'property'} onClick={() => setQuickFilter('property')}>
-          매물 연결
-        </QuickFilterButton>
-        <QuickFilterButton active={filters.quickFilter === 'listingIntake'} onClick={() => setQuickFilter('listingIntake')}>
-          의뢰 연결
-        </QuickFilterButton>
-        <QuickFilterButton active={filters.quickFilter === 'buyerRequirement'} onClick={() => setQuickFilter('buyerRequirement')}>
-          구매요건
-        </QuickFilterButton>
-        <QuickFilterButton active={filters.quickFilter === 'unlinked'} onClick={() => setQuickFilter('unlinked')}>
-          미연결
-        </QuickFilterButton>
-
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs text-muted-foreground">
-              <SlidersHorizontal className="size-3.5" />
-              필터
-              {hasActiveFilters && (
-                <span className="flex size-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground">
-                  {chips.length}
-                </span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="max-h-[70vh] w-[390px] overflow-y-auto p-0">
-            <div className="border-b border-slate-200 px-3 py-2">
-              <div className="text-sm font-semibold text-slate-950">상세 필터</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">고객·매물·기간·기록자로 상담 범위를 좁힙니다.</div>
-            </div>
-            <div className="space-y-3 p-3">
-              <ContactFilterPicker
-                selected={filters.contact ?? null}
-                onSelect={(contact) => onFiltersChange((current) => ({ ...current, contact }))}
-              />
-              <PropertyHierarchyFilter
-                site={filters.site ?? null}
-                dong={filters.dong ?? null}
-                unit={filters.unit ?? null}
-                onChange={(next) => onFiltersChange((current) => ({ ...current, ...next }))}
-              />
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                <div className="mb-2 text-xs font-semibold text-slate-700">상담유형</div>
-                <Select
-                  value={filters.type ?? 'all'}
-                  onValueChange={(value) => onFiltersChange((current) => ({ ...current, type: value === 'all' ? null : value }))}
-                >
-                  <SelectTrigger size="sm" className="w-full bg-background">
-                    <SelectValue placeholder="전체 유형" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">전체 유형</SelectItem>
-                    <SelectItem value="phone">전화</SelectItem>
-                    <SelectItem value="visit">방문</SelectItem>
-                    <SelectItem value="online">온라인</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <CreatedByFilterPicker
-                selected={filters.createdBy ?? null}
-                onSelect={(createdBy) => onFiltersChange((current) => ({ ...current, createdBy }))}
-              />
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="text-xs font-semibold text-slate-700">기간</div>
-                  {(filters.dateFrom || filters.dateTo) && (
-                    <button
-                      type="button"
-                      className="text-[11px] text-muted-foreground hover:text-foreground"
-                      onClick={() => onFiltersChange((current) => ({ ...current, dateFrom: null, dateTo: null }))}
-                    >
-                      해제
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="date"
-                    value={filters.dateFrom ?? ''}
-                    onChange={(event) =>
-                      onFiltersChange((current) => ({ ...current, dateFrom: event.target.value || null }))
-                    }
-                    className="h-8 bg-background text-xs"
-                  />
-                  <span className="text-xs text-muted-foreground">~</span>
-                  <Input
-                    type="date"
-                    value={filters.dateTo ?? ''}
-                    onChange={(event) =>
-                      onFiltersChange((current) => ({ ...current, dateTo: event.target.value || null }))
-                    }
-                    className="h-8 bg-background text-xs"
-                  />
-                </div>
-              </div>
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        <div className="flex-1" />
-
-        <Select value={sortOrder} onValueChange={(value) => onSortOrderChange(value as 'asc' | 'desc')}>
-          <SelectTrigger size="sm" className="h-8 w-[120px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="desc">최신순</SelectItem>
-            <SelectItem value="asc">오래된순</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {(hasActiveFilters || sortOrder !== 'desc') && (
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-border/30 px-3 py-1.5">
-          {chips.map((chip) => (
-            <Badge
-              key={chip.key}
-              variant="secondary"
-              className="gap-1 rounded-md py-0.5 pr-1 text-xs font-normal"
-            >
-              <span className="font-medium">{chip.label}</span>
-              <button
-                type="button"
-                onClick={() => clearChip(chip.key)}
-                className="ml-0.5 rounded-sm hover:bg-muted-foreground/20"
-              >
-                <X className="size-3" />
-              </button>
-            </Badge>
-          ))}
-          {sortOrder !== 'desc' && (
-            <Badge variant="outline" className="rounded-md py-0.5 text-xs font-normal">
-              등록일 ↑
-            </Badge>
-          )}
-          <button type="button" onClick={onReset} className="text-xs text-muted-foreground hover:text-foreground">
-            초기화
-          </button>
-        </div>
-      )}
-    </div>
-  );
+function formatDateRange(from: string | null | undefined, to: string | null | undefined): string | null {
+  const short = (value: string) => value.slice(2).replaceAll('-', '.');
+  if (from && to) return `${short(from)} ~ ${short(to)}`;
+  if (from) return `${short(from)} 이후`;
+  if (to) return `${short(to)} 까지`;
+  return null;
 }
 
-function QuickFilterButton({
-  active,
-  onClick,
-  children,
+/**
+ * 상담분석의 필터 줄. 매물관리의 필터 줄과 같은 부품(ToolbarFilterChip, shape="soft")을 쓴다:
+ * 테두리 없이 "아이콘 이름 ⌄"만 놓고, 값이 걸린 필터만 파란 알약으로 뜬다.
+ * 검색은 보기 탭 옆(화면 쪽)에 있고, 정렬은 표 머리의 "일시"를 눌러 바꾼다.
+ */
+export function ConsultationFilterBar({
+  filters,
+  onFiltersChange,
+  onReset,
+  hasActiveFilters,
 }: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
+  filters: ConsultationEntityFilters;
+  onFiltersChange: (updater: (current: ConsultationEntityFilters) => ConsultationEntityFilters) => void;
+  onReset: () => void;
+  /** 초기화할 것이 있는지 (검색어 · 정렬 포함 — 화면이 판단한다) */
+  hasActiveFilters: boolean;
 }) {
+  const placeSummary = [filters.site?.label, filters.dong?.label, filters.unit?.label].filter(Boolean).join(' ') || null;
+  // 후속 필요(actionRequired)는 보기 탭으로 옮겨 갔다. 남아 있는 값이면 연결 조건이 없는 것으로 본다
+  const contextValue = CONTEXT_OPTIONS.some((option) => option.value === filters.quickFilter)
+    ? filters.quickFilter
+    : 'all';
+
   return (
-    <Button
-      type="button"
-      variant={active ? 'outline' : 'ghost'}
-      size="sm"
-      className={cn(
-        'h-8 px-2.5 text-xs',
-        active ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100' : 'text-muted-foreground',
+    <section data-consultation-filter-row className="flex shrink-0 items-start gap-2 bg-white px-3 pb-1.5 pt-2">
+      {/* 필터가 모두 이 줄에 있으므로, 창이 좁으면 옆으로 숨기지 않고 다음 줄로 내린다 */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
+        <ToolbarFilterChip
+          label="고객"
+          shape="soft"
+          icon={<UserRound />}
+          summary={filters.contact?.label ?? null}
+          onClear={() => onFiltersChange((current) => ({ ...current, contact: null }))}
+          contentClassName="w-[320px] p-0"
+        >
+          {(close) => (
+            <ContactFilterPicker
+              selected={filters.contact ?? null}
+              onSelect={(contact) => {
+                onFiltersChange((current) => ({ ...current, contact }));
+                if (contact) close();
+              }}
+            />
+          )}
+        </ToolbarFilterChip>
+
+        <ToolbarFilterChip
+          label="매물"
+          shape="soft"
+          icon={<Building2 />}
+          summary={placeSummary}
+          onClear={() => onFiltersChange((current) => ({ ...current, site: null, dong: null, unit: null }))}
+          contentClassName="w-[360px] max-w-[calc(100vw-24px)] p-0"
+        >
+          <PropertyHierarchyFilter
+            site={filters.site ?? null}
+            dong={filters.dong ?? null}
+            unit={filters.unit ?? null}
+            onChange={(next) => onFiltersChange((current) => ({ ...current, ...next }))}
+          />
+        </ToolbarFilterChip>
+
+        <ToolbarFilterChip
+          label="방식"
+          shape="soft"
+          icon={<Waypoints />}
+          summary={TYPE_OPTIONS.find((option) => option.value === filters.type)?.label ?? null}
+          onClear={() => onFiltersChange((current) => ({ ...current, type: null }))}
+          contentClassName="w-[180px] p-0"
+        >
+          {(close) => (
+            <ToolbarSelectPanel
+              options={TYPE_OPTIONS}
+              value={filters.type ?? 'all'}
+              onChange={(value) => onFiltersChange((current) => ({ ...current, type: value === 'all' ? null : value }))}
+              onClose={close}
+            />
+          )}
+        </ToolbarFilterChip>
+
+        <ToolbarFilterChip
+          label="연결"
+          shape="soft"
+          icon={<Link2 />}
+          summary={CONTEXT_OPTIONS.find((option) => option.value === contextValue)?.label ?? null}
+          onClear={() => onFiltersChange((current) => ({ ...current, quickFilter: 'all' }))}
+          contentClassName="w-[200px] p-0"
+        >
+          {(close) => (
+            <ToolbarSelectPanel
+              options={CONTEXT_OPTIONS}
+              value={contextValue}
+              onChange={(value) =>
+                onFiltersChange((current) => ({ ...current, quickFilter: value as ConsultationQuickFilter }))
+              }
+              onClose={close}
+            />
+          )}
+        </ToolbarFilterChip>
+
+        <ToolbarFilterChip
+          label="상담자"
+          shape="soft"
+          icon={<PenLine />}
+          summary={filters.createdBy?.label ?? null}
+          onClear={() => onFiltersChange((current) => ({ ...current, createdBy: null }))}
+          contentClassName="w-[220px] p-0"
+        >
+          {(close) => (
+            <CreatedByFilterPicker
+              selected={filters.createdBy ?? null}
+              onSelect={(createdBy) => {
+                onFiltersChange((current) => ({ ...current, createdBy }));
+                close();
+              }}
+            />
+          )}
+        </ToolbarFilterChip>
+
+        <ToolbarFilterChip
+          label="기간"
+          shape="soft"
+          icon={<CalendarDays />}
+          summary={formatDateRange(filters.dateFrom, filters.dateTo)}
+          onClear={() => onFiltersChange((current) => ({ ...current, dateFrom: null, dateTo: null }))}
+          contentClassName="w-[300px] p-3"
+        >
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              aria-label="시작일"
+              value={filters.dateFrom ?? ''}
+              onChange={(event) => onFiltersChange((current) => ({ ...current, dateFrom: event.target.value || null }))}
+              className="h-8 text-[13px]"
+            />
+            <span className="text-xs text-muted-foreground">~</span>
+            <Input
+              type="date"
+              aria-label="종료일"
+              value={filters.dateTo ?? ''}
+              onChange={(event) => onFiltersChange((current) => ({ ...current, dateTo: event.target.value || null }))}
+              className="h-8 text-[13px]"
+            />
+          </div>
+        </ToolbarFilterChip>
+      </div>
+
+      {/* 초기화 — 필터 줄이 넘쳐도 가려지지 않게 오른쪽에 고정 */}
+      {hasActiveFilters && (
+        <button type="button" className={cn(toolbarGhostButtonClassName, 'shrink-0 rounded-full')} onClick={onReset}>
+          <RotateCcw className="size-3.5" />
+          초기화
+        </button>
       )}
-      onClick={onClick}
-    >
-      {children}
-    </Button>
+    </section>
   );
 }
 
@@ -274,7 +224,7 @@ function ContactFilterPicker({
   const contacts = data?.items ?? [];
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+    <div className="p-3">
       <div className="mb-2 flex items-center justify-between">
         <div className="text-xs font-semibold text-slate-700">고객</div>
         {selected && (
@@ -328,8 +278,8 @@ function CreatedByFilterPicker({
   });
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-      <div className="mb-2 text-xs font-semibold text-slate-700">기록자</div>
+    <div className="p-3">
+      <div className="mb-2 text-xs font-semibold text-slate-700">상담자</div>
       <Select
         value={selected?.id ?? 'all'}
         onValueChange={(value) => {
@@ -392,7 +342,7 @@ function PropertyHierarchyFilter({
   const visibleDongs = dongs.filter((item) => !item.isPlaceholder);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+    <div className="p-3">
       <div className="mb-2 flex items-center justify-between">
         <div className="text-xs font-semibold text-slate-700">매물</div>
         {(site || dong || unit) && (
@@ -520,7 +470,7 @@ function formatDongLabel(dong: Dong) {
 }
 
 function formatUnitLabel(unit: Unit) {
-  return withSuffix(unit.name, '호');
+  return formatSharedUnitLabel(unit);
 }
 
 function withSuffix(value: string, suffix: string) {

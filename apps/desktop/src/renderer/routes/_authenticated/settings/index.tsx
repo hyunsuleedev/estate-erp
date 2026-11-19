@@ -57,6 +57,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TeamSettings } from './-team-settings';
 import { ContractTemplatesCard } from './-templates-card';
 import { McpApiKeyCard } from './-mcp-card';
 
@@ -83,6 +84,7 @@ type OfficeForm = {
 type SettingsSectionId =
   | 'account'
   | 'office'
+  | 'team'
   | 'commission'
   | 'templates'
   | 'connections';
@@ -110,8 +112,16 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
     group: '사무소 운영',
     label: '사무소 정보',
     description: '대표 정보와 팀 관리',
-    keywords: '사무소 상호 대표 등록번호 전화 주소 직원 권한 플랜 구독 고정비',
+    keywords: '사무소 상호 대표 등록번호 전화 주소 플랜 구독 고정비',
     icon: Building2,
+  },
+  {
+    id: 'team',
+    group: '사무소 운영',
+    label: '직원 및 권한',
+    description: '계정, 역할, 급여와 비밀번호',
+    keywords: '직원 계정 추가 역할 권한 대표 매니저 중개사 자격 급여 기본급 배분율 비밀번호 재설정 비활성화 슬롯',
+    icon: Users,
   },
   {
     id: 'commission',
@@ -179,7 +189,17 @@ const DEFAULT_COMMISSION_FORM: CommissionConfigForm = {
   closerBonus: '0',
 };
 
+interface SettingsSearch {
+  /** 열 항목. 다른 화면에서 설정의 특정 항목으로 바로 올 때 쓴다 (예: 직원관리 → 직원 및 권한) */
+  section?: SettingsSectionId;
+}
+
 export const Route = createFileRoute('/_authenticated/settings/')({
+  validateSearch: (search: Record<string, unknown>): SettingsSearch => ({
+    section: SETTINGS_SECTIONS.some((item) => item.id === search.section)
+      ? (search.section as SettingsSectionId)
+      : undefined,
+  }),
   component: SettingsPage,
 });
 
@@ -191,12 +211,24 @@ function SettingsPage() {
   const hydratedOfficeVersion = useRef<string | null>(null);
   const contentScrollRef = useRef<HTMLElement | null>(null);
 
+  const { section: requestedSection } = Route.useSearch();
+  // 직원 계정은 대표와 매니저만 관리한다. 중개사에게는 항목 자체를 보이지 않는다.
+  const canManageTeam = user?.role === 'owner' || user?.role === 'manager';
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => {
+    if (requestedSection) return requestedSection;
     const saved = localStorage.getItem(LAST_SECTION_KEY);
     return SETTINGS_SECTIONS.some((section) => section.id === saved)
       ? (saved as SettingsSectionId)
       : 'account';
   });
+  // 설정이 이미 열린 채로 다른 화면에서 특정 항목을 가리키며 들어온 경우
+  useEffect(() => {
+    if (requestedSection) setActiveSection(requestedSection);
+  }, [requestedSection]);
+  // 권한이 없는 사람이 저장된 값이나 주소로 직원 항목에 들어오면 내 계정으로 돌린다
+  useEffect(() => {
+    if (activeSection === 'team' && user && !canManageTeam) setActiveSection('account');
+  }, [activeSection, canManageTeam, user]);
   const [searchQuery, setSearchQuery] = useState('');
   const [locale, setLocale] = useState<SupportedLocale>(currentLocale());
   const [officeForm, setOfficeForm] = useState<OfficeForm>(EMPTY_OFFICE_FORM);
@@ -377,12 +409,13 @@ function SettingsPage() {
   const filteredSections = useMemo(
     () =>
       SETTINGS_SECTIONS.filter((section) => {
+        if (section.id === 'team' && !canManageTeam) return false;
         if (!normalizedSearch) return true;
         return `${section.label} ${section.description} ${section.keywords}`
           .toLocaleLowerCase('ko-KR')
           .includes(normalizedSearch);
       }),
-    [normalizedSearch],
+    [canManageTeam, normalizedSearch],
   );
 
   useEffect(() => {
@@ -532,6 +565,10 @@ function SettingsPage() {
                   onChange={setOfficeForm}
                   onSave={() => updateOfficeMutation.mutate()}
                 />
+              ) : null}
+
+              {activeSection === 'team' && canManageTeam ? (
+                <TeamSettings />
               ) : null}
 
               {activeSection === 'commission' ? (
@@ -1058,11 +1095,11 @@ function OfficeSettings({
             <SettingsLinkRow
               to="/employees"
               icon={Users}
-              title="직원 및 권한"
+              title="직원 업무 현황"
               description={
                 office
-                  ? `전체 ${office.counts.totalUsers}명 · 활성 ${office.counts.activeUsers}명`
-                  : '직원 계정과 역할을 관리합니다.'
+                  ? `전체 ${office.counts.totalUsers}명 · 활성 ${office.counts.activeUsers}명 · 담당 업무와 활동 기록`
+                  : '직원별 담당 업무와 활동 기록을 봅니다.'
               }
               actionLabel="직원 관리 열기"
             />
@@ -1685,6 +1722,8 @@ function paneDescription(sectionId: SettingsSectionId): string {
       return '내 로그인 정보와 이 기기에서 사용할 표시 언어를 확인합니다.';
     case 'office':
       return '사무소의 공식 정보와 팀 운영 현황을 관리합니다.';
+    case 'team':
+      return '직원 계정을 만들고 역할, 자격, 급여와 배분율, 비밀번호를 관리합니다. 급여와 배분율은 대표만 정합니다.';
     case 'commission':
       return '거래 생성 시 적용할 직원 수수료 배분의 기본값을 정합니다.';
     case 'templates':

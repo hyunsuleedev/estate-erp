@@ -22,16 +22,15 @@ function DealDetailPage() {
   const navigate = useNavigate();
   const referenceDate = useMemo(() => new Date(), []);
 
-  // 목록과 같은 캐시(['deals'])를 쓴다. 패널에서 고친 내용이 이 탭에도 바로 보인다.
   const dealsQuery = useQuery({
-    queryKey: ['deals'],
-    queryFn: () => api.deals.findAll(),
+    queryKey: ['deals', 'detail', id],
+    queryFn: () => api.deals.findOne(id),
   });
   const contractsQuery = useQuery({
     queryKey: ['contracts'],
     queryFn: () => api.contracts.findAll(),
   });
-  const deal = dealsQuery.data?.find((item) => item.id === id) ?? null;
+  const deal = dealsQuery.data ?? null;
   const contractByDealId = useMemo(
     () =>
       new Map(

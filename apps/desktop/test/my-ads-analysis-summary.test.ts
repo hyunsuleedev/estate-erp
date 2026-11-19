@@ -46,10 +46,12 @@ function ad({
   return {
     id: "ad-1",
     advertisedPrice: ownPrice,
+    // 묶음 표가 없어져 메모는 광고의 것이다
+    memo,
     listing: { transactionType: "sale" },
-    officeAdvertisementGroup: group
+    comparison: group
       ? {
-          memo,
+          observedAt: "2026-11-18T00:00:00.000Z",
           mainAdvertisement: mine,
           advertisements: [mine, ...compared.map(row)],
         }

@@ -81,15 +81,14 @@ export const NAV_ITEMS: NavItem[] = [
     group: "properties",
   },
   { path: "/sites", label: "관리단지", icon: Map, group: "properties" },
+  // 광고노트(/properties/external-listings)는 2026-11-17에 메뉴에서 뺐다. 화면 코드는 남아 있고
+  // 주소로 들어오면 내광고관리로 보낸다. 다시 켤 때는 여기에 하위 메뉴로 되돌린다.
   {
-    path: "/properties/external-listings",
+    path: "/properties/naver-my-ads",
     label: "광고관리",
     icon: Megaphone,
     group: "properties",
-    children: [
-      { path: "/properties/external-listings", label: "광고노트" },
-      { path: "/properties/naver-my-ads", label: "내광고관리" },
-    ],
+    children: [{ path: "/properties/naver-my-ads", label: "내광고관리" }],
   },
 
   // ── 고객·상담

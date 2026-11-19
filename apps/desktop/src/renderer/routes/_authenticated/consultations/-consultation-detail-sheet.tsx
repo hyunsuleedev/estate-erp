@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import { useState, type ComponentType, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -58,11 +59,22 @@ export function ConsultationDetailSheet({
   consultation,
   onEdit,
   onDeleted,
+  layout = 'sheet',
 }: {
   consultation: ConsultationListItem;
   onEdit: () => void;
   onDeleted: () => void;
+  /**
+   * sheet: 목록 위에 뜨는 넓은 시트 안 (기본).
+   * page: 전체 화면(`/consultations/$id`). 시트의 제목 부품은 시트 안에서만 쓸 수 있어서
+   * 같은 모양의 보통 제목으로 그린다.
+   */
+  layout?: 'sheet' | 'page';
 }) {
+  const isPage = layout === 'page';
+  const Header = isPage ? 'header' : SheetHeader;
+  const Title = isPage ? 'h1' : SheetTitle;
+  const Description = isPage ? 'p' : SheetDescription;
   const queryClient = useQueryClient();
   const signal = getConsultationSignal(consultation);
   const contextCards = getConsultationContextCards(consultation);
@@ -87,18 +99,24 @@ export function ConsultationDetailSheet({
 
   return (
     <>
-      <SheetHeader className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+      <Header
+        className={cn(
+          'border-b border-slate-200 bg-slate-50 px-5 py-4',
+          // SheetHeader가 주는 배치를 전체 화면에서도 같게 한다
+          isPage && 'flex shrink-0 flex-col gap-1.5',
+        )}
+      >
         <div className="flex items-center gap-2">
           <Avatar className="size-9">
             <AvatarFallback>{getInitial(consultation.contact?.name)}</AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <SheetTitle className="truncate text-base font-semibold text-slate-950">
+            <Title className="truncate text-base font-semibold text-slate-950">
               {consultation.contact?.name ?? '미지정 고객'}
-            </SheetTitle>
-            <SheetDescription className="truncate text-xs text-muted-foreground">
+            </Title>
+            <Description className="truncate text-xs text-muted-foreground">
               {formatPhone(consultation.contact?.phone)}
-            </SheetDescription>
+            </Description>
           </div>
           <TypeBadge type={consultation.type} />
           <PurposeBadge purpose={consultation.purpose} showGeneral />
@@ -122,12 +140,12 @@ export function ConsultationDetailSheet({
         {recordingId && (
           <Tabs value={tab} onValueChange={(value) => setTab(value as DetailTab)} className="mt-2">
             <TabsList>
-              <TabsTrigger value="analysis">통화 분석</TabsTrigger>
+              <TabsTrigger value="analysis">{consultation.type === 'visit' ? '방문 분석' : '통화 분석'}</TabsTrigger>
               <TabsTrigger value="consultation">상담 내용</TabsTrigger>
             </TabsList>
           </Tabs>
         )}
-      </SheetHeader>
+      </Header>
 
       {recordingId && tab === 'analysis' ? (
         <CallAnalysisPanel recordingId={recordingId} showConsultations={false} />
@@ -208,7 +226,7 @@ export function ConsultationDetailSheet({
                     kind="property"
                     id={consultation.propertyId}
                     label={consultation.property?.site?.name ?? '매물'}
-                    sublabel={consultation.property?.unit?.name ?? undefined}
+                    sublabel={formatUnitName(consultation.property?.unit) || undefined}
                   />
                 )}
               </div>
@@ -326,7 +344,7 @@ function formatDuration(durationSec: number) {
 // 상담 → 할 일 생성
 // ----------------------------------------------------------------
 
-function CreateTaskDialog({
+export function CreateTaskDialog({
   open,
   onOpenChange,
   consultation,

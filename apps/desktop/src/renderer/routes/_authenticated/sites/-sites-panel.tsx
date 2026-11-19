@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/components/domain';
+import { ToolbarPillTabs } from '../properties/-components/property-toolbar';
 import {
   SITES_PANEL_MAX_WIDTH_CSS,
   SITES_PANEL_WIDTH,
@@ -216,6 +217,8 @@ export function SitesPanel({
   searchRef,
 }: SitesPanelProps) {
   const [siteQuery, setSiteQuery] = useState('');
+  // 검색은 머리줄의 돋보기로 연다. 열려 있는 동안 묶기 탭 자리를 검색칸이 쓴다.
+  const [isSearchRequested, setIsSearchOpen] = useState(false);
   const [groupBy, setGroupBy] = useState<SiteGroupMode>('none');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [isIdleOpen, setIsIdleOpen] = useState(false);
@@ -239,8 +242,16 @@ export function SitesPanel({
 
   const showSearch = officeSites.length > SEARCH_MIN_SITES;
   const query = showSearch ? siteQuery.trim() : '';
+  // 검색 중에 단지를 지워 검색을 숨길 만큼 줄면 검색도 닫힌 것으로 본다 — 아니면 탭도 검색칸도 없는 빈 머리줄이 남는다
+  const isSearchOpen = showSearch && isSearchRequested;
+  useEffect(() => {
+    if (showSearch) return;
+    setIsSearchOpen(false);
+    setSiteQuery('');
+  }, [showSearch]);
 
-  // 사용자가 열었을 때만 검색창(없으면 목록)에 초점을 옮긴다 — 열린 채로 페이지에 들어올 때는 초점을 뺏지 않는다
+  // 사용자가 열었을 때만 목록에 초점을 옮긴다 — 열린 채로 페이지에 들어올 때는 초점을 뺏지 않는다.
+  // 검색칸으로 옮기면 검색이 열리며 묶기 탭을 가리므로 목록으로 옮긴다.
   const wasOpenRef = useRef(open);
   useEffect(() => {
     const justOpened = open && !wasOpenRef.current;
@@ -249,10 +260,10 @@ export function SitesPanel({
     const frame = requestAnimationFrame(() => {
       // 고를 단지가 없으면 옮길 곳이 없다 — 단지가 없어 자동으로 열릴 때 초점을 뺏지 않는다
       if (!listRef.current?.querySelector('[data-site-row]')) return;
-      (searchRef.current ?? listRef.current)?.focus({ preventScroll: true });
+      listRef.current?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
-  }, [open, searchRef]);
+  }, [open]);
 
   const matchingSites = useMemo(
     () => filterOfficeSites(officeSites, query),
@@ -285,6 +296,11 @@ export function SitesPanel({
   }, [selectedSectionKey]);
   const totalManaged = officeSites.reduce((sum, officeSite) => sum + getManagedUnitCount(officeSite), 0);
   const idleSiteCount = officeSites.filter((officeSite) => getManagedUnitCount(officeSite) === 0).length;
+
+  const closeSearch = () => {
+    setIsSearchOpen(false);
+    setSiteQuery('');
+  };
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups((previous) => {
@@ -342,7 +358,7 @@ export function SitesPanel({
       return (
         <div className="pt-1" aria-label="관리단지 불러오는 중">
           {Array.from({ length: 8 }).map((_, index) => (
-            <div key={index} className="flex h-8 items-center gap-2 px-2">
+            <div key={index} className="flex h-[30px] items-center gap-2 px-2">
               <Skeleton className="size-4 rounded" />
               <Skeleton className="h-3.5" style={{ width: `${46 + ((index * 17) % 30)}%` }} />
             </div>
@@ -385,7 +401,7 @@ export function SitesPanel({
             variant="ghost"
             size="sm"
             className="h-7 px-2 text-[11.5px]"
-            onClick={() => setSiteQuery('')}
+            onClick={closeSearch}
           >
             검색 지우기
           </Button>
@@ -474,27 +490,55 @@ export function SitesPanel({
           }
         }}
         className={cn(
-          '@container/panel absolute inset-y-0 left-0 flex flex-col border-r border-border bg-[#f9f9f8]',
+          '@container/panel absolute inset-y-0 left-0 flex flex-col border-r border-border bg-sidebar',
           'motion-safe:transition-[opacity,translate] motion-safe:duration-200 motion-safe:ease-out',
           open ? 'translate-x-0 opacity-100' : '-translate-x-3 opacity-0',
         )}
         style={{ width, maxWidth: SITES_PANEL_MAX_WIDTH_CSS }}
       >
-        {/* 검색줄 — 본문 첫 도구줄과 높이를 맞춰 가로선이 이어진다 */}
-        {showSearch && (
-          <div className="flex h-[51px] shrink-0 items-center border-b border-border px-2.5">
-            {/* 매물관리에서 펼친 검색칸과 같은 옅은 회색 알약. 입력 중엔 흰 바탕 + 파란 테 */}
-            <div className="flex h-[30px] w-full items-center gap-1.5 rounded-full bg-[rgba(60,52,40,0.045)] pl-2.5 pr-1 text-[#a3a09a] transition-colors hover:bg-[rgba(60,52,40,0.07)] focus-within:bg-white focus-within:shadow-[inset_0_0_0_1.5px_#2383e2] focus-within:hover:bg-white">
-              <Search className="size-3.5 shrink-0" aria-hidden="true" />
+        {/* 머리줄 — 본문 첫 도구줄과 높이를 맞춰 가로선이 이어진다. 묶기 탭과 검색이 한 줄을 나눠 쓴다 */}
+        <div className="flex h-[51px] shrink-0 items-center gap-0.5 border-b border-border px-2">
+          {!isSearchOpen && (
+            // 본문의 관리호수/전체 묶음과 같은 알약 탭 — 옅은 회색 트랙에 고른 탭만 검정
+            <ToolbarPillTabs
+              shape="muted"
+              ariaLabel="단지 묶음 방식"
+              value={groupBy}
+              onChange={(value) => {
+                setGroupBy(value);
+                setCollapsedGroups(new Set());
+              }}
+              options={SITE_GROUP_OPTIONS}
+            />
+          )}
+          {showSearch && (
+            // 닫혀 있어도 입력칸은 남겨 둔다 — `/` 단축키가 이 칸에 초점을 주면 그때 열린다
+            <div
+              className={cn(
+                'flex min-w-0 items-center gap-2 pl-1.5 text-sidebar-icon',
+                isSearchOpen ? 'flex-1' : 'sr-only',
+              )}
+            >
+              <Search className="size-4 shrink-0" aria-hidden="true" />
               <input
                 ref={searchRef}
                 value={siteQuery}
+                tabIndex={isSearchOpen ? 0 : -1}
                 onChange={(event) => setSiteQuery(event.target.value)}
+                onFocus={() => setIsSearchOpen(true)}
+                onBlur={() => {
+                  if (!siteQuery.trim()) closeSearch();
+                }}
                 onKeyDown={(event) => {
+                  // 한글 조합을 끝내는 키는 검색 동작으로 쓰지 않는다
+                  if (event.nativeEvent.isComposing) return;
                   if (event.key === 'Escape') {
                     event.stopPropagation();
                     if (siteQuery) setSiteQuery('');
-                    else onClose();
+                    else {
+                      closeSearch();
+                      listRef.current?.focus({ preventScroll: true });
+                    }
                   } else if (event.key === 'ArrowDown') {
                     event.preventDefault();
                     listRef.current?.querySelector<HTMLElement>('[data-site-row]')?.focus();
@@ -506,93 +550,63 @@ export function SitesPanel({
                 placeholder="단지명 · 동네 검색"
                 aria-label="관리단지 검색"
                 autoComplete="off"
-                // 안내 문구는 hover로 바탕이 진해져도 4.5:1 이상 (#65625c: 쉴 때 5.3, hover 5.1)
-                className="w-full min-w-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-[#65625c]"
+                className="w-full min-w-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
               />
-              {siteQuery && (
-                <button
-                  type="button"
-                  className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[#a3a09a] outline-none hover:bg-[rgba(60,52,40,0.08)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#2383e2]/40"
-                  onClick={() => {
-                    setSiteQuery('');
-                    searchRef.current?.focus();
-                  }}
-                  aria-label="관리단지 검색 지우기"
-                >
-                  <X className="size-3" />
-                </button>
-              )}
             </div>
-          </div>
-        )}
-
-        {/* 묶기 — 목록 위에 늘 보인다. 검색줄이 없으면 맨 윗줄이 되므로 본문 첫 도구줄과 가로선을 맞춘다 */}
-        <div
-          className={cn(
-            'flex shrink-0 items-center px-2.5',
-            showSearch ? 'pb-1 pt-2' : 'h-[51px] border-b border-border',
           )}
-        >
-          <div
-            // 매물관리 목록/지도와 같은 회색 트랙 · 흰 알약
-            className="flex h-[30px] min-w-0 flex-1 items-center gap-px rounded-full bg-[rgba(55,53,47,0.08)] p-0.5"
-            role="group"
-            aria-label="단지 묶음 방식"
-          >
-            {SITE_GROUP_OPTIONS.map(({ value, label }) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={groupBy === value}
-                onClick={() => {
-                  setGroupBy(value);
-                  setCollapsedGroups(new Set());
-                }}
-                className={cn(
-                  'h-[26px] flex-1 rounded-full text-[12.5px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-foreground/20',
-                  groupBy === value
-                    ? 'bg-white font-medium text-foreground shadow-[0_1px_2px_rgba(40,35,25,0.12)]'
-                    : 'text-[#6f6c66] hover:text-foreground',
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {showSearch && (
+            <button
+              type="button"
+              // 누르는 동안 입력칸의 초점을 뺏지 않는다 — 빈 검색칸이 먼저 닫히며 버튼이 바뀌면 누른 것이 다시 여는 동작이 된다
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                if (isSearchOpen) {
+                  closeSearch();
+                  listRef.current?.focus({ preventScroll: true });
+                } else {
+                  searchRef.current?.focus();
+                }
+              }}
+              aria-label={isSearchOpen ? '관리단지 검색 닫기' : '관리단지 검색'}
+              title={isSearchOpen ? '검색 닫기 (Esc)' : '단지 검색 ( / )'}
+              className="ml-auto grid size-7 shrink-0 place-items-center rounded-md text-sidebar-icon outline-none transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              {isSearchOpen ? <X className="size-4" /> : <Search className="size-4" />}
+            </button>
+          )}
         </div>
 
         <ScrollArea className="min-h-0 flex-1">
-          <div
-            ref={listRef}
-            role="listbox"
-            aria-label="관리단지"
-            tabIndex={-1}
-            className="px-2 pb-3 pt-1 outline-none"
-            onKeyDown={handleListKeyDown}
-          >
-            {renderList()}
+          <div className="px-1.5 pb-3 pt-1.5">
+            <div
+              ref={listRef}
+              role="listbox"
+              aria-label="관리단지"
+              tabIndex={-1}
+              className="outline-none"
+              onKeyDown={handleListKeyDown}
+            >
+              {renderList()}
+            </div>
+            {/* 목록 끝의 추가 줄 — 단지가 없을 때는 빈 화면 안내의 버튼이 대신한다 */}
+            {!isLoading && !isError && officeSites.length > 0 && (
+              <button
+                type="button"
+                onClick={onAdd}
+                className="mt-0.5 flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-sm text-muted-foreground outline-none transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <Plus className="size-4 shrink-0" aria-hidden="true" />
+                단지 추가
+              </button>
+            )}
           </div>
         </ScrollArea>
 
-        <div className="flex shrink-0 items-center gap-2 border-t border-border px-2.5 py-2">
-          <span className="min-w-0 truncate text-[11.5px] text-[#6f6c66]">
-            관리호수 <span className="font-medium tabular-nums text-foreground/80">{totalManaged.toLocaleString()}</span>
-            {idleSiteCount > 0 && (
-              <>
-                {' · '}기록 없음 <span className="tabular-nums">{idleSiteCount.toLocaleString()}</span>
-              </>
-            )}
-          </span>
-          {/* 필터 줄의 "+ 필터"와 같은 테두리 없는 알약 */}
-          <button
-            type="button"
-            className="ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-[12.5px] text-[#6f6c66] outline-none transition-colors hover:bg-[rgba(60,52,40,0.06)] hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#2383e2]/40"
-            onClick={onAdd}
-          >
-            <Plus className="size-3.5" />
-            단지 추가
-          </button>
-        </div>
+        {/* 요약 — 선이나 띠 없이 글자만 둔다 */}
+        <p className="shrink-0 truncate px-3.5 pb-3 pt-2 text-xs tabular-nums text-muted-foreground">
+          관리호수 {totalManaged.toLocaleString()}
+          {idleSiteCount > 0 && <> · 기록 없음 {idleSiteCount.toLocaleString()}</>}
+        </p>
 
         {/* 너비 조절 손잡이 */}
         <div
@@ -641,7 +655,7 @@ function SectionLabel({
   onToggle?: () => void;
 }) {
   const className =
-    'mt-2 flex h-7 w-full items-center gap-1 px-2 text-[11.5px] font-medium text-[#6f6c66] first:mt-0';
+    'mt-2.5 flex h-7 w-full items-center gap-1 px-2 text-xs font-medium text-muted-foreground first:mt-0';
   if (!onToggle) return <div className={className}>{label}</div>;
   return (
     <button
@@ -650,7 +664,7 @@ function SectionLabel({
       onClick={onToggle}
       className={cn(
         className,
-        'group/section rounded-md outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-[#2383e2]/40',
+        'group/section rounded-md outline-none transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring/50',
       )}
     >
       <span className="truncate">{label}</span>
@@ -659,8 +673,9 @@ function SectionLabel({
       )}
       <ChevronDown
         className={cn(
-          'size-3 shrink-0 motion-safe:transition-transform',
-          !open && '-rotate-90',
+          // 접는 화살표는 올렸을 때와 접혀 있을 때만 보인다
+          'size-3 shrink-0 opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-visible/section:opacity-100 motion-safe:transition-[opacity,transform]',
+          !open && '-rotate-90 opacity-100',
         )}
         aria-hidden="true"
       />
@@ -720,23 +735,23 @@ function SiteRow({
           }}
           className={cn(
             // 앱 메뉴 항목과 같은 한 줄·같은 높이·같은 평평한 선택 바탕 — 목록 안에 카드가 떠 보이지 않게
-            'group relative flex h-8 cursor-pointer items-center gap-2 rounded-md pl-2 pr-1 outline-none transition-colors',
-            'hover:bg-[rgba(60,52,40,0.045)] focus-visible:ring-2 focus-visible:ring-[#2383e2]/40',
-            isSelected && 'bg-[rgba(55,53,47,0.08)] hover:bg-[rgba(55,53,47,0.08)]',
+            'group relative flex h-[30px] cursor-pointer items-center gap-2 rounded-md pl-2 pr-1 text-sidebar-foreground outline-none transition-colors',
+            'hover:bg-sidebar-accent/60 focus-visible:ring-2 focus-visible:ring-ring/50',
+            isSelected && 'bg-sidebar-accent text-foreground hover:bg-sidebar-accent',
           )}
         >
           <TypeIcon
             className={cn(
               'size-4 shrink-0',
-              isSelected ? 'text-foreground/80' : 'text-[#8a8780]',
+              isSelected ? 'text-sidebar-foreground' : 'text-sidebar-icon',
             )}
             aria-hidden="true"
           />
           <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
             <span
               className={cn(
-                'min-w-0 truncate text-[13px]',
-                isSelected ? 'font-semibold' : 'font-normal',
+                'min-w-0 truncate text-sm',
+                isSelected ? 'font-medium' : 'font-[450]',
                 isIdle && !isSelected && 'text-muted-foreground',
               )}
             >
@@ -752,8 +767,7 @@ function SiteRow({
             {showWard && (
               <span
                 className={cn(
-                  'min-w-0 shrink-[4] truncate text-[11.5px] @max-[250px]/panel:hidden',
-                  isSelected ? 'text-[#5f5c57]' : 'text-[#6f6c66]',
+                  'min-w-0 shrink-[4] truncate text-xs text-muted-foreground @max-[250px]/panel:hidden',
                 )}
               >
                 {wardName}
@@ -765,8 +779,7 @@ function SiteRow({
           {!isIdle && (
             <span
               className={cn(
-                'shrink-0 pr-1.5 text-xs tabular-nums group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden',
-                isSelected ? 'text-[#5f5c57]' : 'text-[#6f6c66]',
+                'shrink-0 pr-1.5 text-xs tabular-nums text-muted-foreground group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden',
               )}
             >
               {managed.toLocaleString()}

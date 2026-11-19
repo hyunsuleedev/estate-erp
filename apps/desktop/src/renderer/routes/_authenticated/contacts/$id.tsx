@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatDateTime, formatPhone } from '@/lib/format';
-import { splitContactTags } from '@/lib/contacts';
 import { cn } from '@/lib/utils';
 import { ConfirmDialog, EmptyState } from '@/components/domain';
 import { Button } from '@/components/ui/button';
@@ -219,7 +218,7 @@ function ContactDetailPage() {
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-semibold tracking-tight">{contact.name}</h2>
-                <ContactTagBadges tags={contact.tags} />
+                <ContactTagBadges tags={contact.tags} groups={contact.groups} />
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                 {phones.length > 0 ? (
@@ -323,11 +322,20 @@ function ContactDetailPage() {
                 <InfoField label="등록일" value={formatDateTime(contact.createdAt)} icon={Clock3} />
                 <InfoField label="수정일" value={formatDateTime(contact.updatedAt)} icon={Clock3} />
                 <div className="space-y-2 sm:col-span-2">
-                  <p className="text-xs font-medium text-muted-foreground">그룹 / 태그</p>
+                  <p className="text-xs font-medium text-muted-foreground">그룹</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <ContactTagBadges tags={[]} groups={contact.groups} />
+                    {(contact.groups ?? []).length === 0 && (
+                      <p className="text-sm text-muted-foreground">속한 그룹이 없습니다.</p>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <p className="text-xs font-medium text-muted-foreground">태그</p>
                   <div className="flex flex-wrap gap-1.5">
                     <ContactTagBadges tags={contact.tags} />
                     {contact.tags.filter((tag) => Boolean(tag)).length === 0 && (
-                      <p className="text-sm text-muted-foreground">지정된 그룹/태그가 없습니다.</p>
+                      <p className="text-sm text-muted-foreground">지정된 태그가 없습니다.</p>
                     )}
                   </div>
                 </div>
@@ -360,7 +368,7 @@ function ContactDetailPage() {
                 <EmptyState
                   icon={Users}
                   title="등록된 관계가 없습니다"
-                  description="가족·법무사 등 관련 인물을 연결해 두면 상담 맥락 파악이 빨라집니다."
+                  description="배우자·부모·자녀 같은 가족을 연결해 두면 상담 맥락 파악이 빨라집니다."
                   className="py-8"
                   action={
                     <Button variant="outline" size="sm" onClick={() => setOpenDialog('relation')}>

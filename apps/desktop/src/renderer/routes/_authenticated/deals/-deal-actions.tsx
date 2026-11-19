@@ -69,9 +69,9 @@ export function useDealActions({
       api.deals.updateStage(deal.id, { stage }),
     onMutate: async ({ deal, stage }) => {
       await queryClient.cancelQueries({ queryKey: ['deals'] });
-      const previousDeals = queryClient.getQueryData<Deal[]>(['deals']);
+      const previousDeals = queryClient.getQueryData<Deal[]>(['deals', 'active']);
 
-      queryClient.setQueryData<Deal[]>(['deals'], (currentDeals) =>
+      queryClient.setQueryData<Deal[]>(['deals', 'active'], (currentDeals) =>
         currentDeals?.map((currentDeal) =>
           currentDeal.id === deal.id
             ? { ...currentDeal, stage, stageChangedAt: new Date().toISOString() }
@@ -82,7 +82,7 @@ export function useDealActions({
       return { previousDeals };
     },
     onSuccess: (updatedDeal, { stage }) => {
-      queryClient.setQueryData<Deal[]>(['deals'], (currentDeals) =>
+      queryClient.setQueryData<Deal[]>(['deals', 'active'], (currentDeals) =>
         currentDeals?.map((deal) => (deal.id === updatedDeal.id ? updatedDeal : deal)),
       );
       toast.success(`'${getStatusMeta('dealStage', stage).label}' 단계로 변경되었습니다.`);
@@ -90,7 +90,7 @@ export function useDealActions({
     },
     onError: (error, { deal, stage }, context) => {
       if (context?.previousDeals) {
-        queryClient.setQueryData(['deals'], context.previousDeals);
+        queryClient.setQueryData(['deals', 'active'], context.previousDeals);
       }
       setPendingStage(null);
       const needsContract =

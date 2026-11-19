@@ -32,7 +32,8 @@ import { DealBoard, DealBoardSkeleton } from './-deal-board';
 import { DealCreateDialog } from './-deal-create-dialog';
 import { useDealActions } from './-deal-actions';
 import { DealInspector } from './-deal-detail';
-import { CancelledDealArchive, DealListView } from './-deal-list';
+import { EndedDeals } from './-ended-deals';
+import { DealListView } from './-deal-list';
 import {
   dealStageOrder,
   getDealLocationLine,
@@ -53,7 +54,7 @@ const TX_TAB_OPTIONS = [
   })),
 ];
 
-const STAGE_FILTER_OPTIONS = dealStageOrder.map((value) => ({
+const STAGE_FILTER_OPTIONS = dealStageOrder.filter((value) => value !== 'closed').map((value) => ({
   value,
   label: getStatusMeta('dealStage', value).label,
 }));
@@ -103,14 +104,15 @@ function DealsPage() {
   const [selectedDealId, setSelectedDealId] = useState<string | null>(
     deepLinkDealId ?? null,
   );
-  const [showCancelled, setShowCancelled] = useState(false);
+  const [scope, setScope] = useState<'active' | 'archive'>('active');
   const [createOpen, setCreateOpen] = useState(false);
   const deferredSearch = useDeferredValue(searchQuery);
   const referenceDate = useMemo(() => new Date(), []);
 
   const dealsQuery = useQuery({
-    queryKey: ['deals'],
-    queryFn: () => api.deals.findAll(),
+    queryKey: ['deals', 'active'],
+    queryFn: () => api.deals.findActive(),
+    enabled: scope === 'active',
   });
   const deals = useMemo(() => dealsQuery.data ?? [], [dealsQuery.data]);
 
@@ -180,24 +182,17 @@ function DealsPage() {
     () => filteredDeals.filter((deal) => !deal.isCancelled && deal.stage !== 'closed'),
     [filteredDeals],
   );
-  const cancelledDeals = useMemo(
-    () => filteredDeals.filter((deal) => deal.isCancelled),
-    [filteredDeals],
-  );
   const atRiskDealCount = useMemo(
     () => activeDeals.filter((deal) => getDealPipelineHealth(deal, referenceDate).isAtRisk).length,
     [activeDeals, referenceDate],
   );
-  const selectedDeal = useMemo(
-    () => deals.find((deal) => deal.id === selectedDealId) ?? null,
-    [deals, selectedDealId],
-  );
-
-  useEffect(() => {
-    if (selectedDealId && !dealsQuery.isLoading && !deals.some((deal) => deal.id === selectedDealId)) {
-      setSelectedDealId(null);
-    }
-  }, [deals, dealsQuery.isLoading, selectedDealId]);
+  const listedDeal = deals.find((deal) => deal.id === selectedDealId);
+  const detailQuery = useQuery({
+    queryKey: ['deals', 'detail', selectedDealId],
+    queryFn: () => api.deals.findOne(selectedDealId!),
+    enabled: Boolean(selectedDealId && !listedDeal),
+  });
+  const selectedDeal = listedDeal ?? detailQuery.data;
 
   // 상세 패널은 매물관리와 같은 방식으로 열고 닫는다: 닫을 때는 미끄러져 나간 뒤에 선택을 지운다.
   const [isInspectorClosing, setIsInspectorClosing] = useState(false);
@@ -262,6 +257,16 @@ function DealsPage() {
 
   return (
     <div data-deals-page className="relative -m-4 flex min-h-0 flex-1 flex-col bg-white">
+      <nav aria-label="거래 목록 구분" className="flex gap-4 border-b px-4">
+        {(['active', 'archive'] as const).map((item) => (
+          <button key={item} type="button" aria-pressed={scope === item}
+            className={cn('border-b-2 border-transparent py-2 text-sm text-muted-foreground', scope === item && 'border-foreground font-medium text-foreground')}
+            onClick={() => { setScope(item); setSelectedDealId(null); }}>
+            {item === 'active' ? '진행 중' : '종료된 거래'}
+          </button>
+        ))}
+      </nav>
+      {scope === 'archive' ? <EndedDeals onOpen={openDealInspector} /> : <>
       {/* 1행 "찾기": 매물관리와 같은 순서 — 거래유형 · 검색 · 필터 접기 │ 요약 · 보기 전환 · 새 거래 */}
       <section className="shrink-0 border-b border-border bg-white px-3 py-2.5">
         <div className="@container flex min-w-0 items-center gap-2">
@@ -465,8 +470,9 @@ function DealsPage() {
               />
             ) : (
               <DealListView
+                key={activeDeals[0]?.officeId}
+                onStageDrop={moveStage}
                 deals={activeDeals}
-                contractByDealId={contractByDealId}
                 selectedDealId={openDealId}
                 referenceDate={referenceDate}
                 actions={rowActions}
@@ -479,16 +485,12 @@ function DealsPage() {
               </div>
             ) : null}
 
-            <CancelledDealArchive
-              deals={cancelledDeals}
-              open={showCancelled}
-              onToggle={() => setShowCancelled((prev) => !prev)}
-              actions={rowActions}
-            />
           </div>
         )}
       </section>
 
+      </>}
+      {selectedDealId && detailQuery.isError && !listedDeal && <button onClick={() => detailQuery.refetch()}>거래 상세를 불러오지 못했습니다. 재시도</button>}
       {selectedDeal ? (
         <DealInspector
           deal={selectedDeal}

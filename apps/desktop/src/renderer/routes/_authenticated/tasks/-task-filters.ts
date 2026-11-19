@@ -1,6 +1,7 @@
 /**
  * tasks 페이지 필터·정렬·집계 순수 로직 (React 의존 없음 → 단위 테스트 대상).
  */
+import { formatUnitName } from '@estate-erp/shared';
 import type { Task, TaskContact, UpdateTaskDto } from '@estate-erp/api-client';
 import { getPropertyLabel } from './-task-property-label';
 import { TASK_SCOPES, type TaskGroupBy, type TaskScope, type TaskSortBy } from './-task-display';
@@ -72,7 +73,7 @@ function matchesSearch(task: Task, query: string): boolean {
     task.contact?.name,
     task.contact?.phone,
     task.property?.site?.name,
-    task.property?.unit?.name,
+    formatUnitName(task.property?.unit),
     task.property?.unit?.dong?.name,
     task.property ? getPropertyLabel(task) : null,
     task.assignedTo?.name,

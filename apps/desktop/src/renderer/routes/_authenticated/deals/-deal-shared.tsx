@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Archive, Ban, ChevronDown, ChevronsUpDown, MoreVertical, Trash2, X } from 'lucide-react';
+import { Archive, Ban, ChevronsUpDown, MoreVertical, Trash2, X } from 'lucide-react';
 import type { Contact, Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -131,11 +131,10 @@ export function DealStageMenu({ deal, actions, title }: {
           type="button"
           aria-label={`${title} 단계 변경`}
           disabled={actions.isUpdating}
-          className="inline-flex h-7 max-w-full items-center gap-1 rounded-md text-muted-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-7 max-w-full cursor-pointer items-center rounded-full hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           onClick={(event) => event.stopPropagation()}
         >
           <DealStagePill stage={deal.stage} />
-          <ChevronDown className="size-3 shrink-0" aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-44" onClick={(event) => event.stopPropagation()}>

@@ -1,13 +1,21 @@
 import { useMemo, type Dispatch, type SetStateAction } from 'react';
-import { CalendarDays, CircleDot, RotateCcw, Siren, UserRound } from 'lucide-react';
+import {
+  CalendarDays,
+  CircleDashed,
+  CircleDot,
+  MapPin,
+  RotateCcw,
+  Ruler,
+  Siren,
+  Tag,
+  UserRound,
+} from 'lucide-react';
 import type { BuyerRequirement } from '@estate-erp/api-client';
 import {
-  AddFilterMenu,
   ChecklistFilterPanel,
   summarizeSelection,
   toolbarGhostButtonClassName,
   ToolbarFilterChip,
-  type AddFilterItem,
 } from '../properties/-components/property-toolbar';
 import {
   AREA_RANGE_MAX,
@@ -33,7 +41,9 @@ import {
   type RequirementFilters,
 } from './-wanted-filters';
 import { getMatchStageLabel, matchStageOrder, siteTypeLabel } from './-match-view-utils';
+import { cn } from '@/lib/utils';
 import { getStatusMeta } from '@/lib/status-config';
+import { WonCircleIcon } from '@/components/domain';
 
 const STAGE_OPTIONS = matchStageOrder.map((stage) => ({
   value: stage as string,
@@ -84,8 +94,10 @@ function formatMonthlyRentLabel(min: number, max: number) {
 }
 
 /**
- * 매물관리 2행과 같은 구성: 자주 쓰는 필터는 칩, 나머지는 "+ 필터".
- * 예산·평형은 고객이 원하는 범위와 겹치면 표시한다.
+ * 희망매물 목록의 필터 줄. 문서관리 · 매물관리와 같은 Notion형 알약이다 (ToolbarFilterChip의 "soft" 모양):
+ * 테두리 없이 "아이콘 이름 ⌄"만 놓고, 값이 걸린 필터만 파란 알약으로 띄운다.
+ * 필터는 "+ 필터" 메뉴에 숨기지 않고 모두 이 줄에 늘 보인다. 폭이 모자라면 다음 줄로 넘긴다.
+ * 아이콘은 표 머리의 같은 열 아이콘과 맞춘다. 예산·평형은 고객이 원하는 범위와 겹치면 표시한다.
  */
 export function WantedFilterBar({
   filters,
@@ -122,7 +134,7 @@ export function WantedFilterBar({
     () => getAssigneeFilterOptions(requirements),
     [requirements],
   );
-  // 완료된 조건은 단계별 보기에서만 넘어온다
+  // 완료된 조건이 목록에 있을 때만 '완료'를 고를 수 있다
   const statusOptions = useMemo(
     () =>
       STATUS_OPTIONS.filter(
@@ -143,91 +155,18 @@ export function WantedFilterBar({
           ? `${filters.moveInTo} 이전`
           : null;
 
-  // 자주 쓰지 않는 필터. 값이 있으면 칩으로, 없으면 "+ 필터" 메뉴 안에만 있다.
-  const moreFilterItems: (AddFilterItem & { onClear: () => void })[] = [
-    {
-      key: 'status',
-      label: '상태',
-      icon: <CircleDot />,
-      summary: summarizeSelection(statusOptions, filters.statuses),
-      onClear: () => update({ statuses: [] }),
-      contentClassName: 'w-[180px] p-0',
-      render: () => (
-        <ChecklistFilterPanel
-          options={statusOptions}
-          selected={filters.statuses}
-          onChange={(statuses) => update({ statuses })}
-          searchable={false}
-        />
-      ),
-    },
-    {
-      key: 'assignee',
-      label: '담당자',
-      icon: <UserRound />,
-      summary: summarizeSelection(assigneeOptions, filters.assignees),
-      onClear: () => update({ assignees: [] }),
-      contentClassName: 'w-[220px] p-0',
-      render: () => (
-        <ChecklistFilterPanel
-          options={assigneeOptions}
-          selected={filters.assignees}
-          onChange={(assignees) => update({ assignees })}
-          searchable={false}
-          emptyText="담당자가 없습니다."
-        />
-      ),
-    },
-    {
-      key: 'urgency',
-      label: '긴급도',
-      icon: <Siren />,
-      summary: summarizeSelection(URGENCY_OPTIONS, filters.urgencies),
-      onClear: () => update({ urgencies: [] }),
-      contentClassName: 'w-[180px] p-0',
-      render: () => (
-        <ChecklistFilterPanel
-          options={URGENCY_OPTIONS}
-          selected={filters.urgencies}
-          onChange={(urgencies) => update({ urgencies })}
-          searchable={false}
-        />
-      ),
-    },
-    {
-      key: 'moveIn',
-      label: '입주 희망일',
-      icon: <CalendarDays />,
-      summary: moveInSummary,
-      onClear: () => update({ moveInFrom: '', moveInTo: '' }),
-      contentClassName: 'w-[320px] p-3',
-      render: () => (
-        <div className="space-y-3">
-          <PopoverTitle
-            title="입주 희망일"
-            description="입주 희망일이 기간 안에 있는 조건만 표시합니다."
-          />
-          <DateRangeFilter
-            label="입주 희망일"
-            fromValue={filters.moveInFrom}
-            toValue={filters.moveInTo}
-            onFromChange={(moveInFrom) => update({ moveInFrom })}
-            onToChange={(moveInTo) => update({ moveInTo })}
-          />
-        </div>
-      ),
-    },
-  ];
-
   return (
     <section
       data-wanted-filter-bar
       aria-label="희망 조건 필터"
-      className="flex shrink-0 items-center gap-2 border-b border-border bg-white px-3 py-2"
+      // 매물관리 필터 줄과 같은 여백(좌우 12px · 위 8px). 위쪽 선은 도구 줄이, 표와의 사이 선은 이 줄이 긋는다
+      className="flex shrink-0 items-start gap-2 border-b border-border bg-white px-3 py-2"
     >
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
         <ToolbarFilterChip
           label="단계"
+          shape="soft"
+          icon={<CircleDot />}
           summary={summarizeSelection(stageOptions, stageFilters)}
           onClear={() => onStageFiltersChange([])}
           contentClassName="w-[180px] p-0"
@@ -242,6 +181,8 @@ export function WantedFilterBar({
 
         <ToolbarFilterChip
           label="지역·단지"
+          shape="soft"
+          icon={<MapPin />}
           summary={summarizeSelection(locationOptions, filters.locations)}
           onClear={() => update({ locations: [] })}
           contentClassName="w-[300px] p-0"
@@ -258,6 +199,8 @@ export function WantedFilterBar({
 
         <ToolbarFilterChip
           label="매물 유형"
+          shape="soft"
+          icon={<Tag />}
           summary={summarizeSelection(SITE_TYPE_OPTIONS, filters.siteTypes)}
           onClear={() => update({ siteTypes: [] })}
           contentClassName="w-[200px] p-0"
@@ -272,6 +215,8 @@ export function WantedFilterBar({
 
         <ToolbarFilterChip
           label={budgetLabel}
+          shape="soft"
+          icon={<WonCircleIcon />}
           summary={
             filters.budget
               ? formatPriceRangeLabel(
@@ -321,6 +266,8 @@ export function WantedFilterBar({
         {transactionType === 'monthly' && (
           <ToolbarFilterChip
             label="월세"
+            shape="soft"
+            icon={<WonCircleIcon />}
             summary={
               filters.monthlyRent
                 ? formatMonthlyRentLabel(
@@ -374,6 +321,8 @@ export function WantedFilterBar({
 
         <ToolbarFilterChip
           label="희망 평형"
+          shape="soft"
+          icon={<Ruler />}
           summary={
             filters.area
               ? formatAreaLabel(
@@ -416,30 +365,83 @@ export function WantedFilterBar({
           )}
         </ToolbarFilterChip>
 
-        {moreFilterItems
-          .filter((item) => item.summary !== null)
-          .map((item) => (
-            <ToolbarFilterChip
-              key={item.key}
-              label={item.label}
-              summary={item.summary}
-              onClear={item.onClear}
-              contentClassName={item.contentClassName}
-            >
-              {(close) => item.render(close)}
-            </ToolbarFilterChip>
-          ))}
+        <ToolbarFilterChip
+          label="상태"
+          shape="soft"
+          icon={<CircleDashed />}
+          summary={summarizeSelection(statusOptions, filters.statuses)}
+          onClear={() => update({ statuses: [] })}
+          contentClassName="w-[180px] p-0"
+        >
+          <ChecklistFilterPanel
+            options={statusOptions}
+            selected={filters.statuses}
+            onChange={(statuses) => update({ statuses })}
+            searchable={false}
+          />
+        </ToolbarFilterChip>
 
-        <AddFilterMenu
-          items={moreFilterItems}
-          hint="단계 · 지역·단지 · 매물 유형 · 예산 · 희망 평형은 이 줄에 늘 보입니다."
-        />
+        <ToolbarFilterChip
+          label="담당자"
+          shape="soft"
+          icon={<UserRound />}
+          summary={summarizeSelection(assigneeOptions, filters.assignees)}
+          onClear={() => update({ assignees: [] })}
+          contentClassName="w-[220px] p-0"
+        >
+          <ChecklistFilterPanel
+            options={assigneeOptions}
+            selected={filters.assignees}
+            onChange={(assignees) => update({ assignees })}
+            searchable={false}
+            emptyText="담당자가 없습니다."
+          />
+        </ToolbarFilterChip>
+
+        <ToolbarFilterChip
+          label="긴급도"
+          shape="soft"
+          icon={<Siren />}
+          summary={summarizeSelection(URGENCY_OPTIONS, filters.urgencies)}
+          onClear={() => update({ urgencies: [] })}
+          contentClassName="w-[180px] p-0"
+        >
+          <ChecklistFilterPanel
+            options={URGENCY_OPTIONS}
+            selected={filters.urgencies}
+            onChange={(urgencies) => update({ urgencies })}
+            searchable={false}
+          />
+        </ToolbarFilterChip>
+
+        <ToolbarFilterChip
+          label="입주 희망일"
+          shape="soft"
+          icon={<CalendarDays />}
+          summary={moveInSummary}
+          onClear={() => update({ moveInFrom: '', moveInTo: '' })}
+          contentClassName="w-[320px] p-3"
+        >
+          <div className="space-y-3">
+            <PopoverTitle
+              title="입주 희망일"
+              description="입주 희망일이 기간 안에 있는 조건만 표시합니다."
+            />
+            <DateRangeFilter
+              label="입주 희망일"
+              fromValue={filters.moveInFrom}
+              toValue={filters.moveInTo}
+              onFromChange={(moveInFrom) => update({ moveInFrom })}
+              onToChange={(moveInTo) => update({ moveInTo })}
+            />
+          </div>
+        </ToolbarFilterChip>
       </div>
 
       {hasActiveFilters && (
         <button
           type="button"
-          className={toolbarGhostButtonClassName}
+          className={cn(toolbarGhostButtonClassName, 'shrink-0 rounded-full')}
           onClick={onReset}
         >
           <RotateCcw className="size-3.5" />

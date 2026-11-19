@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { SortingState } from '@tanstack/react-table';
 import type { Deal, PartnerBroker } from '@estate-erp/api-client';
@@ -106,7 +107,7 @@ export function dealAddressLabel(deal: DealWithCommission): string {
   const parts = [
     deal.property?.site?.name,
     dong && !dong.isPlaceholder ? dong.name : null,
-    deal.property?.unit?.name,
+    formatUnitName(deal.property?.unit),
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(' ') : '매물 미지정';
 }

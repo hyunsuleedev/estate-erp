@@ -16,7 +16,7 @@ export const MY_ADS_ANALYSIS_PANEL_LAYOUT = {
 function activeComparedAdvertisements(
   advertisement: ListingAdvertisementWithListing,
 ) {
-  return (advertisement.officeAdvertisementGroup?.advertisements ?? []).filter(
+  return (advertisement.comparison?.advertisements ?? []).filter(
     (comparedAdvertisement) => comparedAdvertisement.isActive,
   );
 }
@@ -26,7 +26,7 @@ export function estimateMyAdsAnalysisPanelHeight(
 ): number {
   const { chromeHeight, rowHeight, memoHeight } = MY_ADS_ANALYSIS_PANEL_LAYOUT;
   const rows = activeComparedAdvertisements(advertisement).length;
-  const hasMemo = Boolean(advertisement.officeAdvertisementGroup?.memo);
+  const hasMemo = Boolean(advertisement.memo);
   return chromeHeight + rowHeight * Math.max(1, rows) + (hasMemo ? memoHeight : 0);
 }
 
@@ -52,7 +52,7 @@ const NO_COMPARISON_TEXT = "네이버 비교 전이라 판단할 수 없음";
 export function myAdsAnalysisPanelSummary(
   advertisement: ListingAdvertisementWithListing,
 ): MyAdsAnalysisPanelSummary {
-  const group = advertisement.officeAdvertisementGroup;
+  const group = advertisement.comparison;
   const hasComparison = Boolean(group && group.mainAdvertisement);
   const competitorCount = activeComparedAdvertisements(advertisement).filter(
     (comparedAdvertisement) => !comparedAdvertisement.isMine,

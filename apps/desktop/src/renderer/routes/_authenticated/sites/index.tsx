@@ -1,3 +1,4 @@
+import { compareUnitSpaces, formatUnitName, formatUnitLabel } from '@estate-erp/shared';
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -28,6 +29,7 @@ import {
   Users,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { consultationChannelIcons } from '../consultations/-consultation-inspector';
 import type {
   Dong,
   Unit,
@@ -54,7 +56,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ConfirmDialog, EmptyState, RowOpenButton } from '@/components/domain';
+import {
+  ConfirmDialog,
+  ContactNameChip,
+  EmptyState,
+  RowOpenButton,
+} from '@/components/domain';
 import { cn } from '@/lib/utils';
 import { formatDate, formatPhone, formatPyeong } from '@/lib/format';
 import {
@@ -74,6 +81,7 @@ import {
   type RecordPresenceFilter,
   type UnitTableScope,
   canEditSiteStructure,
+  consultationTypeLabels,
 } from './-site-helpers';
 import {
   AddFilterMenu,
@@ -101,7 +109,7 @@ import {
 } from './-sites-panel';
 import { AddSiteDialog } from './-add-site-dialog';
 import { UnitLayoutBoard } from './-unit-layout-board';
-import { UnitDetailDialog } from './-unit-detail-dialog';
+import { UnitDetailPanel } from './-unit-detail-dialog';
 import { ExpiryBoard } from './-expiry-board';
 
 // ── Route ───────────────────────────────────────────────────────
@@ -123,7 +131,7 @@ const unitListingTransactionMeta: Record<
   monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
 };
 
-const UNIT_RELATIONSHIP_COLUMN_IDS = ['tenant', 'listing'] as const;
+const UNIT_RELATIONSHIP_COLUMN_IDS = ['tenantName', 'tenantPhone', 'listing'] as const;
 const UNIT_RELATIONSHIP_COLUMN_ID_SET = new Set<string>(
   UNIT_RELATIONSHIP_COLUMN_IDS,
 );
@@ -159,6 +167,11 @@ const unitCellSub = 'whitespace-nowrap text-[14px] leading-[21px] tabular-nums t
 /** "외 2명" · "+1" 같은 개수 꼬리표 */
 const unitCountChip =
   'inline-flex h-5 shrink-0 items-center rounded-[4px] bg-neutral-soft px-1.5 text-[12px] leading-5 text-muted-foreground';
+
+/** 호 이름 순서. 호 없이 층이 단위인 공간은 층 표기로 견준다 */
+function compareUnitNames(a: Unit, b: Unit) {
+  return formatUnitName(a).localeCompare(formatUnitName(b), 'ko', { numeric: true });
+}
 
 function UnitTableEmptyCell() {
   return <span className="sr-only">미등록</span>;
@@ -234,6 +247,8 @@ function SitesPage() {
   const [dongScope, setDongScope] = useState<DongScope | null>(null);
   const [selectedUnitTypeIds, setSelectedUnitTypeIds] = useState<string[]>([]);
   const [query, setQuery] = useState('');
+  // 호수만 찾는 칸. 숫자만 받고, 호 이름의 숫자와 앞부분이 같은 호실을 남긴다.
+  const [unitNo, setUnitNo] = useState('');
   const [unitSort, setUnitSort] = useState<SortingState>([]);
   const [unitViewMode, setUnitViewMode] = useState<UnitViewMode>('table');
   const [unitTableScope, setUnitTableScope] =
@@ -405,6 +420,7 @@ function SitesPage() {
         setDongScope(null);
         setSelectedUnitTypeIds([]);
         setQuery('');
+        setUnitNo('');
         setUnitSort([]);
         setOccupancyFilter([]);
       }
@@ -569,6 +585,7 @@ function SitesPage() {
   const hasActiveUnitContentFilters =
     selectedUnitTypeIds.length > 0 ||
     query.trim().length > 0 ||
+    unitNo.length > 0 ||
     ownerFilter !== 'all' ||
     tenantFilter !== 'all' ||
     listingFilter !== 'all' ||
@@ -589,10 +606,17 @@ function SitesPage() {
       );
     }
 
+    if (unitNo) {
+      // "34" → 3401·3402…, "3401" → 3401호. 호 이름에서 숫자만 뽑아 앞부분을 비교한다.
+      units = units.filter((unit) =>
+        (unit.name ?? '').replace(/\D/g, '').startsWith(unitNo),
+      );
+    }
+
     const q = query.trim().toLowerCase();
     if (q) {
+      // 호수는 옆의 호수 칸이 따로 찾으므로 여기서는 사람·전화·상담만 본다.
       units = units.filter((unit) => {
-        if (unit.name.toLowerCase().includes(q)) return true;
         const properties = unit.properties ?? [];
         for (const property of properties) {
           for (const pc of property.propertyContacts ?? []) {
@@ -617,7 +641,7 @@ function SitesPage() {
       const dongA = getDongName(a.dongId);
       const dongB = getDongName(b.dongId);
       if (dongA !== dongB) return dongA.localeCompare(dongB, 'ko', { numeric: true });
-      return (a.floor ?? 0) - (b.floor ?? 0) || a.name.localeCompare(b.name, 'ko', { numeric: true });
+      return compareUnitSpaces(a, b);
     };
 
     const activeSort = unitSort[0];
@@ -631,10 +655,10 @@ function SitesPage() {
     const getOwnerPhone = (unit: Unit) =>
       getUnitOwnerContacts(unit)[0]?.contact.phone ?? '';
 
-    const getTenantLabel = (unit: Unit) =>
-      (unit.properties ?? [])
-        .flatMap((property) => property.tenants ?? [])
-        .map((tenant) => tenant.contact.name)[0] ?? '';
+    const getPrimaryTenant = (unit: Unit) =>
+      (unit.properties ?? []).flatMap((property) => property.tenants ?? [])[0];
+    const getTenantName = (unit: Unit) => getPrimaryTenant(unit)?.contact.name ?? '';
+    const getTenantPhone = (unit: Unit) => getPrimaryTenant(unit)?.contact.phone ?? '';
 
     const getListingLabel = (unit: Unit) => {
       const primaryListing = (unit.properties ?? [])
@@ -652,7 +676,7 @@ function SitesPage() {
 
     const comparators: Record<string, (a: Unit, b: Unit) => number> = {
       dong: (a, b) => getDongName(a.dongId).localeCompare(getDongName(b.dongId), 'ko', { numeric: true }),
-      name: (a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }),
+      name: (a, b) => compareUnitNames(a, b),
       supplyArea: (a, b) =>
         Number(a.supplyAreaM2 ?? a.siteUnitType?.supplyAreaM2 ?? 0) -
         Number(b.supplyAreaM2 ?? b.siteUnitType?.supplyAreaM2 ?? 0),
@@ -663,7 +687,8 @@ function SitesPage() {
         (a.siteUnitType?.name ?? '').localeCompare(b.siteUnitType?.name ?? '', 'ko', { numeric: true }),
       ownerName: (a, b) => getOwnerName(a).localeCompare(getOwnerName(b), 'ko', { numeric: true }),
       ownerPhone: (a, b) => getOwnerPhone(a).localeCompare(getOwnerPhone(b), 'ko', { numeric: true }),
-      tenant: (a, b) => getTenantLabel(a).localeCompare(getTenantLabel(b), 'ko', { numeric: true }),
+      tenantName: (a, b) => getTenantName(a).localeCompare(getTenantName(b), 'ko', { numeric: true }),
+      tenantPhone: (a, b) => getTenantPhone(a).localeCompare(getTenantPhone(b), 'ko', { numeric: true }),
       listing: (a, b) => getListingLabel(a).localeCompare(getListingLabel(b), 'ko', { numeric: true }),
       lastConsultation: (a, b) => getConsultationDate(a) - getConsultationDate(b),
       lastConsultationDate: (a, b) => getConsultationDate(a) - getConsultationDate(b),
@@ -692,6 +717,7 @@ function SitesPage() {
     query,
     selectedUnitTypeIds,
     tenantFilter,
+    unitNo,
     unitSort,
   ]);
 
@@ -704,7 +730,8 @@ function SitesPage() {
   }, [unitTableScope]);
 
   // 관리호수만 보는 범위는 호수 목록(표)에만 적용한다. 배치표·만기는 단지 구조를 그대로 보여준다.
-  const isSearchingUnits = query.trim().length > 0;
+  // 호수 칸도 검색으로 친다: 관리호수 범위에서도 전체 호실에서 찾는다.
+  const isSearchingUnits = query.trim().length > 0 || unitNo.length > 0;
   const allTableUnits = useMemo(
     () => selectUnitTableRows(filteredUnits, 'all', false),
     [filteredUnits],
@@ -795,9 +822,7 @@ function SitesPage() {
           floors,
           lineNos,
           cellMap,
-          unpositionedUnits: section.unpositionedUnits.sort((a, b) =>
-            a.name.localeCompare(b.name, 'ko', { numeric: true }),
-          ),
+          unpositionedUnits: section.unpositionedUnits.sort(compareUnitNames),
         };
       });
   }, [dongs, filteredUnits, getDongName]);
@@ -810,6 +835,7 @@ function SitesPage() {
     setDongScope(null);
     setSelectedUnitTypeIds([]);
     setQuery('');
+    setUnitNo('');
     setUnitSort([]);
     setOccupancyFilter([]);
     setOwnerFilter('all');
@@ -832,6 +858,7 @@ function SitesPage() {
     setSelectedUnitId(null);
     setSelectedUnitTypeIds([]);
     setQuery('');
+    setUnitNo('');
     setOccupancyFilter([]);
     setOwnerFilter('all');
     setTenantFilter('all');
@@ -839,9 +866,24 @@ function SitesPage() {
     setConsultationFilter('all');
   };
 
+  // 호실 상세 패널은 매물관리와 같은 방식으로 열고 닫는다: 닫을 때는 미끄러져 나간 뒤에 선택을 지운다.
+  const [isUnitInspectorClosing, setIsUnitInspectorClosing] = useState(false);
+  const [unitInspectorMotion, setUnitInspectorMotion] = useState(true);
   const handleSelectUnit = useCallback((unit: Unit) => {
+    setUnitInspectorMotion(!document.activeElement?.matches(':focus-visible'));
+    setIsUnitInspectorClosing(false);
     setSelectedUnitId(unit.id);
   }, []);
+  const closeUnitInspector = useCallback((animate = true) => {
+    setUnitInspectorMotion(animate);
+    setIsUnitInspectorClosing(true);
+  }, []);
+  const finishClosingUnitInspector = useCallback(() => {
+    setSelectedUnitId(null);
+    setIsUnitInspectorClosing(false);
+  }, []);
+  // 닫히는 중인 호실은 표·배치도에서 선택 표시를 바로 뺀다
+  const openUnitId = isUnitInspectorClosing ? null : selectedUnitId;
 
   const handleAddDong = () => {
     if (!newDongName.trim() || !selectedSiteId) return;
@@ -862,6 +904,7 @@ function SitesPage() {
     }
     setSelectedUnitTypeIds([]);
     setQuery('');
+    setUnitNo('');
     setOccupancyFilter([]);
     setOwnerFilter('all');
     setTenantFilter('all');
@@ -899,13 +942,15 @@ function SitesPage() {
         const dongName = getDongName(unit.dongId);
         return (
           <>
-            <span className={cn(unitCellStrong, 'block tabular-nums')}>{unit.name}</span>
-            {/* 매물관리 표와 같은 열기 버튼. 여기서는 호실 상세 창을 연다 */}
+            <span className={cn(unitCellStrong, 'block tabular-nums')}>{formatUnitName(unit)}</span>
+            {/* 매물관리 표와 같은 열기 버튼: 옆 상세 패널을 열고, 열려 있으면 닫는다 */}
             <RowOpenButton
-              label={`${dongName ? `${dongName} ` : ''}${unit.name}호`}
-              current={false}
-              openTitle="호실 상세 열기"
-              onToggle={() => handleSelectUnit(unit)}
+              label={`${dongName ? `${dongName} ` : ''}${formatUnitLabel(unit)}`}
+              current={openUnitId === unit.id}
+              controls="unit-inspector"
+              onToggle={() =>
+                openUnitId === unit.id ? closeUnitInspector() : handleSelectUnit(unit)
+              }
             />
           </>
         );
@@ -963,9 +1008,12 @@ function SitesPage() {
         if (!primaryOwner) return <UnitTableEmptyCell />;
         const ownerNames = owners.map(({ contact }) => contact.name).join('\n');
         return (
-          <div className="flex min-w-0 items-center gap-1.5" title={ownerNames}>
-            <span className={unitCellStrong}>
-              {primaryOwner.contact.name}
+          <div className="flex min-w-0 items-center gap-1.5" title={owners.length > 1 ? ownerNames : undefined}>
+            <span className="flex min-w-0 text-[14px] leading-[21px] text-foreground">
+              <ContactNameChip
+                contactId={primaryOwner.contact.id}
+                name={primaryOwner.contact.name}
+              />
             </span>
             {owners.length > 1 && (
               <span className={unitCountChip}>
@@ -1004,29 +1052,60 @@ function SitesPage() {
         );
       },
     },
+    // 소유자와 같은 방식으로 이름과 전화번호를 따로 둔다 — 한 칸에 섞으면 전화번호로 정렬할 수 없다
     {
-      id: 'tenant',
-      header: () => <UnitTableHeaderLabel icon={<Users />} label="세입자" />,
-      size: 196,
+      id: 'tenantName',
+      header: () => <UnitTableHeaderLabel icon={<Users />} label="세입자명" />,
+      size: 128,
+      minSize: 112,
       enableSorting: true,
       cell: ({ row }) => {
         const tenants = (row.original.properties ?? []).flatMap(
           (property) => property.tenants ?? [],
         );
-        if (!tenants.length) return <UnitTableEmptyCell />;
-
         const primary = tenants[0];
+        if (!primary) return <UnitTableEmptyCell />;
+        const tenantNames = tenants.map(({ contact }) => contact.name).join('\n');
         return (
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className={unitCellStrong}>
-              {primary.contact.name}
+          <div className="flex min-w-0 items-center gap-1.5" title={tenants.length > 1 ? tenantNames : undefined}>
+            <span className="flex min-w-0 text-[14px] leading-[21px] text-foreground">
+              <ContactNameChip contactId={primary.contact.id} name={primary.contact.name} />
             </span>
-            {primary.contact.phone && (
-              <span className={cn(unitCellSub, 'shrink-0')}>
-                {formatPhone(primary.contact.phone)}
+            {tenants.length > 1 && (
+              <span className={unitCountChip}>
+                외 {tenants.length - 1}명
               </span>
             )}
           </div>
+        );
+      },
+    },
+    {
+      id: 'tenantPhone',
+      header: () => (
+        <UnitTableHeaderLabel icon={<Phone />} label="세입자 전화번호" />
+      ),
+      size: 144,
+      minSize: 124,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const tenants = (row.original.properties ?? []).flatMap(
+          (property) => property.tenants ?? [],
+        );
+        const phone = tenants[0]?.contact.phone;
+        if (!phone) return <UnitTableEmptyCell />;
+        const phoneSummary = tenants
+          .flatMap(({ contact }) =>
+            contact.phone ? [`${contact.name} ${formatPhone(contact.phone)}`] : [],
+          )
+          .join('\n');
+        return (
+          <span
+            className={cn(unitCellNumber, 'block min-w-0 truncate')}
+            title={phoneSummary}
+          >
+            {formatPhone(phone)}
+          </span>
         );
       },
     },
@@ -1092,11 +1171,20 @@ function SitesPage() {
               new Date(a.createdAt).getTime(),
           )[0];
         if (!latest) return <UnitTableEmptyCell />;
+        // 누구와의 상담인지는 소유자·세입자 칸에 이미 있다. 여기서는 어떤 상담이었는지만 아이콘으로 알린다.
+        const TypeIcon = consultationChannelIcons[latest.type as keyof typeof consultationChannelIcons]
+          ?? consultationChannelIcons.other;
+        const typeLabel = consultationTypeLabels[latest.type] ?? latest.type;
         return (
-          <div className="flex min-w-0 items-center gap-1.5" title={latest.content}>
-            <span className="max-w-24 shrink-0 truncate text-[14px] leading-[21px] text-muted-foreground">
-              {latest.contact.name}
-            </span>
+          <div
+            className="flex min-w-0 items-center gap-1.5"
+            title={`${typeLabel} · ${latest.contact.name}\n${latest.content}`}
+          >
+            <TypeIcon
+              className="size-4 shrink-0 text-sidebar-icon"
+              role="img"
+              aria-label={`${typeLabel} 상담`}
+            />
             <span className="truncate text-[14px] leading-[21px] text-foreground">
               {latest.content}
             </span>
@@ -1132,7 +1220,14 @@ function SitesPage() {
         UNIT_RELATIONSHIP_COLUMN_ID_SET.has(columnId)
       );
     });
-  }, [areUnitRelationshipColumnsCollapsed, dongs, getDongName, handleSelectUnit]);
+  }, [
+    areUnitRelationshipColumnsCollapsed,
+    closeUnitInspector,
+    dongs,
+    getDongName,
+    handleSelectUnit,
+    openUnitId,
+  ]);
 
   const unitTableResetKey = [
     selectedSiteId,
@@ -1144,6 +1239,7 @@ function SitesPage() {
     listingFilter,
     consultationFilter,
     query.trim(),
+    unitNo,
   ].join('|');
 
   const unitPinnedColumns = useMemo(
@@ -1341,6 +1437,9 @@ function SitesPage() {
               selectedDongIds={selectedDongIds}
               onDongChange={handleDongScopeChange}
               totalUnitCount={totalUnitCount}
+              unitNo={unitNo}
+              // 숫자만 받는다 (붙여넣은 "3401호"도 3401로)
+              onUnitNoChange={(value) => setUnitNo(value.replace(/\D/g, ''))}
               query={query}
               onQueryChange={setQuery}
               searchRef={unitSearchRef}
@@ -1369,7 +1468,14 @@ function SitesPage() {
 
           {/* 2차 필터: 호수별 CRM 등록 상태 — 매물관리 툴바 2행과 같은 칩.
               표와의 사이에는 선을 두지 않는다(표 머리 윗선이 나눈다). */}
-          <section className="flex min-h-[44px] shrink-0 items-center gap-2 bg-white px-3 pb-1.5 pt-2">
+          <section
+            className={cn(
+              'flex shrink-0 items-center gap-2 bg-white px-3 pt-2',
+              // 표 보기에서는 표가 위에 8px(접기 버튼이 걸치는 자리)을 따로 비우므로
+              // 여기 아래 여백을 빼서 필터 줄과 표 사이가 벌어지지 않게 한다(매물관리와 같다).
+              unitViewMode === 'table' ? 'min-h-[38px] pb-0' : 'min-h-[44px] pb-1.5',
+            )}
+          >
             {/* 칩이 많아 한 줄을 넘치면 옆으로 숨기지 않고 다음 줄로 내린다 — 설정한 필터가 가려지지 않게 */}
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
               {unitViewMode === 'table' && (
@@ -1510,7 +1616,7 @@ function SitesPage() {
                   // 두 번 누르기 · Enter · 열기 버튼으로 호실 상세를 연다.
                   activateOnDoubleClick
                   getRowSelectionLabel={(unit) =>
-                    `${getDongName(unit.dongId) ? `${getDongName(unit.dongId)} ` : ''}${unit.name}호 선택`
+                    `${getDongName(unit.dongId) ? `${getDongName(unit.dongId)} ` : ''}${formatUnitLabel(unit)} 선택`
                   }
                   layout="full-height"
                   variant="notion"
@@ -1585,14 +1691,14 @@ function SitesPage() {
               ) : unitViewMode === 'layout' ? (
                 <UnitLayoutBoard
                   sections={layoutSections}
-                  selectedUnitId={selectedUnitId}
+                  selectedUnitId={openUnitId}
                   onUnitOpen={handleSelectUnit}
                   colorMode="activity"
                 />
               ) : unitViewMode === 'occupancy' ? (
                 <UnitLayoutBoard
                   sections={layoutSections}
-                  selectedUnitId={selectedUnitId}
+                  selectedUnitId={openUnitId}
                   onUnitOpen={handleSelectUnit}
                   colorMode="occupancy"
                   occupancyFilter={occupancyFilter}
@@ -1609,13 +1715,18 @@ function SitesPage() {
         </div>
       ) : null}
 
-      {/* ─── Unit Detail Dialog ──────────────────────────────── */}
-      <UnitDetailDialog
-        unit={selectedUnit}
-        site={siteDetail ?? null}
-        dongs={dongs}
-        onClose={() => setSelectedUnitId(null)}
-      />
+      {/* ─── 호실 상세 패널 ─────────────────────────────────── */}
+      {selectedUnit && siteDetail ? (
+        <UnitDetailPanel
+          unit={selectedUnit}
+          site={siteDetail}
+          dongs={dongs}
+          closing={isUnitInspectorClosing}
+          animate={unitInspectorMotion}
+          onClose={closeUnitInspector}
+          onExited={finishClosingUnitInspector}
+        />
+      ) : null}
 
       {/* ─── Remove OfficeSite Confirm ───────────────────────── */}
       <ConfirmDialog

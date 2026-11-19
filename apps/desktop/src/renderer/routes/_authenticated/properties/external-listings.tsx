@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useCallback,
@@ -165,9 +165,19 @@ const MARKET_DETAIL_COLUMN_IDS = [
 ] as const;
 const MARKET_DETAIL_COLUMN_ID_SET = new Set<string>(MARKET_DETAIL_COLUMN_IDS);
 
+// 광고노트는 2026-11-17에 화면에서 뺐다 (네이버 자료를 담는 자리라는 위치가 정리될 때까지).
+// 메뉴에서 지웠고, 열려 있던 탭이나 주소로 들어와도 내광고관리로 보낸다.
+// 다시 켜려면 이 값을 true로 바꾸고 nav-config.ts의 하위 메뉴를 되돌린다.
+const ADVERTISING_NOTE_ENABLED = false as boolean;
+
 export const Route = createFileRoute(
   '/_authenticated/properties/external-listings',
 )({
+  beforeLoad: () => {
+    if (!ADVERTISING_NOTE_ENABLED) {
+      throw redirect({ to: '/properties/naver-my-ads', replace: true });
+    }
+  },
   component: ExternalListingsPage,
 });
 

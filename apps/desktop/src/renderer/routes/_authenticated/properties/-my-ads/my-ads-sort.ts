@@ -1,3 +1,9 @@
+import {
+  advertisementLinkLevel,
+  advertisementTransactionType,
+  changeRequestSummary,
+  pendingChangeRequests,
+} from "./my-ads-link";
 import type { SortingState } from "@tanstack/react-table";
 import type { ListingAdvertisementWithListing } from "@estate-erp/api-client";
 import { analyzeOfficeAdvertisementComparison } from "@estate-erp/api-client";
@@ -38,14 +44,14 @@ function isoToTime(value: string | null | undefined): number | null {
  */
 export function advertisementCheckedAtTime(
   advertisement: Pick<ListingAdvertisementWithListing, "lastCheckedAt"> & {
-    officeAdvertisementGroup?: {
+    comparison?: {
       mainAdvertisement?: { articleConfirmYmd?: string | null } | null;
     } | null;
   },
 ): number | null {
   return (
     ymdToTime(
-      advertisement.officeAdvertisementGroup?.mainAdvertisement
+      advertisement.comparison?.mainAdvertisement
         ?.articleConfirmYmd,
     ) ?? isoToTime(advertisement.lastCheckedAt)
   );
@@ -99,15 +105,24 @@ function advertisementSortValue(
       return location.ho;
     case "type":
       return location.type;
+    case "link":
+      // 덜 이어진 광고가 먼저 오게: 건물 못 찾음 → 호실 못 찾음 → 매물 없음 → 연결됨
+      return { none: 0, site: 1, property: 2, listing: 3 }[
+        advertisementLinkLevel(advertisement)
+      ];
+    case "request": {
+      const [request] = pendingChangeRequests(advertisement);
+      return request ? changeRequestSummary(request) : null;
+    }
     case "transaction":
-      return advertisement.listing?.transactionType ?? null;
+      return advertisementTransactionType(advertisement) ?? null;
     case "price":
       return primaryAmount(advertisement, {
         price: advertisement.advertisedPrice,
         deposit: advertisement.advertisedDeposit,
       });
     case "monthlyRent":
-      return advertisement.listing?.transactionType === "monthly"
+      return advertisementTransactionType(advertisement) === "monthly"
         ? advertisement.advertisedMonthlyRent
         : null;
     case "channel":
@@ -116,7 +131,7 @@ function advertisementSortValue(
       return advertisement.naverArticleNo;
     case "verification": {
       const code =
-        advertisement.officeAdvertisementGroup?.mainAdvertisement
+        advertisement.comparison?.mainAdvertisement
           ?.verificationTypeCode;
       return code ? verificationMethodPresentation(code).label : null;
     }
@@ -126,12 +141,12 @@ function advertisementSortValue(
       );
     case "ranking":
       return (
-        advertisement.officeAdvertisementGroup?.mainAdvertisement?.ranking ??
+        advertisement.comparison?.mainAdvertisement?.ranking ??
         null
       );
     case "floorExposure": {
       const main =
-        advertisement.officeAdvertisementGroup?.mainAdvertisement ?? null;
+        advertisement.comparison?.mainAdvertisement ?? null;
       if (!main) return null;
       const comparison = analyzeOfficeAdvertisementComparison(advertisement);
       const disadvantage =

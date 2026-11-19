@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -66,7 +67,7 @@ function listingToPreview(listing: Listing): SharedPropertyListingView {
     regionLabel: district ? `${district} ${typeLabel}` : typeLabel,
     siteName: site?.name,
     dongName: dong && !dong.isPlaceholder ? dong.name : null,
-    unitName: unit?.name ?? null,
+    unitName: formatUnitName(unit) || null,
     floor: unit?.floor ?? null,
     price: listing.price,
     deposit: listing.deposit,
@@ -83,7 +84,7 @@ function listingRowLabel(listing: Listing): string {
   const site = listing.property?.site?.name ?? '단지 미상';
   const dong = listing.property?.unit?.dong;
   const dongName = dong && !dong.isPlaceholder ? `${dong.name} ` : '';
-  const unitName = listing.property?.unit?.name ?? '';
+  const unitName = formatUnitName(listing.property?.unit) || '';
   return `${site} ${dongName}${unitName}`.trim();
 }
 

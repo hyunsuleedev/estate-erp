@@ -9,6 +9,7 @@ import type { Tab } from '@estate-erp/shared';
 import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
+import { RequiredNoticePopup } from '@/components/layout/required-notice-popup';
 import {
   SidebarInset,
   SidebarProvider,
@@ -72,6 +73,7 @@ function BrowserPreviewShell() {
     <TabBarProvider port={getPreviewTabBarPort()}>
     <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
       <TabWorkspaceController />
+      <RequiredNoticePopup />
       <div data-window-shell="main" className="flex h-screen w-full flex-col">
         <header className="app-titlebar flex h-9 shrink-0 items-center gap-0 border-b border-border bg-sidebar pr-2">
           <div className="app-titlebar-drag-region flex h-full w-(--sidebar-width) shrink-0 items-center gap-1 pl-4">
@@ -233,6 +235,8 @@ function NativeTabShell({
       <NativeTabNavigationBridge />
       <NativeTabRouterBridge tabId={tabId} />
       <NativeTabRetentionReporter />
+      {/* 안 읽은 필독 공지는 앱을 열 때 팝업으로 띄운다. 탭 화면마다 뜨고, 한 곳에서 확인하면 함께 닫힌다. */}
+      <RequiredNoticePopup />
       <AppSidebar />
       <SidebarInset className="min-h-0 min-w-0 flex-1">
         <main

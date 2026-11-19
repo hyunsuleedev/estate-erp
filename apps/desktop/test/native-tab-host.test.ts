@@ -915,6 +915,28 @@ describe('NativeTabHost', () => {
     reportClean(nativeTabs, opened.senderId);
     assert.equal(nativeTabs.hasUnsavedWork(first.id, 'memo'), false);
   });
+
+  it('knows a tab is uploading only when its renderer says so', async () => {
+    const { nativeTabs, first, second } = setup();
+    const opened = await nativeTabs.openOrUpdateTab(first.id, makeTab('calls'));
+    assert.ok(opened);
+
+    // 첫 보고 전의 화면은 올리는 중일 수 없다 (닫기를 막지 않는다)
+    assert.equal(nativeTabs.hasActiveTransfer(first.id, 'calls'), false);
+
+    nativeTabs.reportTabRetention(opened.senderId, {
+      mutating: false,
+      transientEditor: false,
+      explicitDirty: true,
+      transferring: true,
+    });
+    assert.equal(nativeTabs.hasActiveTransfer(first.id, 'calls'), true);
+    assert.equal(nativeTabs.hasActiveTransfer(second.id, 'calls'), false);
+
+    // 다 올라가면 풀린다 (칸을 보내지 않는 예전 보고도 "올리는 중 아님"이다)
+    reportClean(nativeTabs, opened.senderId);
+    assert.equal(nativeTabs.hasActiveTransfer(first.id, 'calls'), false);
+  });
 });
 
 describe('NativeTabHost window-scoped messages', () => {

@@ -45,7 +45,7 @@ import {
   activeAdChannelValues,
   assertExternalAdIdAvailable,
   buildMyAdsManualAdPayload,
-  CHANGED_EXTERNAL_AD_ID_MESSAGE,
+  EXTERNAL_AD_ID_HINT,
   externalAdIdToVerify,
   initialMyAdsManualAdDraft,
   isManualAdDraftChanged,
@@ -105,6 +105,7 @@ export function MyAdsManualAdDialog({
   open,
   onOpenChange,
   getReturnFocusTarget,
+  onUseLocation,
 }: {
   session: ManualAdDialogSession | null;
   open: boolean;
@@ -114,6 +115,8 @@ export function MyAdsManualAdDialog({
    * 빠질 것이면(leftList) 다른 곳을 돌려준다.
    */
   getReturnFocusTarget: (options: { leftList: boolean }) => HTMLElement | null;
+  /** 매물을 고르는 대신 위치(단지 · 동 · 호)로 넣는 창으로 넘어간다 */
+  onUseLocation?: () => void;
 }) {
   // Esc·✕·취소로 닫으려 할 때 내용 쪽이 막을 수 있게 한다. 입력한 내용이 있으면 바로 버리지 않고 묻는다.
   const closeGuardRef = useRef<(() => boolean) | null>(null);
@@ -132,6 +135,7 @@ export function MyAdsManualAdDialog({
           closeGuardRef={closeGuardRef}
           onClose={() => onOpenChange(false)}
           getReturnFocusTarget={getReturnFocusTarget}
+          onUseLocation={onUseLocation}
         />
       )}
     </Dialog>
@@ -143,12 +147,14 @@ function ManualAdDialogContent({
   closeGuardRef,
   onClose,
   getReturnFocusTarget,
+  onUseLocation,
 }: {
   target: ManualAdDialogTarget;
   closeGuardRef: RefObject<(() => boolean) | null>;
   /** 확인 없이 닫는다(저장 성공 · 버리고 닫기) */
   onClose: () => void;
   getReturnFocusTarget: (options: { leftList: boolean }) => HTMLElement | null;
+  onUseLocation?: () => void;
 }) {
   const id = useId();
   const queryClient = useQueryClient();
@@ -370,7 +376,7 @@ function ManualAdDialogContent({
         getReturnFocusTarget({ leftList: leftListRef.current })?.focus();
       }}
     >
-      {/* 머리: 광고업무 다이얼로그(my-ads-action-dialog)와 같은 아이콘 · 제목 · 설명 구성 */}
+      {/* 머리: 아이콘 · 제목 · 설명 구성 */}
       <DialogHeader className="border-b px-6 py-5 pr-12">
         <div className="flex items-center gap-2">
           <span
@@ -411,6 +417,20 @@ function ManualAdDialogContent({
           <DialogFooter className="items-center border-t px-6 py-4 sm:justify-between">
             <p className="text-xs text-muted-foreground">
               광고를 붙일 매물의 거래 옵션을 먼저 고르세요.
+              {onUseLocation && (
+                <>
+                  {" "}
+                  매물이 아직 없으면{" "}
+                  <button
+                    type="button"
+                    onClick={onUseLocation}
+                    className="rounded-sm text-foreground underline underline-offset-2 hover:text-info focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  >
+                    위치로 등록
+                  </button>
+                  할 수 있습니다.
+                </>
+              )}
             </p>
             <Button type="button" variant="outline" size="sm" onClick={requestClose}>
               취소
@@ -542,14 +562,13 @@ function ManualAdDialogContent({
                   label="CP 광고번호"
                   id={`${id}-external`}
                   hint={
-                    editing?.externalAdId ? CHANGED_EXTERNAL_AD_ID_MESSAGE : undefined
+                    editing?.externalAdId ? EXTERNAL_AD_ID_HINT : undefined
                   }
                 >
                   <Input
                     id={`${id}-external`}
                     placeholder="미입력"
                     autoComplete="off"
-                    readOnly={Boolean(editing?.externalAdId)}
                     value={draft.externalAdId}
                     onChange={(event) => patchDraft({ externalAdId: event.target.value })}
                     {...invalidProps(

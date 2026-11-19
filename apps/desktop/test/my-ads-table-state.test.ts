@@ -41,7 +41,7 @@ function ad(
   return {
     id,
     lastCheckedAt: values.lastCheckedAt ?? null,
-    officeAdvertisementGroup:
+    comparison:
       values.articleConfirmYmd === undefined
         ? null
         : { mainAdvertisement: { articleConfirmYmd: values.articleConfirmYmd } },

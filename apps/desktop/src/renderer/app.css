@@ -206,6 +206,26 @@ html[data-renderer-surface="native-tab"] [data-slot="sidebar-container"] {
 }
 
 :root {
+  /* 연락처 태그 색 — Notion 다중 선택 꼬리표에서 잰 값(2026-11-18). 글자색과 반투명 배경이 한 쌍이다. */
+  --contact-tag-gray-text: #494846;
+  --contact-tag-gray-bg: #1c13011c;
+  --contact-tag-brown-text: #584437;
+  --contact-tag-brown-bg: #7f330028;
+  --contact-tag-orange-text: #6a4222;
+  --contact-tag-orange-bg: #c4580034;
+  --contact-tag-yellow-text: #655121;
+  --contact-tag-yellow-bg: #d19c0048;
+  --contact-tag-green-text: #2a533c;
+  --contact-tag-green-bg: #00602628;
+  --contact-tag-blue-text: #264a72;
+  --contact-tag-blue-bg: #0076d934;
+  --contact-tag-purple-text: #553b69;
+  --contact-tag-purple-bg: #5c00a324;
+  --contact-tag-pink-text: #68354e;
+  --contact-tag-pink-bg: #b7004e27;
+  --contact-tag-red-text: #6d3531;
+  --contact-tag-red-bg: #ce18002a;
+
   --sidebar: #f9f8f7;
   --sidebar-foreground: #5f5e59;
   --sidebar-primary: #2c2c2b;

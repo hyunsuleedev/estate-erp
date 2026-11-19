@@ -8,6 +8,11 @@
 import { type ReactNode } from 'react';
 import {
   AlarmClock,
+  CalendarDays,
+  CircleDot,
+  Flag,
+  Tag,
+  UserRound,
   ArrowUpDown,
   Check,
   Columns3,
@@ -45,9 +50,6 @@ import type {
   TaskSortBy,
   TaskVisibleProps,
 } from './-task-display';
-
-/** 매물관리 툴바와 같은 따뜻한 베이지 바탕 */
-const toolbarSurfaceClassName = 'bg-[#f1f0ec]';
 
 export const DUE_FILTER_OPTIONS: { value: DueFacet; label: string }[] = [
   { value: 'overdue', label: '기한 지남' },
@@ -100,8 +102,7 @@ type StatusCounts = Record<'all' | 'pending' | 'in_progress' | 'completed' | 'ca
 
 /** 1행 오른쪽 동그란 아이콘 버튼 */
 const iconButtonClassName = cn(
-  'relative inline-flex size-[30px] shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-[#e9e8e3] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 data-[state=open]:bg-[#e9e8e3] data-[state=open]:text-foreground [&_svg]:size-3.5',
-  toolbarSurfaceClassName,
+  'relative inline-flex size-[30px] shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-[#e9e8e3] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 data-[state=open]:bg-[#e9e8e3] data-[state=open]:text-foreground [&_svg]:size-3.5',
 );
 
 export interface TaskToolbarProps {
@@ -166,6 +167,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
         <h1 className="sr-only">업무</h1>
         <div className="@container flex min-w-0 items-center gap-2">
           <ToolbarPillTabs
+            shape="muted"
             ariaLabel="누구의 업무"
             value={props.scope}
             options={scopeTabs}
@@ -176,7 +178,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
             ref={props.searchWrapRef}
             className={cn(
               'flex h-[30px] min-w-[160px] max-w-[320px] flex-1 cursor-text items-center gap-2 rounded-full pr-1.5 pl-3 transition-colors hover:bg-[#ebeae6] focus-within:bg-white focus-within:shadow-[inset_0_0_0_1px_rgba(55,53,47,0.3)]',
-              toolbarSurfaceClassName,
+              'bg-[rgba(55,53,47,0.045)]',
             )}
           >
             <Search className="size-3.5 shrink-0 text-muted-foreground" />
@@ -244,6 +246,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
             <DisplayMenu display={props.display} scope={props.scope} onChange={props.onDisplayChange} />
 
             <ToolbarPillToggle
+              shape="muted"
               ariaLabel="보기 방식"
               value={props.display.layout}
               onChange={(layout) => props.onDisplayChange({ layout })}
@@ -253,7 +256,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
               size="sm"
               aria-label="업무 추가"
               title="업무 추가 (N)"
-              className="h-[30px] shrink-0 rounded-full px-3.5"
+              className="h-[30px] shrink-0 rounded-[8px] px-3"
               onClick={props.onCreate}
             >
               <Plus className="size-3.5" />
@@ -429,9 +432,11 @@ function FilterRow(props: TaskToolbarProps) {
   );
 
   return (
-    <section className="flex shrink-0 items-center gap-2 border-b border-border bg-[#fcfcfb] px-3 py-2">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <section className="flex shrink-0 items-center gap-2 border-b border-border bg-background px-3 py-2">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
         <ToolbarFilterChip
+          shape="soft"
+          icon={<CircleDot />}
           label="상태"
           summary={statusSummary}
           onClear={() => props.onStatusChange('')}
@@ -457,6 +462,8 @@ function FilterRow(props: TaskToolbarProps) {
         </ToolbarFilterChip>
 
         <ToolbarFilterChip
+          shape="soft"
+          icon={<CalendarDays />}
           label="마감"
           summary={dueSummary}
           onClear={() => props.onDueChange('')}
@@ -482,6 +489,8 @@ function FilterRow(props: TaskToolbarProps) {
         </ToolbarFilterChip>
 
         <ToolbarFilterChip
+          shape="soft"
+          icon={<Tag />}
           label="카테고리"
           summary={categorySummary}
           onClear={() => props.onCategoryChange('')}
@@ -513,6 +522,8 @@ function FilterRow(props: TaskToolbarProps) {
         </ToolbarFilterChip>
 
         <ToolbarFilterChip
+          shape="soft"
+          icon={<Flag />}
           label="우선순위"
           summary={summarizeSelection(priorityOptions, props.priorities)}
           onClear={() => props.onPrioritiesChange([])}
@@ -528,6 +539,8 @@ function FilterRow(props: TaskToolbarProps) {
 
         {props.scope !== 'mine' && (
           <ToolbarFilterChip
+            shape="soft"
+            icon={<UserRound />}
             label="담당자"
             summary={assigneeSummary}
             onClear={() => props.onAssigneeChange('')}

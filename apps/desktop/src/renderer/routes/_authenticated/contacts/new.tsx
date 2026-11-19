@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useDeferredValue, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { useDeferredValue, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Phone } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatPhone } from '@/lib/format';
-import { mergeContactTags, normalizePhone, parseContactTags } from '@/lib/contacts';
-import { ContactGroupSelector } from '@/components/contacts/contact-group-selector';
+import { normalizePhone } from '@/lib/contacts';
+import { ContactGroupPicker } from './-contact-group-picker';
+import { ContactTagsField } from './-contact-tag-picker';
 import {
   ContactPhonesEditor,
   createEmptyPhone,
@@ -40,18 +41,21 @@ function NewContactPage() {
   const openModule = useTabStore((state) => state.openModule);
   const closeTab = useTabStore((state) => state.closeTab);
   const ownerTabIdRef = useRef(activeTabId);
-  const [form, setForm] = useTabScopedState('contact-new:form:v1', {
+  const [form, setForm] = useTabScopedState('contact-new:form:v2', {
     name: '',
     email: '',
-    customTagsInput: '',
     memo: '',
   });
+  const [selectedTags, setSelectedTags] = useTabScopedState<string[]>(
+    'contact-new:tags:v2',
+    [],
+  );
   const [phones, setPhones] = useTabScopedState<EditablePhone[]>(
     'contact-new:phones:v1',
     () => [createEmptyPhone(true)],
   );
-  const [selectedGroupTags, setSelectedGroupTags] = useTabScopedState<string[]>(
-    'contact-new:group-tags:v1',
+  const [selectedGroups, setSelectedGroups] = useTabScopedState<string[]>(
+    'contact-new:groups:v2',
     [],
   );
   const [error, setError] = useState('');
@@ -73,23 +77,35 @@ function NewContactPage() {
   const duplicates = canonicalPhone.length >= 7 ? duplicateContactsQuery.data ?? [] : [];
   const hasDuplicates = duplicates.length > 0;
 
-  const parsedTags = useMemo(() => parseContactTags(form.customTagsInput), [form.customTagsInput]);
 
   const mutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const phoneInputs = toPhoneInputs(phones);
-      return api.contacts.create({
+      const created = await api.contacts.create({
         name: form.name.trim(),
         phone: firstPhoneValue(phones) || undefined,
         phones: phoneInputs.length > 0 ? phoneInputs : undefined,
         email: form.email.trim() || undefined,
-        tags: mergeContactTags(selectedGroupTags, form.customTagsInput),
+        // 없는 이름은 서버가 태그로 만들고 색을 붙인다.
+        tags: selectedTags,
         memo: form.memo.trim() || undefined,
       });
+      // 그룹은 연락처와 따로 저장된다. 연락처는 이미 만들어졌으므로 실패한 그룹만 알려 준다.
+      const results = await Promise.allSettled(
+        selectedGroups.map((name) => api.contacts.addGroupMembers(name, [created.id])),
+      );
+      return {
+        created,
+        groupFailures: results.filter(({ status }) => status === 'rejected').length,
+      };
     },
-    onSuccess: async (created) => {
+    onSuccess: async ({ created, groupFailures }) => {
       await queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      toast.success('연락처가 등록되었습니다.');
+      if (groupFailures > 0) {
+        toast.warning('연락처는 등록했지만 그룹에 넣지 못한 것이 있습니다.');
+      } else {
+        toast.success('연락처가 등록되었습니다.');
+      }
       const route = `/contacts/${created.id}`;
       const meta = getRouteMeta(route);
       const resourceKey = tabResourceKeys.entity('contact', created.id);
@@ -206,45 +222,12 @@ function NewContactPage() {
                 />
               </FormField>
 
-              <FormField label="그룹 / 태그">
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">그룹</p>
-                    <ContactGroupSelector
-                      selectedTags={selectedGroupTags}
-                      onToggle={(tag) => {
-                        setSelectedGroupTags((previous) =>
-                          previous.includes(tag)
-                            ? previous.filter((item) => item !== tag)
-                            : [...previous, tag],
-                        );
-                      }}
-                    />
-                  </div>
+              <FormField label="그룹">
+                <ContactGroupPicker selected={selectedGroups} onChange={setSelectedGroups} />
+              </FormField>
 
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground">추가 태그</p>
-                    <Input
-                      id="tags"
-                      type="text"
-                      value={form.customTagsInput}
-                      onChange={(event) => setForm((previous) => ({ ...previous, customTagsInput: event.target.value }))}
-                      placeholder="쉼표로 구분: VIP, 소개, 재연락"
-                    />
-                  </div>
-                </div>
-                {(selectedGroupTags.length > 0 || parsedTags.length > 0) && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {selectedGroupTags.map((tag) => (
-                      <Badge key={tag}>{tag}</Badge>
-                    ))}
-                    {parsedTags.map((tag) => (
-                      <Badge key={tag} variant="secondary">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
+              <FormField label="태그">
+                <ContactTagsField value={selectedTags} onChange={setSelectedTags} />
               </FormField>
 
               <FormField label="메모">

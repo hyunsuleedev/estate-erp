@@ -1,5 +1,5 @@
 import type { Deal } from '@estate-erp/api-client';
-import { normalizeDealStage } from '@estate-erp/shared';
+import { normalizeDealStage, formatFloorRange } from '@estate-erp/shared';
 import { formatMoney, formatRent } from '@/lib/format';
 
 export type DealListItem = Deal;
@@ -384,7 +384,11 @@ export function getDealTitle(deal: Deal) {
       ? withSuffix(dongName, '동')
       : null;
   const unitName = deal.property?.unit?.name?.trim();
-  const unitLabel = unitName && unitName !== '-' ? withSuffix(unitName, '호') : null;
+  // 호 없이 층이 단위인 공간은 층이 이름이다
+  const unitLabel =
+    unitName && unitName !== '-'
+      ? withSuffix(unitName, '호')
+      : formatFloorRange(deal.property?.unit ?? {}) || null;
 
   return [siteName, dongLabel, unitLabel].filter(Boolean).join(' ') || '매물 정보 없음';
 }

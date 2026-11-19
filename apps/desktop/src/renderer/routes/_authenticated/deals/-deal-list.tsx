@@ -1,11 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import {
   Banknote,
   CalendarClock,
   ChevronDown,
   CircleDot,
-  FileText,
   Handshake,
   List,
   Tag,
@@ -13,7 +12,7 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react';
-import type { Contract, Deal } from '@estate-erp/api-client';
+import type { Deal } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
 import { formatDate, formatMoney } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
@@ -39,17 +38,17 @@ import {
 } from './-deal-view-utils';
 
 /** DataTable이 체크박스 열에 쓰는 폭 */
-const SELECTION_COLUMN_WIDTH = 36;
+const SELECTION_COLUMN_WIDTH = 66;
 
 export function DealListView({
+  onStageDrop,
   deals,
-  contractByDealId,
   selectedDealId,
   referenceDate,
   actions,
 }: {
+  onStageDrop: (deal: Deal, stage: string) => void;
   deals: Deal[];
-  contractByDealId: Map<string, Contract>;
   selectedDealId: string | null;
   referenceDate: Date;
   actions: DealRowActions;
@@ -60,10 +59,21 @@ export function DealListView({
   const [checkedIds, setCheckedIds] = useState<ReadonlySet<string>>(() => new Set());
   // 필터로 목록에서 빠진 거래는 세지 않는다
   const checkedCount = deals.filter((deal) => checkedIds.has(deal.id)).length;
+  const [dragged, setDragged] = useState<Deal | null>(null);
+  const storageKey = `estate:deal-list-order:${deals[0]?.officeId ?? ''}`;
+  const [order, setOrder] = useState<Record<string, string[]>>(() => {
+    try {
+      const stored: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '{}');
+      return Object.fromEntries(Object.entries(stored ?? {}).filter(([, ids]) =>
+        Array.isArray(ids) && ids.every((id) => typeof id === 'string')));
+    } catch {
+      return {};
+    }
+  });
   const groups = getDealNotionListGroups(deals, referenceDate);
   const columns = useMemo(
-    () => createDealColumns(contractByDealId, referenceDate, actions, selectedDealId),
-    [contractByDealId, referenceDate, actions, selectedDealId],
+    () => createDealColumns(referenceDate, actions, selectedDealId),
+    [referenceDate, actions, selectedDealId],
   );
   // 단계가 달라도 같은 열 경계를 유지하고, 가로 스크롤은 목록 전체에서 한 번만 한다.
   const minWidth = columns.reduce(
@@ -75,32 +85,55 @@ export function DealListView({
     <section className="min-w-0" aria-label="거래 목록">
       <ScrollArea className="w-full">
         <div style={{ minWidth }} className="pb-2">
-          {groups.map(({ group, rows }) => (
-            <DealListGroup
-              key={group.key}
-              group={group}
-              deals={sortDealTableRows(
-                rows.map(({ deal }) => deal),
-                sorting,
-                referenceDate,
-              )}
-              columns={columns}
-              sorting={sorting}
-              onSortingChange={setSorting}
-              columnSizing={columnSizing}
-              onColumnSizingChange={setColumnSizing}
-              checkedIds={checkedIds}
-              onCheckedChange={(groupDealIds, nextIds) =>
-                setCheckedIds((previous) => {
-                  const next = new Set(previous);
-                  for (const id of groupDealIds) next.delete(id);
-                  for (const id of nextIds) next.add(id);
-                  return next;
-                })
-              }
-              actions={actions}
-            />
-          ))}
+          {groups.map(({ group, rows }) => {
+            const ranks = new Map((order[group.key] ?? []).map((id, i) => [id, i]));
+            const ordered = rows.map(({ deal }) => deal).sort((a, b) =>
+              (ranks.get(a.id) ?? Infinity) - (ranks.get(b.id) ?? Infinity));
+            return (
+              <DealListGroup
+                key={group.key}
+                group={group}
+                deals={sortDealTableRows(ordered, sorting, referenceDate)}
+                dragged={dragged}
+                onDragChange={setDragged}
+                onMove={(index) => {
+                  if (!dragged) return;
+                  if (!sorting.length) {
+                    const ids = ordered.map((deal) => deal.id);
+                    const reordered = [
+                      ...ids.slice(0, index).filter((id) => id !== dragged.id),
+                      dragged.id,
+                      ...ids.slice(index).filter((id) => id !== dragged.id),
+                    ];
+                    const visible = new Set(reordered);
+                    const queue = reordered.values();
+                    const next = (order[group.key] ?? []).map((id) =>
+                      visible.has(id) ? queue.next().value! : id);
+                    const updated = { ...order, [group.key]: [...next, ...queue] };
+                    setOrder(updated);
+                    try { localStorage.setItem(storageKey, JSON.stringify(updated)); } catch { /* 저장 공간이 없으면 현재 보기에서만 유지한다. */ }
+                  }
+                  if (!group.stages.includes(dragged.stage)) onStageDrop(dragged, group.stages[group.stages.length - 1]);
+                  setDragged(null);
+                }}
+                columns={columns}
+                sorting={sorting}
+                onSortingChange={setSorting}
+                columnSizing={columnSizing}
+                onColumnSizingChange={setColumnSizing}
+                checkedIds={checkedIds}
+                onCheckedChange={(groupDealIds, nextIds) =>
+                  setCheckedIds((previous) => {
+                    const next = new Set(previous);
+                    for (const id of groupDealIds) next.delete(id);
+                    for (const id of nextIds) next.add(id);
+                    return next;
+                  })
+                }
+                actions={actions}
+              />
+            );
+          })}
         </div>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
@@ -121,6 +154,7 @@ export function DealListView({
 }
 
 function DealListGroup({
+  dragged, onDragChange, onMove,
   group,
   deals,
   columns,
@@ -132,6 +166,9 @@ function DealListGroup({
   onCheckedChange,
   actions,
 }: {
+  dragged: Deal | null;
+  onDragChange: (deal: Deal | null) => void;
+  onMove: (index: number) => void;
   group: DealDisplayGroup;
   deals: Deal[];
   columns: ColumnDef<Deal, unknown>[];
@@ -148,19 +185,46 @@ function DealListGroup({
     null,
   );
   const isCollapsed = collapsedOverride ?? deals.length === 0;
+  const [insertion, setInsertion] = useState<number | null>(null);
+  const grabPoint = useRef<{ x: number; y: number } | null>(null);
+  const canDrop = dragged && !actions.isUpdating && (!sorting.length || !group.stages.includes(dragged.stage));
+  function insertionAt(event: React.DragEvent) {
+    const target = event.target as Element;
+    if (target.closest('h2, thead')) return 0;
+    const cell = target.closest<HTMLElement>('td[data-table-row]');
+    if (!cell) return deals.length;
+    const rect = cell.getBoundingClientRect();
+    return Number(cell.dataset.tableRow) + Number(event.clientY >= rect.top + rect.height / 2);
+  }
   const headingId = `deal-list-heading-${group.key}`;
 
   return (
-    <section className="mb-3 last:mb-0" aria-labelledby={headingId}>
-      <h2 id={headingId}>
+    <section className="pb-2 last:pb-0" aria-labelledby={headingId}
+      onDragOver={(event) => {
+        if (!canDrop) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        setInsertion(insertionAt(event));
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setInsertion(null);
+      }}
+      onDrop={(event) => {
+        if (!canDrop) return;
+        event.preventDefault();
+        onMove(insertionAt(event));
+        setInsertion(null);
+      }}
+    >
+      <h2 id={headingId} className={cn("flex h-[42px] items-center ps-2", canDrop && insertion !== null && "bg-blue-50")}>
         <button
           type="button"
           aria-expanded={!isCollapsed}
           aria-controls={`deal-list-group-${group.key}`}
-          className="group/head flex h-8 w-full items-center gap-1.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group/head sticky start-2 inline-flex h-7 w-fit items-center gap-1.5 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => setCollapsedOverride(!isCollapsed)}
         >
-          <span className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground-strong group-hover/head:bg-accent">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground-strong group-hover/head:bg-accent">
             <ChevronDown
               aria-hidden="true"
               className={cn(
@@ -178,7 +242,6 @@ function DealListGroup({
       <div
         id={`deal-list-group-${group.key}`}
         hidden={isCollapsed}
-        className="mt-1 border-t border-border"
       >
         <DataTable
           columns={columns}
@@ -189,6 +252,41 @@ function DealListGroup({
           rowHeight={40}
           activateOnDoubleClick
           onRowClick={(deal) => actions.onSelect(deal.id)}
+          dropIndicator={canDrop && insertion !== null ? {
+            row: Math.min(insertion, deals.length - 1), after: insertion === deals.length,
+          } : undefined}
+          hoverSelectionGutter
+          renderSelectionAccessory={(deal) => (
+            <span
+              title="거래 이동"
+              draggable={!actions.isUpdating}
+              className="inline-flex h-10 w-[30px] shrink-0 cursor-grab items-center justify-center rounded-sm text-[#ada9a3] opacity-0 group-hover:opacity-100 hover:bg-accent active:cursor-grabbing [@media(hover:none)]:opacity-100"
+              onPointerDown={(event) => {
+                const rect = event.currentTarget.closest('tr')?.getBoundingClientRect();
+                grabPoint.current = rect ? { x: event.clientX - rect.left, y: event.clientY - rect.top } : null;
+              }}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('application/x-estait-deal', deal.id);
+                const row = event.currentTarget.closest('tr');
+                if (row) {
+                  const rect = row.getBoundingClientRect();
+                  const point = grabPoint.current ?? { x: event.clientX - rect.left, y: event.clientY - rect.top };
+                  event.dataTransfer.setDragImage(row, point.x, point.y);
+                }
+                grabPoint.current = null;
+                onDragChange(deal);
+              }}
+              onDragEnd={() => { onDragChange(null); setInsertion(null); }}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              <svg aria-hidden="true" viewBox="0 0 20 20" className="size-5 shrink-0 fill-current">
+                {[4, 10, 16].map((y) => (
+                  <g key={y}><circle cx="7.5" cy={y} r="1.25" /><circle cx="12.5" cy={y} r="1.25" /></g>
+                ))}
+              </svg>
+            </span>
+          )}
           enableRowSelection
           getRowSelectionLabel={(deal) => `${getDealTitle(deal)} 거래 선택`}
           selectedRowIds={deals.filter((deal) => checkedIds.has(deal.id)).map((deal) => deal.id)}
@@ -225,7 +323,6 @@ function ColumnHeading({
 }
 
 function createDealColumns(
-  contractByDealId: Map<string, Contract>,
   referenceDate: Date,
   actions: DealRowActions,
   selectedDealId: string | null,
@@ -367,21 +464,6 @@ function createDealColumns(
           />
         </div>
       ),
-    },
-    {
-      id: 'contract',
-      size: 104,
-      minSize: 88,
-      enableSorting: false,
-      header: () => <ColumnHeading icon={FileText} label="계약서" />,
-      cell: ({ row }) => {
-        const contract = contractByDealId.get(row.original.id);
-        return contract ? (
-          <StatusBadge kind="contractStatus" status={contract.status} />
-        ) : (
-          <EmptyValue />
-        );
-      },
     },
     {
       id: 'joint',

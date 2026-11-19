@@ -10,6 +10,7 @@ import {
   flexRender,
   getCoreRowModel,
   useReactTable,
+  type CellContext,
   type ColumnDef,
   type SortingState,
   type RowSelectionState,
@@ -33,6 +34,8 @@ const VIRTUALIZE_THRESHOLD = 50;
 
 /** headerTone="refresh"의 접기 띠 높이(px). 매물관리 표와 같다. */
 const REFRESH_GUIDE_HEIGHT = 11;
+// 매물관리 모양: 매물관리 표처럼 접기 버튼(16px)의 위 절반만 표 위에 비운다
+const PROPERTY_LIST_GUIDE_HEIGHT = 8;
 
 /** 열 id별 실제 너비가 같은지 본다. 값이 없는 열은 열 정의의 기본 너비로 친다. */
 function isSameColumnSizing(
@@ -53,6 +56,31 @@ function isSameColumnSizing(
   return true;
 }
 
+const gutterCheckboxClass = 'relative size-4 cursor-pointer rounded-[3px] data-[state=unchecked]:!border-[rgba(27,21,0,0.26)] bg-transparent shadow-none data-[state=unchecked]:hover:!border-[rgba(27,21,0,0.36)] data-[state=unchecked]:hover:bg-[rgba(66,35,3,0.06)] after:absolute after:-inset-[10px] data-[state=checked]:border-[#2383e2] data-[state=checked]:bg-[#2383e2] data-[state=checked]:text-white data-[state=indeterminate]:border-[#2383e2] data-[state=indeterminate]:bg-[#2383e2] data-[state=indeterminate]:text-white';
+
+// 드래그 중 표가 갱신되어도 Chromium이 잡고 있는 손잡이 DOM을 유지한다.
+function SelectionCell<TData extends { id: string }>({ row, table }: CellContext<TData, unknown>) {
+  const { hoverSelectionGutter, renderSelectionAccessory, getRowSelectionLabel } =
+    table.options.meta as Pick<DataTableProps<TData>, 'hoverSelectionGutter' | 'renderSelectionAccessory' | 'getRowSelectionLabel'>;
+  return (
+    <div className={cn("flex items-center", hoverSelectionGutter ? "justify-between pr-[10px]" : "flex-col justify-center gap-1 py-1")}>
+      {hoverSelectionGutter && renderSelectionAccessory?.(row.original)}
+      <Checkbox
+        checked={row.getIsSelected()}
+        onCheckedChange={(v) => row.toggleSelected(!!v)}
+        onClick={(e) => e.stopPropagation()}
+        aria-label={
+          getRowSelectionLabel
+            ? getRowSelectionLabel(row.original)
+            : `${row.index + 1}번째 행 선택`
+        }
+        className={cn("size-3.5", hoverSelectionGutter && gutterCheckboxClass, hoverSelectionGutter && "opacity-0 group-hover:opacity-100 hover:opacity-100 focus-visible:opacity-100 data-[state=checked]:opacity-100 [@media(hover:none)]:opacity-100")}
+      />
+      {!hoverSelectionGutter && renderSelectionAccessory?.(row.original)}
+    </div>
+  );
+}
+
 export function DataTable<TData extends { id: string }>({
   columns,
   data,
@@ -65,6 +93,8 @@ export function DataTable<TData extends { id: string }>({
   sorting,
   onSortingChange,
   enableRowSelection = false,
+  hoverSelectionGutter = false,
+  dropIndicator,
   selectedRowIds,
   onRowSelectionChange,
   renderSelectionAccessory,
@@ -133,9 +163,9 @@ export function DataTable<TData extends { id: string }>({
   if (enableRowSelection) {
     allColumns.push({
       id: '_select',
-      size: 36,
-      minSize: 36,
-      maxSize: 36,
+      size: hoverSelectionGutter ? 66 : 36,
+      minSize: hoverSelectionGutter ? 66 : 36,
+      maxSize: hoverSelectionGutter ? 66 : 36,
       enableResizing: false,
       header: ({ table }) => (
         <Checkbox
@@ -145,25 +175,10 @@ export function DataTable<TData extends { id: string }>({
           }
           onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
           aria-label="현재 목록 전체 행 선택"
-          className="size-3.5"
+          className={cn("size-3.5", hoverSelectionGutter && gutterCheckboxClass, hoverSelectionGutter && "ml-auto mr-[10px] opacity-0 hover:opacity-100 focus-visible:opacity-100 data-[state=checked]:opacity-100 data-[state=indeterminate]:opacity-100 [@media(hover:none)]:opacity-100")}
         />
       ),
-      cell: ({ row }) => (
-        <div className="flex flex-col items-center justify-center gap-1 py-1">
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(v) => row.toggleSelected(!!v)}
-            onClick={(e) => e.stopPropagation()}
-            aria-label={
-              getRowSelectionLabel
-                ? getRowSelectionLabel(row.original)
-                : `${row.index + 1}번째 행 선택`
-            }
-            className="size-3.5"
-          />
-          {renderSelectionAccessory?.(row.original)}
-        </div>
-      ),
+      cell: SelectionCell,
     });
   }
 
@@ -171,6 +186,7 @@ export function DataTable<TData extends { id: string }>({
 
   // ── TanStack Table instance ───────────────────────────────────
   const table = useReactTable({
+    meta: { hoverSelectionGutter, renderSelectionAccessory, getRowSelectionLabel },
     data,
     columns: allColumns,
     pageCount,
@@ -445,6 +461,9 @@ export function DataTable<TData extends { id: string }>({
   const isPropertyListTone = propertyListTone;
   // 접기 띠·정렬 화살표·aria-sort는 refresh 머리와 같은 모양을 쓴다.
   const usesRefreshGuide = isRefreshHeader || isPropertyListTone;
+  const refreshGuideHeight = isPropertyListTone
+    ? PROPERTY_LIST_GUIDE_HEIGHT
+    : REFRESH_GUIDE_HEIGHT;
 
   // Virtualize only for full-height mode with a meaningful row count.
   // Paginated views are small (pageSize ~20) and auto-height rows can't be
@@ -645,7 +664,7 @@ export function DataTable<TData extends { id: string }>({
             style={{
               width: '100%',
               minWidth: tableTotalSize,
-              ...(usesRefreshGuide ? { height: REFRESH_GUIDE_HEIGHT } : {}),
+              ...(usesRefreshGuide ? { height: refreshGuideHeight } : {}),
             }}
           >
             <div
@@ -673,7 +692,10 @@ export function DataTable<TData extends { id: string }>({
                       <span
                         aria-hidden="true"
                         data-data-table-column-group-line={control.label}
-                        className="absolute top-[9px] z-40 h-[2px] bg-[#a3a09a]"
+                        className={cn(
+                          'absolute z-40 h-[2px] bg-[#a3a09a]',
+                          isPropertyListTone ? 'top-[6px]' : 'top-[9px]',
+                        )}
                         style={{
                           left: anchorEnd + 10,
                           width: Math.max(0, expandedWidth - 10),
@@ -716,7 +738,7 @@ export function DataTable<TData extends { id: string }>({
                       className={cn(
                         'pointer-events-auto absolute z-50 inline-flex items-center justify-center bg-white p-0 outline-none',
                         usesRefreshGuide
-                          ? 'mt-[2px] size-[17px] rounded-[4px] border border-[#a3a09a] text-[#6f6c66] shadow-[0_1px_2px_rgba(16,24,40,0.08)] transition-[border-color,color,box-shadow] hover:border-[#2383e2] hover:text-[#1d6dbf] hover:shadow-[0_0_0_3px_rgba(35,131,226,0.16)] focus-visible:ring-2 focus-visible:ring-[#2383e2]/35'
+                          ? cn(isPropertyListTone ? 'size-4' : 'mt-[2px] size-[17px]', 'rounded-[4px] border border-[#a3a09a] text-[#6f6c66] shadow-[0_1px_2px_rgba(16,24,40,0.08)] transition-[border-color,color,box-shadow] hover:border-[#2383e2] hover:text-[#1d6dbf] hover:shadow-[0_0_0_3px_rgba(35,131,226,0.16)] focus-visible:ring-2 focus-visible:ring-[#2383e2]/35')
                           : 'mt-2 size-5 rounded-[3px] border border-border text-muted-foreground shadow-xs transition-colors hover:border-muted-foreground/40 hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35 active:translate-y-px',
                       )}
                       style={{ left: toggleOffset }}
@@ -743,7 +765,7 @@ export function DataTable<TData extends { id: string }>({
                         className={cn(
                           'pointer-events-auto absolute z-50 flex items-center whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground',
                           usesRefreshGuide
-                            ? 'mt-0 h-[11px] text-[11px]'
+                            ? cn('mt-0 text-[11px]', isPropertyListTone ? 'h-2' : 'h-[11px]')
                             : 'mt-2 h-5 text-[12px]',
                         )}
                         style={{ left: toggleOffset + (usesRefreshGuide ? 22 : 26) }}
@@ -784,7 +806,7 @@ export function DataTable<TData extends { id: string }>({
             )}
             style={
               usesRefreshGuide
-                ? { top: hasColumnGroupGuide ? REFRESH_GUIDE_HEIGHT : 0 }
+                ? { top: hasColumnGroupGuide ? refreshGuideHeight : 0 }
                 : undefined
             }
           >
@@ -862,12 +884,13 @@ export function DataTable<TData extends { id: string }>({
                           ? cn(
                               // 매물관리 메인 표(property-listings-table) 머리와 같은 규격
                               'h-9 border-b border-border bg-white px-2.5 text-[13px] font-normal leading-[21px] normal-case tracking-normal text-muted-foreground transition-colors',
-                              hasColumnGroupGuide && 'border-t border-t-border',
+                              (hasColumnGroupGuide || hoverSelectionGutter) && 'border-t border-t-border',
                               !isLast && 'border-r border-r-[#eeeeec]',
+                              hoverSelectionGutter && header.id === '_select' && 'border-0 px-0',
                               canSort &&
                                 'cursor-pointer select-none outline-none hover:bg-[#f6f5f3] hover:text-[#2c2c2b] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2383e2]/50',
                               sorted && 'text-[#2c2c2b]',
-                              isLastPinned && 'border-r-0 shadow-[1px_0_0_0_#cfcecb]',
+                              // 고정 열의 끝도 다른 칸과 같은 옅은 세로선을 쓴다(따로 진한 경계선을 두지 않는다)
                             )
                           : isRefreshHeader
                           ? cn(
@@ -1011,6 +1034,7 @@ export function DataTable<TData extends { id: string }>({
                               ? 'border-r border-r-[#eeeeec]'
                               : 'border-r border-r-border/30'),
                           isPropertyListTone && 'border-b-border',
+                          hoverSelectionGutter && j === 0 && 'border-0',
                         )}
                         style={{ height: rowCellHeight }}
                       >
@@ -1039,7 +1063,9 @@ export function DataTable<TData extends { id: string }>({
                   <tr
                     key={row.id}
                     data-state={row.getIsSelected() ? 'selected' : undefined}
-                    className="group"
+                    className={cn("group", dropIndicator?.row === rowIndex && (dropIndicator.after
+                      ? "[&>td]:shadow-[inset_0_-2px_var(--color-blue-400)]"
+                      : "[&>td]:shadow-[inset_0_2px_var(--color-blue-400)]"))}
                   >
                     {row.getVisibleCells().map((cell, colIndex) => {
                       const isLastCol =
@@ -1064,6 +1090,7 @@ export function DataTable<TData extends { id: string }>({
                             className={cn(
                               'relative select-none border-b border-border px-2.5 align-middle text-[14px] font-[450] leading-[21px] text-foreground',
                               !isLastCol && 'border-r border-r-[#eeeeec]',
+                              hoverSelectionGutter && cell.column.id === '_select' && 'border-0 px-0',
                               'group-hover:bg-muted/70',
                               'group-data-[state=selected]:bg-primary/5',
                               isFocused &&
@@ -1073,7 +1100,6 @@ export function DataTable<TData extends { id: string }>({
                                 (activateOnDoubleClick ? 'cursor-default' : 'cursor-pointer'),
                               isPinned &&
                                 'bg-white group-hover:bg-muted group-data-[state=selected]:bg-secondary',
-                              isLastPinned && 'border-r-0 shadow-[1px_0_0_0_#cfcecb]',
                               cell.column.columnDef.meta?.cellClassName,
                             )}
                             style={{

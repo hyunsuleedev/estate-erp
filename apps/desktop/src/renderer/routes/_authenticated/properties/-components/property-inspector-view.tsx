@@ -327,7 +327,7 @@ export function PropertyInspectorView({
           {model.siteName}
           {(model.dong || model.ho) && (
             <span className="ml-2 whitespace-nowrap tabular-nums">
-              {[model.dong && `${model.dong}동`, model.ho && `${model.ho}호`]
+              {[model.dong && `${model.dong}동`, model.ho]
                 .filter(Boolean)
                 .join(" ")}
             </span>

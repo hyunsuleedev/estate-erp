@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateListingAdvertisementDto, CreateTaskDto } from '@estate-erp/api-client';
@@ -37,7 +38,7 @@ export function PropertyAdActions({ group, selectedIds, onClearSelection }: {
   const selected = group.listings.flatMap(listing => (listing.activeAdvertisements ?? [])
     .filter(ad => selectedIds.has(ad.id)).map(advertisement => ({ listing, advertisement })));
   const dong = group.property?.unit?.dong;
-  const unit = group.property?.unit?.name;
+  const unit = formatUnitName(group.property?.unit);
   const location = [group.property?.site?.name, dong && !dong.isPlaceholder ? `${dong.name.replace(/동$/, '')}동` : null,
     unit ? `${unit.replace(/호$/, '')}호` : null].filter(Boolean).join(' ') || '매물';
   const mutation = useMutation({

@@ -2,6 +2,7 @@ import { useIsMutating } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { NativeTabRetentionUpdate } from '../../../../common/nativeTabs';
 import {
+  ACTIVE_TRANSFER_SELECTOR,
   EXPLICIT_DIRTY_SELECTOR,
   TRANSIENT_EDITOR_SELECTOR,
 } from '../lib/unsavedWork';
@@ -9,6 +10,8 @@ import {
 interface RetentionSignals {
   transientEditor: boolean;
   explicitDirty: boolean;
+  /** 파일을 올리는 중 (탭 닫기를 막는다) */
+  transferring?: boolean;
 }
 
 export function createNativeTabRetentionUpdate(
@@ -18,11 +21,13 @@ export function createNativeTabRetentionUpdate(
 ): NativeTabRetentionUpdate {
   const mutating = pendingMutations > 0;
   const { transientEditor, explicitDirty } = signals;
+  const transferring = signals.transferring === true;
   return {
     schemaVersion: 1,
-    protected: mutating || transientEditor || explicitDirty,
+    protected: mutating || transientEditor || explicitDirty || transferring,
     ...(viewState ? { viewState } : {}),
-    reasons: { mutating, transientEditor, explicitDirty },
+    // 올리는 중이 아닐 때는 칸을 넣지 않는다 (보고 내용이 예전과 똑같이 유지된다)
+    reasons: { mutating, transientEditor, explicitDirty, ...(transferring ? { transferring } : {}) },
   };
 }
 
@@ -32,6 +37,7 @@ function readRetentionSignals(): RetentionSignals {
       document.querySelector(TRANSIENT_EDITOR_SELECTOR),
     ),
     explicitDirty: Boolean(document.querySelector(EXPLICIT_DIRTY_SELECTOR)),
+    transferring: Boolean(document.querySelector(ACTIVE_TRANSFER_SELECTOR)),
   };
 }
 
@@ -124,18 +130,28 @@ export function NativeTabRetentionReporter() {
 
   useEffect(() => {
     let scheduledFrame: number | null = null;
+    let scheduledTimer: number | null = null;
+    const read = () => {
+      if (scheduledFrame !== null) window.cancelAnimationFrame(scheduledFrame);
+      if (scheduledTimer !== null) window.clearTimeout(scheduledTimer);
+      scheduledFrame = null;
+      scheduledTimer = null;
+      const next = readRetentionSignals();
+      setSignals((current) =>
+        current.transientEditor === next.transientEditor &&
+        current.explicitDirty === next.explicitDirty &&
+        current.transferring === next.transferring
+          ? current
+          : next,
+      );
+    };
     const refresh = () => {
-      if (scheduledFrame !== null) return;
-      scheduledFrame = window.requestAnimationFrame(() => {
-        scheduledFrame = null;
-        const next = readRetentionSignals();
-        setSignals((current) =>
-          current.transientEditor === next.transientEditor &&
-          current.explicitDirty === next.explicitDirty
-            ? current
-            : next,
-        );
-      });
+      if (scheduledFrame !== null || scheduledTimer !== null) return;
+      scheduledFrame = window.requestAnimationFrame(read);
+      // 화면에 보이지 않는 탭에서는 애니메이션 프레임이 돌지 않는다. 뒤에 있는 탭에서 올리기가
+      // 끝났는데 "올리는 중"이 풀리지 않으면 그 탭을 닫을 수 없게 된다 — 타이머로도 읽는다
+      // (보이지 않는 탭의 타이머는 느려질 뿐 멈추지 않는다). 먼저 도는 쪽이 읽고 다른 쪽은 취소한다.
+      scheduledTimer = window.setTimeout(read, 250);
     };
     const observer = new MutationObserver(refresh);
     observer.observe(document.body, {
@@ -146,12 +162,14 @@ export function NativeTabRetentionReporter() {
         'data-state',
         'data-native-tab-discard-blocker',
         'data-native-tab-dirty',
+        'data-native-tab-transfer',
       ],
     });
     refresh();
     return () => {
       observer.disconnect();
       if (scheduledFrame !== null) window.cancelAnimationFrame(scheduledFrame);
+      if (scheduledTimer !== null) window.clearTimeout(scheduledTimer);
     };
   }, []);
 

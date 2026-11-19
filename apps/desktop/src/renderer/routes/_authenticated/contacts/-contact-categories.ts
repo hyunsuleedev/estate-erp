@@ -3,12 +3,11 @@ import {
   CONTACT_CATEGORY_LABELS,
   type ContactCategoryKey,
 } from '@estate-erp/shared';
-import { isContactTagVisible } from '@/lib/contacts';
 
 export interface ContactCategory {
   id: string;
   label: string;
-  filter: Pick<ContactsFilter, 'category' | 'tags'>;
+  filter: Pick<ContactsFilter, 'category' | 'group'>;
 }
 
 export const ALL_CONTACTS_CATEGORY: ContactCategory = {
@@ -57,7 +56,7 @@ export const CONTACT_CATEGORY_SECTIONS: ReadonlyArray<{
 const GROUP_ID_PREFIX = 'group:';
 
 export function contactGroupCategory(name: string): ContactCategory {
-  return { id: `${GROUP_ID_PREFIX}${name}`, label: name, filter: { tags: name } };
+  return { id: `${GROUP_ID_PREFIX}${name}`, label: name, filter: { group: name } };
 }
 
 /** 그룹 분류면 그룹 이름을, 아니면 null을 돌려준다. */
@@ -83,7 +82,13 @@ export function validateContactGroupName(rawName: string): string | null {
   if (!name) return '그룹 이름을 입력하세요.';
   if (name.length > 30) return '그룹 이름은 30자까지 쓸 수 있습니다.';
   if (name.includes(',')) return '그룹 이름에는 쉼표를 쓸 수 없습니다.';
-  // 화면에서 숨기는 옛 태그 이름으로 만들면 만들어 놓고도 보이지 않는다.
-  if (!isContactTagVisible(name)) return '이 이름은 그룹 이름으로 쓸 수 없습니다.';
   return null;
+}
+
+/** 한 번의 저장에서 넣을 그룹과 뺄 그룹. 사용자가 실제로 바꾼 것만 담는다. */
+export function diffContactGroups(initial: string[], selected: string[]) {
+  return {
+    added: selected.filter((name) => !initial.includes(name)),
+    removed: initial.filter((name) => !selected.includes(name)),
+  };
 }

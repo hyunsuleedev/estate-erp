@@ -210,6 +210,7 @@ function getBaseWindowOptions(): Electron.BrowserWindowConstructorOptions {
     isMac
       ? {
           titleBarStyle: 'hiddenInset',
+          acceptFirstMouse: true,
           // 36px 타이틀바 가운데에 macOS 창 버튼을 정렬한다.
           trafficLightPosition: { x: 16, y: (TITLEBAR_HEIGHT - 16) / 2 },
         }
@@ -337,7 +338,9 @@ function isValidNativeTabRetentionUpdate(
     !isRecord(payload.reasons) ||
     typeof payload.reasons.mutating !== 'boolean' ||
     typeof payload.reasons.transientEditor !== 'boolean' ||
-    typeof payload.reasons.explicitDirty !== 'boolean'
+    typeof payload.reasons.explicitDirty !== 'boolean' ||
+    (payload.reasons.transferring !== undefined &&
+      typeof payload.reasons.transferring !== 'boolean')
   ) {
     return false;
   }
@@ -357,7 +360,8 @@ function isValidNativeTabRetentionUpdate(
     payload.protected ===
     (payload.reasons.mutating ||
       payload.reasons.transientEditor ||
-      payload.reasons.explicitDirty)
+      payload.reasons.explicitDirty ||
+      payload.reasons.transferring === true)
   );
 }
 

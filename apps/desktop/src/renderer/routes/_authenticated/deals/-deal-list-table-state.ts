@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import type { Deal } from '@estate-erp/api-client';
 import type { SortingState } from '@tanstack/react-table';
 import {
@@ -16,7 +17,7 @@ export function getDealPropertyCells(deal: Deal) {
   return {
     site: cellValue(deal.property?.site?.name),
     dong: dong?.isPlaceholder ? null : cellValue(dong?.name),
-    unit: cellValue(deal.property?.unit?.name),
+    unit: cellValue(formatUnitName(deal.property?.unit)),
   };
 }
 

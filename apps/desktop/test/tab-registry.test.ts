@@ -50,6 +50,13 @@ class FakeViews implements TabViewsPort {
     return this.unsaved.has(tabId);
   }
 
+  /** 탭 화면이 "파일을 올리는 중"이라고 알린 탭. */
+  readonly transferring = new Set<string>();
+
+  hasActiveTransfer(_windowId: number, tabId: string): boolean {
+    return this.transferring.has(tabId);
+  }
+
   /** 그 창에 마지막으로 보여 주라고 한 탭(없으면 null). 한 번도 없으면 undefined. */
   shown(windowId: number): Tab | null | undefined {
     return this.presented.filter((entry) => entry.windowId === windowId).at(-1)?.tab;
@@ -563,6 +570,38 @@ describe('TabRegistry: actions from the tab bar', () => {
     s.bar(MAIN, { type: 'close', tabId: contacts });
     assert.deepEqual(s.routes(), ['/dashboard']);
     assert.notEqual(s.active(), contacts);
+  });
+
+  it('does not close a tab that is uploading a file, and says why', () => {
+    const s = setup();
+    const consultations = s.open('/consultations');
+    const tasks = s.open('/tasks');
+    // 상담분석 탭이 녹음을 올리는 중이다
+    s.host.views.transferring.add(consultations);
+
+    // 그 탭을 닫으려 해도, 그 탭이 닫히게 되는 묶음 닫기도 막는다
+    for (const action of [
+      { type: 'close', tabId: consultations },
+      { type: 'close-others', tabId: tasks },
+      { type: 'close-left', tabId: tasks },
+    ] as const) {
+      const toastsBefore = s.host.toasts.length;
+      s.bar(MAIN, action);
+      assert.deepEqual(s.routes(), ['/dashboard', '/consultations', '/tasks'], action.type);
+      assert.equal(s.host.toasts.length, toastsBefore + 1, action.type);
+      assert.equal(s.host.toasts.at(-1)?.toast.level, 'warning');
+      assert.match(s.host.toasts.at(-1)?.toast.message ?? '', /올리는 중이라 탭을 닫지 않았습니다/);
+    }
+    assert.ok(!s.host.views.discarded.includes(consultations));
+
+    // 다른 탭은 그대로 닫힌다
+    s.bar(MAIN, { type: 'close', tabId: tasks });
+    assert.deepEqual(s.routes(), ['/dashboard', '/consultations']);
+
+    // 다 올라간 뒤에는 닫힌다
+    s.host.views.transferring.delete(consultations);
+    s.bar(MAIN, { type: 'close', tabId: consultations });
+    assert.deepEqual(s.routes(), ['/dashboard']);
   });
 
   it('opens new tabs in the main window only', () => {

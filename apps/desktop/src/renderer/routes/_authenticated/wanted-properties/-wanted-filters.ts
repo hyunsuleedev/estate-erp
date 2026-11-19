@@ -61,6 +61,24 @@ export function hasRequirementFilters(filters: RequirementFilters): boolean {
   );
 }
 
+/**
+ * 값이 걸린 필터의 수. 필터 줄에 파란 알약으로 보이는 개수와 같다
+ * (입주 희망일은 시작일 · 종료일이 한 알약이다). 필터 줄을 접었을 때 도구 줄이 이 수를 보여 준다.
+ */
+export function countRequirementFilters(filters: RequirementFilters): number {
+  return [
+    filters.statuses.length > 0,
+    filters.locations.length > 0,
+    filters.siteTypes.length > 0,
+    filters.budget !== null,
+    filters.monthlyRent !== null,
+    filters.area !== null,
+    filters.assignees.length > 0,
+    filters.urgencies.length > 0,
+    filters.moveInFrom !== '' || filters.moveInTo !== '',
+  ].filter(Boolean).length;
+}
+
 /** 슬라이더 값을 필터로 바꾼다. 양 끝까지 잡으면 그쪽은 제한이 없다. */
 export function toOpenRange(
   [min, max]: [number, number],
@@ -250,9 +268,9 @@ export function getLocationFilterOptions(requirements: BuyerRequirement[]) {
 }
 
 /**
- * 지금 보기에서 고를 수 없는 값을 필터에서 뺀다. 단계별 보기에서 고른 완료 상태나
- * 완료된 조건에만 있는 단지·담당자가 고객별 보기에 남으면, 선택지에도 없는 값 때문에 목록이 비어 버린다.
- * 원래 선택은 그대로 두므로 단계별 보기로 돌아가면 다시 적용된다.
+ * 지금 목록에서 고를 수 없는 값을 필터에서 뺀다. 조건이 완료·삭제되어 목록에서 빠지면
+ * 그 조건에만 있던 단지·담당자가 선택에 남아, 선택지에도 없는 값 때문에 목록이 비어 버린다.
+ * 원래 선택은 그대로 두므로 그 값이 목록에 다시 생기면 다시 적용된다.
  */
 export function scopeRequirementFilters(
   filters: RequirementFilters,

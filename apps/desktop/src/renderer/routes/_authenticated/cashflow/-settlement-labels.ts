@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import type { Deal } from '@estate-erp/api-client';
 import { dealLocation } from './-cashflow-utils';
 
@@ -20,6 +21,6 @@ export function dealLocationOf(deal: Deal): string {
   return dealLocation({
     siteName: deal.property?.site?.name ?? null,
     dongName: unit?.dong?.name ?? null,
-    unitName: unit?.name ?? null,
+    unitName: formatUnitName(unit) || null,
   });
 }

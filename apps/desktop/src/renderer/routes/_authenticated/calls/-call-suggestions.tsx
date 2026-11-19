@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState, type ReactNode } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   CalendarClock,
@@ -15,6 +15,11 @@ import {
   UserRoundPen,
   UserRoundPlus,
 } from 'lucide-react';
+import {
+  ApiError,
+  CALL_SUGGESTION_BASE_CHANGED,
+  type CallSuggestionBaseChange,
+} from '@estate-erp/api-client';
 import type {
   CallActionSuggestion,
   CallSuggestionPayloadByType,
@@ -27,15 +32,29 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   CONTACT_REQUIRED_TYPES,
+  defaultIncludedRequirementRows,
   describeSuggestion,
+  describeSuggestionEffect,
+  isHeavySuggestion,
+  pickRequirementFields,
+  requirementFieldRows,
   splitKstDateTime,
+  SUGGESTION_ACTION_LABEL,
+  SUGGESTION_GROUP_LABEL,
+  SUGGESTION_GROUP_ORDER,
   SUGGESTION_TYPE_LABEL,
+  suggestionGroupOf,
   toKstValue,
+  type RequirementCurrentValues,
 } from './-call-suggestion-format';
 
 /**
  * 통화 분석이 제안한 업무.
  * 받아쓰기는 숫자·이름을 틀릴 수 있어 사람이 확인(필요하면 고쳐서)한 뒤 반영한다.
+ *
+ * 제안을 한 가지 카드로 다루지 않는다. 무엇을 쓰느냐에 따라 확인하는 방식이 다르다:
+ * 할 일·일정은 목록에서 바로 만들고, 희망조건은 항목별로 골라 저장하고,
+ * 매칭·매물 확인은 무엇이 바뀌는지 읽고 직접 실행한다. 어느 것도 자동으로 반영하지 않는다.
  */
 
 const TYPE_ICON: Record<CallSuggestionTypeValue, typeof ListTodo> = {
@@ -59,7 +78,11 @@ const RELATED_QUERY_KEYS = [
   ['listing-intakes'],
   ['listings'],
   ['consultations'],
+  ['consultation'],
 ];
+
+/** 처리 전 제안 수를 보여 주는 곳: 통화 상세, 상담 목록(상태 · 작업 요청 보기), 상담 한 건 */
+const SUGGESTION_COUNT_QUERY_KEYS = [['call-recordings'], ['consultations'], ['consultation']];
 
 function errorText(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -82,34 +105,50 @@ export function CallSuggestionList({
   const resolved = suggestions.filter((s) => s.status === 'accepted' || s.status === 'dismissed');
   if (suggestions.length === 0) return null;
 
+  const shared = { labels, hasContact, renderEvidenceLink };
+
   return (
     <section data-call-suggestions className="border-b px-6 py-5">
       <div className="mb-1 flex items-baseline justify-between">
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-violet">
-          AI 제안{open.length > 0 ? ` · ${open.length}건` : ''}
+          AI 제안 · 통화에서 나온 다음 일{open.length > 0 ? ` · ${open.length}건` : ''}
         </h3>
       </div>
       <p className="mb-3 text-[11px] text-muted-foreground">
-        받아쓰기는 숫자·이름을 틀릴 수 있어요. 내용을 확인하고 반영하세요.
+        AI가 통화 내용에서 골라낸 것입니다. 받아쓰기는 숫자·이름을 틀릴 수 있어요. 내용을 확인하고 필요한 것만 만드세요.
       </p>
 
       {open.length === 0 ? (
-        <p className="rounded-md border border-dashed px-3 py-3 text-center text-[12px] text-muted-foreground">
-          처리할 제안이 없습니다.
-        </p>
+        <p className="text-[12px] text-muted-foreground">처리할 것이 없습니다.</p>
       ) : (
-        <ul className="space-y-2">
-          {open.map((suggestion) => (
-            <li key={suggestion.id}>
-              <SuggestionCard
-                suggestion={suggestion}
-                labels={labels}
-                hasContact={hasContact}
-                renderEvidenceLink={renderEvidenceLink}
-              />
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-5">
+          {/* 무엇을 쓰느냐에 따라 확인하는 방식이 다르다: 가볍게 만드는 것 → 값을 고르는 것 → 직접 실행하는 것 */}
+          {SUGGESTION_GROUP_ORDER.map((group) => {
+            const items = open.filter((suggestion) => suggestionGroupOf(suggestion.type) === group);
+            if (items.length === 0) return null;
+            return (
+              <div key={group} data-suggestion-group={group}>
+                <h4 className="mb-1 text-[12px] font-medium text-foreground">
+                  {SUGGESTION_GROUP_LABEL[group]}
+                  <span className="ml-1 font-normal text-muted-foreground">{items.length}</span>
+                </h4>
+                <ul className="divide-y divide-border border-y border-border">
+                  {items.map((suggestion) => (
+                    <li key={suggestion.id}>
+                      {group === 'followUp' ? (
+                        <FollowUpRow suggestion={suggestion} {...shared} />
+                      ) : group === 'requirement' ? (
+                        <RequirementBlock suggestion={suggestion} {...shared} />
+                      ) : (
+                        <DecisionRow suggestion={suggestion} {...shared} />
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {resolved.length > 0 && (
@@ -121,7 +160,7 @@ export function CallSuggestionList({
             aria-expanded={showResolved}
           >
             <ChevronDown className={cn('size-3 transition-transform', !showResolved && '-rotate-90')} />
-            처리한 제안 {resolved.length}건
+            처리한 것 {resolved.length}건
           </button>
           {showResolved && (
             <ul className="mt-2 space-y-1.5">
@@ -142,12 +181,42 @@ function useSuggestionMutations(suggestion: CallActionSuggestion) {
   const queryClient = useQueryClient();
   const refresh = () =>
     Promise.all(RELATED_QUERY_KEYS.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+  /** 무시 · 되돌리기: 다른 기록은 바뀌지 않지만 처리 전 제안 수는 바뀐다 */
+  const refreshSuggestionCounts = () =>
+    Promise.all(
+      SUGGESTION_COUNT_QUERY_KEYS.map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+    );
   const label = SUGGESTION_TYPE_LABEL[suggestion.type];
+  const [conflict, setConflict] = useState<{
+    changes: CallSuggestionBaseChange[];
+    payload: CallSuggestionPayloadByType[CallSuggestionTypeValue] | undefined;
+  } | null>(null);
 
   const accept = useMutation({
     mutationFn: (payload?: CallSuggestionPayloadByType[CallSuggestionTypeValue]) =>
       api.callRecordings.acceptSuggestion(suggestion.id, payload),
     onSuccess: async () => {
+      toast.success(`${label} 반영했습니다`);
+      await refresh();
+    },
+    onMutate: () => setConflict(null),
+    onError: async (error, payload) => {
+      // 제안한 뒤 누가 값을 고쳤다 — 덮어쓰지 않고 무엇이 달라졌는지 보여 준다
+      const changes = baseChangesOf(error);
+      if (changes) {
+        setConflict({ changes, payload });
+        await refresh();
+        return;
+      }
+      toast.error(errorText(error, `${label} 반영에 실패했습니다`));
+      await queryClient.invalidateQueries({ queryKey: ['call-recordings'] });
+    },
+  });
+  // 달라진 값을 보고도 반영 (서버에 확인했다고 알린다)
+  const acceptAnyway = useMutation({
+    mutationFn: () => api.callRecordings.acceptSuggestion(suggestion.id, conflict?.payload, { force: true }),
+    onSuccess: async () => {
+      setConflict(null);
       toast.success(`${label} 반영했습니다`);
       await refresh();
     },
@@ -158,108 +227,406 @@ function useSuggestionMutations(suggestion: CallActionSuggestion) {
   });
   const dismiss = useMutation({
     mutationFn: () => api.callRecordings.dismissSuggestion(suggestion.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['call-recordings'] }),
+    // 처리 전 제안 수가 바뀐다 — 상담 목록의 상태(작업 요청 ↔ 완료)와 "작업 요청" 보기도 새로 불러온다
+    onSuccess: () => refreshSuggestionCounts(),
     onError: (error) => toast.error(errorText(error, '제안을 무시하지 못했습니다')),
   });
   const restore = useMutation({
     mutationFn: () => api.callRecordings.restoreSuggestion(suggestion.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['call-recordings'] }),
+    onSuccess: () => refreshSuggestionCounts(),
     onError: (error) => toast.error(errorText(error, '제안을 되돌리지 못했습니다')),
   });
-  return { accept, dismiss, restore };
+  const conflictNotice = conflict ? (
+    <div
+      role="alert"
+      data-suggestion-base-changed
+      className="mt-2 border-l-2 border-warning pl-3 text-[12px] leading-relaxed"
+    >
+      <p className="font-medium text-warning-strong">지금 저장된 값을 확인해 주세요. 아직 반영하지 않았어요.</p>
+      <ul className="mt-0.5 text-muted-foreground">
+        {conflict.changes.map((change) => (
+          <li key={change.label}>
+            {change.label}: 제안할 때 <span className="tabular-nums">{change.was}</span> → 지금 저장된 값{' '}
+            <span className="tabular-nums text-foreground">{change.now}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-1.5 flex items-center gap-0.5">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2.5 text-xs"
+          disabled={acceptAnyway.isPending}
+          onClick={() => acceptAnyway.mutate()}
+        >
+          {acceptAnyway.isPending && <Loader2 className="size-3.5 animate-spin" />}
+          지금 값을 확인했고, 제안대로 바꾸기
+        </Button>
+        <button type="button" className={ghostAction} disabled={acceptAnyway.isPending} onClick={() => setConflict(null)}>
+          닫기
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  return { accept, dismiss, restore, conflictNotice, busyConflict: acceptAnyway.isPending };
 }
 
-function SuggestionCard({
-  suggestion,
-  labels,
-  hasContact,
-  renderEvidenceLink,
-}: {
+/** 서버가 "제안한 뒤 값이 바뀌었다"고 멈춘 오류면 달라진 항목을 돌려준다 */
+function baseChangesOf(error: unknown): CallSuggestionBaseChange[] | null {
+  if (!(error instanceof ApiError) || error.statusCode !== 409) return null;
+  const body = error.body as { code?: unknown; changes?: unknown } | null;
+  if (!body || body.code !== CALL_SUGGESTION_BASE_CHANGED || !Array.isArray(body.changes)) return null;
+  return body.changes.filter(
+    (change): change is CallSuggestionBaseChange =>
+      !!change && typeof change.label === 'string' && typeof change.was === 'string' && typeof change.now === 'string',
+  );
+}
+
+interface SuggestionRowProps {
   suggestion: CallActionSuggestion;
   labels: Record<string, string>;
   hasContact: boolean;
   renderEvidenceLink?: (evidence: string) => ReactNode;
+}
+
+const ghostAction =
+  'inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-[12px] text-muted-foreground transition-colors hover:bg-[rgba(33,27,23,0.05)] hover:text-foreground disabled:pointer-events-none disabled:opacity-50';
+
+function EvidenceQuote({
+  evidence,
+  renderEvidenceLink,
+}: {
+  evidence: string | null;
+  renderEvidenceLink?: (evidence: string) => ReactNode;
 }) {
+  if (!evidence) return null;
+  return (
+    <div className="mt-1 flex items-start gap-2">
+      <blockquote className="min-w-0 text-[12px] leading-relaxed text-muted-foreground">“{evidence}”</blockquote>
+      {renderEvidenceLink?.(evidence)}
+    </div>
+  );
+}
+
+function NeedsContactNote() {
+  return (
+    <p className="mt-1.5 text-[11px] text-muted-foreground">통화 상대 연락처를 연결하면 반영할 수 있어요.</p>
+  );
+}
+
+/** 할 일 · 일정: 한 줄에 내용과 "만들기". 틀리면 고쳐서 만들고, 필요 없으면 지운다. */
+function FollowUpRow({ suggestion, labels, hasContact, renderEvidenceLink }: SuggestionRowProps) {
   const [editing, setEditing] = useState(false);
-  const { accept, dismiss } = useSuggestionMutations(suggestion);
+  const { accept, dismiss, conflictNotice } = useSuggestionMutations(suggestion);
+  const Icon = TYPE_ICON[suggestion.type] ?? ListTodo;
+  const needsContact = CONTACT_REQUIRED_TYPES.includes(suggestion.type) && !hasContact;
+  const busy = accept.isPending || dismiss.isPending || suggestion.status === 'applying';
+  const lines = describeSuggestion(suggestion, labels);
+
+  return (
+    <article data-call-suggestion={suggestion.type} className="py-2.5">
+      <div className="flex items-start gap-2.5">
+        <Icon className="mt-0.5 size-4 shrink-0 text-[#8e8b86]" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium leading-snug">{suggestion.title}</p>
+          {lines.length > 0 && (
+            <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{lines.join(' · ')}</p>
+          )}
+          <EvidenceQuote evidence={suggestion.evidence} renderEvidenceLink={renderEvidenceLink} />
+        </div>
+        {!editing && (
+          <div className="flex shrink-0 items-center gap-0.5">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2.5 text-xs"
+              disabled={busy || needsContact}
+              onClick={() => accept.mutate(undefined)}
+            >
+              {accept.isPending && <Loader2 className="size-3.5 animate-spin" />}
+              {SUGGESTION_ACTION_LABEL[suggestion.type]}
+            </Button>
+            <button
+              type="button"
+              className={ghostAction}
+              aria-label={`${suggestion.title} 고쳐서 만들기`}
+              title="고쳐서 만들기"
+              disabled={busy || needsContact}
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="size-3.5" />
+            </button>
+            <button type="button" className={ghostAction} disabled={busy} onClick={() => dismiss.mutate()}>
+              무시
+            </button>
+          </div>
+        )}
+      </div>
+      {editing && (
+        <SuggestionEditor
+          suggestion={suggestion}
+          pending={accept.isPending}
+          submitLabel={SUGGESTION_ACTION_LABEL[suggestion.type]}
+          onCancel={() => setEditing(false)}
+          onSubmit={(payload) => accept.mutate(payload, { onSuccess: () => setEditing(false) })}
+        />
+      )}
+      {conflictNotice}
+      {needsContact && <NeedsContactNote />}
+    </article>
+  );
+}
+
+/**
+ * 희망조건: 항목마다 "지금 값 → 통화에서 들은 값"을 보이고, 체크한 줄만 저장한다.
+ * 빈 칸을 채우는 줄은 미리 체크돼 있고, 이미 있는 값을 바꾸는 줄은 사람이 골라야 한다.
+ */
+function RequirementBlock({ suggestion, labels, hasContact, renderEvidenceLink }: SuggestionRowProps) {
+  const { accept, dismiss, conflictNotice } = useSuggestionMutations(suggestion);
+  const [editing, setEditing] = useState(false);
+  const isUpdate = suggestion.type === 'buyer_requirement_update';
+  const updatePayload = suggestion.payload as CallSuggestionPayloadByType['buyer_requirement_update'];
+  const createPayload = suggestion.payload as CallSuggestionPayloadByType['buyer_requirement_create'];
+  const fields = isUpdate ? updatePayload.changes : createPayload;
+  const memo = isUpdate ? updatePayload.memoAppend : createPayload.memo;
+
+  // 고치는 제안은 지금 저장된 값을 읽어 와 나란히 보인다
+  const currentQuery = useQuery({
+    queryKey: ['buyer-requirements', 'suggestion-current', isUpdate ? updatePayload.buyerReqId : null],
+    queryFn: () => api.buyerRequirements.findOne(updatePayload.buyerReqId),
+    enabled: isUpdate,
+  });
+  const current = (isUpdate ? (currentQuery.data ?? null) : null) as RequirementCurrentValues | null;
+  const waitingCurrent = isUpdate && currentQuery.isLoading;
+
+  const rows = useMemo(
+    () => requirementFieldRows(fields, labels, current, !isUpdate),
+    [fields, labels, current, isUpdate],
+  );
+  // 사람이 손대기 전에는 기본 체크를 따른다 (지금 값을 읽어 오면 기본값도 다시 정해진다)
+  const [picked, setPicked] = useState<string[] | null>(null);
+  // 지금 값을 읽지 못했으면 무엇을 덮어쓰는지 알 수 없다 — 아무것도 미리 체크하지 않는다
+  const currentUnknown = isUpdate && !current;
+  const included = picked ?? (currentUnknown ? [] : defaultIncludedRequirementRows(rows));
+  const [includeMemo, setIncludeMemo] = useState(true);
+
+  const needsContact = CONTACT_REQUIRED_TYPES.includes(suggestion.type) && !hasContact;
+  const busy = accept.isPending || dismiss.isPending || suggestion.status === 'applying';
+  const chosenCount = rows.filter((row) => included.includes(row.key)).length + (memo && includeMemo ? 1 : 0);
+  const comparisonFailed = isUpdate && currentQuery.isError;
+
+  // 저장하는 내용은 어느 경로든(바로 저장 · 값 고쳐서 반영) 체크한 줄에서만 나온다
+  const chosenPayload = (): CallSuggestionPayloadByType[CallSuggestionTypeValue] => {
+    const chosen = pickRequirementFields(fields, rows, included);
+    return isUpdate
+      ? { buyerReqId: updatePayload.buyerReqId, changes: chosen, memoAppend: includeMemo ? updatePayload.memoAppend : null }
+      : { ...chosen, buyerIntakeId: createPayload.buyerIntakeId, memo: includeMemo ? createPayload.memo : null };
+  };
+  const save = () => accept.mutate(chosenPayload());
+
+  const toggle = (key: string) =>
+    setPicked(included.includes(key) ? included.filter((item) => item !== key) : [...included, key]);
+
+  return (
+    <article data-call-suggestion={suggestion.type} className="py-3">
+      <p className="text-[13px] font-medium leading-snug">{suggestion.title}</p>
+      <p className="mt-0.5 text-[12px] text-muted-foreground">
+        {isUpdate
+          ? `${labels[updatePayload.buyerReqId] ?? '저장된 희망조건'}을 고칩니다.`
+          : '새 희망조건으로 등록합니다.'}
+      </p>
+      <EvidenceQuote evidence={suggestion.evidence} renderEvidenceLink={renderEvidenceLink} />
+
+      {editing ? (
+        // 고치는 창은 체크한 줄의 값만 가지고 연다 — 뺀 줄이나 보이지 않은 값이 함께 저장되지 않게
+        <SuggestionEditor
+          suggestion={{ ...suggestion, payload: chosenPayload() }}
+          pending={accept.isPending}
+          submitLabel={SUGGESTION_ACTION_LABEL[suggestion.type]}
+          onCancel={() => setEditing(false)}
+          onSubmit={(payload) => accept.mutate(payload, { onSuccess: () => setEditing(false) })}
+        />
+      ) : (
+        <>
+          <table data-requirement-fields className="mt-2 w-full text-[13px]">
+            <thead className="sr-only">
+              <tr>
+                <th>저장</th>
+                <th>항목</th>
+                <th>지금 값</th>
+                <th>통화에서 들은 값</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const checked = included.includes(row.key);
+                return (
+                  <tr key={row.key} className="align-top">
+                    <td className="w-6 py-1">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 size-3.5 accent-foreground"
+                        aria-label={`${row.label} 저장`}
+                        checked={checked}
+                        disabled={row.locked || busy || waitingCurrent}
+                        onChange={() => toggle(row.key)}
+                      />
+                    </td>
+                    <td className="w-20 py-1 text-muted-foreground">{row.label}</td>
+                    <td className="py-1">
+                      {row.current && (
+                        <span className={cn('mr-1.5 text-muted-foreground', checked && 'line-through')}>
+                          {row.current}
+                        </span>
+                      )}
+                      {row.current && <span className="mr-1.5 text-muted-foreground">→</span>}
+                      <span className={cn('tabular-nums', checked ? 'text-foreground' : 'text-muted-foreground')}>
+                        {row.proposed}
+                      </span>
+                      {row.changesExisting && !checked && (
+                        <span className="ml-1.5 text-[11px] text-warning-strong">지금 값을 바꿉니다 — 확인 후 체크</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {memo && (
+                <tr className="align-top">
+                  <td className="w-6 py-1">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 size-3.5 accent-foreground"
+                      aria-label="메모 저장"
+                      checked={includeMemo}
+                      disabled={busy}
+                      onChange={() => setIncludeMemo((value) => !value)}
+                    />
+                  </td>
+                  <td className="w-20 py-1 text-muted-foreground">{isUpdate ? '메모 추가' : '메모'}</td>
+                  <td className={cn('py-1', !includeMemo && 'text-muted-foreground')}>{memo}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          {waitingCurrent && <p className="mt-1 text-[11px] text-muted-foreground">지금 값을 불러오는 중…</p>}
+          {comparisonFailed && (
+            <p className="mt-1 text-[11px] text-warning-strong">
+              지금 저장된 값을 불러오지 못해 견줄 수 없습니다. 체크한 항목은 저장된 값을 덮어쓰므로 직접 골라 주세요.{' '}
+              <button type="button" className="underline underline-offset-2" onClick={() => void currentQuery.refetch()}>
+                다시 불러오기
+              </button>
+            </p>
+          )}
+          <div className="mt-2 flex items-center gap-0.5">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2.5 text-xs"
+              disabled={busy || needsContact || waitingCurrent || chosenCount === 0}
+              onClick={save}
+            >
+              {accept.isPending && <Loader2 className="size-3.5 animate-spin" />}
+              {chosenCount === 0 ? '저장할 항목을 고르세요' : `${chosenCount}개 항목 ${isUpdate ? '고치기' : '등록'}`}
+            </Button>
+            <button
+              type="button"
+              className={ghostAction}
+              disabled={busy || needsContact || waitingCurrent || chosenCount === 0}
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="size-3.5" />
+              값 고쳐서 반영
+            </button>
+            <button type="button" className={cn(ghostAction, 'ml-auto')} disabled={busy} onClick={() => dismiss.mutate()}>
+              무시
+            </button>
+          </div>
+        </>
+      )}
+      {conflictNotice}
+      {needsContact && <NeedsContactNote />}
+    </article>
+  );
+}
+
+/**
+ * 매칭 · 매물 확인: 다른 기록에 연쇄 효과가 있는 변경.
+ * 누르면 무엇이 바뀌는지 문장으로 먼저 보이고, 버튼에는 그 일을 적는다.
+ */
+function DecisionRow({ suggestion, labels, hasContact, renderEvidenceLink }: SuggestionRowProps) {
+  const [editing, setEditing] = useState(false);
+  const { accept, dismiss, conflictNotice } = useSuggestionMutations(suggestion);
   const Icon = TYPE_ICON[suggestion.type] ?? ListTodo;
   const needsContact = CONTACT_REQUIRED_TYPES.includes(suggestion.type) && !hasContact;
   const busy = accept.isPending || dismiss.isPending || suggestion.status === 'applying';
   const editable = suggestion.type !== 'match_stage';
   const lines = describeSuggestion(suggestion, labels);
+  const effect = describeSuggestionEffect(suggestion);
+  const heavy = isHeavySuggestion(suggestion);
 
   return (
-    <article
-      data-call-suggestion={suggestion.type}
-      className="rounded-lg border bg-background px-3 py-2.5 shadow-[0_1px_0_rgba(0,0,0,0.02)]"
-    >
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <Icon className="size-3.5 text-violet" aria-hidden />
-        <span>{SUGGESTION_TYPE_LABEL[suggestion.type]}</span>
-      </div>
-      <p className="mt-1 text-[13px] font-medium leading-snug">{suggestion.title}</p>
-      {lines.length > 0 && (
-        <ul className="mt-1 space-y-0.5 text-[12px] leading-relaxed text-muted-foreground">
-          {lines.map((line, index) => (
-            <li key={index}>{line}</li>
-          ))}
-        </ul>
-      )}
-      {suggestion.evidence && (
-        <div className="mt-2 flex items-start justify-between gap-2">
-          <blockquote className="min-w-0 border-l-2 border-violet/30 pl-2 text-[12px] leading-relaxed text-muted-foreground">
-            “{suggestion.evidence}”
-          </blockquote>
-          {renderEvidenceLink?.(suggestion.evidence)}
+    <article data-call-suggestion={suggestion.type} className="py-3">
+      <div className="flex items-start gap-2.5">
+        <Icon className="mt-0.5 size-4 shrink-0 text-[#8e8b86]" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-medium leading-snug">{suggestion.title}</p>
+          {lines.length > 0 && (
+            <ul className="mt-0.5 space-y-0.5 text-[12px] leading-relaxed text-muted-foreground">
+              {lines.map((line, index) => (
+                <li key={index}>{line}</li>
+              ))}
+            </ul>
+          )}
+          <EvidenceQuote evidence={suggestion.evidence} renderEvidenceLink={renderEvidenceLink} />
+          {effect && (
+            <p
+              data-suggestion-effect
+              className={cn('mt-1.5 text-[12px] leading-relaxed', heavy ? 'text-warning-strong' : 'text-foreground')}
+            >
+              {effect}
+            </p>
+          )}
         </div>
-      )}
-
+      </div>
       {editing ? (
         <SuggestionEditor
           suggestion={suggestion}
           pending={accept.isPending}
+          submitLabel={SUGGESTION_ACTION_LABEL[suggestion.type]}
           onCancel={() => setEditing(false)}
           onSubmit={(payload) => accept.mutate(payload, { onSuccess: () => setEditing(false) })}
         />
       ) : (
-        <div className="mt-2.5 flex items-center gap-1.5">
+        <div className="mt-2 flex items-center gap-0.5 pl-[26px]">
           <Button
             size="sm"
+            variant="outline"
             className="h-7 px-2.5 text-xs"
             disabled={busy || needsContact}
             onClick={() => accept.mutate(undefined)}
           >
-            {accept.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-            반영
+            {accept.isPending && <Loader2 className="size-3.5 animate-spin" />}
+            {SUGGESTION_ACTION_LABEL[suggestion.type]}
           </Button>
           {editable && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 px-2 text-xs"
+            <button
+              type="button"
+              className={ghostAction}
               disabled={busy || needsContact}
               onClick={() => setEditing(true)}
             >
               <Pencil className="size-3.5" />
               고쳐서 반영
-            </Button>
+            </button>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="ml-auto h-7 px-2 text-xs text-muted-foreground"
-            disabled={busy}
-            onClick={() => dismiss.mutate()}
-          >
+          <button type="button" className={cn(ghostAction, 'ml-auto')} disabled={busy} onClick={() => dismiss.mutate()}>
             무시
-          </Button>
+          </button>
         </div>
       )}
-      {needsContact && (
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          통화 상대 연락처를 연결하면 반영할 수 있어요.
-        </p>
-      )}
+      {conflictNotice}
+      {needsContact && <NeedsContactNote />}
     </article>
   );
 }
@@ -354,11 +721,14 @@ const MONEY_FIELDS = [
 function SuggestionEditor({
   suggestion,
   pending,
+  submitLabel,
   onCancel,
   onSubmit,
 }: {
   suggestion: CallActionSuggestion;
   pending: boolean;
+  /** 누르면 일어나는 일 ("할 일 만들기" 등) */
+  submitLabel: string;
   onCancel: () => void;
   onSubmit: (payload: CallSuggestionPayloadByType[CallSuggestionTypeValue]) => void;
 }) {
@@ -539,7 +909,7 @@ function SuggestionEditor({
         </Button>
         <Button type="submit" size="sm" className="h-7 px-2.5 text-xs" disabled={pending}>
           {pending ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-          이대로 반영
+          {submitLabel}
         </Button>
       </div>
     </form>

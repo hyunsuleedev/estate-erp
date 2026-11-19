@@ -99,12 +99,15 @@ export type NativeTabProtectionReason =
   | 'unreported'
   | 'dirty'
   | 'mutation'
+  | 'transfer'
   | 'suspended';
 
 export interface NativeTabRetentionState {
   mutating: boolean;
   transientEditor: boolean;
   explicitDirty: boolean;
+  /** 파일을 올리는 중. 탭 닫기를 막는다 */
+  transferring?: boolean;
 }
 
 interface HostRecord {
@@ -547,6 +550,7 @@ export class NativeTabHost {
       'dirty',
       state.explicitDirty || state.transientEditor,
     );
+    this.replaceProtection(record, 'transfer', state.transferring === true);
     this.reconcileLiveTabLimit();
     return {
       tabId,
@@ -730,6 +734,18 @@ export class NativeTabHost {
       record.protectionReasons.has('dirty') ||
       record.protectionReasons.has('mutation')
     );
+  }
+
+  /**
+   * 이 탭이 파일을 올리는 중인지. 닫으면 올리던 요청이 조용히 끊기므로 탭 목록이 닫기를 막는다.
+   * 화면이 스스로 알린 경우에만 true다 (보고 전인 화면은 올리는 중일 수 없다).
+   */
+  hasActiveTransfer(hostId: number, tabId: string): boolean {
+    const record = this.tabs.get(tabId);
+    if (!record || record.hostId !== hostId || record.view.isDestroyed()) {
+      return false;
+    }
+    return record.protectionReasons.has('transfer');
   }
 
   getTabSnapshot(tabId: string): Tab | null {

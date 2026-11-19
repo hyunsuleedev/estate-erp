@@ -71,6 +71,11 @@ export interface NativeTabRetentionUpdate {
     mutating: boolean;
     transientEditor: boolean;
     explicitDirty: boolean;
+    /**
+     * 파일을 서버로 올리는 중 (녹음 올리기 등). 이때 탭을 닫으면 올리던 요청이 조용히 끊긴다 —
+     * 다른 이유와 달리 탭 닫기 자체를 막는다. 예전 화면은 보내지 않는다(없으면 false).
+     */
+    transferring?: boolean;
   };
 }
 

@@ -80,3 +80,53 @@ export function computeBudgetFit(
     ? { label: `${formatMoney(amount - max)} 초과`, over: true }
     : { label: '예산 안', over: false };
 }
+
+// ── 합의 조건 입력 ──────────────────────────────────────────────────────────
+
+/** 만원 단위 금액의 상한. 서버 검증(UpdateMatchAgreedTermsDto)과 같다. */
+const MAX_MANWON = 200_000_000;
+
+/**
+ * 숫자 글을 읽는다. 쉼표는 천 단위 자리에 있을 때만 받는다 —
+ * "31,5"를 315로 읽으면 31.5억이 315억으로 저장된다.
+ * 빈 글은 null(비우기), 읽을 수 없으면 NaN.
+ */
+function parsePlainNumber(text: string, maxDecimals: number): number | null {
+  const raw = text.trim();
+  if (!raw) return null;
+  const decimals = maxDecimals > 0 ? `(\\.\\d{1,${maxDecimals}})?` : '';
+  if (!new RegExp(`^(\\d+|\\d{1,3}(,\\d{3})+)${decimals}$`).test(raw)) return Number.NaN;
+  return Number(raw.replace(/,/g, ''));
+}
+
+/** 억 단위로 적은 글을 만원 정수로. 31.5 → 315000. 빈 글은 null, 잘못된 글은 NaN. */
+export function parseEokInput(text: string): number | null {
+  const eok = parsePlainNumber(text, 4);
+  if (eok === null || Number.isNaN(eok)) return eok;
+  const manwon = Math.round(eok * 10000);
+  return manwon > 0 && manwon <= MAX_MANWON ? manwon : Number.NaN;
+}
+
+/** 만원 단위로 적은 글을 만원 정수로. 빈 글은 null, 잘못된 글은 NaN. */
+export function parseManwonInput(text: string): number | null {
+  const manwon = parsePlainNumber(text, 0);
+  if (manwon === null || Number.isNaN(manwon)) return manwon;
+  return manwon <= MAX_MANWON ? manwon : Number.NaN;
+}
+
+/** 만원 정수를 억 단위 입력칸의 글로. 315000 → "31.5" */
+export function formatEokInput(manwon: number | null | undefined): string {
+  if (manwon == null) return '';
+  return String(Math.round(manwon) / 10000);
+}
+
+/** ISO 날짜를 date 입력칸의 값(YYYY-MM-DD)으로. 시각은 버린다. */
+export function toDateInputValue(iso: string | null | undefined): string {
+  return iso ? iso.slice(0, 10) : '';
+}
+
+/** "2027-02-20…" → "2027. 2. 20." 시간대에 따라 하루가 밀리지 않도록 글자에서 바로 읽는다. */
+export function formatDateOnly(iso: string | null | undefined): string {
+  const [year, month, day] = toDateInputValue(iso).split('-').map(Number);
+  return year && month && day ? `${year}. ${month}. ${day}.` : '';
+}

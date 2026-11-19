@@ -8,7 +8,7 @@ export const matchTableColumns = [
   { id: "budget", label: "예산", width: 180, minWidth: 130 },
   { id: "area", label: "면적", width: 120, minWidth: 90 },
   { id: "stage", label: "단계", width: 164, minWidth: 130 },
-  { id: "memo", label: "메모", width: 180, minWidth: 120 },
+  { id: "memo", label: "고객 메모", width: 180, minWidth: 120 },
   { id: "assignee", label: "담당", width: 84, minWidth: 80 },
 ] as const;
 
@@ -35,7 +35,7 @@ export const matchSortLabels: Record<MatchSortId, string> = {
   budget: "예산 상한",
   area: "면적 상한",
   stage: "단계",
-  memo: "메모",
+  memo: "고객 메모",
   assignee: "담당",
   need: "머문 일수",
   monthlyRent: "월세 상한",
@@ -155,7 +155,8 @@ export function sortMatchGroups(
         return index < 0 ? null : index;
       }
       case "memo":
-        return textOrNull(match.memo);
+        // 이 칸은 매칭 메모가 아니라 고객 조건의 메모를 보여 준다
+        return textOrNull(match.buyerRequirement?.memo);
       case "assignee":
         return textOrNull(buyer?.assignedTo?.name);
       case "need":

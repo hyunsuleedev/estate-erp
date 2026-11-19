@@ -1,3 +1,4 @@
+import { formatUnitLabel } from '@estate-erp/shared';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
@@ -86,7 +87,7 @@ function locationOf(doc: PublicDocument): string {
     return [
       doc.property.site.name,
       doc.property.unit?.dong?.name,
-      doc.property.unit?.name && `${doc.property.unit.name}호`,
+      formatUnitLabel(doc.property.unit),
     ]
       .filter(Boolean)
       .join(' ');

@@ -6,6 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
+import { useInspectorFocus } from '@/hooks/use-inspector-focus';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
@@ -40,7 +41,14 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { EntityChip, PipelineSteps, StatusBadge } from '@/components/domain';
+import {
+  EntityChip,
+  PipelineSteps,
+  StatusBadge,
+  InspectorTabs,
+  inspectorTabIds,
+  type InspectorTabItem,
+} from '@/components/domain';
 import {
   EmptyText,
   PropertyInspectorToolbar,
@@ -129,6 +137,10 @@ export function DealInspector({
     onClose(false);
   };
 
+  const panelRef = useRef<HTMLElement>(null);
+  // 키보드로 열었을 때(미끄러짐 없이 열림)만 포커스를 패널로 옮긴다
+  useInspectorFocus(panelRef, !animate, deal.id);
+
   useEffect(() => {
     if (!closing) return;
     // 숨은 탭이나 모션 줄이기 설정에서는 transitionend가 오지 않을 수 있다.
@@ -152,6 +164,8 @@ export function DealInspector({
 
   return (
     <aside
+      ref={panelRef}
+      tabIndex={-1}
       id="deal-inspector"
       data-deal-inspector
       data-property-inspector
@@ -160,7 +174,7 @@ export function DealInspector({
       inert={closing}
       aria-hidden={closing || undefined}
       aria-label="거래 상세 패널"
-      className="absolute inset-y-0 right-0 z-50 flex min-h-0 flex-col border-l border-border bg-white shadow-[-2px_0_8px_rgba(0,0,0,0.03)]"
+      className="absolute inset-y-0 right-0 z-50 flex min-h-0 flex-col border-l border-border bg-white shadow-[-2px_0_8px_rgba(0,0,0,0.03)] outline-none"
       style={{ width, maxWidth: '100%' }}
       onTransitionEnd={(event) => {
         if (closing && event.target === event.currentTarget && event.propertyName === 'transform') {
@@ -322,7 +336,7 @@ export function DealDetailPanel({
         ? '전세금'
         : '합의 가격';
   const nextActions = getNextActions(deal.isCancelled ? 'cancelled' : deal.stage);
-  const tabs: Array<{ value: DealInspectorTab; label: string; count?: number }> = [
+  const tabs: Array<InspectorTabItem<DealInspectorTab>> = [
     { value: 'summary', label: '요약' },
     { value: 'people', label: '매물·당사자' },
     { value: 'payments', label: '대금·계약', count: deal.payments?.length },
@@ -398,38 +412,21 @@ export function DealDetailPanel({
         </div>
       </div>
 
-      {/* 탭 */}
-      <div
-        role="tablist"
-        aria-label="거래 상세 구역"
-        className="flex shrink-0 gap-5 border-b border-[#ecebe8] px-6"
-      >
-        {tabs.map((item) => {
-          const selected = tab === item.value;
-          return (
-            <button
-              key={item.value}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              onClick={() => setTab(item.value)}
-              className={cn(
-                'relative h-10 whitespace-nowrap text-[13px] font-medium transition-colors focus-visible:outline-none',
-                selected
-                  ? 'text-[#2f2e2a] after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {item.label}
-              {item.count ? (
-                <span className="ml-1 text-[11.5px] font-medium text-[#a9a7a1]">{item.count}</span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
+      <InspectorTabs
+        idPrefix="deal-inspector"
+        ariaLabel="거래 상세 구역"
+        tabs={tabs}
+        value={tab}
+        onChange={setTab}
+      />
 
-      <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 pt-5">
+      <div
+        role="tabpanel"
+        id={inspectorTabIds('deal-inspector', tab).panel}
+        aria-labelledby={inspectorTabIds('deal-inspector', tab).tab}
+        tabIndex={0}
+        className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 pt-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
         {tab === 'summary' && (
           <div className="space-y-7">
             {deal.isCancelled ? (

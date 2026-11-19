@@ -3,12 +3,14 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Building2, Check, ChevronsUpDown, Search } from 'lucide-react';
-import { sqmToPyeong, TRANSACTION_TYPE_LABELS, type JsonValue } from '@estate-erp/shared';
+import { formatUnitLabel, sqmToPyeong, TRANSACTION_TYPE_LABELS, type JsonValue } from '@estate-erp/shared';
 import type {
   CreateListingForIntakeDto,
   Property,
   PropertyListing,
 } from '@estate-erp/api-client';
+import { ApiError } from '@estate-erp/api-client';
+import { registrationSpace, type SpaceDraft, type SpaceScope } from './-registration-space';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format';
@@ -69,12 +71,11 @@ const UNIT_BEARING_TYPES = new Set([
   'apartment',
   'officetel',
   'villa',
-  'commercial',
   'living_accommodation',
 ]);
 
-// 단독/다가구(house)는 통건물·호실 둘 다 허용 — 동/호 선택은 선택사항
-const OPTIONAL_UNIT_TYPES = new Set(['house']);
+// 단독·다가구와 상가는 건물 전체 또는 지정한 거래 공간을 접수한다.
+const OPTIONAL_UNIT_TYPES = new Set(['house', 'commercial']);
 
 const SITE_TYPE_LABELS: Record<string, string> = {
   apartment: '아파트',
@@ -99,7 +100,7 @@ const MOVE_IN_TYPES = [
 type TransactionType = NewPropertyTransactionType;
 type MoveInType = (typeof MOVE_IN_TYPES)[number]['value'];
 
-interface FormState {
+interface FormState extends SpaceDraft {
   // Step 1: Site
   siteId: string;
   siteName: string;
@@ -262,9 +263,10 @@ export function PropertyRegistrationForm({
     setPrefillApplied(true);
   }, [prefillSite, prefillApplied, searchParams.dongId, searchParams.unitId]);
 
-  const needsUnit = UNIT_BEARING_TYPES.has(form.siteType);
-  const allowsUnit = needsUnit || OPTIONAL_UNIT_TYPES.has(form.siteType);
-  const isHouse = OPTIONAL_UNIT_TYPES.has(form.siteType);
+  const flexible = OPTIONAL_UNIT_TYPES.has(form.siteType);
+  const scope = flexible ? form.scope ?? (form.siteType === 'house' && !form.unitId ? 'whole' : 'unit') : 'unit';
+  const allowsUnit = flexible || UNIT_BEARING_TYPES.has(form.siteType);
+  const needsUnit = allowsUnit && scope !== 'whole';
   const isCommercial = form.siteType === 'commercial';
 
   const { data: dongs } = useQuery({
@@ -277,7 +279,7 @@ export function PropertyRegistrationForm({
   const visibleDongs = useMemo(() => dongs ?? [], [dongs]);
   const isPlaceholderOnly =
     visibleDongs.length === 1 && visibleDongs[0]?.isPlaceholder === true;
-  const effectiveDongId = isPlaceholderOnly
+  const effectiveDongId = visibleDongs.length === 1
     ? visibleDongs[0].id
     : form.dongId;
 
@@ -310,20 +312,32 @@ export function PropertyRegistrationForm({
     [effectiveDongId, visibleDongs],
   );
 
-  // Detect existing Property for the same Site/Unit (find-or-create)
-  // house는 통건물(unitId=null)·호실(unitId 지정) 둘 다 가능
-  const effectiveUnitId = allowsUnit && form.unitId ? form.unitId : null;
-  const siteUnitKeyReady =
-    !!form.siteId && (!needsUnit || !!form.unitId);
+  const wholeDong = scope === 'whole' && visibleDongs.length > 1;
+  const newPart = flexible && scope === 'unit' && form.unitId === '__new_space__';
+  const draftSpace = scope === 'floors' || newPart || wholeDong;
+  let space: ReturnType<typeof registrationSpace> = null;
+  let spaceError = '';
+  if (draftSpace) {
+    try {
+      space = registrationSpace({ ...form, scope }, wholeDong);
+    } catch (cause) {
+      spaceError = cause instanceof Error ? cause.message : '공간 정보를 확인하세요.';
+    }
+  }
+  const matchingUnit = space && units?.find((unit) =>
+    unit.name === space.name && unit.floor === space.floor && (unit.floorEnd ?? null) === space.floorEnd);
+  const effectiveUnitId = draftSpace ? matchingUnit?.id : scope === 'unit' ? form.unitId || null : null;
+  const siteUnitKeyReady = !!form.siteId && (!!effectiveUnitId || (!needsUnit && !wholeDong && (!flexible || !!dongs)));
   const { data: existingProperties } = useQuery({
     queryKey: ['properties', 'lookup', form.siteId, effectiveUnitId],
     queryFn: () =>
       api.properties.findAll({
         siteId: form.siteId,
         unitId: effectiveUnitId ?? undefined,
-        limit: 20,
+        withoutUnit: effectiveUnitId ? undefined : true,
+        limit: 1,
       }),
-    enabled: siteUnitKeyReady,
+    enabled: Boolean(siteUnitKeyReady),
   });
   const existingProperty = useMemo<Property | null>(() => {
     const items = existingProperties?.items ?? [];
@@ -352,7 +366,14 @@ export function PropertyRegistrationForm({
     mutationFn: async () => {
       // Validate
       if (!form.siteId) throw new Error('단지를 선택하세요.');
-      if (needsUnit && !form.unitId)
+      if (flexible && !dongs) throw new Error('건물 목록을 확인한 뒤 등록하세요.');
+      if ((draftSpace || needsUnit) && !effectiveDongId) throw new Error('대상 동을 선택하세요.');
+      if (spaceError) throw new Error(spaceError);
+      if (newPart && matchingUnit && form.partArea?.trim() &&
+        Number(matchingUnit.exclusiveAreaM2) !== Number(form.partArea)) {
+        throw new Error('같은 이름과 층에 면적이 다른 공간이 있습니다. 기존 공간을 확인하세요.');
+      }
+      if (needsUnit && !draftSpace && !selectedUnit)
         throw new Error('호실을 선택하세요. (없으면 단지 상세에서 먼저 등록)');
       if (form.transactionTypes.includes('sale') && !form.salePrice) {
         throw new Error('매매가를 입력하세요.');
@@ -369,13 +390,30 @@ export function PropertyRegistrationForm({
         );
       }
 
-      // 1) Property — 이미 있으면 재사용, 없으면 생성
-      const property = existingProperty
-        ? existingProperty
-        : await api.properties.create({
-            siteId: form.siteId,
-            unitId: effectiveUnitId ?? undefined,
-          });
+      let unitId = effectiveUnitId || undefined;
+      if (space && !unitId) {
+        try {
+          const unit = await api.units.create({ ...space, siteId: form.siteId, dongId: effectiveDongId });
+          unitId = unit.id;
+          void queryClient.invalidateQueries({ queryKey: ['units'] });
+        } catch (cause) {
+          // A concurrent submission can have registered the same space.
+          if (!(cause instanceof ApiError) || cause.statusCode !== 409) throw cause;
+          const refreshed = await api.units.findAll({ siteId: form.siteId, dongId: effectiveDongId });
+          const existing = refreshed.find(unit => unit.name === space.name && unit.floor === space.floor &&
+            (unit.floorEnd ?? null) === space.floorEnd);
+          if (!existing) throw cause;
+          unitId = existing.id;
+        }
+      }
+      const property = existingProperty ?? await api.properties.findOne(
+        (await api.properties.ensure({ siteId: form.siteId, unitId })).id,
+      );
+
+      if (property !== existingProperty && property.listings?.some(listing =>
+        form.transactionTypes.includes(listing.transactionType as TransactionType))) {
+        throw new Error('이미 접수된 거래유형입니다. 매물 상세에서 확인하세요.');
+      }
 
       // 2) ListingIntake + Listing
       const listingPayloads = buildListingPayloads(form, isCommercial);
@@ -388,11 +426,14 @@ export function PropertyRegistrationForm({
             : null,
       };
 
-      let intakeId = activeIntake?.id;
-      if (activeIntake) {
-        await api.listingIntakes.update(activeIntake.id, intakePayload);
+      const currentIntake = activeIntake ?? (await api.listingIntakes.findAll({
+        propertyId: property.id, limit: 1,
+      })).items[0];
+      let intakeId = currentIntake?.id;
+      if (currentIntake) {
+        await api.listingIntakes.update(currentIntake.id, intakePayload);
         for (const listingPayload of listingPayloads) {
-          await api.listingIntakes.addListing(activeIntake.id, listingPayload);
+          await api.listingIntakes.addListing(currentIntake.id, listingPayload);
         }
       } else {
         const intake = await api.listingIntakes.create({
@@ -534,7 +575,7 @@ export function PropertyRegistrationForm({
           <div className={cn("grid items-start gap-5", !isDrawer && "xl:grid-cols-2")}>
             <Section
               step={1}
-              title="단지 / 호실"
+              title="단지 / 거래 공간"
               subtitle="관리 중인 단지 또는 전체 단지에서 선택합니다."
             >
               <FieldRow label="단지" required>
@@ -542,11 +583,10 @@ export function PropertyRegistrationForm({
                   value={form.siteId}
                   displayName={form.siteName}
                   onChange={(site) => {
-                    set('siteId', site.id);
-                    set('siteName', site.name);
-                    set('siteType', site.type);
-                    set('dongId', '');
-                    set('unitId', '');
+                    setForm(prev => ({
+                      ...prev, scope: undefined, siteId: site.id, siteName: site.name, siteType: site.type,
+                      dongId: '', unitId: '', startFloor: '', endFloor: '', partName: '', partArea: '',
+                    }));
                   }}
                 />
               </FieldRow>
@@ -558,27 +598,35 @@ export function PropertyRegistrationForm({
                     {SITE_TYPE_LABELS[form.siteType] ?? form.siteType}
                   </span>
                   {!allowsUnit && <> — 호실 구분 없이 매물 한 건으로 관리합니다.</>}
-                  {isHouse && (
-                    <>
-                      {' '}— 통건물·호실 단위 둘 다 등록할 수 있어요. 호실을 비워두면
-                      통건물로 등록됩니다.
-                    </>
-                  )}
                 </p>
               )}
 
-              {form.siteId && allowsUnit && !isPlaceholderOnly && (
-                <FieldRow label="동" required={needsUnit}>
+              {flexible && form.siteId && (
+                <FieldRow label="거래 공간" required>
+                  <Select value={scope} onValueChange={(value: SpaceScope) =>
+                    setForm(prev => ({ ...prev, scope: value, unitId: '', startFloor: '', endFloor: '', partName: '', partArea: '' }))}>
+                    <SelectTrigger aria-label="거래 공간"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="whole">건물 전체</SelectItem>
+                      <SelectItem value="floors">층 선택</SelectItem>
+                      <SelectItem value="unit">호실·일부 공간</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FieldRow>
+              )}
+
+              {form.siteId && allowsUnit && !isPlaceholderOnly && visibleDongs.length > 0 && (
+                <FieldRow label="동" required>
                   <Select
-                    value={form.dongId}
+                    value={effectiveDongId}
                     onValueChange={(v) => {
                       set('dongId', v);
                       set('unitId', '');
                     }}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger aria-label="동">
                       <SelectValue
-                        placeholder={isHouse ? '동 선택 (통건물이면 비워두세요)' : '동 선택'}
+                        placeholder="동 선택"
                       />
                     </SelectTrigger>
                     <SelectContent>
@@ -589,35 +637,23 @@ export function PropertyRegistrationForm({
                       ))}
                     </SelectContent>
                   </Select>
-                  {isHouse && visibleDongs.length === 0 && (
-                    <p className="mt-1.5 text-xs text-muted-foreground">
-                      등록된 동이 없습니다. 호실 단위로 관리하려면{' '}
-                      <Link to="/sites" className="underline">
-                        단지 관리에서 동/호를 먼저 추가
-                      </Link>
-                      하세요. 비워두면 통건물로 등록됩니다.
-                    </p>
-                  )}
                 </FieldRow>
               )}
 
-              {form.siteId && allowsUnit && effectiveDongId && (
+              {form.siteId && allowsUnit && scope === 'unit' && effectiveDongId && (
                 <FieldRow label="호실" required={needsUnit}>
                   <Select
-                    value={form.unitId || (isHouse ? '__whole__' : '')}
-                    onValueChange={(v) => set('unitId', v === '__whole__' ? '' : v)}
+                    value={form.unitId}
+                    onValueChange={(v) => set('unitId', v)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger aria-label="호실">
                       <SelectValue placeholder="호실 선택" />
                     </SelectTrigger>
                     <SelectContent>
-                      {isHouse && (
-                        <SelectItem value="__whole__">통건물 (호실 없음)</SelectItem>
-                      )}
+                      {flexible && <SelectItem value="__new_space__">새 호실·구획 입력</SelectItem>}
                       {(units ?? []).map((u) => (
                         <SelectItem key={u.id} value={u.id}>
-                          {u.name}
-                          {u.floor != null ? ` · ${u.floor}층` : ''}
+                          {formatUnitLabel(u)}
                           {u.siteUnitType?.name ? ` · ${u.siteUnitType.name}` : ''}
                         </SelectItem>
                       ))}
@@ -639,7 +675,7 @@ export function PropertyRegistrationForm({
                       )}
                     </p>
                   )}
-                  {units && units.length === 0 && (
+                  {!flexible && units && units.length === 0 && (
                     <p className="mt-1.5 text-xs text-warning-strong">
                       등록된 호실이 없습니다.{' '}
                       <Link to="/sites" className="underline">
@@ -648,6 +684,32 @@ export function PropertyRegistrationForm({
                     </p>
                   )}
                 </FieldRow>
+              )}
+
+              {newPart && (
+                <FieldRow label="호실·구획 이름" required>
+                  <Input aria-label="호실·구획 이름" placeholder="예: 201호, 도로변 점포" value={form.partName ?? ''}
+                    onChange={e => set('partName', e.target.value)} />
+                </FieldRow>
+              )}
+              {(scope === 'floors' || newPart) && (
+                <FieldRow label={newPart ? '층' : '층 범위'} required={!newPart}>
+                  <div className="flex gap-2">
+                    <Input aria-label="시작층" placeholder="시작층 (예: B1, 2)" value={form.startFloor ?? ''}
+                      onChange={e => set('startFloor', e.target.value)} />
+                    {!newPart && <Input aria-label="끝층" placeholder="끝층 (한 층이면 생략)" value={form.endFloor ?? ''}
+                      onChange={e => set('endFloor', e.target.value)} />}
+                  </div>
+                </FieldRow>
+              )}
+              {newPart && (
+                <FieldRow label="전용면적">
+                  <Input aria-label="전용면적 (㎡)" type="number" min="0" step="any" placeholder="㎡" value={form.partArea ?? ''}
+                    onChange={e => set('partArea', e.target.value)} />
+                </FieldRow>
+              )}
+              {flexible && dongs?.length === 0 && needsUnit && (
+                <p className="text-xs text-muted-foreground"><Link to="/sites" className="underline">단지 관리</Link>에서 건물을 먼저 등록하세요.</p>
               )}
 
               {existingProperty && (
@@ -997,9 +1059,9 @@ export function PropertyRegistrationForm({
           </footer>
         ) : <RegistrationSummaryPanel
           form={form}
-          needsUnit={needsUnit}
+          needsUnit={needsUnit || flexible}
           selectedDongName={selectedDong?.isPlaceholder ? '' : selectedDong?.name}
-          selectedUnitName={selectedUnit?.name}
+          selectedUnitName={scope === 'whole' ? '건물 전체' : formatUnitLabel(space ?? selectedUnit) || undefined}
           existingProperty={existingProperty}
           activeIntakeExists={Boolean(activeIntake)}
           txConflicts={txConflicts}
@@ -1057,7 +1119,7 @@ function RegistrationSummaryPanel({
 
         <dl className="space-y-3 text-sm">
           <SummaryRow label="위치" value={siteLabel} muted={!form.siteId} />
-          <SummaryRow label="호실" value={unitLabel} muted={needsUnit && !selectedUnitName} />
+          <SummaryRow label="거래 공간" value={unitLabel} muted={needsUnit && !selectedUnitName} />
           <SummaryRow label="거래" value={form.transactionTypes.map((type) => TX_LABELS[type]).join(', ')} />
           <SummaryRow label="금액" value={amountLabel} muted={!amountLabel} />
           <SummaryRow label="입주" value={moveInLabel} />

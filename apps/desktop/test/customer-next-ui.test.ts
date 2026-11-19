@@ -157,9 +157,15 @@ describe("customer next workspace", () => {
       /queryKey: \[['"]brokerage-cases['"]\]/,
     );
     assert.match(newDemandIntakePageSource, /title="구함 의뢰 추가"/);
+    // 취소하면 연 화면으로 돌아간다: 희망매물에서 열었으면 희망매물, 그 밖에는 고객 원장
     assert.match(
       newDemandIntakePageSource,
-      /closeTab\(ownerTabIdRef\.current\)[\s\S]*?getRouteMeta\('\/customers-table'\)[\s\S]*?openModule/,
+      /const returnRoute = from === 'wanted-properties' \? '\/wanted-properties' : '\/customers-table';/,
+    );
+    // 돌아갈 화면을 먼저 열고 그다음에 이 탭을 닫는다 (닫힌 탭이 보낸 요청은 셸이 무시한다)
+    assert.match(
+      newDemandIntakePageSource,
+      /const handleCancel = \(\) => \{[\s\S]*?getRouteMeta\(returnRoute\)[\s\S]*?openModule\(\{[\s\S]*?\}\);\s*if \(ownerTabIdRef\.current\) \{\s*closeTab\(ownerTabIdRef\.current\);/,
     );
     assert.match(buyerRequirementFormSource, /구함 의뢰 등록/);
   });

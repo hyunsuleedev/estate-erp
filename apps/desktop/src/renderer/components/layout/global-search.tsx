@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Building2, MapPin, Search, User } from 'lucide-react'
-import { formatPrice } from '@estate-erp/shared'
+import { formatPrice, formatUnitName } from '@estate-erp/shared'
 
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -100,7 +100,7 @@ export function GlobalSearch() {
     const siteName = property?.site?.name ?? '매물'
     const dong = property?.unit?.dong
     const dongName = dong && !dong.isPlaceholder ? ` ${dong.name}` : ''
-    const unitName = property?.unit?.name ? ` ${property.unit.name}` : ''
+    const unitName = formatUnitName(property?.unit) ? ` ${formatUnitName(property?.unit)}` : ''
     return `${siteName}${dongName}${unitName}`
   }
 

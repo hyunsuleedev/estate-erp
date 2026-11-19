@@ -113,21 +113,17 @@ describe("my ads Task-based workflow", () => {
     ]) {
       assert.match(source, new RegExp(label));
     }
-    assert.match(source, /enableRowSelection/);
-    assert.match(
-      source,
-      /변경 초안 \$\{dirtyAdvertisements\.length\}건 · 업무 등록 전/,
-    );
-    assert.match(source, /function InlineDraftResetButton/);
+    // 줄 선택과 선택 막대는 없다. 고치기는 위쪽의 두 모드로 들어간다.
+    assert.doesNotMatch(source, /enableRowSelection|renderBulkActions|selectedRowIds/);
     assert.match(source, /renderExpandedRow=\{\(advertisement\) =>/);
     assert.match(source, /<AdvertisementAnalysisPanel/);
-    assert.match(source, /가격 수정안 작성/);
+    assert.doesNotMatch(source, /가격 수정안 작성/);
   });
 
   it("uses the property page's two-row toolbar and filter chips", () => {
     const source = readMyAdsSource();
 
-    assert.match(source, /className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white"/);
+    assert.match(source, /className="relative -m-4 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white"/);
     const toolbar = readFileSync(resolve(myAdsModuleDir, "my-ads-toolbar.tsx"), "utf8");
     for (const part of [
       "ToolbarPillTabs",
@@ -206,18 +202,78 @@ describe("my ads Task-based workflow", () => {
     assert.match(panel, /exactInput\.onApply\(exactMin\.trim\(\), exactMax\.trim\(\)\)/);
   });
 
-  it("creates an ordinary advertisement Task with stable advertisement identifiers", () => {
+  it("edits the record in one mode and drafts requests in the other", () => {
+    const source = readMyAdsSource();
+    const page = readFileSync(desktopPath, "utf8");
+
+    // 평소에는 읽기 전용이고, 위쪽 버튼으로 들어와야 고칠 수 있다
+    assert.match(page, /data-my-ads-mode-button="edit"[\s\S]*?기록 수정/);
+    assert.match(page, /data-my-ads-mode-button="request"[\s\S]*?변경 요청/);
+    assert.match(page, /data-my-ads-mode-bar=\{mode\}/);
+    // 화면이 업무를 직접 만들지 않는다. 요청은 서버의 변경 요청(업무 하나와 짝)이다
+    assert.doesNotMatch(source, /api\.tasks\.create\(/);
+    assert.match(page, /api\.listingAdvertisements\.createChangeRequest\(advertisement\.id, request\)/);
+    // 기록 수정: 칸에서 바로 저장하고, 화면이 보고 있던 값을 함께 보낸다(그 사이 바뀌었으면 서버가 거절)
+    assert.match(page, /api\.listingAdvertisements\.update\(\s*advertisement\.id,\s*buildRecordEdit\(advertisement, field, value\),\s*\)/);
+    assert.match(source, /expected: \{ \[key\]: advertisement\[key\] \}/);
+    // 저장에 실패하면 입력칸을 닫지 않는다
+    assert.match(page, /catch \(error\) \{\s*\/\/ 입력칸을 닫지 않는다[^\n]*\n\s*return getErrorMessage\(error\);/);
+    // 변경 요청: 값은 그대로 두고 초안에 적는다. 그 줄이 펼쳐지며 요청 탭이 열린다
+    assert.match(page, /withDraftValue\(advertisement, all\[advertisement\.id\], field, value\)/);
+    assert.match(page, /setPanelTab\("requests"\)/);
+    // 가격과 월세는 "가격 변경" 한 건으로 묶인다
+    assert.match(source, /requests\.push\(\{ kind: "price", toValue: price, \.\.\.shared \}\)/);
+    // 모드를 바꾸기 전에 고치던 칸을 먼저 확정하고, 작성한 요청이 있으면 묻는다
+    assert.match(page, /if \(!\(await flushEditor\(\)\)\) return;\s*if \(\s*modeRef\.current === "request" &&\s*Object\.keys\(draftsRef\.current\)\.length > 0\s*\) \{\s*setIsConfirmingDiscard\(true\);/);
+    // 칸을 그릴 때, 값을 받을 때, 보낼 때 모두 같은 함수로 막는다
+    assert.match(page, /const blocked = editBlockReason\(advertisement, field, current\);\s*if \(blocked\) return blocked;/);
+    assert.match(source, /editBlockReason\(advertisement, "primary", "request"\) === null/);
+    // 보낸 초안은 누른 순간의 것을 넘기고, 보낸 뒤 손대지 않은 것만 지운다
+    assert.match(page, /sent: draftsRef\.current,/);
+    assert.match(page, /if \(rest\[id\] && rest\[id\] === sent\[id\]\)/);
+    // 맡길 사람 · 기한 · 메모는 한 번만 받는다. 기한은 달력 팝오버다(브라우저 기본 날짜 칸이 아니다)
+    assert.match(source, /assignedToId: assignee === AGENT \? null : assignee/);
+    assert.doesNotMatch(
+      readFileSync(resolve(myAdsModuleDir, "my-ads-request-send-dialog.tsx"), "utf8"),
+      /type="date"/,
+    );
+    // 검색어를 바꿔 그 광고가 받은 목록에서 빠져도 작성한 요청은 남는다
+    assert.match(page, /if \(!advertisement\) \{\s*next\[id\] = draft;\s*continue;\s*\}/);
+    assert.match(page, /draftedAdvertisementCache/);
+    // 일부 종류만 만들어지고 끊기면 만들어진 종류만 초안에서 뺀다 (가려진 광고도 다시 보낼 수 있게)
+    assert.match(page, /if \(created\.length > 0\) partial\[advertisement\.id\] = created;/);
+    assert.match(page, /withoutSentKinds\(rest\[id\], kinds\)/);
+    // 요청을 거둘 수 있다
+    assert.match(source, /api\.listingAdvertisements\s*\.cancelChangeRequest\(request\.id\)/);
+  });
+
+  it("shows how far each advertisement is linked and lets a person link it", () => {
     const source = readMyAdsSource();
 
-    assert.match(source, /api\.tasks\.create\(/);
-    assert.match(source, /category: "advertisement"/);
-    assert.match(source, /status: "pending"/);
-    assert.match(source, /listingAdvertisementId=/);
-    assert.match(source, /externalAdId=/);
-    assert.match(source, /naverArticleNo=/);
-    assert.match(source, /재광고=\$\{draft\.republishAfterSave/);
-    assert.match(source, /선택한 광고는 하나의 일반 업무로 등록됩니다/);
-    assert.match(source, /광고 작업을 업무에 등록했습니다/);
+    assert.match(source, /\{ value: "unlinked", label: "연결 안 됨" \}/);
+    assert.match(source, /\{ value: "requested", label: "요청 중" \}/);
+    assert.match(source, /property: "매물 없음"/);
+    assert.match(source, /site: "호실 못 찾음"/);
+    assert.match(source, /none: "건물 못 찾음"/);
+    // 매물이 없는 광고는 CP가 적은 글로 위치를 보여 준다
+    assert.match(source, /advertisement\.rawDong\?\.trim\(\)/);
+    assert.match(source, /api\.listingAdvertisements\.link\(advertisement\.id, \{ listingId: listing\.id \}\)/);
+  });
+
+  it("opens a side panel from the site cell, like the property list", () => {
+    const source = readMyAdsSource();
+
+    // 단지 칸의 "열기"가 옆 상세 패널을 열고, 열려 있으면 닫는다
+    assert.match(source, /<RowOpenButton\s+label=\{advertisementLocationLabel\(advertisement\)\}\s+current=\{peekId === advertisement\.id\}\s+controls=\{MY_ADS_INSPECTOR_ID\}/);
+    assert.match(source, /<MyAdsPeek\s+advertisement=\{peekAdvertisement\}/);
+    // 패널의 광고는 탭 · 필터와 상관없이 받은 광고 전체에서 찾는다 (필터를 바꿔도 보던 패널이 닫히지 않는다)
+    assert.match(source, /advertisements\.find\(\s*\(advertisement\) => advertisement\.id === peekAdvertisementId,?\s*\)/);
+    // 흐름: 광고 이력과 네이버 비교 기록을 한 줄기로
+    assert.match(source, /api\.listingAdvertisements\.timeline\(advertisement\.id\)/);
+    assert.match(source, /export function buildAdvertisementTimeline\(/);
+    // 펼친 영역은 두 탭이다
+    assert.match(source, /label="비교 분석"/);
+    assert.match(source, /label="비교 광고"/);
   });
 
   it("does not expose a server sync or AgentAction API", () => {
@@ -246,15 +302,13 @@ describe("my ads Task-based workflow", () => {
     assert.match(page, /columnSizing=\{preferences\.widths\}/);
     assert.match(page, /onColumnSizingChange=\{handleColumnSizingChange\}/);
     assert.match(page, /useMyAdsTablePreferences\(\s*user\?\.office\?\.id \?\? "local",\s*user\?\.id \?\? "guest",?\s*\)/);
-    // 업무 등록 뒤 표 안의 선택도 함께 비워지도록 선택을 제어형으로 넘긴다
-    assert.match(page, /selectedRowIds=\{selectedRowIds\}/);
     // 검색어는 잠시 기다렸다가 보내고, 새로 받는 동안 이전 결과를 유지한다
     assert.match(page, /useDebouncedValue\(search\.trim\(\), SEARCH_DEBOUNCE_MS\)/);
     assert.match(page, /placeholderData: keepPreviousData/);
     // 필터·검색·탭 중 하나라도 걸려 있으면 "조건에 맞는 광고가 없습니다."
     assert.match(page, /hasNarrowingConditions\s*\?\s*"조건에 맞는 광고가 없습니다\."/);
     // 빈 <> 래퍼 없이 툴바가 바로 온다
-    assert.match(page, /className="-m-4 flex min-h-0 min-w-0 flex-1 flex-col bg-white"\s*>\s*<MyAdsToolbar/);
+    assert.match(page, /className="relative -m-4 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white"\s*>\s*<MyAdsToolbar/);
   });
 
   it("keeps inline inputs, row names, expansion and floor exposure accessible", () => {
@@ -262,18 +316,12 @@ describe("my ads Task-based workflow", () => {
     const cells = readFileSync(resolve(myAdsModuleDir, "my-ads-cells.tsx"), "utf8");
     const columns = readFileSync(columnsPath, "utf8");
 
-    // 입력칸 안의 키는 입력칸이 처리한다 (표의 화살표 이동·Esc 선택 해제로 올라가지 않음)
-    assert.match(cells, /onKeyDown=\{stopTableHandling\}/);
+    // 입력칸 안의 키는 입력칸이 처리한다 (표의 화살표 이동 · Esc로 올라가지 않음). 한글 조합 중의 Enter는 확정이 아니다
+    assert.match(cells, /onKeyDown=\{\(event\) => \{\s*stopTableHandling\(event\);\s*if \(event\.nativeEvent\.isComposing\) return;/);
     assert.match(cells, /if \(transactionType === "jeonse"\) return "전세가";/);
-    const monthlyRentCell = cells.slice(
-      cells.indexOf("export function InlineMonthlyRentCell"),
-      cells.indexOf("function InlineDraftResetButton"),
-    );
-    assert.equal(monthlyRentCell.match(/inlineEditBase\(advertisement\)/g)?.length, 1);
     // 층수노출은 읽기 정보 — 비활성 스위치가 아니다
     assert.doesNotMatch(cells, /<Switch|components\/ui\/switch/);
-    // 행 체크박스는 위치로 읽히고, 펼침 버튼은 펼친 패널을 가리킨다
-    assert.match(page, /getRowSelectionLabel=\{\(advertisement\) =>\s*`\$\{advertisementLocationLabel\(advertisement\)\} 선택`/);
+    // 펼침 버튼은 펼친 패널을 가리킨다
     assert.match(columns, /aria-expanded=\{expanded\}\s*aria-controls=\{\s*expanded \? myAdsAnalysisPanelId\(advertisement\.id\) : undefined\s*\}/);
     assert.match(page, /<div id=\{myAdsAnalysisPanelId\(advertisement\.id\)\}>/);
     // 머리글 아이콘 16px #8e8b86, 13px 라벨

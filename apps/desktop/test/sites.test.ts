@@ -44,10 +44,18 @@ describe('desktop managed sites page', () => {
     // 관리호수가 없는 단지는 아래 묶음으로 모은다
     assert.match(panelSource, /기록 없는 단지/);
 
-    // 단지 줄은 앱 메뉴처럼 아이콘 + 이름 한 줄(h-8)이고, 선택은 평평한 바탕 — 목록 속 흰 카드로 띄우지 않는다
+    // 단지 줄은 앱 메뉴처럼 아이콘 + 이름 한 줄(30px)이고, 선택은 평평한 바탕 — 목록 속 흰 카드로 띄우지 않는다
     assert.match(panelSource, /SITE_TYPE_ICONS/);
-    assert.match(panelSource, /'group relative flex h-8 cursor-pointer/);
+    assert.match(panelSource, /'group relative flex h-\[30px\] cursor-pointer/);
     assert.doesNotMatch(panelSource, /ring-1 ring-border hover:bg-background/);
+
+    // 묶기는 트랙 없는 보기 탭이고, 검색은 같은 머리줄의 돋보기로 연다
+    assert.doesNotMatch(panelSource, /rounded-full bg-\[rgba\(55,53,47,0\.08\)\] p-0\.5/);
+    assert.match(panelSource, /onFocus=\{\(\) => setIsSearchOpen\(true\)\}/);
+    // 한글 조합 중의 키는 검색 동작으로 쓰지 않는다
+    assert.match(panelSource, /if \(event\.nativeEvent\.isComposing\) return;/);
+    // 단지 추가는 목록 끝의 줄이고, 아래 요약에는 선과 버튼이 없다
+    assert.doesNotMatch(panelSource, /border-t border-border px-2\.5 py-2/);
   });
 
   it('keeps the add-site dialog open for adding several sites in a row', () => {
@@ -276,6 +284,13 @@ describe('desktop managed sites page', () => {
     assert.match(source, /label="소유자명"/);
     assert.match(source, /id: 'ownerPhone'/);
     assert.match(source, /label="소유자 전화번호"/);
+    // 세입자도 소유자처럼 이름과 전화번호를 따로 둔다
+    assert.match(source, /id: 'tenantName'[\s\S]*?label="세입자명"/);
+    // 최근 상담은 사람 이름 대신 상담 방식 아이콘을 앞에 둔다(상담분석과 같은 아이콘)
+    assert.match(source, /consultationChannelIcons\[latest\.type/);
+    assert.match(source, /aria-label=\{`\$\{typeLabel\} 상담`\}/);
+    assert.match(source, /id: 'tenantPhone'[\s\S]*?label="세입자 전화번호"/);
+    assert.doesNotMatch(source, /id: 'tenant',/);
     assert.match(source, /외 \{owners\.length - 1\}명/);
     assert.match(
       source,
@@ -283,7 +298,7 @@ describe('desktop managed sites page', () => {
     );
     assert.match(
       source,
-      /const UNIT_RELATIONSHIP_COLUMN_IDS = \['tenant', 'listing'\] as const/,
+      /const UNIT_RELATIONSHIP_COLUMN_IDS = \['tenantName', 'tenantPhone', 'listing'\] as const/,
     );
     assert.match(source, /columnGroupControls=\{\[/);
     assert.match(source, /anchorColumnId: 'ownerPhone'/);
@@ -321,8 +336,12 @@ describe('managed sites unit table follows the property list table', () => {
 
   it('selects on click and opens the unit on double click, Enter or the shared open button', () => {
     assert.match(page, /onRowClick=\{handleSelectUnit\}[\s\S]{0,260}activateOnDoubleClick/);
-    assert.match(columnsSource, /<RowOpenButton[\s\S]{0,260}onToggle=\{\(\) => handleSelectUnit\(unit\)\}/);
-    assert.match(columnsSource, /openTitle="호실 상세 열기"/);
+    // 열기 버튼은 옆 상세 패널을 열고, 그 호실이 열려 있으면 닫는다
+    assert.match(
+      columnsSource,
+      /<RowOpenButton[\s\S]{0,360}controls="unit-inspector"[\s\S]{0,200}closeUnitInspector\(\) : handleSelectUnit\(unit\)/,
+    );
+    assert.doesNotMatch(columnsSource, /openTitle="호실 상세 열기"/);
     assert.match(page, /getRowSelectionLabel=/);
     assert.match(page, /scrollResetKey=\{unitTableResetKey\}/);
   });

@@ -8,6 +8,7 @@ import type {
 } from '@estate-erp/api-client';
 import {
   formatPrice,
+  formatFloorRange,
   IntakeConfirmationState,
   ListingAvailability,
   MaintenanceFeeInclude,
@@ -274,7 +275,8 @@ export function buildBriefCards({
 /** 머리 제목: 손님에게는 단지·동까지만 */
 export function getHeaderTitle(property: Property, guest: boolean) {
   const identity = getUnitIdentity(property);
-  const unit = guest ? identity.dong : [identity.dong, identity.ho].filter(Boolean).join(' ');
+  const showSpace = !guest || identity.ho === '건물 전체';
+  const unit = [identity.dong, showSpace ? identity.ho : null].filter(Boolean).join(' ');
   return { siteName: identity.siteName, unit: unit || null };
 }
 
@@ -311,7 +313,7 @@ export function getHeaderSpecs(property: Property, guest: boolean): HeaderSpec[]
             .join(' · '),
         }
       : null,
-    !guest && unit?.floor != null ? { key: 'floor', text: `${unit.floor}층` } : null,
+    !guest && unit?.floor != null ? { key: 'floor', text: formatFloorRange(unit) } : null,
     rooms != null || baths != null
       ? {
           key: 'rooms',

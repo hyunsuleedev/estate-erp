@@ -1,0 +1,1201 @@
+/*
+ * 대시보드 전용 스타일 — 유틸리티 클래스로 쓰기 번거로운 것만 여기에 둔다:
+ * 카드의 겹 그림자, 표의 subgrid, 체크 상자의 그려지는 선, 인사 영역의 하늘·그림과 움직임.
+ * 화면의 색은 app.css의 토큰(var(--color-*))만 쓴다. 예외는 인사 영역의 그림이다 — 그림 안에서만 따로 고른 색을 쓰고,
+ * 글자·알약·도구 단추는 토큰 그대로다. 그림의 색은 시각과 날씨에 따라 -dashboard-sky.ts가 계산해 넣는다.
+ *
+ * 움직임은 세 가지다.
+ *   ① 처음 한 번(.dash-play가 붙어 있는 동안): 글자와 구획이 올라오고, 건물이 땅에서 솟고, 해가 떠오른다.
+ *   ② 계속: 해·구름의 숨쉬기, 고양이 꼬리, 나무, 연기, 걷는 사람, 비·눈.
+ *   ③ 반응: 업무를 완료하면 해가 뛰고 반짝이가 튄다. 마우스를 올리면 하늘이 살짝 밀리고 건물에 불이 켜진다
+ *           (-dashboard-scene.tsx가 WAAPI와 canvas로 움직인다).
+ * '움직임 줄이기'를 켠 기기에서는 전부 끈다.
+ */
+
+/* ── 카드 ── */
+.dash-card {
+  box-shadow: 0 0 0 1px rgb(42 28 0 / 0.08), 0 1px 2px rgb(42 28 0 / 0.04);
+  transition: box-shadow 220ms ease;
+}
+.dash-card-soon {
+  border: 1px dashed #dddbd7;
+}
+@media (hover: hover) and (pointer: fine) {
+  .dash-card:hover {
+    box-shadow: 0 0 0 1px rgb(42 28 0 / 0.13), 0 6px 16px -8px rgb(42 28 0 / 0.16);
+  }
+}
+
+/* ── 할 일의 체크 상자 (Notion의 네모 상자) ── */
+.dash-chk {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex: none;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1.5px #c4c1bc;
+  transition: background-color 120ms, box-shadow 120ms, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.dash-chk:hover {
+  background: rgb(33 27 23 / 0.08);
+}
+.dash-chk:active {
+  transform: scale(0.9);
+}
+.dash-chk svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.dash-chk[aria-checked='true'] {
+  background: var(--color-info);
+  box-shadow: none;
+}
+.dash-chk[aria-checked='true'] svg {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 180ms cubic-bezier(0.23, 1, 0.32, 1) 40ms;
+}
+
+/* ── 진행 거래 표: 줄은 subgrid다 (display: contents로 풀면 줄에 포커스를 줄 수 없다) ── */
+.dash-table {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) 104px minmax(0, 1fr);
+}
+.dash-tr {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+.dash-th,
+.dash-td {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
+}
+.dash-th:first-child,
+.dash-td:first-child {
+  border-left: 0;
+  padding-left: 6px;
+}
+.dash-th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  gap: 5px;
+  height: 32px;
+  background: var(--color-background);
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+}
+.dash-td {
+  height: 46px;
+}
+a.dash-tr:hover .dash-td,
+a.dash-tr:focus-visible .dash-td {
+  background: rgb(33 27 23 / 0.045);
+}
+a.dash-tr:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}
+
+/*
+ * ── 인사 영역: 하늘이 깔린 판 ──
+ * 하늘색은 시각과 날씨에 따라 바뀐다. 색을 변수로 받아 부드럽게 넘어가게 하려고 @property로 색·길이임을 알려 둔다.
+ */
+@property --sky-a {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #c4e3fa;
+}
+@property --sky-b {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #eff8fe;
+}
+@property --glow {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 226, 160, 0);
+}
+@property --wash {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 255, 255, 0.66);
+}
+@property --gx {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+@property --gy {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+.dash-hero {
+  /* 그림의 너비를 판의 너비에 맞추려고(cqw) 판을 기준 상자로 삼는다 */
+  container-type: inline-size;
+  isolation: isolate;
+  box-shadow: inset 0 0 0 1px rgb(42 28 0 / 0.08);
+}
+.dash-hero[data-tone='dark'] {
+  box-shadow: none;
+}
+.dash-sky {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  /* 해 둘레의 빛 + 위아래로 번지는 하늘 */
+  background:
+    radial-gradient(circle at var(--gx) var(--gy), var(--glow), transparent 150px),
+    linear-gradient(180deg, var(--sky-a), var(--sky-b));
+  transition:
+    --sky-a 900ms ease,
+    --sky-b 900ms ease,
+    --glow 900ms ease,
+    --wash 900ms ease,
+    --gx 900ms ease,
+    --gy 900ms ease;
+}
+/* 왼쪽 글자 자리를 밝히는 물빛 */
+.dash-sky::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--wash) 0%, var(--wash) 24%, transparent 62%);
+}
+.dash-flash {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+/* 그림이 놓이는 오른쪽 자리. 왼쪽으로 갈수록 사라진다. */
+.dash-vista {
+  --sw: min(440px, 60cqw);
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -2;
+  width: calc(var(--sw) * 1.32);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 27%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 27%);
+}
+.dash-scene,
+.dash-fx {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: var(--sw);
+  aspect-ratio: 440 / 132;
+}
+.dash-scene {
+  overflow: visible;
+}
+.dash-fx {
+  pointer-events: none;
+}
+/* 글자가 그림 위로 넘어가지 않게: 좁아지면 날짜 줄이 두 줄로 접힌다 */
+.dash-copy {
+  max-width: calc(100cqw - min(440px, 60cqw) * 0.92);
+}
+
+/*
+ * 판 위의 글자. 판이 밝을 때와 어두울 때(밤)의 색을 여기서 정한다 —
+ * 판의 밝기는 앱의 테마가 아니라 시각과 날씨가 정하므로 토큰을 그대로 쓰지 않는다.
+ */
+.dash-hero .dash-title {
+  color: #2c2c2b;
+  transition: color 600ms ease;
+}
+.dash-hero .dash-date {
+  color: #79766f;
+  transition: color 600ms ease;
+}
+.dash-hero .dash-weather {
+  color: #5f5e59;
+  transition: color 600ms ease;
+}
+.dash-hero .dash-weather-tip {
+  color: #d9730d;
+  font-weight: 600;
+}
+.dash-hero[data-tone='dark'] .dash-title {
+  color: #ffffff;
+}
+.dash-hero[data-tone='dark'] .dash-date {
+  color: rgb(255 255 255 / 0.66);
+}
+.dash-hero[data-tone='dark'] .dash-weather {
+  color: rgb(255 255 255 / 0.86);
+}
+.dash-hero[data-tone='dark'] .dash-weather-tip {
+  color: #ffc27a;
+}
+/* 도구 단추: 밤에는 범위 고르기의 바탕을 밝게 깔고, 빠른 등록은 흰 단추가 된다 */
+.dash-hero .dash-scope {
+  transition: background-color 600ms ease;
+}
+.dash-hero[data-tone='dark'] .dash-scope {
+  background: rgb(255 255 255 / 0.14);
+}
+.dash-hero[data-tone='dark'] .dash-scope button[aria-pressed='false'] {
+  color: rgb(255 255 255 / 0.72);
+}
+.dash-hero[data-tone='dark'] .dash-tools > button {
+  background: #ffffff;
+  color: #2c2c2b;
+}
+.dash-hero[data-tone='dark'] .dash-tools > button:hover {
+  background: rgb(255 255 255 / 0.9);
+}
+
+.dash-pin {
+  position: relative;
+  box-shadow: 0 0 0 1px rgb(42 28 0 / 0.08), 0 1px 2px rgb(42 28 0 / 0.04);
+  transition: box-shadow 200ms ease, transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.dash-pin:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .dash-pin:hover {
+    box-shadow: 0 0 0 1px rgb(42 28 0 / 0.13), 0 6px 16px -8px rgb(42 28 0 / 0.16);
+    transform: translateY(-1px);
+  }
+}
+
+/*
+ * ── 그림 ──
+ * 채우는 색(.tint)은 -dashboard-scene.tsx가 시각·날씨에 맞춰 넣고, 여기서는 그 색이 부드럽게 바뀌게만 한다.
+ * 무엇이 보이고 숨는지는 svg에 붙은 data-wx(날씨) · data-night(해가 졌는가) · data-off(시간 축 밖) · data-season으로 정한다.
+ */
+.dash-scene {
+  --ol: rgba(64, 48, 40, 0.5);
+  --glass: #9cc3e6;
+  --axis: rgba(44, 44, 43, 0.5);
+  --hot: var(--color-orange);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.dash-scene .tint {
+  transition: fill 800ms ease;
+}
+.dash-scene .o {
+  stroke: var(--ol);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.dash-scene .ln {
+  fill: none;
+  stroke: var(--ol);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dash-scene .wn {
+  fill: var(--glass);
+  transition: fill 500ms ease;
+}
+.dash-scene .wn.lit {
+  fill: #ffd45c;
+}
+.dash-scene .axisline {
+  stroke: var(--axis);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.dash-scene .tick {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+.dash-scene text {
+  font-size: 9.5px;
+  font-weight: 500;
+  fill: var(--axis);
+  font-variant-numeric: tabular-nums;
+  transition: fill 600ms ease;
+}
+.dash-scene .nowtxt {
+  fill: var(--hot);
+  font-weight: 700;
+}
+.dash-scene .nowline {
+  stroke: var(--hot);
+  stroke-width: 1.1;
+  stroke-dasharray: 2 3;
+  opacity: 0.75;
+}
+.dash-scene[data-off='1'] .nowline,
+.dash-scene[data-off='1'] .nowtxt {
+  opacity: 0;
+}
+.dash-scene .pole {
+  stroke: var(--hot);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.dash-scene .flag {
+  fill: var(--hot);
+}
+.dash-scene .ev {
+  fill: var(--hot);
+  stroke: #fff;
+  stroke-width: 1.6;
+}
+/* 일정 시각에 비·눈 예보가 있으면 깃발에 씌우는 우산 */
+.dash-scene .fumb {
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+.dash-scene .fumb path {
+  fill: #ff8a65;
+  stroke: rgba(64, 48, 40, 0.5);
+  stroke-width: 1;
+}
+.dash-scene .fumb.on {
+  opacity: 1;
+}
+.dash-scene .star {
+  fill: #fff3c4;
+  opacity: 0;
+  transition: opacity 800ms ease;
+}
+.dash-scene[data-night='1'] .star {
+  opacity: 0.9;
+}
+.dash-scene[data-night='1']:is([data-wx='cloudy'], [data-wx='rain'], [data-wx='snow'], [data-wx='thunder'], [data-wx='fog']) .star {
+  opacity: 0.12;
+}
+
+/* 해 · 달 · 지금 자리의 구름 */
+.dash-scene .lum {
+  transition: transform 900ms cubic-bezier(0.77, 0, 0.175, 1);
+}
+.dash-scene .sun,
+.dash-scene .moon,
+.dash-scene .bigcloud {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 500ms ease, transform 600ms var(--ease-out);
+}
+.dash-scene .sun,
+.dash-scene .bigcloud,
+.dash-scene .cat,
+.dash-scene .slot {
+  cursor: pointer;
+}
+.dash-scene .sunc {
+  fill: #ffd15c;
+  stroke: #ef9b2d;
+  stroke-width: 1.4;
+}
+.dash-scene .ray {
+  stroke: #f6a93a;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.dash-scene .moonc {
+  fill: #fff1c4;
+  stroke: #e3c36f;
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+}
+.dash-scene .cloud {
+  stroke: #9fb0c4;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.dash-scene[data-night='1'] .sun,
+.dash-scene[data-night='0'] .moon {
+  opacity: 0;
+  transform: scale(0.6);
+  pointer-events: none;
+}
+.dash-scene .bigcloud {
+  opacity: 0;
+  transform: translateY(6px) scale(0.7);
+  pointer-events: none;
+}
+/* 구름 조금: 해 옆에 작은 구름 하나가 걸친다 */
+.dash-scene[data-wx='partly'] .bigcloud {
+  opacity: 1;
+  transform: translate(10px, 8px) scale(0.6);
+  pointer-events: auto;
+}
+/* 하늘이 덮인 날에는 해와 달이 구름 뒤로 숨는다 */
+.dash-scene:is([data-wx='cloudy'], [data-wx='rain'], [data-wx='snow'], [data-wx='thunder']) :is(.sun, .moon) {
+  opacity: 0;
+  transform: scale(0.7);
+  pointer-events: none;
+}
+.dash-scene[data-wx='fog'] .sun {
+  opacity: 0.62;
+}
+
+/* 구름 */
+.dash-scene .slot {
+  opacity: 0;
+  transform: translateY(-7px);
+  pointer-events: none;
+  transition: opacity 500ms ease, transform 600ms var(--ease-out);
+  transition-delay: calc(var(--i) * 40ms);
+}
+.dash-scene .slot.on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.dash-scene .deck {
+  opacity: 0;
+  transform: translateY(-9px);
+  pointer-events: none;
+  transition: opacity 600ms ease, transform 700ms var(--ease-out);
+}
+.dash-scene .deck.on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  cursor: pointer;
+}
+/* 뒤 겹은 테두리를 옅고 가늘게: 낮의 밝은 하늘에서도 앞 겹 뒤에 구름이 더 있는 것이 보이게 */
+.dash-scene .deck.back .cloud {
+  stroke: #b7c5d5;
+  stroke-width: 0.9;
+}
+.dash-scene .wisp {
+  fill: #fff;
+  opacity: 0;
+  transition: opacity 800ms ease;
+}
+.dash-scene:is([data-wx='clear'], [data-wx='partly']) .wisp {
+  opacity: 0.75;
+}
+.dash-scene[data-night='1'] .wisp {
+  opacity: 0.12;
+}
+.dash-scene .fogband,
+.dash-scene .haze {
+  opacity: 0;
+  transition: opacity 900ms ease;
+  pointer-events: none;
+}
+.dash-scene[data-wx='fog'] .fogband {
+  opacity: 0.6;
+}
+.dash-scene[data-wx='fog'] .haze {
+  opacity: 1;
+}
+.dash-scene .bolt {
+  fill: #ffe066;
+  stroke: #f2a900;
+  stroke-width: 0.8;
+  stroke-linejoin: round;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 건물 */
+.dash-scene .bld {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transition: transform 240ms var(--ease-pop);
+}
+@media (hover: hover) and (pointer: fine) {
+  .dash-scene .bld:hover {
+    transform: scaleY(1.05);
+  }
+  .dash-scene .bld:hover .wn {
+    fill: #ffd45c;
+  }
+}
+/* 걷는 사람이 들어가 있는 건물은 창에 불이 켜진다 */
+.dash-scene .bld.visit .wn {
+  fill: #ffd45c;
+}
+/* 눈이 오면 지붕과 나무에 얹히는 눈 */
+.dash-scene .cap {
+  fill: #fff;
+  stroke: #c3d2e4;
+  stroke-width: 1;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scaleY(0);
+  opacity: 0;
+  transition: transform 700ms var(--ease-out), opacity 400ms ease;
+}
+.dash-scene[data-wx='snow'] .cap {
+  transform: none;
+  opacity: 1;
+}
+.dash-scene .puff {
+  fill: #fff;
+  stroke: var(--ol);
+  stroke-width: 0.9;
+  opacity: 0;
+}
+.dash-scene .lamp,
+.dash-scene .lampglow {
+  opacity: 0;
+  transition: opacity 600ms ease;
+}
+.dash-scene[data-night='1'] .lamp {
+  opacity: 1;
+}
+.dash-scene[data-night='1'] .lampglow {
+  opacity: 0.35;
+}
+
+/* 고양이 */
+.dash-scene .catfur {
+  fill: #f7c58c;
+}
+.dash-scene .cattail {
+  fill: none;
+  stroke: #c98a4a;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+}
+.dash-scene .catstripe {
+  fill: none;
+  stroke: #c98a4a;
+  stroke-width: 0.7;
+  stroke-linecap: round;
+}
+.dash-scene .cateyes-shut {
+  fill: none;
+  stroke: #4a3526;
+  stroke-width: 0.7;
+  stroke-linecap: round;
+}
+.dash-scene .catscarf path,
+.dash-scene .snowman .scarf {
+  fill: none;
+  stroke: #e85d5d;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.dash-scene .catumb,
+.dash-scene .catscarf,
+.dash-scene .cateyes-shut,
+.dash-scene .heart {
+  opacity: 0;
+  transition: opacity 400ms ease, transform 500ms var(--ease-pop);
+}
+.dash-scene .catumb {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scale(0.5);
+}
+.dash-scene:is([data-wx='rain'], [data-wx='thunder']) .catumb {
+  opacity: 1;
+  transform: none;
+}
+.dash-scene[data-wx='snow'] .catscarf {
+  opacity: 1;
+}
+.dash-scene[data-night='1'] .cateyes-shut {
+  opacity: 1;
+}
+.dash-scene[data-night='1'] .cateyes {
+  opacity: 0;
+}
+.dash-scene .heart {
+  fill: #ff6f91;
+  font-size: 9px;
+}
+
+/* 걷는 사람 */
+.dash-scene .w-leg {
+  fill: none;
+  stroke: #34406a;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.dash-scene .far .w-leg {
+  stroke: #252e4a;
+}
+.dash-scene .w-arm {
+  fill: none;
+  stroke: #5d83cc;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dash-scene .far .w-arm {
+  stroke: #3c5896;
+}
+.dash-scene .w-shoe {
+  fill: #6e4a33;
+  stroke: rgba(48, 30, 20, 0.6);
+  stroke-width: 0.45;
+  stroke-linejoin: round;
+}
+.dash-scene .far .w-shoe {
+  fill: #563a28;
+}
+.dash-scene .w-skin {
+  fill: #ffdcc0;
+  stroke: rgba(120, 78, 52, 0.6);
+  stroke-width: 0.55;
+  stroke-linejoin: round;
+}
+.dash-scene .w-coat {
+  fill: #4f72b8;
+  stroke: rgba(30, 40, 80, 0.55);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+}
+.dash-scene .w-shirt {
+  fill: #fff;
+}
+.dash-scene .w-tie {
+  fill: none;
+  stroke: #e2574c;
+  stroke-width: 0.9;
+  stroke-linecap: round;
+}
+.dash-scene .w-hair {
+  fill: #4a3528;
+}
+.dash-scene .w-eye {
+  fill: #33261d;
+}
+.dash-scene .w-brow {
+  fill: none;
+  stroke: #4a3528;
+  stroke-width: 0.6;
+  stroke-linecap: round;
+}
+.dash-scene .w-case {
+  fill: #b9825a;
+  stroke: rgba(64, 48, 40, 0.6);
+  stroke-width: 0.6;
+}
+.dash-scene .w-handle {
+  fill: none;
+  stroke: rgba(64, 48, 40, 0.6);
+  stroke-width: 0.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* 관절은 묶음의 원점(0,0)에서 돈다 — 자리는 바깥 묶음의 transform 속성이 잡는다 */
+.dash-scene .thigh,
+.dash-scene .shin,
+.dash-scene .armswing,
+.dash-scene .forearm,
+.dash-scene .armcarry {
+  transform-origin: 0 0;
+}
+.dash-scene .whead {
+  transform-origin: 0.6px -14px;
+}
+.dash-scene .forearm {
+  transform: rotate(-22deg);
+}
+.dash-scene .armfree {
+  transition: opacity 400ms ease;
+}
+.dash-scene:is([data-wx='rain'], [data-wx='thunder']) .armfree {
+  opacity: 0;
+}
+
+/* 지나가는 것들: 새는 맑은 낮에만, 사람은 낮에만(눈 오는 날에는 눈사람), 잎은 봄·가을에만 */
+.dash-scene .bird,
+.dash-scene .walker,
+.dash-scene .walkumb,
+.dash-scene .leaf {
+  transition: opacity 600ms ease;
+}
+.dash-scene .bird {
+  opacity: 0;
+}
+.dash-scene[data-night='0']:is([data-wx='clear'], [data-wx='partly']) .bird {
+  opacity: 1;
+}
+.dash-scene[data-night='1'] .walker,
+.dash-scene[data-wx='snow'] .walker {
+  opacity: 0;
+}
+.dash-scene .walkumb {
+  opacity: 0;
+}
+.dash-scene:is([data-wx='rain'], [data-wx='thunder']) .walkumb {
+  opacity: 1;
+}
+.dash-scene .snowman {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scale(0.6);
+  transition: opacity 600ms ease, transform 700ms var(--ease-pop);
+}
+.dash-scene[data-wx='snow'] .snowman {
+  opacity: 1;
+  transform: none;
+}
+.dash-scene .leaf {
+  opacity: 0;
+}
+.dash-scene:is([data-season='spring'], [data-season='autumn']):is([data-wx='clear'], [data-wx='partly'], [data-wx='cloudy']) .leaf {
+  opacity: 1;
+}
+/* 비 올 때 마우스를 따라다니는 우산 */
+.dash-scene .brolly {
+  opacity: 0;
+  transition: opacity 220ms ease;
+  pointer-events: none;
+}
+.dash-scene .brolly.on {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* ① 처음 한 번 */
+  @keyframes dash-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes dash-rise {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scaleY(0.8);
+    }
+  }
+  @keyframes dash-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  .dash-play .dash-up {
+    animation: dash-up 520ms cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation-delay: calc(var(--d, 0) * 60ms);
+  }
+  .dash-play .dash-sec {
+    animation: dash-up 520ms cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation-delay: calc(260ms + var(--d, 0) * 60ms);
+  }
+  .dash-play .dash-card,
+  .dash-play .dash-card-soon {
+    animation: dash-up 520ms cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation-delay: calc(260ms + var(--d, 0) * 60ms);
+  }
+  .dash-play .dash-scene .bld {
+    animation: dash-rise 560ms cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation-delay: calc(140ms + var(--i) * 55ms);
+  }
+  .dash-play .dash-scene .far-blocks {
+    animation: dash-fade 700ms ease both;
+  }
+  .dash-play .dash-scene .late {
+    animation: dash-fade 600ms ease both;
+    animation-delay: 820ms;
+  }
+
+  /* ② 계속 */
+  @keyframes dash-bob {
+    50% {
+      transform: translateY(-2.4px);
+    }
+  }
+  @keyframes dash-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes dash-blink {
+    0%,
+    92%,
+    100% {
+      transform: scaleY(1);
+    }
+    96% {
+      transform: scaleY(0.1);
+    }
+  }
+  @keyframes dash-wag {
+    0%,
+    60%,
+    100% {
+      transform: rotate(0);
+    }
+    70% {
+      transform: rotate(16deg);
+    }
+    85% {
+      transform: rotate(-8deg);
+    }
+  }
+  @keyframes dash-sway {
+    50% {
+      transform: rotate(var(--sway, 2.4deg));
+    }
+  }
+  @keyframes dash-drift {
+    from {
+      transform: translateX(-190px);
+    }
+    to {
+      transform: translateX(470px);
+    }
+  }
+  @keyframes dash-deck {
+    from {
+      transform: translateX(-5px);
+    }
+    to {
+      transform: translateX(5px);
+    }
+  }
+  @keyframes dash-fly {
+    from {
+      transform: translate(-30px, 0);
+    }
+    50% {
+      transform: translate(220px, -10px);
+    }
+    to {
+      transform: translate(470px, 2px);
+    }
+  }
+  @keyframes dash-flap {
+    50% {
+      transform: scaleY(0.35);
+    }
+  }
+  /*
+   * 걸음 한 바퀴(1.1초, 두 걸음). 사람은 오른쪽으로 걷는다 — 음수 각이 앞, 양수 각이 뒤.
+   * 허벅지: 발을 딛는 순간 앞(-24°) → 몸이 지나가며 뒤(+22°) → 다시 앞으로.
+   * 정강이(무릎): 딛고 있는 동안은 거의 펴져 있고, 발을 뗀 뒤 허벅지가 앞으로 넘어올 때 가장 접혔다가(44°) 딛기 직전에 편다.
+   * 한 바퀴에 발이 닿는 거리(약 13)와 가로로 가는 속도를 맞춰 디딘 발이 미끄러지지 않게 했다.
+   * 가로로 옮기는 것은 -dashboard-scene.tsx가 한다(가끔 건물에 들렀다 나온다). 속도는 그 파일의 WALK_SPEED.
+   */
+  @keyframes dash-thigh {
+    0%,
+    100% {
+      transform: rotate(-24deg);
+    }
+    50% {
+      transform: rotate(22deg);
+    }
+  }
+  @keyframes dash-shin {
+    0% {
+      transform: rotate(3deg);
+    }
+    12% {
+      transform: rotate(9deg);
+    }
+    35% {
+      transform: rotate(2deg);
+    }
+    50% {
+      transform: rotate(14deg);
+    }
+    62% {
+      transform: rotate(34deg);
+    }
+    74% {
+      transform: rotate(44deg);
+    }
+    86% {
+      transform: rotate(18deg);
+    }
+    95%,
+    100% {
+      transform: rotate(3deg);
+    }
+  }
+  /* 팔은 같은 쪽 다리와 반대로 흔든다: 가까운 팔은 가까운 다리가 앞일 때 뒤로, 먼 팔(가방)은 그 반대 */
+  @keyframes dash-armswing {
+    0%,
+    100% {
+      transform: rotate(22deg);
+    }
+    50% {
+      transform: rotate(-20deg);
+    }
+  }
+  @keyframes dash-forearm {
+    0%,
+    100% {
+      transform: rotate(-10deg);
+    }
+    50% {
+      transform: rotate(-34deg);
+    }
+  }
+  @keyframes dash-armcarry {
+    0%,
+    100% {
+      transform: rotate(-6deg);
+    }
+    50% {
+      transform: rotate(7deg);
+    }
+  }
+  @keyframes dash-tread {
+    50% {
+      transform: translateY(-0.9px);
+    }
+  }
+  @keyframes dash-nod {
+    50% {
+      transform: rotate(2.5deg);
+    }
+  }
+  @keyframes dash-puff {
+    0% {
+      opacity: 0;
+      transform: translate(0, 0) scale(0.5);
+    }
+    25% {
+      opacity: 0.8;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(6px, -20px) scale(1.5);
+    }
+  }
+  @keyframes dash-wave {
+    50% {
+      transform: skewY(-10deg) scaleX(0.9);
+    }
+  }
+  @keyframes dash-twinkle {
+    0%,
+    86%,
+    100% {
+      transform: scale(1);
+    }
+    93% {
+      transform: scale(0.3);
+    }
+  }
+  @keyframes dash-fog {
+    from {
+      transform: translateX(-22px);
+    }
+    to {
+      transform: translateX(22px);
+    }
+  }
+  @keyframes dash-leaf {
+    0% {
+      transform: translate(0, 0) rotate(0);
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+    50% {
+      transform: translate(-9px, 12px) rotate(160deg);
+    }
+    90% {
+      opacity: 1;
+    }
+    100% {
+      transform: translate(4px, 25px) rotate(320deg);
+      opacity: 0;
+    }
+  }
+  @keyframes dash-float {
+    50% {
+      transform: translateY(-3px);
+    }
+  }
+  @keyframes dash-dots {
+    0%,
+    60%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.4;
+    }
+    30% {
+      transform: translateY(-3px);
+      opacity: 1;
+    }
+  }
+  .dash-scene .bobber {
+    animation: dash-bob 6s ease-in-out infinite;
+  }
+  .dash-scene .rays {
+    animation: dash-spin 28s linear infinite;
+  }
+  .dash-scene .eyes {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dash-blink 5.5s ease-in-out infinite;
+  }
+  .dash-scene .cbob {
+    animation: dash-bob 7s ease-in-out infinite;
+    animation-delay: calc(var(--i, 0) * -0.9s);
+  }
+  .dash-scene .deckdrift {
+    animation: dash-deck 19s ease-in-out infinite alternate;
+  }
+  .dash-scene .deck.back .deckdrift {
+    animation-duration: 27s;
+    animation-direction: alternate-reverse;
+  }
+  .dash-scene .tail {
+    transform-box: fill-box;
+    transform-origin: 0% 100%;
+    animation: dash-wag 4.5s ease-in-out infinite;
+  }
+  .dash-scene .sway {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: dash-sway 5s ease-in-out infinite;
+  }
+  .dash-scene .sway.b {
+    animation-duration: 6.5s;
+    animation-delay: -2s;
+  }
+  /* 비바람이 치면 나무가 더 크게, 더 빨리 흔들린다 */
+  .dash-scene:is([data-wx='rain'], [data-wx='thunder']) .sway {
+    --sway: 6deg;
+    animation-duration: 2.2s;
+  }
+  .dash-scene .drifter {
+    animation: dash-drift 90s linear infinite;
+    animation-delay: -30s;
+  }
+  .dash-scene .drifter.b {
+    animation-duration: 130s;
+    animation-delay: -84s;
+  }
+  .dash-scene .birdfly {
+    animation: dash-fly 24s linear infinite;
+    animation-delay: -6s;
+  }
+  .dash-scene .birdfly path {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dash-flap 0.5s ease-in-out infinite;
+  }
+  .dash-scene .walkgo .body {
+    animation: dash-tread 0.55s ease-in-out infinite;
+  }
+  .dash-scene .thigh {
+    animation: dash-thigh 1.1s ease-in-out infinite;
+  }
+  .dash-scene .shin {
+    animation: dash-shin 1.1s linear infinite;
+  }
+  .dash-scene .walker .far .thigh,
+  .dash-scene .walker .far .shin {
+    animation-delay: -0.55s;
+  }
+  .dash-scene .whead {
+    animation: dash-nod 0.55s ease-in-out infinite;
+  }
+  .dash-scene .armswing {
+    animation: dash-armswing 1.1s ease-in-out infinite;
+  }
+  .dash-scene .forearm {
+    animation: dash-forearm 1.1s ease-in-out infinite;
+  }
+  .dash-scene .armcarry {
+    animation: dash-armcarry 1.1s ease-in-out infinite;
+  }
+  .dash-scene .puff {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dash-puff 4.2s ease-out infinite;
+    animation-delay: calc(var(--i) * 1.4s);
+  }
+  .dash-scene .flagwave {
+    transform-box: fill-box;
+    transform-origin: 0% 50%;
+    animation: dash-wave 1.8s ease-in-out infinite;
+  }
+  .dash-scene .star {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dash-twinkle 6s ease-in-out infinite;
+    animation-delay: calc(var(--i) * 700ms);
+  }
+  .dash-scene .fogband {
+    animation: dash-fog 16s ease-in-out infinite alternate;
+    animation-delay: calc(var(--i) * -5s);
+  }
+  .dash-scene .leaf {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dash-leaf 7s ease-in-out infinite;
+    animation-delay: calc(var(--i) * -2.4s);
+  }
+  .dash-soon-icon {
+    animation: dash-float 3.6s ease-in-out infinite;
+  }
+  .dash-soon-dot {
+    display: inline-block;
+    animation: dash-dots 1.4s ease-in-out infinite;
+    animation-delay: calc(var(--d) * 0.16s);
+  }
+
+  /* ③ 반응: 반짝이와 숫자 */
+  @keyframes dash-sparkle {
+    from {
+      opacity: 1;
+      transform: rotate(var(--a)) translateY(-4px) scaleY(1);
+    }
+    to {
+      opacity: 0;
+      transform: rotate(var(--a)) translateY(-15px) scaleY(0.3);
+    }
+  }
+  @keyframes dash-numpop {
+    40% {
+      transform: scale(1.35);
+    }
+  }
+  .dash-spark {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 7px;
+    margin: -3px 0 0 -1px;
+    border-radius: 1px;
+    background: var(--color-orange);
+    pointer-events: none;
+    animation: dash-sparkle 560ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+  .dash-chk .dash-spark {
+    height: 5px;
+    background: var(--color-info);
+  }
+  .dash-numpop {
+    display: inline-block;
+    animation: dash-numpop 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+/* 움직임을 줄인 기기: 반짝이는 그리지 않는다 (끝 모양이 없는 장식이라 남기면 점으로 보인다) */
+@media (prefers-reduced-motion: reduce) {
+  .dash-spark {
+    display: none;
+  }
+}

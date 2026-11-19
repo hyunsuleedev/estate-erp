@@ -11,6 +11,7 @@ import type {
 import {
   CONTRACT_TRANSACTION_TYPE_LABELS,
   isContractRichTextHtml,
+  formatUnitName,
 } from '@estate-erp/shared';
 import { StatusBadge } from '@/components/domain';
 import { Badge } from '@/components/ui/badge';
@@ -180,7 +181,7 @@ export function getContractPropertyLabel(deal: Deal | null | undefined): string 
   return [
     property.site?.name,
     dong && !dong.isPlaceholder ? dong.name : null,
-    property.unit?.name,
+    formatUnitName(property.unit),
   ]
     .filter(Boolean)
     .join(' ');

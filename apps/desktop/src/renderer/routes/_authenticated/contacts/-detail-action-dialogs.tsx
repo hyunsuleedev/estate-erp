@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -229,7 +230,7 @@ export function TaskAddDialog({
 
 function propertyLabel(property: Property) {
   const dong = property.unit?.dong && !property.unit.dong.isPlaceholder ? property.unit.dong.name : null;
-  return [property.site?.name ?? '매물', dong, property.unit?.name].filter(Boolean).join(' ');
+  return [property.site?.name ?? '매물', dong, formatUnitName(property.unit)].filter(Boolean).join(' ');
 }
 
 export function PropertyLinkDialog({

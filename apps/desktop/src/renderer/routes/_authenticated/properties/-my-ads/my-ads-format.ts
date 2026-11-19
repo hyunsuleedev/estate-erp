@@ -1,3 +1,4 @@
+import { advertisementLocation, advertisementTransactionType } from "./my-ads-link";
 import type {
   ListingAdvertisementWithListing,
   OfficeAdvertisement,
@@ -12,22 +13,15 @@ import { getAdChannelLabel } from "@/lib/advertisement-channels";
 import { PROPERTY_TABLE_PILL_TONES } from "./my-ads-pill";
 import type { AnalysisSignal } from "./my-ads-types";
 
+/** 표 · 패널 · 창이 함께 쓰는 위치 글. 매물과 이어지지 않은 광고는 CP가 적은 글을 쓴다 */
 export function getCanonicalLocation(advertisement: ListingAdvertisementWithListing) {
-  const property = advertisement.listing?.property;
-  const unit = property?.unit;
-  return {
-    site: property?.site?.name ?? "단지 미상",
-    dong: unit?.dong?.name ?? null,
-    floor: unit?.floor != null ? `${unit.floor}층` : null,
-    ho: unit?.name ?? null,
-    type: unit?.siteUnitType?.name ?? null,
-  };
+  return advertisementLocation(advertisement);
 }
 
 export function advertisementPriceLabel(
   advertisement: ListingAdvertisementWithListing,
 ): string {
-  const transactionType = advertisement.listing?.transactionType;
+  const transactionType = advertisementTransactionType(advertisement);
   if (transactionType === "monthly") {
     return formatRent(
       advertisement.advertisedDeposit,
@@ -43,7 +37,7 @@ export function advertisementPriceLabel(
 export function advertisementPrimaryAmountLabel(
   advertisement: ListingAdvertisementWithListing,
 ): string {
-  const transactionType = advertisement.listing?.transactionType;
+  const transactionType = advertisementTransactionType(advertisement);
   return formatMoney(
     transactionType === "monthly" || transactionType === "jeonse"
       ? advertisement.advertisedDeposit
@@ -54,7 +48,7 @@ export function advertisementPrimaryAmountLabel(
 export function advertisementMonthlyRentLabel(
   advertisement: ListingAdvertisementWithListing,
 ): string {
-  if (advertisement.listing?.transactionType !== "monthly") return "—";
+  if (advertisementTransactionType(advertisement) !== "monthly") return "—";
   return formatMoney(advertisement.advertisedMonthlyRent);
 }
 
@@ -63,13 +57,29 @@ export function observedAdvertisementPriceLabel(
 ): string {
   const context = advertisement.actionContext;
   if (!context) return "—";
-  if (advertisement.listing?.transactionType === "monthly") {
+  if (advertisementTransactionType(advertisement) === "monthly") {
     return formatRent(context.deposit, context.monthlyRent);
   }
-  if (advertisement.listing?.transactionType === "jeonse") {
+  if (advertisementTransactionType(advertisement) === "jeonse") {
     return formatMoney(context.deposit);
   }
   return formatMoney(context.price);
+}
+
+/**
+ * 게재 중인 경쟁 광고의 최저 주 금액(매매가 또는 전세 보증금). 월세는 한 값으로 줄이지 않는다.
+ * 저장된 요약이 아니라 받은 비교 줄에서 계산한다.
+ */
+export function lowestCompetitorAmount(
+  advertisement: ListingAdvertisementWithListing,
+): number | null {
+  const transactionType = advertisementTransactionType(advertisement);
+  if (transactionType === "monthly") return null;
+  const amounts = (advertisement.comparison?.advertisements ?? [])
+    .filter((row) => row.isActive && !row.isMine)
+    .map((row) => (transactionType === "jeonse" ? (row.deposit ?? row.price) : row.price))
+    .filter((amount): amount is number => typeof amount === "number");
+  return amounts.length > 0 ? Math.min(...amounts) : null;
 }
 
 export function getErrorMessage(error: unknown): string {
@@ -136,8 +146,8 @@ export function primaryAmount(
   amounts: { price: number | null; deposit: number | null },
 ): number | null {
   if (
-    advertisement.listing?.transactionType === "monthly" ||
-    advertisement.listing?.transactionType === "jeonse"
+    advertisementTransactionType(advertisement) === "monthly" ||
+    advertisementTransactionType(advertisement) === "jeonse"
   ) {
     return amounts.deposit;
   }

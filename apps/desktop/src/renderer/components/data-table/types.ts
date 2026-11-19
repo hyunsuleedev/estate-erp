@@ -140,6 +140,8 @@ export interface DataTableProps<TData> {
   onSortingChange?: (sorting: SortingState) => void;
   // Selection
   enableRowSelection?: boolean;
+  hoverSelectionGutter?: boolean;
+  dropIndicator?: { row: number; after: boolean };
   selectedRowIds?: readonly string[];
   onRowSelectionChange?: (selectedIds: string[]) => void;
   renderSelectionAccessory?: (row: TData) => ReactNode;

@@ -6,7 +6,7 @@ import type {
   ListingAdvertisementWithListing,
   UpdateListingAdvertisementDto,
 } from "@estate-erp/api-client";
-import { ListingAvailability } from "@estate-erp/shared";
+import { ListingAvailability, formatUnitName } from "@estate-erp/shared";
 import { formatMoney, formatRent } from "@/lib/format";
 import { getListingAvailability } from "@/lib/listing-status";
 import { naverCpChannels } from "@/lib/advertisement-channels";
@@ -98,7 +98,7 @@ export function listingMatchesSearchTokens(
     [
       property?.site?.name,
       property?.unit?.dong?.name,
-      property?.unit?.name,
+      formatUnitName(property?.unit),
       property?.site?.roadAddress,
       property?.site?.jibunAddress,
       listing.memo,
@@ -122,13 +122,14 @@ export function manualAdListingLocationParts(
 ): { site: string | null; unit: string | null } {
   const property = listing?.property;
   const dong = property?.unit?.dong;
-  const unit = property?.unit?.name?.trim();
+  const unit = formatUnitName(property?.unit);
   const dongName = dong?.name?.trim();
   const unitLabel = [
     dongName && dongName !== "-" && !dong?.isPlaceholder
       ? `${dongName.replace(/동$/, "")}동`
       : null,
-    unit ? `${unit.replace(/호$/, "")}호` : null,
+    // 호 없이 층이 단위인 공간은 층이 이름이다
+    property?.unit?.name ? `${unit.replace(/호$/, "")}호` : unit || null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -262,8 +263,9 @@ export function manualAdErrorFields(message: string): ManualAdField[] | null {
 
 /** buildManualAdPayload가 바꾼 칸이 없을 때 던지는 문구. 번호만 고친 경우를 가려낸다. */
 const NO_CHANGE_MESSAGE = "변경한 내용이 없습니다.";
-export const CHANGED_EXTERNAL_AD_ID_MESSAGE =
-  "CP 광고번호가 바뀐 재광고는 새 광고로 등록해 주세요.";
+/** 재광고해도 광고는 같은 줄이다. 번호가 바뀌었으면 새 줄을 만들지 않고 이 줄의 번호를 고친다. */
+export const EXTERNAL_AD_ID_HINT =
+  "재광고로 번호가 바뀌었으면 새 번호로 고쳐 주세요.";
 
 function identifierValues(draft: MyAdsManualAdDraft) {
   const externalAdId = draft.externalAdId.trim() || null;
@@ -305,10 +307,6 @@ export function buildMyAdsManualAdPayload(
     };
   }
 
-  // 서버는 이미 있는 CP 광고번호를 바꾸거나 지우는 것을 거절한다(재광고는 새 회차).
-  if (existing.externalAdId && identifiers.externalAdId !== existing.externalAdId) {
-    throw new Error(CHANGED_EXTERNAL_AD_ID_MESSAGE);
-  }
   const identifierPatch: UpdateListingAdvertisementDto = {
     ...(identifiers.externalAdId !== existing.externalAdId && {
       externalAdId: identifiers.externalAdId,
@@ -438,7 +436,7 @@ export function myAdsAnalysisSignal(
       className: PROPERTY_TABLE_PILL_TONES.warning,
     };
   }
-  const group = advertisement.officeAdvertisementGroup;
+  const group = advertisement.comparison;
   if (!group) {
     return {
       kind: "comparison_pending",

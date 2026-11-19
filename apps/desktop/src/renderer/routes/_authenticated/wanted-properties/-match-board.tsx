@@ -295,7 +295,7 @@ function StageActionPopoverContent({
         <div>
           <p className="text-sm font-semibold">방문 작업</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            방문 일정을 캘린더에 남기고, 방문 완료 시 협상 단계로 이동합니다.
+            방문 일정을 캘린더에 남기고, 방문을 마치면 고객 검토 단계로 이동합니다.
           </p>
         </div>
 
@@ -346,11 +346,11 @@ function StageActionPopoverContent({
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => onStageChange(MatchStage.NEGOTIATING)}
+                onClick={() => onStageChange(MatchStage.BUYER_REVIEWING)}
                 disabled={disabled}
               >
                 <CheckCircle2 className="size-4" />
-                {actionCopy?.progressLabel ?? '방문 완료하고 협상으로'}
+                {actionCopy?.progressLabel ?? '방문 완료하고 고객 검토로'}
               </Button>
               <Button
                 type="button"

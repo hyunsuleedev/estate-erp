@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { FileAudio, Loader2, Upload } from 'lucide-react';
+import { FileAudio, Upload } from 'lucide-react';
 import { parseCallRecordingFileName } from '@estate-erp/shared';
-import type { CallRecordingDetail } from '@estate-erp/api-client';
-import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatPhone } from '@/lib/format';
 import { Button } from '@/components/ui/button';
@@ -19,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatDuration } from './-call-utils';
+import { useRecordingUploadStore } from './-recording-upload-store';
 
 /** Date → datetime-local 입력값 (이 PC 시간대) */
 function toLocalInputValue(date: Date) {
@@ -46,15 +45,20 @@ function readAudioDuration(file: File): Promise<number | null> {
  * 핸드폰 통화 녹음 파일 올리기 (앱 자동 업로드 전 수동 경로).
  * 갤럭시 기본 녹음 파일 이름에서 상대 번호와 통화 시각을 채운다.
  * 올리면 받아쓰기 → 분석 → 상담 기록·업무 제안이 자동으로 이어진다.
+ * 올리기는 뒤에서 진행되고(-recording-upload-store) 이 창은 바로 닫힌다.
  */
 export function UploadRecordingDialog({
   open,
   onOpenChange,
-  onUploaded,
+  attachTo,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onUploaded?: (recording: CallRecordingDetail) => void;
+  /**
+   * 이미 적어 둔 상담에 녹음을 붙일 때. 종류·번호는 그 상담에서 정해지므로 묻지 않고,
+   * 상담 내용은 그대로 둔 채 받아쓰기와 분석만 더한다.
+   */
+  attachTo?: { id: string; type: string; contactName: string; createdAt: string } | null;
 }) {
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -71,10 +75,10 @@ export function UploadRecordingDialog({
     setFile(null);
     setPhone('');
     setCalledAt('');
-    setKind('phone');
+    setKind(attachTo?.type === 'visit' ? 'visit' : 'phone');
     setDirection('inbound');
     setDurationSec(null);
-  }, [open]);
+  }, [open, attachTo?.type]);
 
   const pickFile = (next: File | null) => {
     setFile(next);
@@ -82,46 +86,56 @@ export function UploadRecordingDialog({
     if (!next) return;
     const parsed = parseCallRecordingFileName(next.name);
     setPhone(parsed.phoneNumber ? formatPhone(parsed.phoneNumber) : '');
-    setCalledAt(toLocalInputValue(parsed.calledAt ?? new Date(next.lastModified)));
+    // 붙이는 경우에는 상담 기록의 시각이 기준이다 (파일을 옮긴 시각으로 바뀌지 않게)
+    setCalledAt(
+      toLocalInputValue(attachTo ? new Date(attachTo.createdAt) : (parsed.calledAt ?? new Date(next.lastModified))),
+    );
     void readAudioDuration(next).then(setDurationSec);
   };
 
-  const mutation = useMutation({
-    mutationFn: async () => {
-      if (!file) throw new Error('녹음 파일을 골라 주세요');
-      const created = await api.consultations.createWithRecording({
+  const startUpload = useRecordingUploadStore((state) => state.start);
+
+  // 올리기를 시작하고 창은 바로 닫는다. 진행 상황은 상담분석 표의 "올리는 중" 줄에서 본다.
+  const submit = () => {
+    if (!file) return;
+    startUpload(
+      {
         file,
-        type: kind,
-        direction: kind === 'visit' ? undefined : direction,
-        phoneNumber: phone.replace(/\D/g, '') || undefined,
-        calledAt: calledAt ? new Date(calledAt).toISOString() : undefined,
-        durationSec: durationSec ?? undefined,
-      });
-      // 올리기는 이미 끝났다. 상세 조회가 실패해도 실패로 보이면 다시 올려 중복이 생기므로 그냥 넘어간다.
-      return api.callRecordings.findOne(created.recording.id).catch(() => null);
-    },
-    onSuccess: async (recording) => {
-      toast.success('녹음을 올렸습니다. 받아쓰기와 분석이 끝나면 상담 기록과 제안이 생깁니다.');
-      await queryClient.invalidateQueries({ queryKey: ['call-recordings'] });
-      onOpenChange(false);
-      if (recording) onUploaded?.(recording);
-    },
-    onError: (error) =>
-      toast.error(error instanceof Error && error.message ? error.message : '녹음을 올리지 못했습니다'),
-  });
+        kind,
+        direction,
+        phoneNumber: phone.replace(/\D/g, ''),
+        calledAt: (calledAt ? new Date(calledAt) : new Date()).toISOString(),
+        durationSec,
+        attachTo: attachTo ? { id: attachTo.id, contactName: attachTo.contactName } : null,
+      },
+      queryClient,
+    );
+    toast.success(
+      attachTo
+        ? '녹음을 올리는 중입니다. 다 올라가면 받아쓰기와 분석이 이어집니다.'
+        : '녹음을 올리는 중입니다. 표에서 진행 상황을 볼 수 있습니다.',
+    );
+    onOpenChange(false);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-base">녹음 올리기</DialogTitle>
+          <DialogTitle className="text-base">{attachTo ? '이 상담에 녹음 붙이기' : '녹음 올리기'}</DialogTitle>
           <DialogDescription className="text-xs">
-            받아쓰기와 분석이 끝나면 상담 기록이 남고, 할 일·일정 같은 업무를 제안합니다.
+            {attachTo
+              ? `${attachTo.contactName} 님과의 상담에 녹음을 붙입니다. 적어 둔 내용은 그대로 두고 받아쓰기·요약·업무 제안을 더합니다.`
+              : '받아쓰기와 분석이 끝나면 상담 기록이 남고, 할 일·일정 같은 업무를 제안합니다.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-1">
-          <div role="radiogroup" aria-label="녹음 종류" className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
+          <div
+            role="radiogroup"
+            aria-label="녹음 종류"
+            className={cn('grid grid-cols-2 gap-1 rounded-md bg-muted p-1', attachTo && 'hidden')}
+          >
             {(
               [
                 { value: 'phone', label: '전화 통화' },
@@ -169,8 +183,8 @@ export function UploadRecordingDialog({
             )}
           </button>
 
-          <div className={cn('grid gap-3', kind === 'phone' && 'grid-cols-2')}>
-            <div className="space-y-1.5">
+          <div className={cn('grid gap-3', kind === 'phone' && !attachTo && 'grid-cols-2', attachTo && kind === 'visit' && 'hidden')}>
+            <div className={cn('space-y-1.5', attachTo && 'hidden')}>
               <Label className="text-xs font-semibold">{kind === 'visit' ? '고객 번호 (선택)' : '상대 번호'}</Label>
               <Input
                 value={phone}
@@ -203,19 +217,21 @@ export function UploadRecordingDialog({
             />
           </div>
           <p className="text-[11px] text-muted-foreground">
-            {kind === 'visit'
+            {attachTo
+              ? '한 상담에는 녹음 하나만 붙일 수 있습니다.'
+              : kind === 'visit'
               ? '고객 번호를 넣으면 그 연락처의 방문 상담으로 남습니다. 비워 두면 연결 대기에서 연락처를 이어 주세요.'
               : '등록된 번호면 그 연락처에 자동으로 연결됩니다. 갤럭시 기본 녹음 파일은 번호와 시각을 파일 이름에서 채웁니다.'}
           </p>
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" size="sm" disabled={mutation.isPending} onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             취소
           </Button>
-          <Button size="sm" disabled={!file || mutation.isPending} onClick={() => mutation.mutate()}>
-            {mutation.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
-            올리기
+          <Button size="sm" disabled={!file} onClick={submit}>
+            <Upload className="size-3.5" />
+            {attachTo ? '붙이기' : '올리기'}
           </Button>
         </DialogFooter>
       </DialogContent>

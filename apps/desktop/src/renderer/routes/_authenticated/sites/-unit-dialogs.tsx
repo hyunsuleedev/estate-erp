@@ -1,6 +1,7 @@
 /**
  * 호실 수정 다이얼로그 + 호실 컨텍스트 상담 추가 다이얼로그.
  */
+import { formatUnitName } from '@estate-erp/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -50,7 +51,7 @@ export function UnitEditDialog({
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     dongId: unit.dongId,
-    name: unit.name,
+    name: unit.name ?? '',
     floor: unit.floor != null ? String(unit.floor) : '',
     lineNo: unit.lineNo != null ? String(unit.lineNo) : '',
     siteUnitTypeId: unit.siteUnitTypeId ?? NONE,
@@ -65,7 +66,7 @@ export function UnitEditDialog({
     if (!open) return;
     setForm({
       dongId: unit.dongId,
-      name: unit.name,
+      name: unit.name ?? '',
       floor: unit.floor != null ? String(unit.floor) : '',
       lineNo: unit.lineNo != null ? String(unit.lineNo) : '',
       siteUnitTypeId: unit.siteUnitTypeId ?? NONE,
@@ -89,14 +90,15 @@ export function UnitEditDialog({
   });
 
   const handleSubmit = () => {
-    if (!form.name.trim()) return;
+    // 호 없이 층이 단위인 공간은 이름을 비워 둘 수 있다
+    if (!form.name.trim() && !form.floor.trim()) return;
     const parseNum = (value: string) => {
       if (!value.trim()) return null;
       const n = Number(value);
       return Number.isNaN(n) ? null : n;
     };
     updateMutation.mutate({
-      name: form.name.trim(),
+      name: form.name.trim() || null,
       dongId: form.dongId,
       siteUnitTypeId: form.siteUnitTypeId === NONE ? null : form.siteUnitTypeId,
       floor: parseNum(form.floor),
@@ -117,7 +119,7 @@ export function UnitEditDialog({
         <DialogHeader>
           <DialogTitle>호실 수정</DialogTitle>
           <DialogDescription>
-            {site.name} · {unit.name}
+            {site.name} · {formatUnitName(unit)}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -253,7 +255,7 @@ export function UnitEditDialog({
           <Button
             size="sm"
             onClick={handleSubmit}
-            disabled={!form.name.trim() || updateMutation.isPending}
+            disabled={(!form.name.trim() && !form.floor.trim()) || updateMutation.isPending}
           >
             저장
           </Button>
@@ -370,7 +372,7 @@ export function UnitConsultDialog({
     },
   });
 
-  const unitLabel = `${dongName ? `${dongName} ` : ''}${unit.name}`;
+  const unitLabel = `${dongName ? `${dongName} ` : ''}${formatUnitName(unit)}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

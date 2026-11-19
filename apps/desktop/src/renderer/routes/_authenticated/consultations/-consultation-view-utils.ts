@@ -1,7 +1,9 @@
+import { formatFloorRange } from '@estate-erp/shared';
 import type { Consultation, ListingIntakeState } from '@estate-erp/api-client';
 import { formatDate, formatMoney } from '@/lib/format';
 import { getIntakeConfirmationState, getListingAvailability } from '@/lib/listing-status';
 import { getStatusMeta } from '@/lib/status-config';
+import { consultationViewParams, type ConsultationView } from './-consultation-list-model';
 
 export type ConsultationListItem = Consultation;
 
@@ -379,15 +381,21 @@ export function buildConsultationApiParams({
   page,
   sortOrder,
   filters,
+  view = 'all',
+  limit = 20,
 }: {
   page: number;
   sortOrder: 'asc' | 'desc';
   filters: ConsultationEntityFilters;
+  /** 보기 탭 (전체 · 녹음 있음 · 후속 필요) */
+  view?: ConsultationView;
+  limit?: number;
 }) {
   const params: Record<string, string | number> = {
     page,
-    limit: 20,
+    limit,
     sortOrder,
+    ...consultationViewParams(view),
   };
 
   const q = filters.q?.trim();
@@ -428,7 +436,7 @@ export function getConsultationFilterChips(filters: ConsultationEntityFilters): 
   if (propertyLabel) chips.push({ key: 'property', label: `매물 ${propertyLabel}` });
 
   if (filters.type) chips.push({ key: 'type', label: `상담유형 ${typeLabel(filters.type)}` });
-  if (filters.createdBy) chips.push({ key: 'createdBy', label: `기록자 ${filters.createdBy.label}` });
+  if (filters.createdBy) chips.push({ key: 'createdBy', label: `상담자 ${filters.createdBy.label}` });
 
   if (filters.dateFrom || filters.dateTo) {
     const from = filters.dateFrom ? filters.dateFrom.replaceAll('-', '.') : '';
@@ -462,6 +470,7 @@ export const matchStageLabels: Record<string, string> = {
   buyerInterested: '고객 관심',
   viewingConfirmed: '임장 조율',
   viewing: '임장',
+  buyerReviewing: '고객 검토',
   negotiating: '협상',
   dealCreated: '거래전환',
   closed: '종료',
@@ -517,7 +526,8 @@ function formatPropertyUnitLabel(unit: ConsultationPropertyUnit | null | undefin
   const dongLabel = shouldShowDong ? withSuffix(dongName, '동') : null;
 
   const unitName = unit.name?.trim();
-  const unitLabel = unitName && unitName !== '-' ? withSuffix(unitName, '호') : null;
+  const unitLabel =
+    unitName && unitName !== '-' ? withSuffix(unitName, '호') : formatFloorRange(unit) || null;
 
   return [dongLabel, unitLabel].filter(Boolean).join(' ') || null;
 }

@@ -15,6 +15,9 @@ export function advertisementLocationLabel(
     .join(" ");
 }
 
+/** 옆 상세 패널의 id. 단지 칸의 "열기" 버튼의 aria-controls가 가리킨다. */
+export const MY_ADS_INSPECTOR_ID = "my-ads-inspector";
+
 /** 펼친 네이버 비교 패널의 id. 랭킹 버튼의 aria-controls가 가리킨다. */
 export function myAdsAnalysisPanelId(advertisementId: string): string {
   return `my-ads-analysis-${advertisementId}`;

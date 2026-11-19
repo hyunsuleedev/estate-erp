@@ -1,3 +1,4 @@
+import { formatUnitName } from '@estate-erp/shared';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Search, X } from 'lucide-react';
@@ -39,7 +40,7 @@ function getErrorMessage(error: unknown) {
 function listingTitle(listing: Listing) {
   const site = listing.property?.site?.name;
   const dong = listing.property?.unit?.dong?.isPlaceholder ? null : listing.property?.unit?.dong?.name;
-  const unit = listing.property?.unit?.name;
+  const unit = formatUnitName(listing.property?.unit);
   return [site, dong, unit].filter(Boolean).join(' ') || '매물';
 }
 

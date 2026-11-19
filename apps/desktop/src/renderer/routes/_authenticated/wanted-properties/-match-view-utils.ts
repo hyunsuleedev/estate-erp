@@ -11,6 +11,7 @@ import {
   MatchStage,
   normalizeDealStage,
   normalizeMatchStage,
+  formatFloorRange,
 } from '@estate-erp/shared';
 import { getStatusMeta, type Tone } from '@/lib/status-config';
 import { formatDateTime, formatMoney, formatPhone } from '@/lib/format';
@@ -65,6 +66,7 @@ export const matchBoardStages = [
   MatchStage.BUYER_INTERESTED,
   MatchStage.VIEWING_CONFIRMED,
   MatchStage.VIEWING,
+  MatchStage.BUYER_REVIEWING,
   MatchStage.NEGOTIATING,
 ] as const;
 
@@ -84,28 +86,42 @@ export type MatchProgressNodeState = 'completed' | 'current' | 'pending' | 'fail
 
 export interface MatchStageActionCopy {
   progressLabel: string;
+  /** 지금 단계를 끝내는 버튼의 이름. 단계는 들어왔다고 끝난 것이 아니라 확정해야 끝난다. */
+  confirmLabel: string;
   closeLabel: string;
 }
 
 const MATCH_STAGE_ACTION_COPY: Partial<Record<MatchProgressStage, MatchStageActionCopy>> = {
   [MatchStage.SUGGESTED]: {
     progressLabel: '고객에게 제안',
+    confirmLabel: '내부 후보 확정',
     closeLabel: '후보에서 제외 · 종료',
   },
   [MatchStage.BUYER_INTERESTED]: {
     progressLabel: '관심 있음 · 임장 조율로',
+    confirmLabel: '고객 관심 확정',
     closeLabel: '관심 없음 · 종료',
   },
   [MatchStage.VIEWING_CONFIRMED]: {
     progressLabel: '조율 완료 · 임장으로',
+    confirmLabel: '방문 일정 확정',
     closeLabel: '임장 불가 · 종료',
   },
+  // 임장은 다녀오면 끝난다. 고객의 반응은 다음 단계(고객 검토)에서 받는다.
   [MatchStage.VIEWING]: {
-    progressLabel: '임장 후 관심 있음 · 협상으로',
-    closeLabel: '임장 후 관심 없음 · 종료',
+    progressLabel: '방문 완료 · 고객 검토로',
+    confirmLabel: '방문 완료',
+    closeLabel: '방문 취소 · 종료',
+  },
+  // 고객은 여러 집을 보고 고민한다. 이 단계의 끝은 그 고민의 결론이다.
+  [MatchStage.BUYER_REVIEWING]: {
+    progressLabel: '검토 후 관심 있음 · 협상으로',
+    confirmLabel: '검토 후 관심 있음 · 협상으로',
+    closeLabel: '검토 후 관심 없음 · 종료',
   },
   [MatchStage.NEGOTIATING]: {
     progressLabel: '조건 합의 · 거래로 전환',
+    confirmLabel: '조건 합의 · 거래전환',
     closeLabel: '협상 결렬 · 종료',
   },
 };
@@ -150,58 +166,6 @@ export function getMatchStageHeaderClass(stage: string): string {
 /** 단계 점(dot) 표시용 컬러 */
 export function getMatchStageDotClass(stage: string): string {
   return TONE_DOT_CLASS[getStatusMeta('matchStage', stage).tone];
-}
-
-// ── 그룹 뷰 데이터 ───────────────────────────────────────────────────────────
-
-export type MatchStageGroupDefinition = {
-  stage: string;
-  label: string;
-  dotClassName: string;
-  isResult: boolean;
-};
-
-export type MatchStageRow = {
-  rowNumber: number;
-  match: MatchViewListItem;
-};
-
-export type MatchStageGroup = {
-  stage: string;
-  label: string;
-  dotClassName: string;
-  isResult: boolean;
-  rows: MatchStageRow[];
-};
-
-export const matchStageGroups: MatchStageGroupDefinition[] = matchStageOrder.map((stage) => ({
-  stage,
-  label: getMatchStageLabel(stage),
-  dotClassName: getMatchStageDotClass(stage),
-  isResult: stage === MatchStage.DEAL_CREATED || stage === MatchStage.CLOSED,
-}));
-
-export function getMatchStageGroups(
-  matches: MatchViewListItem[],
-  includeEmpty = false,
-): MatchStageGroup[] {
-  return matchStageGroups
-    .map((group) => {
-      const stageMatches = sortMatchesByUpdatedAt(
-        matches.filter(
-          (match) => normalizeMatchStage(match.stage) === group.stage,
-        ),
-      );
-
-      return {
-        ...group,
-        rows: stageMatches.map((match, index) => ({
-          rowNumber: index + 1,
-          match,
-        })),
-      };
-    })
-    .filter((group) => includeEmpty || group.rows.length > 0);
 }
 
 // ── 방문 일정 ────────────────────────────────────────────────────────────────
@@ -314,10 +278,6 @@ export function getMatchStageBlockReason(
   const buyerInterestedIndex = matchStageOrder.indexOf(
     MatchStage.BUYER_INTERESTED,
   );
-  const viewingConfirmedIndex = matchStageOrder.indexOf(
-    MatchStage.VIEWING_CONFIRMED,
-  );
-
   const isCrossingBuyerInterest =
     normalizedTarget !== MatchStage.CLOSED &&
     currentIndex < buyerInterestedIndex &&
@@ -351,22 +311,7 @@ export function getMatchStageBlockReason(
     }
   }
 
-  if (
-    normalizedTarget === MatchStage.VIEWING &&
-    currentIndex >= 0 &&
-    currentIndex < viewingConfirmedIndex
-  ) {
-    return '집주인·점유자와 임장 조율을 먼저 완료해 주세요.';
-  }
-
-  if (
-    normalizedTarget !== MatchStage.CLOSED &&
-    currentIndex >= 0 &&
-    targetIndex > currentIndex + 1
-  ) {
-    const nextStage = matchStageOrder[currentIndex + 1];
-    return `${getMatchStageLabel(nextStage)} 단계를 먼저 완료해 주세요.`;
-  }
+  // 단계 순서는 막지 않는다. 임장 없이 계약으로 가는 경우처럼 실제 업무가 단계를 건너뛴다(서버도 같다).
 
   return null;
 }
@@ -508,7 +453,15 @@ function getUnitDisplayName(
   }
 
   const dongName = unit.dong && !unit.dong.isPlaceholder ? unit.dong.name : null;
-  return [dongName, unit.name].filter(Boolean).join(' ');
+  // "102 3401"이 아니라 "102동 3401호"로 읽히게 한다 (매물 상세·거래관리와 같은 표기)
+  return [withSuffix(dongName, '동'), unit.name ? withSuffix(unit.name, '호') : formatFloorRange(unit)].filter(Boolean).join(' ');
+}
+
+/** 이름이 이미 그 글자로 끝나면 그대로 둔다 ("101동" → "101동") */
+function withSuffix(value: string | null | undefined, suffix: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed.endsWith(suffix) ? trimmed : `${trimmed}${suffix}`;
 }
 
 export function getListingAddress(listing: MatchViewListItem['listing'] | null | undefined) {
@@ -576,9 +529,11 @@ export function formatRequirementSummary(match: MatchViewListItem) {
       requirement.depositMin,
       requirement.depositMax,
     );
-    const monthlyRent = requirement.monthlyRentMax
-      ? `${formatMoney(requirement.monthlyRentMax)} 이하`
-      : '협의';
+    // 월세도 범위로 적는다. 칸에서 최소 월세를 고칠 수 있으므로 최대만 보이면 저장한 값이 보이지 않는다
+    const monthlyRent = formatBudgetRange(
+      requirement.monthlyRentMin,
+      requirement.monthlyRentMax,
+    );
     return `월세 · 보증금 ${deposit} / 월세 ${monthlyRent}`;
   }
 
@@ -671,6 +626,8 @@ export interface BuyerRequirementGroup {
  * - 검색: 조건(고객·연락처·지역·단지·메모)에 걸리면 그 조건의 매칭을 모두 보여주고,
  *   매물에만 걸리면 걸린 매칭만 보여준다.
  * - 그 밖의 조건 필터: matchesRequirementFilters
+ * - keepRequirementId: 칸 편집기가 열려 있는 조건. 목록이 새로 와서 필터에서 벗어나도 줄을 남긴다.
+ *   줄이 사라지면 고치던 입력이 편집기와 함께 사라진다. 편집기를 닫으면 다시 필터를 따른다.
  */
 export function groupMatchesByRequirement({
   requirements,
@@ -679,6 +636,7 @@ export function groupMatchesByRequirement({
   stageFilters,
   transactionType,
   requirementFilters = EMPTY_REQUIREMENT_FILTERS,
+  keepRequirementId = null,
 }: {
   requirements: BuyerRequirementGroup['buyerRequirement'][];
   matches: MatchViewListItem[];
@@ -686,6 +644,7 @@ export function groupMatchesByRequirement({
   stageFilters: string[];
   transactionType: string;
   requirementFilters?: RequirementFilters;
+  keepRequirementId?: string | null;
 }): BuyerRequirementGroup[] {
   const query = search.trim().toLowerCase();
   const matchesByRequirement = new Map<string, MatchViewListItem[]>();
@@ -697,9 +656,11 @@ export function groupMatchesByRequirement({
 
   return requirements
     .flatMap((requirement) => {
+      const kept = requirement.id === keepRequirementId;
       if (
-        (transactionType && requirement.transactionType !== transactionType) ||
-        !matchesRequirementFilters(requirement, requirementFilters)
+        !kept &&
+        ((transactionType && requirement.transactionType !== transactionType) ||
+          !matchesRequirementFilters(requirement, requirementFilters))
       ) {
         return [];
       }
@@ -713,6 +674,7 @@ export function groupMatchesByRequirement({
       const keptAsUnmatched =
         requirementMatches.length === 0 && stageFilters.includes(NO_MATCH_STAGE);
       if (
+        !kept &&
         stageFilters.length > 0 &&
         stageMatches.length === 0 &&
         !keptAsUnmatched
@@ -727,7 +689,7 @@ export function groupMatchesByRequirement({
         : stageMatches.filter((match) =>
             getMatchSearchText(match).includes(query),
           );
-      if (!requirementHit && visibleMatches.length === 0) {
+      if (!kept && !requirementHit && visibleMatches.length === 0) {
         return [];
       }
 
@@ -765,9 +727,10 @@ export function formatBudgetSummary(requirement: NonNullable<MatchViewListItem['
       requirement.depositMin,
       requirement.depositMax,
     );
-    const monthlyRent = requirement.monthlyRentMax
-      ? `${formatMoney(requirement.monthlyRentMax)} 이하`
-      : '협의';
+    const monthlyRent = formatBudgetRange(
+      requirement.monthlyRentMin,
+      requirement.monthlyRentMax,
+    );
     return `월세 보증금 ${deposit} / 월 ${monthlyRent}`;
   }
 
@@ -799,10 +762,4 @@ export function formatElapsedDays(value: string) {
 
 export function getInitials(name: string) {
   return name.slice(0, 2);
-}
-
-function sortMatchesByUpdatedAt(matches: MatchViewListItem[]) {
-  return [...matches].sort(
-    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-  );
 }
