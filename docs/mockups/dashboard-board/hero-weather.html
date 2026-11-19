@@ -1,0 +1,1129 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대시보드 인사 영역 · 날씨판</title>
+<link rel="icon" href="data:,">
+<style>
+  /*
+   * 인사 영역 날씨판 시안 (2026-11-18)
+   *
+   * 지금 앱의 인사 영역(가는 선 단지, 먹색과 주황 하나)을 색이 있는 그림으로 바꾸고 사무소 위치의 날씨를 입힌다.
+   * 그림이 말하는 것은 그대로다: 땅이 오늘의 시간 축(06~20시), 해가 지금 시각 위, 오늘 일정이 깃발.
+   * 여기에 하나를 더한다 — 시간 축 위의 하늘이 오늘의 시간대별 예보다. 15시부터 비라면 15시 자리부터 비구름이 서 있다.
+   *
+   * 움직임
+   *   ① 처음 한 번: 건물이 땅에서 솟고 해가 지평선에서 지금 자리까지 오른다.
+   *   ② 계속: 해·구름의 숨쉬기, 꼬리, 나무, 연기, 비·눈.
+   *   ③ 반응: 하늘이 마우스 반대로 살짝 밀린다 / 고양이 눈이 마우스를 따라간다 / 비 올 때 마우스가 우산이 된다 /
+   *           눈이 마우스를 피해 흩날린다 / 건물에 올리면 불이 켜진다 / 해·구름·고양이를 누르면 반응한다 / 업무를 완료하면 해가 뛴다.
+   * 글자·알약·도구 단추는 앱 그대로다(app.css 토큰 값). 색을 쓰는 곳은 그림뿐이다.
+   * 해·달·구름에는 얼굴을 넣지 않는다(넣었다가 어색하다는 지적으로 뺐다). 얼굴이 있는 것은 고양이와 사람뿐이다.
+   */
+  @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+
+  @property --sky-a { syntax: '<color>'; inherits: true; initial-value: #c4e3fa; }
+  @property --sky-b { syntax: '<color>'; inherits: true; initial-value: #eff8fe; }
+  @property --glow { syntax: '<color>'; inherits: true; initial-value: rgba(255, 225, 163, 0); }
+  @property --wash { syntax: '<color>'; inherits: true; initial-value: rgba(255, 255, 255, 0.6); }
+  @property --gx { syntax: '<length>'; inherits: true; initial-value: 0px; }
+  @property --gy { syntax: '<length>'; inherits: true; initial-value: 0px; }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 16px;
+    background: var(--background, #ffffff);
+    color: var(--foreground, #171717);
+    font: 400 14px/20px "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+
+  /* ───────── 앱 화면 흉내: 여기 안의 색은 앱 토큰 값으로 고정 ───────── */
+  .app {
+    --m-bg: #ffffff; --m-fg: #2c2c2b; --m-fg2: #5f5e59; --m-fg3: #79766f; --m-icon: #8e8b86;
+    --m-red: #bb3430; --m-orange: #d9730d; --m-blue: #2383e2;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--m-bg);
+    color: var(--m-fg);
+    box-shadow: 0 0 0 1px rgba(42, 28, 0, 0.08);
+  }
+
+  .hero {
+    position: relative;
+    container-type: inline-size;
+    min-height: 176px;
+    padding: 18px 20px 16px 22px;
+    display: flex;
+    align-items: flex-end;
+    overflow: hidden;
+    border-radius: 14px;
+    isolation: isolate;
+    transition: --sky-a 900ms ease, --sky-b 900ms ease, --glow 900ms ease, --wash 900ms ease, --gx 900ms ease, --gy 900ms ease;
+    box-shadow: inset 0 0 0 1px rgba(42, 28, 0, 0.08);
+  }
+  .hero.scrub { transition-duration: 160ms; }
+  .sky {
+    position: absolute; inset: 0; z-index: -3;
+    background:
+      radial-gradient(circle at var(--gx) var(--gy), var(--glow), transparent 150px),
+      linear-gradient(180deg, var(--sky-a), var(--sky-b));
+  }
+  /* 왼쪽 글자 자리를 밝히는 물빛 */
+  .sky::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, var(--wash) 0%, var(--wash) 24%, transparent 62%);
+  }
+  .flash { position: absolute; inset: 0; z-index: -1; background: #fff; opacity: 0; pointer-events: none; }
+
+  /* 그림이 놓이는 오른쪽 자리. 왼쪽으로 갈수록 사라진다. */
+  .vista {
+    --sw: min(440px, 60cqw);
+    position: absolute; right: 0; bottom: 0; top: 0; z-index: -2;
+    width: calc(var(--sw) * 1.32);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 27%);
+    mask-image: linear-gradient(90deg, transparent 0%, #000 27%);
+  }
+  .scene, .fx {
+    position: absolute; right: 0; bottom: 0;
+    width: var(--sw); aspect-ratio: 440 / 132;
+  }
+  .scene { overflow: visible; }
+  .fx { pointer-events: none; }
+
+  /* ── 글자 쪽 (앱 그대로) ── */
+  /* 글자가 그림 위로 넘어가지 않게: 좁아지면 날짜 줄이 두 줄로 접힌다 */
+  .copy { position: relative; min-width: 0; max-width: calc(100cqw - min(440px, 60cqw) * 0.92); }
+  .dateline { margin: 0; font-size: 12px; line-height: 18px; font-weight: 500; color: var(--m-fg3); display: flex; flex-wrap: wrap; align-items: center; column-gap: 6px; transition: color 600ms ease; }
+  .wxchip { display: inline-flex; align-items: center; gap: 4px; color: var(--m-fg2); transition: color 600ms ease; }
+  .wxchip svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .wxchip .tip { color: var(--m-orange); font-weight: 600; }
+  .sep { opacity: 0.5; }
+  h1 { margin: 2px 0 12px; font-size: 26px; line-height: 34px; font-weight: 600; letter-spacing: -0.02em; transition: color 600ms ease; }
+  .pins { display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; }
+  .pin {
+    position: relative; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px 0 9px;
+    border-radius: 999px; background: var(--m-bg); font-size: 13px; white-space: nowrap; color: var(--m-fg2);
+    box-shadow: 0 0 0 1px rgba(42, 28, 0, 0.08), 0 1px 2px rgba(42, 28, 0, 0.04);
+    transition: box-shadow 200ms ease, transform 200ms var(--ease-out);
+  }
+  .pin:active { transform: scale(0.97); }
+  .pin svg { width: 15px; height: 15px; fill: none; stroke: var(--m-icon); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .pin b { font-weight: 600; color: var(--m-fg); font-variant-numeric: tabular-nums; display: inline-block; }
+  .pin b.bad { color: var(--m-red); }
+  @media (hover: hover) and (pointer: fine) {
+    .pin:hover { box-shadow: 0 0 0 1px rgba(42, 28, 0, 0.13), 0 6px 16px -8px rgba(42, 28, 0, 0.16); transform: translateY(-1px); }
+  }
+  .tools { position: absolute; top: 14px; right: 16px; display: flex; align-items: center; gap: 8px; }
+  .scope { display: inline-flex; height: 32px; padding: 3px; border-radius: 8px; background: rgba(44, 44, 43, 0.06); transition: background-color 600ms ease; }
+  .scope span { display: grid; place-items: center; padding: 0 10px; border-radius: 6px; font-size: 14px; font-weight: 500; color: rgba(44, 44, 43, 0.6); transition: color 600ms ease; }
+  .scope span.on { background: #fff; color: var(--m-fg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+  .quick { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; background: var(--m-fg); color: #fff; font-size: 14px; font-weight: 500; }
+  .quick svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+  /* 밤: 판이 어두워지면 글자가 밝아진다 */
+  .hero[data-tone="dark"] h1 { color: #ffffff; }
+  .hero[data-tone="dark"] .dateline { color: rgba(255, 255, 255, 0.66); }
+  .hero[data-tone="dark"] .wxchip { color: rgba(255, 255, 255, 0.86); }
+  .hero[data-tone="dark"] .wxchip .tip { color: #ffc27a; }
+  .hero[data-tone="dark"] .scope { background: rgba(255, 255, 255, 0.14); }
+  .hero[data-tone="dark"] .scope span:not(.on) { color: rgba(255, 255, 255, 0.72); }
+  .hero[data-tone="dark"] .quick { background: #fff; color: var(--m-fg); }
+  .hero[data-tone="dark"] { box-shadow: none; }
+
+  /* ───────── 그림 ───────── */
+  .scene { --ol: rgba(64, 48, 40, 0.5); --glass: #9cc3e6; --axis: rgba(44, 44, 43, 0.5); --hot: #d9730d; }
+  .scene [data-c] { transition: fill 800ms ease; }
+  .scene .o { stroke: var(--ol); stroke-width: 1.2; stroke-linejoin: round; stroke-linecap: round; }
+  .scene .ln { fill: none; stroke: var(--ol); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  .scene .wn { fill: var(--glass); transition: fill 500ms ease; }
+  .scene .wn.lit { fill: #ffd45c; }
+  .scene .axisline { stroke: var(--axis); stroke-width: 1.2; stroke-linecap: round; }
+  .scene .tick { stroke: var(--axis); stroke-width: 1; }
+  .scene text { font-size: 9.5px; font-weight: 500; fill: var(--axis); font-variant-numeric: tabular-nums; transition: fill 600ms ease; }
+  .scene .nowtxt { fill: var(--hot); font-weight: 700; }
+  .scene .nowline { stroke: var(--hot); stroke-width: 1.1; stroke-dasharray: 2 3; opacity: 0.75; }
+  .scene[data-off="1"] .nowline, .scene[data-off="1"] .nowtxt { opacity: 0; }
+  .scene .pole { stroke: var(--hot); stroke-width: 1.4; stroke-linecap: round; }
+  .scene .flag { fill: var(--hot); }
+  .scene .ev { fill: var(--hot); stroke: #fff; stroke-width: 1.6; }
+  .scene .fumb { opacity: 0; transition: opacity 400ms ease; }
+  .scene .fumb.on { opacity: 1; }
+  .scene .star { fill: #fff3c4; opacity: 0; transition: opacity 800ms ease; }
+  .scene[data-night="1"] .star { opacity: 0.9; }
+  .scene[data-night="1"][data-wx="cloudy"] .star, .scene[data-night="1"][data-wx="rain"] .star,
+  .scene[data-night="1"][data-wx="snow"] .star, .scene[data-night="1"][data-wx="thunder"] .star,
+  .scene[data-night="1"][data-wx="fog"] .star { opacity: 0.12; }
+
+  /* 해 · 달 · 지금 자리의 구름 */
+  #lum { transition: transform 900ms cubic-bezier(0.77, 0, 0.175, 1); }
+  .hero.scrub #lum { transition-duration: 160ms; transition-timing-function: linear; }
+  .scene .sun, .scene .moon, .scene .bigcloud {
+    transform-box: fill-box; transform-origin: center;
+    transition: opacity 500ms ease, transform 600ms var(--ease-out);
+  }
+  .scene .sun, .scene .bigcloud, .scene .cat, .scene .slot { cursor: pointer; }
+  .scene .sunc { fill: #ffd15c; stroke: #ef9b2d; stroke-width: 1.4; }
+  .scene .ray { stroke: #f6a93a; stroke-width: 1.7; stroke-linecap: round; }
+  .scene .moonc { fill: #fff1c4; stroke: #e3c36f; stroke-width: 1.3; stroke-linejoin: round; }
+  .scene .cloud { stroke: #9fb0c4; stroke-width: 1.2; stroke-linejoin: round; }
+  .scene[data-night="1"] .sun, .scene[data-night="0"] .moon { opacity: 0; transform: scale(0.6); pointer-events: none; }
+  .scene .bigcloud { opacity: 0; transform: translateY(6px) scale(0.7); pointer-events: none; }
+  .scene[data-wx="partly"] .bigcloud { opacity: 1; transform: translate(10px, 8px) scale(0.6); pointer-events: auto; }
+  .scene[data-wx="cloudy"] :is(.sun, .moon), .scene[data-wx="rain"] :is(.sun, .moon),
+  .scene[data-wx="snow"] :is(.sun, .moon), .scene[data-wx="thunder"] :is(.sun, .moon) { opacity: 0; transform: scale(0.7); pointer-events: none; }
+  .scene[data-wx="fog"] .sun { opacity: 0.62; }
+
+  /* 예보 구름 */
+  .scene .slot { opacity: 0; transform: translateY(-7px); pointer-events: none; transition: opacity 500ms ease, transform 600ms var(--ease-out); transition-delay: calc(var(--i) * 40ms); }
+  .scene .slot.on { opacity: 1; transform: none; pointer-events: auto; }
+  .scene .deck { opacity: 0; transform: translateY(-9px); pointer-events: none; transition: opacity 600ms ease, transform 700ms var(--ease-out); }
+  .scene .deck.on { opacity: 1; transform: none; pointer-events: auto; cursor: pointer; }
+  /* 뒤 겹은 테두리를 옅고 가늘게: 낮의 밝은 하늘에서도 앞 겹 뒤에 구름이 더 있는 것이 보이게 */
+  .scene .deck.back .cloud { stroke: #b7c5d5; stroke-width: 0.9; }
+  .scene .wisp { fill: #fff; opacity: 0; transition: opacity 800ms ease; }
+  .scene:is([data-wx="clear"], [data-wx="partly"]) .wisp { opacity: 0.75; }
+  .scene[data-night="1"] .wisp { opacity: 0.12; }
+  .scene .fogband { fill: url(#fogG); opacity: 0; transition: opacity 900ms ease; pointer-events: none; }
+  .scene[data-wx="fog"] .fogband { opacity: 0.6; }
+  .scene .haze { fill: url(#hazeG); opacity: 0; transition: opacity 900ms ease; pointer-events: none; }
+  .scene[data-wx="fog"] .haze { opacity: 1; }
+  .scene .bolt { fill: #ffe066; stroke: #f2a900; stroke-width: 0.8; stroke-linejoin: round; opacity: 0; pointer-events: none; }
+
+  /* 건물 */
+  .scene .bld { transform-box: fill-box; transform-origin: 50% 100%; transition: transform 240ms var(--ease-pop); }
+  @media (hover: hover) and (pointer: fine) {
+    .scene .bld:hover { transform: scaleY(1.05); }
+    .scene .bld:hover .wn { fill: #ffd45c; }
+  }
+  /* 걷는 사람이 들어가 있는 건물은 창에 불이 켜진다 */
+  .scene .bld.visit .wn { fill: #ffd45c; }
+  .scene .cap { fill: #fff; stroke: #c3d2e4; stroke-width: 1; transform-box: fill-box; transform-origin: 50% 100%; transform: scaleY(0); opacity: 0; transition: transform 700ms var(--ease-out), opacity 400ms ease; }
+  .scene[data-wx="snow"] .cap { transform: none; opacity: 1; }
+  .scene .puff { fill: #fff; stroke: var(--ol); stroke-width: 0.9; opacity: 0; }
+  .scene .lamp, .scene .lampglow { opacity: 0; transition: opacity 600ms ease; }
+  .scene[data-night="1"] .lamp { opacity: 1; }
+  .scene[data-night="1"] .lampglow { opacity: 0.35; }
+
+  /* 고양이 */
+  .scene .catfur { fill: #f7c58c; }
+  .scene .catumb, .scene .catscarf, .scene .cateyes-shut, .scene .heart { opacity: 0; transition: opacity 400ms ease, transform 500ms var(--ease-pop); }
+  .scene .catumb { transform-box: fill-box; transform-origin: 50% 100%; transform: scale(0.5); }
+  .scene:is([data-wx="rain"], [data-wx="thunder"]) .catumb { opacity: 1; transform: none; }
+  .scene[data-wx="snow"] .catscarf { opacity: 1; }
+  .scene[data-night="1"] .cateyes-shut { opacity: 1; }
+  .scene[data-night="1"] .cateyes { opacity: 0; }
+  .scene .heart { fill: #ff6f91; font-size: 9px; }
+
+  /* 걷는 사람 */
+  .scene .w-leg { fill: none; stroke: #34406a; stroke-width: 2.2; stroke-linecap: round; }
+  .scene .far .w-leg { stroke: #252e4a; }
+  .scene .w-arm { fill: none; stroke: #5d83cc; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .scene .far .w-arm { stroke: #3c5896; }
+  .scene .w-shoe { fill: #6e4a33; stroke: rgba(48, 30, 20, 0.6); stroke-width: 0.45; stroke-linejoin: round; }
+  .scene .far .w-shoe { fill: #563a28; }
+  .scene .w-skin { fill: #ffdcc0; stroke: rgba(120, 78, 52, 0.6); stroke-width: 0.55; stroke-linejoin: round; }
+  .scene .w-coat { fill: #4f72b8; stroke: rgba(30, 40, 80, 0.55); stroke-width: 0.6; stroke-linejoin: round; }
+  .scene .w-shirt { fill: #fff; }
+  .scene .w-tie { fill: none; stroke: #e2574c; stroke-width: 0.9; stroke-linecap: round; }
+  .scene .w-hair { fill: #4a3528; }
+  .scene .w-eye { fill: #33261d; }
+  .scene .w-brow { fill: none; stroke: #4a3528; stroke-width: 0.6; stroke-linecap: round; }
+  .scene .w-case { fill: #b9825a; stroke: rgba(64, 48, 40, 0.6); stroke-width: 0.6; }
+  .scene .w-handle { fill: none; stroke: rgba(64, 48, 40, 0.6); stroke-width: 0.6; stroke-linecap: round; stroke-linejoin: round; }
+  .scene .thigh, .scene .shin, .scene .armswing, .scene .forearm, .scene .armcarry { transform-origin: 0 0; }
+  .scene .whead { transform-origin: 0.6px -14px; }
+  .scene .forearm { transform: rotate(-22deg); }
+  .scene .armfree { transition: opacity 400ms ease; }
+  .scene:is([data-wx="rain"], [data-wx="thunder"]) .armfree { opacity: 0; }
+
+  /* 지나가는 것들 */
+  .scene .bird, .scene .walker, .scene .snowman, .scene .walkumb, .scene .leaf { transition: opacity 600ms ease; }
+  .scene .bird { opacity: 0; }
+  .scene[data-night="0"]:is([data-wx="clear"], [data-wx="partly"]) .bird { opacity: 1; }
+  .scene[data-night="1"] .walker, .scene[data-wx="snow"] .walker { opacity: 0; }
+  .scene .walkumb { opacity: 0; }
+  .scene:is([data-wx="rain"], [data-wx="thunder"]) .walkumb { opacity: 1; }
+  .scene .snowman { opacity: 0; transform-box: fill-box; transform-origin: 50% 100%; transform: scale(0.6); transition: opacity 600ms ease, transform 700ms var(--ease-pop); }
+  .scene[data-wx="snow"] .snowman { opacity: 1; transform: none; }
+  .scene .leaf { opacity: 0; }
+  .scene:is([data-season="spring"], [data-season="autumn"]):is([data-wx="clear"], [data-wx="partly"], [data-wx="cloudy"]) .leaf { opacity: 1; }
+  #brolly { opacity: 0; transition: opacity 220ms ease; pointer-events: none; }
+  #brolly.on { opacity: 1; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    /* ① 처음 한 번 */
+    @keyframes k-up { from { opacity: 0; transform: translateY(8px); } }
+    @keyframes k-rise { from { opacity: 0; transform: translateY(12px) scaleY(0.8); } }
+    @keyframes k-fade { from { opacity: 0; } }
+    .hero.play .up { animation: k-up 520ms var(--ease-out) both; animation-delay: calc(var(--d, 0) * 60ms); }
+    .hero.play .bld { animation: k-rise 560ms var(--ease-out) both; animation-delay: calc(140ms + var(--i) * 55ms); }
+    .hero.play .far { animation: k-fade 700ms ease both; }
+    .hero.play .late { animation: k-fade 600ms ease both; animation-delay: 820ms; }
+
+    /* ② 계속 */
+    @keyframes k-bob { 50% { transform: translateY(-2.4px); } }
+    @keyframes k-spin { to { transform: rotate(360deg); } }
+    @keyframes k-blink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
+    @keyframes k-wag { 0%, 60%, 100% { transform: rotate(0); } 70% { transform: rotate(16deg); } 85% { transform: rotate(-8deg); } }
+    @keyframes k-sway { 50% { transform: rotate(var(--sway, 2.4deg)); } }
+    @keyframes k-drift { from { transform: translateX(-190px); } to { transform: translateX(470px); } }
+    @keyframes k-fly { from { transform: translate(-30px, 0); } 50% { transform: translate(220px, -10px); } to { transform: translate(470px, 2px); } }
+    @keyframes k-flap { 50% { transform: scaleY(0.35); } }
+    @keyframes k-nod { 50% { transform: rotate(2.5deg); } }
+    /*
+     * 걸음 한 바퀴(1초, 두 걸음). 사람은 오른쪽으로 걷는다 — 음수 각이 앞, 양수 각이 뒤.
+     * 허벅지: 발을 딛는 순간 앞(-24°) → 몸이 지나가며 뒤(+22°) → 다시 앞으로.
+     * 정강이(무릎): 딛고 있는 동안은 거의 펴져 있고, 발을 뗀 뒤 허벅지가 앞으로 넘어올 때 가장 접혔다가(44°) 딛기 직전에 편다.
+     * 한 바퀴(1.1초)에 발이 닿는 거리(약 13)와 가로로 가는 속도를 맞춰 발이 미끄러지지 않게 했다.
+     */
+    @keyframes k-thigh { 0%, 100% { transform: rotate(-24deg); } 50% { transform: rotate(22deg); } }
+    @keyframes k-shin {
+      0% { transform: rotate(3deg); } 12% { transform: rotate(9deg); } 35% { transform: rotate(2deg); } 50% { transform: rotate(14deg); }
+      62% { transform: rotate(34deg); } 74% { transform: rotate(44deg); } 86% { transform: rotate(18deg); } 95%, 100% { transform: rotate(3deg); }
+    }
+    @keyframes k-armswing { 0%, 100% { transform: rotate(22deg); } 50% { transform: rotate(-20deg); } }
+    @keyframes k-forearm { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(-34deg); } }
+    @keyframes k-armcarry { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(7deg); } }
+    @keyframes k-tread { 50% { transform: translateY(-0.9px); } }
+    @keyframes k-puff { 0% { opacity: 0; transform: translate(0, 0) scale(0.5); } 25% { opacity: 0.8; } 100% { opacity: 0; transform: translate(6px, -20px) scale(1.5); } }
+    @keyframes k-wave { 50% { transform: skewY(-10deg) scaleX(0.9); } }
+    @keyframes k-twinkle { 0%, 86%, 100% { transform: scale(1); } 93% { transform: scale(0.3); } }
+    @keyframes k-fog { from { transform: translateX(-22px); } to { transform: translateX(22px); } }
+    @keyframes k-leaf { 0% { transform: translate(0, 0) rotate(0); opacity: 0; } 10% { opacity: 1; } 50% { transform: translate(-9px, 12px) rotate(160deg); } 90% { opacity: 1; } 100% { transform: translate(4px, 25px) rotate(320deg); opacity: 0; } }
+    .scene .bobber { animation: k-bob 6s ease-in-out infinite; }
+    .scene .rays { animation: k-spin 28s linear infinite; }
+    .scene .eyes { transform-box: fill-box; transform-origin: center; animation: k-blink 5.5s ease-in-out infinite; }
+    .scene .cbob { animation: k-bob 7s ease-in-out infinite; animation-delay: calc(var(--i, 0) * -0.9s); }
+    @keyframes k-deck { from { transform: translateX(-5px); } to { transform: translateX(5px); } }
+    .scene .deckdrift { animation: k-deck 19s ease-in-out infinite alternate; }
+    .scene .deck.back .deckdrift { animation-duration: 27s; animation-direction: alternate-reverse; }
+    .scene .tail { transform-box: fill-box; transform-origin: 0% 100%; animation: k-wag 4.5s ease-in-out infinite; }
+    .scene .sway { transform-box: fill-box; transform-origin: 50% 100%; animation: k-sway 5s ease-in-out infinite; }
+    .scene .sway.b { animation-duration: 6.5s; animation-delay: -2s; }
+    .scene:is([data-wx="rain"], [data-wx="thunder"]) .sway { --sway: 6deg; animation-duration: 2.2s; }
+    .scene .drifter { animation: k-drift 90s linear infinite; animation-delay: -30s; }
+    .scene .drifter.b { animation-duration: 130s; animation-delay: -84s; }
+    .scene .birdfly { animation: k-fly 24s linear infinite; animation-delay: -6s; }
+    .scene .birdfly path { transform-box: fill-box; transform-origin: center; animation: k-flap 0.5s ease-in-out infinite; }
+    .scene .walkgo .body { animation: k-tread 0.55s ease-in-out infinite; }
+    .scene .thigh { animation: k-thigh 1.1s ease-in-out infinite; }
+    .scene .shin { animation: k-shin 1.1s linear infinite; }
+    .scene .walker .far .thigh, .scene .walker .far .shin { animation-delay: -0.55s; }
+    .scene .whead { animation: k-nod 0.55s ease-in-out infinite; }
+    /* 팔은 같은 쪽 다리와 반대로 흔든다: 가까운 팔은 가까운 다리가 앞일 때 뒤로, 먼 팔(가방)은 그 반대 */
+    .scene .armswing { animation: k-armswing 1.1s ease-in-out infinite; }
+    .scene .forearm { animation: k-forearm 1.1s ease-in-out infinite; }
+    .scene .armcarry { animation: k-armcarry 1.1s ease-in-out infinite; }
+    .scene .puff { transform-box: fill-box; transform-origin: center; animation: k-puff 4.2s ease-out infinite; animation-delay: calc(var(--i) * 1.4s); }
+    .scene .flagwave { transform-box: fill-box; transform-origin: 0% 50%; animation: k-wave 1.8s ease-in-out infinite; }
+    .scene .star { transform-box: fill-box; transform-origin: center; animation: k-twinkle 6s ease-in-out infinite; animation-delay: calc(var(--i) * 700ms); }
+    .scene .fogband { animation: k-fog 16s ease-in-out infinite alternate; animation-delay: calc(var(--i) * -5s); }
+    .scene .leaf { transform-box: fill-box; transform-origin: center; animation: k-leaf 7s ease-in-out infinite; animation-delay: calc(var(--i) * -2.4s); }
+
+    /* ③ 반응 */
+    @keyframes k-sparkle { from { opacity: 1; transform: rotate(var(--a)) translateY(-4px) scaleY(1); } to { opacity: 0; transform: rotate(var(--a)) translateY(-15px) scaleY(0.3); } }
+    @keyframes k-numpop { 40% { transform: scale(1.35); } }
+    .spark { position: absolute; left: 50%; top: 50%; width: 2px; height: 7px; margin: -3px 0 0 -1px; border-radius: 1px; background: var(--m-orange); pointer-events: none; animation: k-sparkle 560ms var(--ease-out) both; }
+    .numpop { animation: k-numpop 360ms var(--ease-pop); }
+  }
+
+  /* ───────── 시안 조작판 (앱의 일부가 아니다) ───────── */
+  .panel {
+    max-width: 1280px; margin: 14px auto 0; padding: 12px 14px; border-radius: 12px;
+    border: 1px solid var(--border, #e5e5e5); background: var(--card, #ffffff); color: var(--card-foreground, #171717);
+    display: grid; gap: 10px; font-size: 13px;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .lab { width: 34px; flex: none; font-weight: 600; color: var(--muted-foreground, #737373); }
+  .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+  .panel button {
+    height: 28px; padding: 0 10px; border-radius: 7px; font-size: 13px;
+    background: var(--secondary, #f4f4f5); color: var(--secondary-foreground, #171717);
+    border: 1px solid transparent; transition: background-color 150ms ease, transform 150ms ease;
+  }
+  .panel button:active { transform: scale(0.97); }
+  .panel button[aria-pressed="true"] { background: var(--primary, #171717); color: var(--primary-foreground, #ffffff); }
+  .panel button:focus-visible, .panel input:focus-visible { outline: 2px solid var(--ring, #2563eb); outline-offset: 2px; }
+  .panel input[type="range"] { flex: 1 1 180px; min-width: 120px; accent-color: var(--primary, #171717); }
+  .panel output { width: 44px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .hint { margin: 0; color: var(--muted-foreground, #737373); line-height: 19px; }
+  .hint b { color: var(--card-foreground, #171717); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="hero play" id="hero" data-tone="light">
+    <div class="sky"></div>
+    <div class="flash" id="flash"></div>
+    <div class="vista">
+      <svg class="scene" id="scene" viewBox="0 0 440 132" role="img" aria-label="오늘의 시간 축과 날씨"></svg>
+      <canvas class="fx" id="fx"></canvas>
+    </div>
+
+    <div class="copy">
+      <p class="dateline up" style="--d:0">
+        <span id="dateText">11월 18일 수요일</span><span class="sep">·</span><span>고덕퍼스트공인중개사사무소</span><span class="sep">·</span>
+        <span class="wxchip" id="wxchip"></span>
+      </p>
+      <h1><span class="up" style="--d:1;display:inline-block" id="greet">좋은 오후예요,</span> <span class="up" style="--d:2;display:inline-block">현수님</span></h1>
+      <div class="pins">
+        <button class="pin up" style="--d:5" type="button">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>오늘 일정 <b>3</b>
+        </button>
+        <button class="pin up" style="--d:6" type="button" id="pinTasks">
+          <svg viewBox="0 0 24 24"><path d="M3 6l1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17M11 6h10M11 12h10M11 18h10"/></svg>남은 업무 <b id="taskNum">5</b>
+        </button>
+        <button class="pin up" style="--d:7" type="button">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3L2 6M22 6l-3-3"/></svg>기한 지남 <b class="bad">2</b>
+        </button>
+      </div>
+    </div>
+
+    <div class="tools up" style="--d:3">
+      <div class="scope"><span class="on">내 담당</span><span>사무소 전체</span></div>
+      <span class="quick"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>새로 만들기</span>
+    </div>
+  </header>
+</div>
+
+<section class="panel" aria-label="시안 조작">
+  <div class="row"><span class="lab">날씨</span><div class="seg" id="wxSeg"></div></div>
+  <div class="row">
+    <span class="lab">시각</span>
+    <input type="range" id="hr" min="0" max="24" step="0.25" aria-label="시각">
+    <output id="hrOut"></output>
+    <button type="button" id="nowBtn">지금</button>
+    <button type="button" id="dayBtn">하루 돌려 보기</button>
+  </div>
+  <div class="row">
+    <span class="lab">계절</span><div class="seg" id="seSeg"></div>
+    <span style="flex:1"></span>
+    <button type="button" id="doneBtn">업무 하나 완료</button>
+    <button type="button" id="replayBtn">처음부터 재생</button>
+  </div>
+  <p class="hint">
+    그림 위에서 해 볼 것 — <b>마우스를 움직이면</b> 하늘이 살짝 밀리고 고양이의 눈이 따라옵니다.
+    <b>비가 올 때</b> 그림에 올리면 마우스가 우산이 되고, <b>눈이 올 때</b>는 눈이 피해서 흩날립니다.
+    <b>건물</b>에 올리면 불이 켜지고, <b>해·구름·고양이</b>는 누르면 반응합니다. 깃발은 오늘 일정(10:30 · 15:00 · 17:30)입니다.
+    <b>걷는 사람</b>은 가끔 건물에 들어가 한동안(8~22초) 있다가 나옵니다. 안에 있는 동안 그 건물 창에 불이 켜집니다.
+  </p>
+</section>
+
+<script>
+(() => {
+  const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const hero = $('#hero'), scene = $('#scene'), fx = $('#fx'), flash = $('#flash');
+
+  /* ───────── 좌표 ───────── */
+  const W = 440, H = 132, X0 = 36, XW = 372, GROUND = 104, DAY_START = 6, DAY_END = 20, SUN_TOP = 27;
+  const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+  const xAt = (h) => X0 + ((clamp(h, DAY_START, DAY_END) - DAY_START) / (DAY_END - DAY_START)) * XW;
+  const hourAtX = (x) => DAY_START + clamp((x - X0) / XW, 0, 1) * (DAY_END - DAY_START);
+  /** 해의 높이. p는 일출 0 ~ 일몰 1. 지평선에서 빨리 올라와 지붕 위 하늘을 완만하게 지난다(건물 뒤로 숨지 않게). */
+  const sunY = (p) => Math.max(SUN_TOP + 10 * ((p - 0.5) / 0.5) ** 2, GROUND - 2000 * p * (1 - p));
+  const clock = (h) => `${String(Math.floor(h) % 24).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
+
+  /* ───────── 색 ───────── */
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+  const css = (c, alpha = 1) => `rgba(${c.map((v) => Math.round(v)).join(',')},${alpha})`;
+  const lum = (c) => (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255;
+
+  /* 시각 → 하늘 위/아래 색, 어두움(0 낮 ~ 1 밤). 그날의 일출(sr)·일몰(ss)에 맞춰 새벽·낮·노을·밤이 바뀐다. */
+  const NIGHT = ['#1e2450', '#3d4380', 1];
+  const stops = (sr, ss) => [
+    [0, ...NIGHT], [sr - 1.3, ...NIGHT], [sr - 0.1, '#b4c2ea', '#ffd9c7', 0.3],
+    [sr + 1.4, '#c4e3fa', '#eff8fe', 0], [ss - 1.6, '#c4e3fa', '#eff8fe', 0], [ss - 0.3, '#b9b4e6', '#ffcdae', 0.22],
+    [ss + 0.6, '#5d5f9e', '#c994aa', 0.62], [ss + 1.5, ...NIGHT], [24, ...NIGHT],
+  ];
+  /* 날씨 → 하늘이 물드는 정도와 색 */
+  const WX = {
+    clear: { label: '맑음', k: 0, a: '#c4e3fa', b: '#eff8fe' },
+    partly: { label: '구름 조금', k: 0.14, a: '#d3e3f1', b: '#f1f6fa' },
+    cloudy: { label: '흐림', k: 0.62, a: '#d9e0e8', b: '#eef1f4' },
+    rain: { label: '비', k: 0.78, a: '#bccada', b: '#e2e9f0' },
+    snow: { label: '눈', k: 0.72, a: '#d6e0ee', b: '#f6f8fc' },
+    thunder: { label: '천둥번개', k: 0.88, a: '#a3adc4', b: '#d0d6e2' },
+    fog: { label: '안개', k: 0.82, a: '#e7e3da', b: '#f4f1ea' },
+  };
+  const PRECIP = { rain: 'rain', thunder: 'rain', snow: 'snow' };
+  const CLOUDED = ['cloudy', 'rain', 'snow', 'thunder'];
+
+  function ambient(hour, wx) {
+    const { sr, ss } = SEASONS[state.season];
+    const STOPS = stops(sr, ss);
+    let i = 0;
+    while (i < STOPS.length - 2 && hour >= STOPS[i + 1][0]) i++;
+    const [h0, a0, b0, d0] = STOPS[i], [h1, a1, b1, d1] = STOPS[i + 1];
+    const t = clamp((hour - h0) / (h1 - h0), 0, 1);
+    const dark = d0 + (d1 - d0) * t;
+    const w = WX[wx];
+    const A = mix(mix(rgb(a0), rgb(a1), t), mix(rgb(w.a), rgb('#2a2f4d'), dark), w.k);
+    const B = mix(mix(rgb(b0), rgb(b1), t), mix(rgb(w.b), rgb('#3a3f60'), dark), w.k);
+    const tone = lum(mix(A, B, 0.5)) < 0.45 ? 'dark' : 'light';
+    const sunset = hour > ss - 1.6 && hour < ss + 0.6 ? 1 : 0;
+    return {
+      A, B, dark, grey: w.k, tone,
+      glow: dark > 0.8 ? css([255, 241, 196], 0.16 * (1 - w.k)) : css(sunset ? [255, 176, 120] : [255, 226, 160], (sunset ? 0.95 : 0.8) * (1 - dark * 0.6) * (1 - w.k)),
+      wash: tone === 'light' ? css([255, 255, 255], 0.66) : css([30, 36, 80], 0),
+    };
+  }
+  /* 그림의 색을 지금의 빛으로 물들인다: 밤이면 남색으로, 흐리면 회색으로. k는 물드는 세기. */
+  const shade = (hex, amb, k = 1) => css(mix(mix(rgb(hex), rgb('#262b57'), amb.dark * 0.58 * k), rgb('#aab4c4'), amb.grey * 0.2 * k));
+
+  /* ───────── 데이터 (시안용) ───────── */
+  const all = (wx) => Array.from({ length: 24 }, () => wx);
+  const PRESETS = {
+    clear: { name: '맑음', temp: 14, hourly: all('clear') },
+    partly: { name: '구름 조금', temp: 13, hourly: all('partly') },
+    cloudy: { name: '흐림', temp: 11, hourly: all('cloudy') },
+    rain: { name: '비', temp: 9, hourly: all('rain') },
+    snow: { name: '눈', temp: -2, hourly: all('snow') },
+    thunder: { name: '천둥번개', temp: 10, hourly: all('thunder') },
+    fog: { name: '안개', temp: 7, hourly: all('fog') },
+    mixed: { name: '오후부터 비', temp: 13, hourly: Array.from({ length: 24 }, (_, h) => (h < 11 ? 'clear' : h < 13 ? 'partly' : h < 15 ? 'cloudy' : 'rain')) },
+  };
+  const EVENTS = [
+    { hour: 10.5, label: '고객 미팅' },
+    { hour: 15, label: '임장 · 고덕그라시움' },
+    { hour: 17.5, label: '계약서 검토' },
+  ];
+  const SEASONS = {
+    /* sr·ss: 그 계절의 서울 일출·일몰 어림값. 실제로는 날씨 응답의 그날 값을 쓴다. */
+    spring: { name: '봄', tree: ['#ffc3d8', '#ffd5e3'], ground: '#dcefc9', leaf: '#ffb3cc', sr: 6.2, ss: 18.8 },
+    summer: { name: '여름', tree: ['#9fd69b', '#b7e2a8'], ground: '#cfe8bd', leaf: '#9fd69b', sr: 5.3, ss: 19.8 },
+    autumn: { name: '가을', tree: ['#f6b352', '#ef8f4c'], ground: '#f1e2c0', leaf: '#ef8f4c', sr: 7.1, ss: 17.4 },
+    winter: { name: '겨울', tree: ['#dcd3c8', '#d3cabf'], ground: '#ebeef1', leaf: '#dcd3c8', sr: 7.7, ss: 17.3 },
+  };
+  const seasonOf = (d) => ['winter', 'winter', 'spring', 'spring', 'spring', 'summer', 'summer', 'summer', 'autumn', 'autumn', 'autumn', 'winter'][d.getMonth()];
+  const nowHour = () => { const d = new Date(); return d.getHours() + d.getMinutes() / 60; };
+
+  const state = { preset: 'clear', hour: nowHour(), season: seasonOf(new Date()), tasks: 5 };
+  /** 시간 축(06~20시) 밖인가 */
+  const offAxis = () => state.hour < DAY_START || state.hour >= DAY_END;
+  /** 해가 떠 있는가 (일출 ~ 일몰 직후) */
+  const sunUp = () => { const { sr, ss } = SEASONS[state.season]; return state.hour >= sr && state.hour < ss + 0.25; };
+  const isNight = () => !sunUp();
+  /** 해·달의 자리. 시간 축 안에서는 지금 시각 위, 밖에서는 한쪽에 떠 있다. */
+  function luminary(hour) {
+    const { sr, ss } = SEASONS[state.season];
+    const off = hour < DAY_START || hour >= DAY_END;
+    const x = off ? X0 + XW * 0.74 : xAt(hour);
+    if (hour >= sr && hour < ss + 0.25 && !off) return { x, y: sunY(clamp((hour - sr) / (ss - sr), 0, 1)) };
+    if (off) return { x, y: 30 };
+    return { x, y: Math.max(30, GROUND - (hour >= ss ? hour - ss - 0.25 : sr - hour) * 110) };
+  }
+  const wxAtHour = (h) => PRESETS[state.preset].hourly[clamp(Math.floor(h), 0, 23)];
+  const wxNow = () => wxAtHour(state.hour);
+  /** 그림의 가로 자리에 내리는 것. 시간 축 밖의 시각에는 지금 날씨가 전체에 내린다. */
+  const precipAtX = (x) => { const wx = offAxis() ? wxNow() : wxAtHour(hourAtX(x)); return PRECIP[wx] ? { kind: PRECIP[wx], heavy: wx === 'thunder' } : null; };
+
+  /* ───────── 그림 짓기 (한 번) ───────── */
+  /*
+   * 건물과 구름 사이에 하늘이 보여야 한다. 도구 단추 아래부터 지붕까지가 하늘의 전부라서(세로 약 60),
+   * 구름은 그 위쪽 3분의 1에 두고(바닥 y ≈ 22) 가장 높은 지붕은 y 46 아래로 낮췄다. 둘 사이가 24 이상 벌어진다.
+   */
+  const BLOCKS = [
+    [55, 31, 38, '#ffe6c7'], [91, 26, 52, '#ffd2cf'], [124, 38, 30, '#cdeedd'], [217, 40, 58, '#cee1fb'],
+    [262, 29, 40, '#fff0b6'], [329, 36, 48, '#e2d9f8'], [369, 26, 32, '#ffdbc0'],
+  ];
+  const FAR = [[14, 24, 28], [150, 26, 44], [192, 18, 32], [292, 30, 50], [352, 20, 36], [398, 28, 42]];
+  /*
+   * 구름. 낱개 구름을 같은 간격으로 늘어놓으면 줄에 꿴 구슬처럼 보인다. 그래서 둘로 나눈다.
+   *   - 흐림: 길이가 제각각인 구름 덩이 여럿이 틈을 두고 떠 있다. 덩이마다 높이가 조금씩 다르고, 뒤 겹의 덩이가 틈 사이로 보인다.
+   *     (한 줄로 이어 붙이면 한 덩어리로 뭉쳐 보이고, 낱개를 같은 간격으로 놓으면 구슬 줄이 된다 — 그 사이다.)
+   *   - 비·눈·천둥번개: 뒤에는 이어진 구름층이 깔리고, 앞에는 긴 덩이들이 좁은 틈을 두고 놓인다.
+   *   - 덩이의 바닥은 거의 평평하고 위는 몽글몽글하다(실제 구름이 그렇다). 구름은 그 날씨가 예보된 시간대의 가로 범위에만 깔린다.
+   *   - 구름 조금: 크기가 뚜렷이 다른 구름 몇 점을 높이를 달리해 띄운다(큰 것 하나, 중간 하나, 작은 것 둘).
+   */
+  const CLOUD_SHAPES = {
+    a: 'M-13 8a7 7 0 0 1-1-13.9a9.5 9.5 0 0 1 18-3a7.5 7.5 0 0 1 9.5 7a5.6 5.6 0 0 1-1.5 9.9z',
+    b: 'M-17 7a5.5 5.5 0 0 1 .5-11a7 7 0 0 1 12.5-3.5a8.5 8.5 0 0 1 15 2.5a6 6 0 0 1 4 12z',
+    c: 'M-9 5a4.5 4.5 0 0 1 0-9a6.5 6.5 0 0 1 12-1.5a5 5 0 0 1 5.5 10.5z',
+  };
+  const CLOUD = CLOUD_SHAPES.a;
+  const CLOUDS = [
+    { h: 8.9, y: 16, s: 1, shape: 'b' }, { h: 12.4, y: 10, s: 0.7, shape: 'c', flip: 1 },
+    { h: 15.9, y: 14, s: 0.84, shape: 'a', flip: 1 }, { h: 18.4, y: 20, s: 0.6, shape: 'c' },
+  ];
+  const DECK_TONE = {
+    cloudy: ['#ffffff', '#f0f4f8'], rain: ['#e6ecf4', '#ccd6e3'], snow: ['#ffffff', '#e8edf4'], thunder: ['#c3cbd9', '#a3aec3'],
+  };
+  /** 덩이 여럿을 한 경로로. 가로 범위를 길이(widths)와 틈(gaps)으로 나누고 덩이마다 바닥·봉우리 높이를 달리한다. */
+  function massPath(x1, x2, cfg, seed) {
+    let d = '', x = x1, i = seed;
+    while (x < x2 - 30) {
+      let w = cfg.w[i % cfg.w.length];
+      if (x2 - (x + w) < 50) w = x2 - x; // 끝에 자투리 덩이가 남지 않게
+      d += bandPath(x, x + w, cfg.yb[i % cfg.yb.length], cfg.yt[i % cfg.yt.length], i);
+      x += w + cfg.gap[i % cfg.gap.length]; i++;
+    }
+    return d;
+  }
+  const MASS = {
+    // 흐림: 덩이 사이로 하늘이 보인다
+    looseFront: { w: [84, 58, 104, 66, 92], gap: [15, 21, 13, 19], yb: [22, 19, 24, 20, 23], yt: [12, 10, 14, 9, 13] },
+    looseBack: { w: [70, 98, 56, 82], gap: [36, 27, 42], yb: [16, 18, 15, 17], yt: [5, 8, 4, 7] },
+    // 비·눈: 긴 덩이가 좁은 틈으로 놓이고 그 뒤를 이어진 층이 메운다
+    denseFront: { w: [128, 96, 150, 110], gap: [6, 8, 5], yb: [23, 21, 24, 22], yt: [12, 10, 13, 11] },
+  };
+  /** 구름 덩이 하나의 외곽선. 아래는 완만한 물결, 위는 크기가 제각각인 봉우리. (x1~x2: 가로 범위, yb: 바닥, yt: 봉우리 밑선) */
+  function bandPath(x1, x2, yb, yt, seed) {
+    const BW = [34, 26, 40, 30, 44, 28], BD = [5.5, 4.5, 6, 5, 6.5, 5];
+    const TW = [30, 22, 36, 26, 40, 24, 32], TD = [11, 8, 13, 9, 12, 8, 10], TY = [0, 3, -2, 2, -1, 4, 1];
+    const L = x1 + 9, R = x2 - 9;
+    let d = `M${L.toFixed(1)} ${yb}`, x = L, i = seed;
+    while (x < R - 0.1) { // 바닥: 왼쪽 → 오른쪽
+      let w = BW[i % 6]; if (R - x - w < 14) w = R - x;
+      x += w; d += `A${(w * 0.56).toFixed(1)} ${BD[i % 6]} 0 0 0 ${x.toFixed(1)} ${yb}`; i++;
+    }
+    let y = yt + TY[seed % 7]; const cap = (yb - y) / 2;
+    d += `A${(cap * 1.15).toFixed(1)} ${cap.toFixed(1)} 0 0 0 ${R.toFixed(1)} ${y}`; // 오른쪽 끝
+    i = seed;
+    while (x > L + 0.1) { // 위: 오른쪽 → 왼쪽
+      let w = TW[i % 7]; if (x - L - w < 12) w = x - L;
+      x -= w; i++; y = yt + TY[i % 7];
+      d += `A${(w * 0.53).toFixed(1)} ${TD[i % 7]} 0 0 0 ${x.toFixed(1)} ${y}`;
+    }
+    const cap2 = (yb - y) / 2;
+    return `${d}A${(cap2 * 1.15).toFixed(1)} ${cap2.toFixed(1)} 0 0 0 ${L.toFixed(1)} ${yb}Z`;
+  }
+  /* 걷는 사람: 배율, 걷는 속도(걸음 한 바퀴 1.1초에 발이 닿는 거리 13 × 배율 — 이 속도여야 디딘 발이 안 미끄러진다), 문이 있는 건물 */
+  const WALKER_SCALE = 1.1;
+  const WALK_SPEED = (13 / 1.1) * WALKER_SCALE;
+  const DOORS = BLOCKS.flatMap(([x, w], b) => (w >= 30 ? [[b, x + w / 2]] : []));
+  const darker = (hex, t) => '#' + mix(rgb(hex), rgb('#7a5a4a'), t).map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+
+  function build() {
+    let s = `<defs>
+      <linearGradient id="fogG"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".3" stop-color="#fff"/><stop offset=".7" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+      <linearGradient id="hazeG" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#f4f1ea" stop-opacity="0"/><stop offset="1" stop-color="#f4f1ea" stop-opacity=".9"/></linearGradient>
+    </defs>`;
+    // 별
+    s += '<g class="par" data-depth="0.25">' + [[60, 20], [112, 9], [150, 30], [200, 14], [250, 6], [300, 18], [345, 34], [400, 12]]
+      .map(([x, y], i) => `<path class="star" style="--i:${i}" d="M${x} ${y - 2.2}l.7 1.5 1.5.7-1.5.7-.7 1.5-.7-1.5-1.5-.7 1.5-.7z"/>`).join('') + '</g>';
+    // 먼 구름 두 점
+    s += `<g class="par" data-depth="0.5"><g class="drifter"><path class="wisp" transform="translate(0 12)" d="M0 8a5 5 0 0 1 5-5 8 8 0 0 1 15 1 5 5 0 0 1 3 9H4a5 5 0 0 1-4-5z"/></g>
+      <g class="drifter b"><path class="wisp" transform="translate(0 30) scale(.7)" d="M0 8a5 5 0 0 1 5-5 8 8 0 0 1 15 1 5 5 0 0 1 3 9H4a5 5 0 0 1-4-5z"/></g></g>`;
+    // 먼 건물
+    s += '<g class="par far" data-depth="0.35">' + FAR.map(([x, w, h]) => `<path data-c="far" d="M${x} ${GROUND}V${GROUND - h + 3}a3 3 0 0 1 3-3h${w - 6}a3 3 0 0 1 3 3V${GROUND}z"/>`).join('') + '</g>';
+    // 지금 자리의 점선
+    s += '<g class="late"><path class="nowline" id="nowline"/></g>';
+    // 해 · 달 · 지금 자리의 구름 (얼굴은 넣지 않는다)
+    s += `<g id="lum"><g class="par" data-depth="0.6"><g id="hopper" style="transform-box:fill-box;transform-origin:50% 100%"><g class="bobber">
+      <g class="sun">
+        <g class="rays">${Array.from({ length: 8 }, (_, i) => `<path class="ray" transform="rotate(${i * 45})" d="M0 -15v-3.6"/>`).join('')}</g>
+        <circle class="sunc" r="11"/>
+      </g>
+      <g class="moon"><path class="moonc" d="M5 -10a11 11 0 1 0 7 18a9 9 0 0 1-7-18z"/></g>
+      <g class="bigcloud"><path class="cloud" data-c="cloud" d="${CLOUD}" transform="scale(1.08)"/></g>
+    </g></g></g></g>`;
+    // 예보 구름
+    const deckSlots = (cls) => [0, 1, 2].map((i) => `<g class="deck ${cls}" data-i="${i}"><g class="deckdrift"><path class="cloud" data-c="cloud" d=""/></g></g>`).join('');
+    s += `<g class="par" data-depth="0.5">${deckSlots('back')}</g>`;
+    s += `<g class="par" data-depth="0.85" id="slots">${deckSlots('front')}` + CLOUDS.map((c, i) =>
+      `<g class="slot" data-i="${i}" style="--i:${i}"><g transform="translate(${xAt(c.h).toFixed(1)} ${c.y})"><g class="cbob" style="--i:${i}"><g transform="scale(${c.flip ? -c.s : c.s} ${c.s})"><path class="cloud" data-c="#ffffff" d="${CLOUD_SHAPES[c.shape]}"/></g></g></g></g>`).join('') + '</g>';
+    s += '<g class="par" data-depth="0.8"><path class="bolt" id="bolt" d="M3 0l-7 11h5l-3 10 9-13h-5l4-8z"/></g>';
+    // 새
+    s += '<g class="late bird" transform="translate(0 34)"><g class="birdfly"><path class="ln" d="M0 0q3.6 -4 6 0q2.4 -4 6 0"/></g></g>';
+    // 나무
+    [181, 307].forEach((x, i) => {
+      s += `<g class="sway ${i ? 'b' : ''}"><path class="ln" d="M${x} ${GROUND}v-10"/><circle class="o" data-c="tree${i}" cx="${x}" cy="${GROUND - 15}" r="7.4"/>
+        <path class="cap" d="M${x - 6.6} ${GROUND - 17.4}a6.9 6.9 0 0 1 13.2 0q-3.3 2.4 -6.6 .6t-6.6 -.6z"/></g>`;
+    });
+    // 건물
+    BLOCKS.forEach(([x, w, h, color], b) => {
+      const top = GROUND - h;
+      const cols = Math.floor((w - 7) / 8.4), rows = Math.floor((h - 12) / 10.5);
+      const pad = (w - cols * 8.4 + 4.2) / 2;
+      let g = `<g class="bld" data-block="${b}" style="--i:${b}">`;
+      if (b === 1) g += `<path class="o" data-c="${darker(color, 0.3)}" d="M${x + 15} ${top + 1}v-6h5v6z"/>` + [0, 1, 2].map((i) => `<circle class="puff" style="--i:${i}" cx="${x + 17.5}" cy="${top - 9}" r="2.8"/>`).join('');
+      g += `<path class="o" data-c="${color}" d="M${x} ${GROUND}V${top + 3}a3 3 0 0 1 3-3h${w - 6}a3 3 0 0 1 3 3V${GROUND}z"/>`;
+      g += `<path data-c="${darker(color, 0.24)}" d="M${x + 0.6} ${top + 4.6}V${top + 3}a2.4 2.4 0 0 1 2.4-2.4h${w - 6}a2.4 2.4 0 0 1 2.4 2.4v1.6z"/>`;
+      for (let i = 0; i < rows * cols; i++) {
+        const row = Math.floor(i / cols), col = i % cols;
+        g += `<rect class="wn" data-k="${b * 5 + row * 3 + col * 7}" x="${(x + pad + col * 8.4).toFixed(1)}" y="${top + 9 + row * 10.5}" width="4.2" height="5.6" rx="0.9"/>`;
+      }
+      if (w >= 30) g += `<rect data-c="${darker(color, 0.5)}" x="${x + w / 2 - 3.5}" y="${GROUND - 10}" width="7" height="10" rx="1.8"/>`;
+      g += `<rect class="cap" x="${x - 1.6}" y="${top - 3.4}" width="${w + 3.2}" height="6.6" rx="3.3"/>`;
+      if (b === 5) g += catMarkup(x + 9, top);
+      g += '</g>';
+      s += g;
+    });
+    // 안개 띠
+    s += `<rect class="haze" x="-240" y="34" width="700" height="${GROUND - 34}"/>`;
+    s += [[10, 56, 250], [150, 72, 290], [40, 86, 330]].map(([x, y, w], i) => `<rect class="fogband" style="--i:${i}" x="${x}" y="${y}" width="${w}" height="13" rx="6.5"/>`).join('');
+    // 땅과 시간 축
+    s += `<rect data-c="ground" x="-240" y="${GROUND}" width="700" height="${H - GROUND + 2}"/>`;
+    s += `<path class="axisline" d="M-240 ${GROUND}H460"/>`;
+    s += '<g class="late">' + [9, 12, 15, 18].map((t) => `<path class="tick" d="M${xAt(t)} ${GROUND}v4.5"/><text class="ticktxt" data-h="${t}" x="${xAt(t)}" y="${GROUND + 16}" text-anchor="middle">${t}</text>`).join('')
+      + `<text class="nowtxt" id="nowtxt" y="${GROUND + 16}" text-anchor="middle"></text></g>`;
+    // 가로등 · 눈사람 · 걷는 사람
+    s += `<g class="late"><circle class="lampglow" cx="196" cy="${GROUND - 24}" r="12" fill="#ffd45c"/><g class="lamp"><path class="ln" d="M196 ${GROUND}v-22m-3.6 0h7.2"/><circle cx="196" cy="${GROUND - 24}" r="2.3" fill="#ffd45c" stroke="#e3a92c" stroke-width=".8"/></g></g>`;
+    s += `<g class="late" transform="translate(414 ${GROUND})"><g class="snowman">
+      <circle class="o" cx="0" cy="-5.6" r="5.6" fill="#fff"/><circle class="o" cx="0" cy="-13.4" r="3.9" fill="#fff"/>
+      <circle cx="-1.3" cy="-14.2" r=".6" fill="#3d3a38"/><circle cx="1.3" cy="-14.2" r=".6" fill="#3d3a38"/><path d="M0 -13.2l3.4 .8-3.4 .7z" fill="#f08a2c"/>
+      <path d="M-3.4 -10.4q3.4 1.8 6.8 0" fill="none" stroke="#e85d5d" stroke-width="1.8" stroke-linecap="round"/><path d="M2.4 -9.8l1.4 3.4" fill="none" stroke="#e85d5d" stroke-width="1.8" stroke-linecap="round"/>
+    </g></g>`;
+    /*
+     * 걷는 사람 — 정장 입은 중개사. 막대 인형이 아니라 몸과 얼굴이 있다.
+     * 3.5등신쯤이다. 머리를 더 키우면(2.5등신) 얼굴은 잘 보이지만 아이 인형처럼 보여 어른으로 읽히지 않는다.
+     *   얼굴: 턱이 조금 좁은 둥근 얼굴형, 오른쪽(가는 방향)을 보는 옆모습 — 점 눈 하나와 눈썹 한 줄뿐이다(볼·입까지 그리면 사람만 촘촘해 튄다).
+     *   머리카락: 정수리와 뒤통수를 덮는 모자 모양 한 덩이. 앞머리의 굴곡은 넣지 않는다.
+     *   몸: 어깨가 둥근 재킷, 깃 사이로 흰 셔츠와 넥타이. 팔다리는 굵기가 있고 손과 구두가 달려 있다.
+     * 관절: 다리는 엉덩이에서 허벅지가 돌고 그 끝(무릎)에서 정강이가 따로 돈다. 팔은 어깨와 팔꿈치.
+     * 관절 자리를 묶음의 원점에 두어(translate로 옮긴 뒤 그 안에서 회전) 회전 중심이 흔들리지 않게 한다.
+     * 그리는 순서: 먼 쪽 팔과 가방 → 먼 쪽 다리 → 몸·머리 → 가까운 다리 → 가까운 팔. 가방을 먼 쪽 손에 둔 것은 다리를 가리지 않기 위해서다.
+     */
+    const leg = (cls) => `<g class="${cls}" transform="translate(0.55 -8.4)"><g class="thigh"><path class="w-leg" d="M0 0v4"/><g transform="translate(0 4)"><g class="shin"><path class="w-leg" d="M0 0v3.5"/><path class="w-shoe" transform="translate(0 .5)" d="M-1.15 2.5h2l1.5.55q.75.3.75.85h-4.25z"/></g></g></g></g>`;
+    s += `<g class="late walker" transform="translate(0 ${GROUND}) scale(${WALKER_SCALE})"><g class="walkgo"><g class="walkdoor"><g class="body">
+      <g transform="translate(0 -1)"><g class="far" transform="translate(0.6 -12.4)"><g class="armcarry">
+        <path class="w-arm" d="M0 0v5"/><circle class="w-skin" cx="0" cy="5.3" r=".95"/>
+        <path class="w-handle" d="M-1 5.9v-.9h2v.9"/><rect class="w-case" x="-2.7" y="5.8" width="5.4" height="3.7" rx=".9"/><path class="w-handle" d="M-2.7 7.3h5.4"/>
+      </g></g></g>
+      ${leg('far')}
+      <g transform="translate(0 -1)">
+        <g class="walkumb"><path class="ln" d="M3.7 -12.6V-22.4"/><path class="o" fill="#6fa8e8" d="M-4.5 -22.4a8.2 8.2 0 0 1 16.4 0q-2.05-1.7-4.1 0q-2.05-1.7-4.1 0q-2.05-1.7-4.1 0q-2.05-1.7-4.1 0z"/></g>
+        <rect class="w-skin" x="-0.2" y="-14.4" width="1.6" height="1.6" rx=".5"/>
+        <path class="w-coat" d="M-1.1 -12.4q0-1.1 1.1-1.1h1.3q1.1 0 1.15 1.1l.2 5.1q.05.9-.8.9h-2.4q-.85 0-.8-.9z"/>
+        <path class="w-shirt" d="M0.7 -13.5h1.5l-.5 2.4z"/><path class="w-tie" d="M1.45 -13.3l-.12 2"/>
+        <g transform="translate(0.6 -13.9) scale(.64) translate(-0.6 13.9)"><g class="whead">
+          <path class="w-skin" d="M-3.6 -18.4c0-3 2-4.6 4.2-4.6s4.2 1.8 4.2 4.6c0 1.4-.3 2.6-1.2 3.5-.9.9-1.9 1.3-3 1.3s-2.3-.4-3.1-1.3c-.8-.9-1.1-2.1-1.1-3.5z"/>
+          <path class="w-hair" d="M-3.7 -17.2C-4.6 -20.9-2.4 -23.7.8 -23.7 3.5 -23.7 5.1 -21.9 5.1 -19.9H-.5Q-1.9 -19.9-1.9 -18.5V-17.1z"/>
+          <g class="eyes"><circle class="w-eye" cx="3.1" cy="-17.7" r=".72"/></g>
+          <path class="w-brow" d="M2 -18.95q1.1 -.5 2.2 -.05"/>
+        </g></g>
+      </g>
+      ${leg('')}
+      <g transform="translate(0 -1)">
+        <g class="armfree" transform="translate(0.6 -12.4)"><g class="armswing"><path class="w-arm" d="M0 0v2.9"/><g transform="translate(0 2.9)"><g class="forearm"><path class="w-arm" d="M0 0v2.5"/><circle class="w-skin" cx="0" cy="2.8" r=".95"/></g></g></g></g>
+        <g class="walkumb"><path class="w-arm" d="M0.6 -12.4l2.3 1.5.8-2.3"/><circle class="w-skin" cx="3.7" cy="-13.4" r=".95"/></g>
+      </g>
+    </g></g></g></g>`;
+    // 떨어지는 잎
+    s += [[176, 84], [304, 82], [186, 88]].map(([x, y], i) => `<g transform="translate(${x} ${y})"><ellipse class="leaf" style="--i:${i}" data-c="leaf" rx="1.9" ry="1.1"/></g>`).join('');
+    // 깃발
+    s += '<g id="flags">' + EVENTS.filter((e) => e.hour >= DAY_START && e.hour <= DAY_END).map((e, i) => {
+      const x = xAt(e.hour).toFixed(1);
+      return `<g><g class="late"><path class="pole" d="M${x} ${GROUND}v-15"/><g class="flagwave"><path class="flag" d="M${x} ${GROUND - 15}l9.4 3-9.4 3.2z"/></g>
+        <g class="fumb" data-h="${e.hour}" transform="translate(${x} ${GROUND - 19})"><path d="M-6 0a6 6 0 0 1 12 0z" fill="#ff8a65" stroke="rgba(64,48,40,.5)" stroke-width="1"/></g></g>
+        <circle class="ev" cx="${x}" cy="${GROUND}" r="3.2"><title>${clock(e.hour)} ${e.label}</title></circle></g>`;
+    }).join('') + '</g>';
+    // 마우스 우산
+    s += `<g id="brolly"><g id="brollyTilt"><path class="ln" d="M0 0v11a2.4 2.4 0 0 1-4.8 0"/><path class="o" fill="#ff8a65" d="M-13 0a13 13 0 0 1 26 0q-3.25-3-6.5 0q-3.25-3-6.5 0q-3.25-3-6.5 0q-3.25-3-6.5 0z"/></g></g>`;
+    scene.innerHTML = s;
+  }
+  function catMarkup(x, top) {
+    return `<g class="cat late" id="cat" transform="translate(${x} ${top}) scale(1.32)"><g id="catHop" style="transform-box:fill-box;transform-origin:50% 100%">
+      <g class="catumb"><path class="ln" d="M10.6 -3.4v-13"/><path class="o" fill="#ff8a65" d="M3.8 -16.2a6.8 6.8 0 0 1 13.6 0z"/></g>
+      <path class="o catfur tail" d="M10.5 -0.6c3.4 0.2 4.4 -3 2.6 -5.4" style="fill:none;stroke:#c98a4a;stroke-width:1.9"/>
+      <path class="o catfur" d="M0.5 0c-0.6 -4.6 1.6 -6.4 4.8 -6.4s5.4 1.8 4.8 6.4z"/>
+      <path class="o catfur" d="M1.9 -8.6l-0.5 -3.2 2.7 1.5M8.7 -8.6l0.5 -3.2 -2.7 1.5"/>
+      <circle class="o catfur" cx="5.3" cy="-8.4" r="3.5"/>
+      <path d="M4.5 -11.5v1.1M5.3 -11.8v1.2M6.1 -11.5v1.1" fill="none" stroke="#c98a4a" stroke-width=".7" stroke-linecap="round"/>
+      <g class="cateyes look"><g class="eyes"><circle cx="4.1" cy="-8.7" r=".62" fill="#4a3526"/><circle cx="6.6" cy="-8.7" r=".62" fill="#4a3526"/></g></g>
+      <path class="cateyes-shut" d="M3.4 -8.7q.7 .7 1.4 0M5.9 -8.7q.7 .7 1.4 0" fill="none" stroke="#4a3526" stroke-width=".7" stroke-linecap="round"/>
+      <path d="M5.35 -7.5l-.45 -.5h.9z" fill="#ff8f9c"/>
+      <g class="catscarf"><path d="M2.5 -5.5q2.8 1.5 5.6 0" fill="none" stroke="#e85d5d" stroke-width="1.7" stroke-linecap="round"/><path d="M7.2 -5l1 2.6" fill="none" stroke="#e85d5d" stroke-width="1.7" stroke-linecap="round"/></g>
+      <text class="heart" id="heart" x="9" y="-13">♥</text>
+    </g></g>`;
+  }
+
+  /* ───────── 상태 → 그림 ───────── */
+  const ICON = {
+    clear: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+    night: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    partly: '<path d="M12 2v2M4.93 4.93l1.41 1.41M20 12h2M19.07 4.93l-1.41 1.41M15.947 12.65a4 4 0 0 0-5.925-4.128M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/>',
+    cloudy: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
+    rain: '<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M16 14v6M8 14v6M12 16v6"/>',
+    snow: '<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M8 15h.01M8 19h.01M12 17h.01M12 21h.01M16 15h.01M16 19h.01"/>',
+    thunder: '<path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.973M13 12l-3 5h4l-3 5"/>',
+    fog: '<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242M16 17H7M17 21H9"/>',
+  };
+  let sun = { x: 0, y: 0 };
+  /** 지금 깔려 있는 구름층들: { t: 날씨, h1, h2, x1, x2 } */
+  let decks = [];
+  let amb = ambient(state.hour, wxNow());
+  let geo = { s: 1, ox: 0, oy: 0 };
+
+  function greeting(h) {
+    if (h < 5) return '늦은 시간까지 수고 많으세요,';
+    if (h < 12) return '좋은 아침이에요,';
+    if (h < 18) return '좋은 오후예요,';
+    return '오늘도 수고 많으셨어요,';
+  }
+
+  function apply() {
+    const wx = wxNow(), night = isNight(), off = offAxis(), hour = state.hour;
+    amb = ambient(hour, wx);
+    sun = luminary(hour);
+
+    hero.dataset.tone = amb.tone;
+    hero.style.setProperty('--sky-a', css(amb.A));
+    hero.style.setProperty('--sky-b', css(amb.B));
+    hero.style.setProperty('--glow', amb.glow);
+    hero.style.setProperty('--wash', amb.wash);
+    hero.style.setProperty('--gx', `${(geo.ox + sun.x * geo.s).toFixed(1)}px`);
+    hero.style.setProperty('--gy', `${(geo.oy + sun.y * geo.s).toFixed(1)}px`);
+
+    scene.dataset.wx = wx;
+    scene.dataset.night = night ? '1' : '0';
+    scene.dataset.off = off ? '1' : '0';
+    scene.dataset.season = state.season;
+    scene.style.setProperty('--glass', css(mix(rgb('#9cc3e6'), rgb('#181d42'), amb.dark * 0.72)));
+    scene.style.setProperty('--axis', amb.dark > 0.5 ? 'rgba(255,255,255,.62)' : 'rgba(44,44,43,.5)');
+    scene.style.setProperty('--ol', amb.dark > 0.5 ? 'rgba(18,20,48,.6)' : 'rgba(64,48,40,.5)');
+
+    $('#lum').style.transform = `translate(${sun.x.toFixed(1)}px, ${sun.y.toFixed(1)}px)`;
+    $('#nowline').setAttribute('d', `M${sun.x.toFixed(1)} ${(sun.y + 18).toFixed(1)}V${GROUND}`);
+    const nowtxt = $('#nowtxt');
+    nowtxt.setAttribute('x', sun.x.toFixed(1));
+    nowtxt.textContent = clock(hour);
+    $$('.ticktxt').forEach((el) => { el.style.opacity = !off && Math.abs(xAt(+el.dataset.h) - sun.x) < 24 ? 0 : 1; });
+
+    // 구름층: 같은 날씨가 이어지는 시간대를 한 덩어리로 묶어 그 가로 범위에 깐다
+    decks = [];
+    for (let h = DAY_START; h < DAY_END; h++) {
+      const w = off ? wx : wxAtHour(h);
+      const t = CLOUDED.includes(w) ? w : null;
+      const last = decks[decks.length - 1];
+      if (t && last && last.t === t && last.h2 === h) last.h2 = h + 1;
+      else if (t) decks.push({ t, h1: h, h2: h + 1 });
+    }
+    decks.forEach((dk) => { dk.x1 = dk.h1 === DAY_START ? -70 : xAt(dk.h1) - 12; dk.x2 = dk.h2 === DAY_END ? 470 : xAt(dk.h2) + 12; });
+    ['front', 'back'].forEach((layer) => {
+      $$(`.deck.${layer}`, scene).forEach((el, i) => {
+        const dk = decks[i];
+        el.classList.toggle('on', !!dk);
+        if (!dk) return;
+        const path = $('.cloud', el);
+        const loose = dk.t === 'cloudy';
+        path.setAttribute('d', layer === 'front'
+          ? massPath(dk.x1, dk.x2, loose ? MASS.looseFront : MASS.denseFront, dk.h1)
+          : loose ? massPath(dk.x1 - 34, dk.x2 + 20, MASS.looseBack, dk.h1 + 2) : bandPath(dk.x1 - 16, dk.x2 + 12, 18, 5, dk.h1 + 3));
+        path.dataset.c = DECK_TONE[dk.t][layer === 'front' ? 0 : 1];
+      });
+    });
+    // 낱개 구름: '구름 조금'인 시간대에만
+    $$('.slot', scene).forEach((el) => el.classList.toggle('on', (off ? wx : wxAtHour(CLOUDS[+el.dataset.i].h)) === 'partly'));
+
+    // 색 입히기
+    const season = SEASONS[state.season];
+    const snowing = wx === 'snow';
+    $$('[data-c]', scene).forEach((el) => {
+      const c = el.dataset.c;
+      if (c === 'far') el.style.fill = css(mix(amb.B, mix(amb.A, rgb('#7b8fb8'), 0.45), 0.6));
+      else if (c === 'ground') el.style.fill = shade(snowing ? '#f7f9fc' : season.ground, amb, 1.4);
+      else if (c === 'tree0' || c === 'tree1') el.style.fill = shade(season.tree[c === 'tree0' ? 0 : 1], amb);
+      else if (c === 'leaf') el.style.fill = shade(season.leaf, amb, 0.5);
+      else if (c === 'cloud') el.style.fill = shade('#ffffff', amb, 0.7);
+      else el.style.fill = shade(c, amb, c === '#ffffff' || c === '#e2e9f2' || c === '#b9c2d3' ? 0.7 : 1);
+    });
+
+    // 창문: 저녁부터, 그리고 궂은 날에는 낮에도 몇 집이 불을 켠다
+    const { sr, ss } = SEASONS[state.season];
+    const dusk = hour >= ss - 0.8 || hour < sr + 0.5;
+    const m = night ? 3 : dusk ? 5 : wx === 'thunder' || wx === 'rain' ? 7 : 0;
+    $$('.wn', scene).forEach((el) => el.classList.toggle('lit', m > 0 && +el.dataset.k % m === 0));
+
+    // 일정 시각에 비·눈 예보면 깃발에 우산
+    let tip = '';
+    $$('.fumb').forEach((el) => {
+      const h = +el.dataset.h, w = wxAtHour(h), wet = !!PRECIP[w] && !off;
+      el.classList.toggle('on', wet);
+      if (wet && !tip && h > hour) tip = `${clock(h)} 일정 때 ${WX[w].label === '천둥번개' ? '비' : WX[w].label} 예보`;
+    });
+    const icon = wx === 'clear' && night ? ICON.night : ICON[wx];
+    $('#wxchip').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>${WX[wx].label} ${PRESETS[state.preset].temp}°${tip ? `<span class="sep">·</span><span class="tip">${tip}</span>` : ''}`;
+    $('#greet').textContent = greeting(hour);
+    scene.setAttribute('aria-label', `오늘의 시간 축과 날씨. 지금 ${clock(hour)} ${WX[wx].label}`);
+
+    $('#hr').value = hour;
+    $('#hrOut').textContent = clock(hour);
+    $$('#wxSeg button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.v === state.preset));
+    $$('#seSeg button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.v === state.season));
+    if (RM) drawStatic();
+  }
+
+  /* ───────── 비 · 눈 (canvas) ───────── */
+  const ctx = fx.getContext('2d');
+  const pool = Array.from({ length: 84 }, (_, i) => ({ i, kind: null, wait: Math.random() * 0.4 }));
+  const CAP = { rain: 46, heavy: 84, snow: 70 };
+  const splashes = [];
+  const ptr = { in: false, x: 0, y: 0, vx: 0, nx: 0, ny: 0 };
+
+  function respawn(p, prewarm) {
+    const x = 14 + Math.random() * 420;
+    const pr = precipAtX(x);
+    if (!pr || p.i >= CAP[pr.heavy ? 'heavy' : pr.kind]) { p.kind = null; p.wait = 0.15 + Math.random() * 0.5; return; }
+    p.kind = pr.kind; p.x = x; p.ix = 0; p.iy = 0;
+    if (pr.kind === 'rain') {
+      p.y = prewarm ? 24 + Math.random() * (GROUND - 24) : 20 + Math.random() * 6;
+      p.vy = (pr.heavy ? 172 : 132) + Math.random() * 50; p.vx = pr.heavy ? -48 : -20; p.len = 5 + Math.random() * 3;
+    } else {
+      p.y = prewarm ? 20 + Math.random() * (GROUND - 20) : 17 + Math.random() * 6;
+      p.vy = 13 + Math.random() * 13; p.r = 0.9 + Math.random() * 1.1; p.ph = Math.random() * 6.28; p.sw = 4 + Math.random() * 5;
+    }
+  }
+  const reseed = () => pool.forEach((p) => respawn(p, true));
+
+  const UMB_R = 13.5;
+  const umbrellaOn = () => ptr.in && ptr.y > 22 && ptr.y < GROUND + 6 && precipAtX(ptr.x)?.kind === 'rain';
+
+  function step(dt) {
+    const umb = umbrellaOn();
+    const ux = brolly.x, uy = brolly.y;
+    for (const p of pool) {
+      if (!p.kind) { p.wait -= dt; if (p.wait <= 0) respawn(p); continue; }
+      if (p.kind === 'rain') {
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        if (umb) {
+          const dx = p.x - ux, dy = p.y - uy;
+          if (dy < 1 && dx * dx + dy * dy < UMB_R * UMB_R) {
+            // 우산에 맞은 빗방울은 가장자리로 흘러내린다
+            const side = dx >= 0 ? 1 : -1;
+            p.x = ux + side * (UMB_R + 0.6); p.y = uy + 1.5; p.vx = side * 22; p.vy *= 0.72;
+            splashes.push({ x: ux + dx, y: uy + Math.min(dy, -Math.sqrt(Math.max(UMB_R * UMB_R - dx * dx, 0))), life: 0.2 });
+          }
+        }
+        if (p.y >= GROUND) { splashes.push({ x: p.x, y: GROUND, life: 0.24 }); respawn(p); }
+      } else {
+        p.ph += dt * 1.6;
+        if (ptr.in) {
+          const dx = p.x - ptr.x, dy = p.y - ptr.y, d = Math.hypot(dx, dy);
+          if (d < 30 && d > 0.01) { const f = (30 - d) / 30; p.ix += (dx / d) * f * 420 * dt + ptr.vx * f * 0.5 * dt; p.iy += (dy / d) * f * 300 * dt; }
+        }
+        p.ix *= Math.pow(0.05, dt); p.iy *= Math.pow(0.05, dt);
+        p.x += (Math.sin(p.ph) * p.sw + p.ix) * dt; p.y += (p.vy + p.iy) * dt;
+        if (p.y >= GROUND || p.y < 4) respawn(p);
+      }
+    }
+    for (let i = splashes.length - 1; i >= 0; i--) { splashes[i].life -= dt; if (splashes[i].life <= 0) splashes.splice(i, 1); }
+  }
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const nightish = amb.dark > 0.5;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = nightish ? 'rgba(200,216,255,.6)' : 'rgba(72,124,196,.62)';
+    ctx.lineWidth = 1.15;
+    ctx.beginPath();
+    for (const p of pool) if (p.kind === 'rain') { const k = p.len / Math.hypot(p.vx, p.vy); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * k, p.y - p.vy * k); }
+    for (const sp of splashes) { const r = (0.24 - sp.life) * 16 + 1; ctx.moveTo(sp.x - r, sp.y - r * 0.7); ctx.lineTo(sp.x - r * 0.5, sp.y - 0.4); ctx.moveTo(sp.x + r, sp.y - r * 0.7); ctx.lineTo(sp.x + r * 0.5, sp.y - 0.4); }
+    ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = nightish ? 'rgba(160,180,230,.4)' : 'rgba(112,146,196,.6)'; ctx.lineWidth = 0.55;
+    for (const p of pool) if (p.kind === 'snow') { ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.2832); ctx.fill(); ctx.stroke(); }
+  }
+  function drawStatic() { reseed(); draw(); }
+
+  /* ───────── 마우스: 눈동자 · 하늘 밀림 · 우산 ───────── */
+  const brolly = { x: 0, y: 0, tilt: 0, el: null, tiltEl: null };
+  const look = { x: 0, y: 0 };
+  const par = { x: 0, y: 0 };
+  const cache = { par: [], cat: null };
+  hero.addEventListener('pointermove', (e) => {
+    const r = scene.getBoundingClientRect(), hr = hero.getBoundingClientRect();
+    const x = (e.clientX - r.left) / geo.s, y = (e.clientY - r.top) / geo.s;
+    ptr.vx = (x - ptr.x) * 60; ptr.x = x; ptr.y = y; ptr.in = true;
+    ptr.nx = clamp(((e.clientX - hr.left) / hr.width) * 2 - 1, -1, 1);
+    ptr.ny = clamp(((e.clientY - hr.top) / hr.height) * 2 - 1, -1, 1);
+  });
+  hero.addEventListener('pointerleave', () => { ptr.in = false; ptr.nx = 0; ptr.ny = 0; ptr.vx = 0; });
+
+  function follow(dt) {
+    const k = 1 - Math.pow(0.0015, dt);
+    par.x += (ptr.nx - par.x) * k; par.y += (ptr.ny - par.y) * k;
+    cache.par.forEach((el) => { const d = +el.dataset.depth; el.style.transform = `translate(${(-par.x * d * 7).toFixed(2)}px, ${(-par.y * d * 3).toFixed(2)}px)`; });
+    // 눈동자: 고양이가 마우스를 본다
+    const tx = ptr.in ? clamp((ptr.x - 345) / 60, -1, 1) : 0, ty = ptr.in ? clamp((ptr.y - 45) / 40, -1, 1) : 0;
+    look.x += (tx - look.x) * k; look.y += (ty - look.y) * k;
+    cache.cat.style.transform = `translate(${(look.x * 0.55).toFixed(2)}px, ${(look.y * 0.4).toFixed(2)}px)`;
+    // 우산
+    const on = umbrellaOn();
+    brolly.el.classList.toggle('on', on);
+    const bk = 1 - Math.pow(0.00002, dt);
+    const gx = ptr.x, gy = ptr.y - 5;
+    const px = brolly.x;
+    brolly.x += (gx - brolly.x) * bk; brolly.y += (gy - brolly.y) * bk;
+    brolly.tilt += (clamp((brolly.x - px) / Math.max(dt, 0.001) * 0.09, -20, 20) - brolly.tilt) * k;
+    brolly.el.style.transform = `translate(${brolly.x.toFixed(1)}px, ${brolly.y.toFixed(1)}px)`;
+    brolly.tiltEl.style.transform = `rotate(${brolly.tilt.toFixed(1)}deg)`;
+  }
+
+  /* ───────── 반응 ───────── */
+  function hop(el, big) {
+    if (RM || !el?.animate) return;
+    const h = big ? 10 : 6;
+    el.animate([
+      { transform: 'translateY(0) scale(1, 1)' },
+      { transform: `translateY(-${h}px) scale(1.08, 0.94)`, offset: 0.3 },
+      { transform: 'translateY(0) scale(0.93, 1.07)', offset: 0.55 },
+      { transform: `translateY(-${h / 3}px) scale(1, 1)`, offset: 0.75 },
+      { transform: 'translateY(0) scale(1, 1)' },
+    ], { duration: 620, easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)' });
+  }
+  function sprinkle(x, y) {
+    if (RM) return;
+    let n = 0;
+    for (const p of pool) {
+      if (n >= 9) break;
+      if (p.kind) continue;
+      p.kind = wxNow() === 'snow' ? 'snow' : 'rain'; p.x = x - 9 + Math.random() * 18; p.y = y + 6; p.ix = 0; p.iy = 0;
+      if (p.kind === 'rain') { p.vy = 110 + Math.random() * 60; p.vx = -8; p.len = 5; } else { p.vy = 16 + Math.random() * 10; p.r = 1.2; p.ph = Math.random() * 6; p.sw = 6; }
+      n++;
+    }
+  }
+  function thunder() {
+    if (RM || document.hidden) return;
+    const storm = decks.filter((dk) => dk.t === 'thunder');
+    if (!storm.length) return;
+    const dk = storm[Math.floor(Math.random() * storm.length)];
+    const x = clamp(dk.x1 + 20 + Math.random() * (dk.x2 - dk.x1 - 40), 30, 420), y = 12;
+    const bolt = $('#bolt');
+    bolt.setAttribute('transform', `translate(${x.toFixed(1)} ${(y + 9).toFixed(1)})`);
+    bolt.animate([{ opacity: 0 }, { opacity: 1, offset: 0.12 }, { opacity: 0.2, offset: 0.3 }, { opacity: 1, offset: 0.42 }, { opacity: 0 }], { duration: 520 });
+    flash.animate([{ opacity: 0 }, { opacity: 0.3, offset: 0.12 }, { opacity: 0.05, offset: 0.3 }, { opacity: 0.2, offset: 0.42 }, { opacity: 0 }], { duration: 520 });
+    setTimeout(() => hop($('#catHop')), 140);
+  }
+  (function loopThunder() { setTimeout(() => { thunder(); loopThunder(); }, 4200 + Math.random() * 5200); })();
+
+  function sparkles(host) {
+    if (RM) return;
+    for (let i = 0; i < 6; i++) {
+      const sp = document.createElement('span');
+      sp.className = 'spark'; sp.style.setProperty('--a', `${i * 60 + 15}deg`);
+      host.appendChild(sp); setTimeout(() => sp.remove(), 600);
+    }
+  }
+  function sunrise() {
+    const el = $('#lum');
+    if (RM || !el.animate) return;
+    const night = isNight() || offAxis();
+    const { sr } = SEASONS[state.season];
+    // 낮: 일출 자리에서 지금 자리까지 해가 지나온 길을 따라 올라온다
+    const frames = night
+      ? [{ opacity: 0, transform: `translate(${sun.x}px, ${sun.y + 12}px)` }, { opacity: 1, transform: `translate(${sun.x}px, ${sun.y}px)` }]
+      : Array.from({ length: 13 }, (_, i) => { const p = luminary(sr + ((state.hour - sr) * i) / 12); return { transform: `translate(${p.x}px, ${p.y}px)`, opacity: i === 0 ? 0 : 1 }; });
+    el.animate(frames, { duration: night ? 700 : 1500, delay: 350, easing: 'cubic-bezier(0.23, 1, 0.32, 1)', fill: 'backwards' });
+  }
+
+  /*
+   * ───────── 걷는 사람의 하루 ─────────
+   * 끝없이 같은 속도로 지나가면 배경 무늬처럼 보인다. 그래서 왼쪽에서 나와 오른쪽으로 걷다가 가끔 건물에 들어가고,
+   * 한동안 있다가 나와서 다시 걷는다. 안에 있는 동안은 그 건물 창에 불이 켜진다.
+   */
+  function walkerDay() {
+    const go = $('.walkgo', scene), door = $('.walkdoor', scene);
+    if (RM || !go.animate) { go.style.transform = `translateX(${176 / WALKER_SCALE}px)`; return; }
+    const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+    const walk = (from, to) => go.animate(
+      [{ transform: `translateX(${from / WALKER_SCALE}px)` }, { transform: `translateX(${to / WALKER_SCALE}px)` }],
+      { duration: (Math.abs(to - from) / WALK_SPEED) * 1000, easing: 'linear', fill: 'forwards' }).finished;
+    const pass = (entering) => {
+      const shown = { opacity: 1, transform: 'scale(1)' }, hidden = { opacity: 0, transform: 'scale(0.82)' };
+      return door.animate(entering ? [shown, hidden] : [hidden, shown], { duration: 380, easing: 'ease-out', fill: 'forwards' }).finished;
+    };
+    (async () => {
+      for (;;) {
+        let x = -18;
+        for (const [block, doorX] of DOORS) {
+          if (Math.random() > 0.4) continue;
+          await walk(x, doorX); x = doorX;
+          await pass(true);
+          const bld = $(`.bld[data-block="${block}"]`, scene);
+          bld.classList.add('visit');
+          await wait(8000 + Math.random() * 14000);
+          bld.classList.remove('visit');
+          await pass(false);
+        }
+        await walk(x, 458);
+        await wait(2500 + Math.random() * 5000);
+      }
+    })();
+  }
+
+  /* ───────── 틀 ───────── */
+  function layout() {
+    const r = scene.getBoundingClientRect(), hr = hero.getBoundingClientRect();
+    if (!r.width) return;
+    geo = { s: r.width / W, ox: r.left - hr.left, oy: r.top - hr.top };
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    fx.width = Math.round(r.width * dpr); fx.height = Math.round(r.height * dpr);
+    ctx.setTransform(dpr * geo.s, 0, 0, dpr * geo.s, 0, 0);
+  }
+  let last = 0;
+  function frame(ts) {
+    const dt = Math.min((ts - last) / 1000 || 0.016, 0.05); last = ts;
+    if (!document.hidden) { step(dt); draw(); follow(dt); }
+    requestAnimationFrame(frame);
+  }
+
+  /* ───────── 조작판 ───────── */
+  function setState(patch, reseedFx = true) { Object.assign(state, patch); apply(); if (reseedFx && !RM) reseed(); }
+  $('#wxSeg').innerHTML = Object.entries(PRESETS).map(([k, v]) => `<button type="button" data-v="${k}">${v.name}</button>`).join('');
+  $('#seSeg').innerHTML = Object.entries(SEASONS).map(([k, v]) => `<button type="button" data-v="${k}">${v.name}</button>`).join('');
+  $('#wxSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setState({ preset: b.dataset.v }); });
+  $('#seSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setState({ season: b.dataset.v }, false); });
+  let sweep = 0;
+  const stopSweep = () => { cancelAnimationFrame(sweep); sweep = 0; hero.classList.remove('scrub'); $('#dayBtn').textContent = '하루 돌려 보기'; };
+  $('#hr').addEventListener('input', (e) => { if (sweep) stopSweep(); hero.classList.add('scrub'); setState({ hour: +e.target.value }, false); });
+  $('#hr').addEventListener('change', () => { hero.classList.remove('scrub'); if (!RM) reseed(); });
+  $('#nowBtn').addEventListener('click', () => { stopSweep(); setState({ hour: nowHour() }); });
+  $('#dayBtn').addEventListener('click', () => {
+    if (sweep) return stopSweep();
+    hero.classList.add('scrub'); $('#dayBtn').textContent = '멈추기';
+    const t0 = performance.now(), from = 4.5, to = 22.5, dur = 16000;
+    const tick = (ts) => {
+      const t = (ts - t0) / dur;
+      if (t >= 1) { setState({ hour: to }); return stopSweep(); }
+      setState({ hour: from + (to - from) * t }, false);
+      sweep = requestAnimationFrame(tick);
+    };
+    sweep = requestAnimationFrame(tick);
+  });
+  $('#doneBtn').addEventListener('click', () => {
+    if (state.tasks <= 0) state.tasks = 6;
+    state.tasks -= 1;
+    const num = $('#taskNum');
+    num.textContent = state.tasks; num.classList.remove('numpop'); void num.offsetWidth; num.classList.add('numpop');
+    sparkles($('#pinTasks')); hop($('#hopper'), true);
+  });
+  $('#replayBtn').addEventListener('click', () => { hero.classList.remove('play'); void hero.offsetWidth; hero.classList.add('play'); sunrise(); setTimeout(() => hero.classList.remove('play'), 2600); });
+
+  /* ───────── 시작 ───────── */
+  build();
+  brolly.el = $('#brolly'); brolly.tiltEl = $('#brollyTilt');
+  cache.par = $$('.par', scene); cache.cat = $('#cat .look');
+  scene.addEventListener('click', (e) => {
+    if (e.target.closest('.sun, .moon')) return hop($('#hopper'), true);
+    if (e.target.closest('.bigcloud')) { hop($('#hopper')); return sprinkle(sun.x + 10, sun.y + 8); }
+    if (e.target.closest('.deck')) return sprinkle(ptr.x, 15);
+    const slot = e.target.closest('.slot');
+    if (slot) { const c = CLOUDS[+slot.dataset.i]; hop($('.cbob', slot)); return sprinkle(xAt(c.h), c.y); }
+    if (e.target.closest('.cat')) {
+      hop($('#catHop'));
+      $('#heart').animate?.([{ opacity: 0, transform: 'translate(0, 2px) scale(0.6)' }, { opacity: 1, transform: 'translate(1px, -3px) scale(1)', offset: 0.3 }, { opacity: 0, transform: 'translate(3px, -10px) scale(1)' }], { duration: 900, easing: 'ease-out' });
+    }
+  });
+  const d = new Date();
+  $('#dateText').textContent = d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' });
+  layout(); apply(); reseed();
+  new ResizeObserver(() => { layout(); apply(); }).observe(hero);
+  sunrise();
+  walkerDay();
+  setTimeout(() => hero.classList.remove('play'), 2600);
+  if (RM) drawStatic(); else requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

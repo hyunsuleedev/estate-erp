@@ -69,7 +69,7 @@ pnpm --filter @estate-erp/desktop make      # 설치 파일 만들기 (electron-
 
 ### 단위와 이름
 - TypeScript는 `camelCase`, DB 컬럼은 `snake_case`(`@map`), Prisma 모델은 `PascalCase`
-- 가격은 **만원** 단위 정수. 15.8억 = `158000`
+- 가격은 **만원** 단위 정수. 15.8억 = `158000`. 예외: 수수료 입금 기록과 직원 정산의 금액은 **원** 단위다(부가세 10%와 3.3% 공제가 만원으로 떨어지지 않는다). 이유는 `prisma/schema/finance.prisma`의 주석.
 - 면적은 **m²**로 저장. 평 = m² × 0.3025
 - 주소는 자유 글이 아니라 법정동 코드(`Site.wardCode` → Ward → District → Province)
 - 좌표는 PostGIS `geometry(Point, 5179)`. 공간 쿼리는 `$queryRaw`
@@ -78,6 +78,7 @@ pnpm --filter @estate-erp/desktop make      # 설치 파일 만들기 (electron-
 - 법정동 마스터를 뺀 모든 업무 데이터에 `office_id`가 있다. 서버는 요청마다 사용자의 사무소로 범위를 좁힌다.
 - 새 표를 만들면 `office_id`를 넣고 `apps/server/src/prisma/prisma.service.ts`의 격리 대상 목록에 올린다.
 - 단지(Site)·동·호는 예외다. `officeId = null`이면 모든 사무소가 보는 공공 데이터, 값이 있으면 그 사무소의 비공개 데이터다.
+- 공지사항(`Notice`)도 예외다. 에스테잇플로우가 모든 사용자에게 알리는 공지라 `office_id`가 없다. 올리는 것은 운영자(`User.isPlatformAdmin`)만 하고, 앱에는 올리는 화면을 두지 않는다(`/notices/admin` API, 운영 화면은 나중에 별도 사이트).
 
 ### 장소 → 매물 → 거래
 ```
@@ -105,7 +106,7 @@ Site → Dong → Unit → Property → ListingIntake → Listing → Match → 
 - 상세는 `.claude/rules/mcp.md`.
 
 ### 화면
-- 색과 타이포의 기준은 `DESIGN.md`. 톤은 차분하고 전문적으로, 상자와 띠보다 선과 여백을 쓴다.
+- 색과 타이포의 기준은 코드다: `apps/desktop/src/renderer/app.css`의 토큰과 `components/domain/`의 공유 컴포넌트. 따로 둔 디자인 문서는 없다(`DESIGN.md`는 2026-11-16에 지웠다). 톤은 차분하고 전문적으로, 상자와 띠보다 선과 여백을 쓴다.
 - 사용자에게 보이는 문구를 새로 쓸 때는 같은 화면의 기존 문구와 말투를 맞춘다.
 
 ## 어디에 무엇이 있나

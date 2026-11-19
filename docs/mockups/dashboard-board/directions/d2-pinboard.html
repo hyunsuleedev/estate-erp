@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>방향 ② 핀보드 · 대시보드</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="shared.css">
+<style>
+  /*
+   * 방향 ② 핀보드 — 인사 영역의 귀여움을 아래까지 이어 간다.
+   * 판 위에 종이가 붙어 있다: 뜯는 달력(오늘 일정), 노란 메모지(밀린 일), 줄 쳐진 카드(오늘·다가옴), 거래마다 한 장씩의 매물 카드.
+   * 종이는 살짝 기울어 있고, 올리면 바로 서며 떠오른다. 색은 여전히 먹색·주황·메모지 노랑뿐이다.
+   */
+  .board { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr) minmax(0, 1.05fr); grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px 20px; padding: 18px 20px 14px; border-radius: 14px; background-color: var(--muted); background-image: radial-gradient(rgba(44, 44, 43, 0.13) 1px, transparent 1.2px); background-size: 14px 14px; box-shadow: inset 0 0 0 1px var(--line); }
+  .paper { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); border-radius: 4px; box-shadow: 0 1px 1px rgba(42, 28, 0, 0.08), 0 6px 14px -8px rgba(42, 28, 0, 0.28); transform: rotate(var(--r, 0deg)); transition: transform 260ms var(--ease-out), box-shadow 260ms ease; }
+  @media (hover: hover) and (pointer: fine) { .paper:hover, .paper:focus-within { transform: rotate(0deg) translateY(-2px); box-shadow: 0 1px 1px rgba(42, 28, 0, 0.08), 0 14px 24px -12px rgba(42, 28, 0, 0.34); z-index: 2; } }
+  /* 핀과 테이프 */
+  .pin-dot { position: absolute; left: 50%; top: -6px; width: 13px; height: 13px; margin-left: -6px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f7b07a, var(--accent) 60%); box-shadow: 0 2px 3px rgba(42, 28, 0, 0.3); z-index: 3; }
+  .tape { position: absolute; left: 50%; top: -9px; width: 62px; height: 18px; margin-left: -31px; background: rgba(217, 115, 13, 0.2); border-left: 1px dashed rgba(217, 115, 13, 0.35); border-right: 1px dashed rgba(217, 115, 13, 0.35); transform: rotate(-3deg); z-index: 3; }
+  .ph2 { display: flex; align-items: baseline; gap: 6px; padding: 14px 14px 6px; flex: none; font-size: 14px; font-weight: 600; }
+  .ph2 .n { font-weight: 400; color: var(--fg4); }
+  .ph2 .go { margin-left: auto; }
+  .pb { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 10px; }
+  /* 뜯는 달력 */
+  .cal { --r: -1.1deg; }
+  .note { --r: 0.9deg; }
+  .note .nrow { grid-template-columns: 8px minmax(0, 1fr); row-gap: 0; }
+  .note .nrow .mm { grid-column: 2; }
+  .note .nrow .tt { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 18px; }
+  .cal .top { height: 34px; display: flex; align-items: center; justify-content: center; gap: 22px; background: var(--red-strong); color: #fff; font-size: 13px; font-weight: 600; border-radius: 4px 4px 0 0; flex: none; }
+  .cal .top i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255, 255, 255, 0.55); box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.25); }
+  .cal .big { padding: 6px 0 0; text-align: center; font-size: 64px; line-height: 70px; font-weight: 600; letter-spacing: -0.04em; flex: none; }
+  .cal .dow { padding-bottom: 10px; text-align: center; font-size: 13px; color: var(--fg3); border-bottom: 1px dashed var(--line2); flex: none; }
+  .cal .days { display: grid; grid-template-columns: repeat(7, 1fr); padding: 6px 8px; flex: none; }
+  .cal .days button { height: 26px; border-radius: 13px; font-size: 12px; color: var(--fg3); font-variant-numeric: tabular-nums; transition: background-color 120ms; }
+  .cal .days button:hover { background: var(--hover); }
+  .cal .days button[aria-pressed="true"] { background: var(--fg); color: #fff; font-weight: 600; }
+  .evr { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 8px; padding: 6px 8px; border-radius: 6px; }
+  .evr:hover { background: var(--hover); }
+  .evr b { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  /* 노란 메모지 */
+  .sticky { --r: 0.9deg; background: #fff3d1; border-radius: 2px 2px 14px 2px; }
+  .sticky::after { content: ""; position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; background: linear-gradient(135deg, rgba(138, 90, 19, 0.16) 50%, var(--muted) 50%); border-radius: 0 0 14px 0; }
+  .sticky .ph2 { color: var(--amber); }
+  .sticky .ph2 .n { color: var(--amber); opacity: 0.7; }
+  .sticky .task:hover, .sticky .task:focus-within { background: rgba(138, 90, 19, 0.08); }
+  .sticky .chk { box-shadow: inset 0 0 0 1.5px rgba(138, 90, 19, 0.5); }
+  .sticky .t2 { color: var(--amber); opacity: 0.8; }
+  /* 줄 쳐진 카드 */
+  .lined { --r: -0.6deg; }
+  .lined .pb { background-image: repeating-linear-gradient(transparent 0 43px, rgba(35, 131, 226, 0.13) 43px 44px); }
+  .lined .task { min-height: 44px; padding-top: 5px; padding-bottom: 5px; }
+  .sub2 { padding: 8px 8px 2px; font-size: 12px; color: var(--fg4); }
+  /* 매물 카드 */
+  .dealrow { grid-column: 2 / 4; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(0, 1.7fr); gap: 14px; min-height: 0; }
+  .dcard { padding: 12px 12px 10px; text-align: left; --r: 0.7deg; }
+  .dcard:nth-child(even) { --r: -0.8deg; }
+  .dcard svg { width: 30px; height: 30px; fill: none; stroke: var(--fg3); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+  .dcard .u { margin-top: 6px; font-size: 15px; font-weight: 600; white-space: nowrap; }
+  .dcard .s { font-size: 12px; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dcard .nx { margin-top: auto; padding-top: 8px; font-size: 12px; }
+  .stamp { position: absolute; right: 8px; top: 12px; padding: 1px 6px; border: 1.5px solid currentColor; border-radius: 4px; font-size: 11px; font-weight: 600; transform: rotate(7deg); opacity: 0.85; background: var(--bg); }
+  .stamp.s2 { color: #6940a5; } .stamp.s3 { color: #2383e2; } .stamp.s4 { color: #d9730d; } .stamp.s5 { color: #0f7b6c; }
+  /* 신문 스크랩 */
+  .clip { flex: 1; --r: 1deg; background: #f6f3ec; border-radius: 1px; clip-path: polygon(0 3px, 6% 0, 14% 4px, 24% 1px, 37% 4px, 52% 0, 66% 3px, 80% 0, 92% 4px, 100% 1px, 100% 100%, 0 100%); }
+  .clip .mast { padding: 10px 12px 5px; margin: 0 0 2px; border-bottom: 2px solid var(--fg); font-size: 14px; font-weight: 700; letter-spacing: 0.04em; flex: none; }
+  .clip .nrow { grid-template-columns: minmax(0, 1fr); row-gap: 1px; padding: 5px 8px; border-radius: 3px; }
+  .clip .nrow + .nrow { box-shadow: 0 -1px 0 rgba(44, 44, 43, 0.12); }
+  .clip .nrow .ntag { justify-self: start; background: none; padding: 0; color: var(--accent); font-weight: 600; }
+  .clip .nrow .tt { white-space: normal; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; font-weight: 600; line-height: 18px; color: var(--fg); }
+  .clip .nrow .mm { display: none; }
+  /* 준비 중 쪽지 */
+  .slips { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .slip { position: relative; flex: none; height: 46px; display: flex; flex-direction: column; justify-content: center; padding: 6px 12px 4px; background: rgba(255, 255, 255, 0.6); border: 1px dashed #d6d3ce; border-radius: 3px; transform: rotate(var(--r, 0.6deg)); }
+  .slip:nth-child(2) { --r: -0.9deg; }
+  .slip b { font-size: 13px; font-weight: 500; color: var(--fg2); }
+  .slip span { font-size: 11px; color: var(--fg4); }
+  .slip .tape { width: 40px; margin-left: -20px; height: 14px; top: -8px; }
+</style>
+</head>
+<body>
+<script src="shared.js"></script>
+<script>
+(() => {
+  const { DAYS, DATES, TODAY, events, deals, ic, esc, inScope, bucket, dueText, shown, isDone, keepFocus } = DX;
+  let day = TODAY;
+  const HOUSE = '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 28V9a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v19M20 15h4a2 2 0 0 1 2 2v11M4 28h24M10 12h2M14 12h2M10 17h2M14 17h2M10 22h2M14 22h2"/></svg>';
+  const chk = (t) => `<button class="chk" role="checkbox" aria-checked="${isDone(t)}" aria-label="${esc(t.t)} ${isDone(t) ? '완료 취소' : '완료 처리'}" data-a="check" data-key="${t.id}"><svg viewBox="0 0 12 12"><path pathLength="1" d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg></button>`;
+  const task = (t, showDue) => `<div class="task${isDone(t) ? ' done' : ''}">${chk(t)}<div style="min-width:0"><div class="t1">${esc(t.t)}</div><div class="t2">${esc(t.m)}</div></div><span class="due ${bucket(t) === 'late' ? 'late' : ''}">${showDue ? dueText(t) : ''}</span></div>`;
+
+  function paint() {
+    const area = document.getElementById('area');
+    keepFocus(area, () => {
+      const all = shown(), g = { late: [], today: [], soon: [] }; all.forEach((t) => g[bucket(t)].push(t));
+      const live = (k) => g[k].filter((t) => !isDone(t)).length;
+      const ev = events.filter((e) => e.day === day && inScope(e)).sort((a, b) => a.time.localeCompare(b.time));
+      area.innerHTML = `<div class="board">
+        <section class="paper cal" id="p-cal"><span class="pin-dot"></span>
+          <div class="top"><i></i>2026년 11월<i></i></div>
+          <div class="big num">${DATES[day]}</div><div class="dow">${DAYS[day]}요일${day === TODAY ? ' · 오늘' : ''}</div>
+          <div class="days" role="group" aria-label="이번 주">${DAYS.map((d, i) => `<button data-a="day" data-key="${i}" aria-pressed="${i === day}" aria-label="11월 ${DATES[i]}일 ${d}요일">${DATES[i]}</button>`).join('')}</div>
+          <div class="pb">${ev.map((e) => `<div class="evr"><b>${e.time}</b><div style="min-width:0"><div class="t1">${esc(e.t)}</div><div class="t2">${esc(e.m)}</div></div></div>`).join('') || '<div class="empty">잡힌 일정이 없어요</div>'}</div>
+        </section>
+        <section class="paper note" id="p-note" style="grid-row:2;grid-column:1"><span class="tape"></span>
+          <div class="ph2">공지사항<span class="n num">${DX.unread() ? `안 읽음 ${DX.unread()}` : '모두 읽음'}</span></div>
+          <div class="pb">${DX.noticeRows(4)}</div>
+        </section>
+        <section class="paper sticky" id="p-late"><span class="tape"></span>
+          <div class="ph2">밀린 일<span class="n num">${live('late')}</span></div>
+          <div class="pb">${g.late.map((t) => task(t, true)).join('') || '<div class="empty">밀린 일이 없어요. 깔끔해요!</div>'}</div>
+        </section>
+        <section class="paper lined" id="p-todo"><span class="pin-dot"></span>
+          <div class="ph2">오늘 · 다가옴<span class="n num">${live('today') + live('soon')}</span><button class="go" data-a="say" data-msg="업무 화면으로 갑니다">업무${ic('arrow')}</button></div>
+          <div class="pb"><div class="sub2">오늘</div>${g.today.map((t) => task(t, false)).join('') || '<div class="empty" style="padding:8px">오늘 안에 할 일은 없어요</div>'}<div class="sub2">다가옴</div>${g.soon.map((t) => task(t, true)).join('')}</div>
+        </section>
+        <div class="dealrow">
+          ${deals.map((x) => `<button class="paper dcard" data-a="say" data-msg="${esc(x.t)} 거래를 엽니다"><span class="tape"></span>${HOUSE}<span class="stamp s${x.st}">${x.stl}</span><div class="u">${esc(x.t.replace('고덕그라시움 101동 ', ''))}</div><div class="s num">${esc(x.a)}</div><div class="nx num ${x.cls === 'warn' ? 'warn' : ''}" style="${x.cls === 'warn' ? 'color:var(--amber);font-weight:500' : ''}">${esc(x.nx)}${x.d ? ` · <b>${x.d}</b>` : ''}</div></button>`).join('')}
+          <div class="slips"><section class="paper clip"><div class="mast">부동산 뉴스</div><div class="pb" style="padding:0 4px 6px">${DX.newsRows(3)}</div></section><div class="slip"><span class="tape"></span><b>관리단지</b><span>준비 중이에요</span></div></div>
+        </div></div>`;
+    });
+  }
+  DX.onRender(paint);
+  document.addEventListener('dx:act', (e) => {
+    const { a, key } = e.detail;
+    if (a === 'day') { day = +key; return paint(); }
+    // 알약: 그 종이로 간다
+    const to = a === 'jump' ? '#p-cal [aria-pressed="true"]' : a === 'tab' && key === 'late' ? '#p-late [data-a]' : a === 'tab' ? '#p-todo [data-a="check"]' : null;
+    if (a === 'jump') { day = TODAY; paint(); }
+    if (to) document.querySelector(to)?.focus();
+  });
+  DX.start();
+})();
+</script>
+</body>
+</html>

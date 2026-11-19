@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D 사무소 판 · 대시보드 시안</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="board.css">
+<style>
+  /* 대표·팀장용. 줄은 직원, 칸은 종류. 칸을 누르면 오른쪽에 그 사람의 그 일이 나온다. */
+  .split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); gap: 12px; }
+  .pane { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-radius: var(--r-panel); box-shadow: 0 0 0 1px var(--line), var(--shadow-1); }
+  .pane > header { display: flex; align-items: baseline; gap: 8px; padding: 12px 16px 10px; flex: none; }
+  .pane > header h2 { margin: 0; font-size: 14px; font-weight: 600; }
+  .pane > header span { font-size: 12.5px; color: var(--text-3); }
+  .pane > header .clear { margin-left: auto; color: var(--text-2); font-size: 12.5px; }
+  .pane > header .clear:hover { color: var(--text); }
+
+  .grid { display: grid; grid-template-columns: 148px repeat(5, minmax(0, 1fr)) 76px; padding: 0 8px 8px; overflow: auto; }
+  .grid > * { min-height: 54px; display: flex; align-items: center; border-top: 1px solid var(--line); }
+  .grid .h { min-height: 32px; border-top: 0; font-size: 12.5px; color: var(--text-2); gap: 6px; padding: 0 8px; }
+  .grid .h.c { justify-content: center; }
+  .grid .name { gap: 9px; padding: 0 8px; font-weight: 500; }
+  .grid .name small { display: block; font-weight: 400; font-size: 12px; color: var(--text-3); }
+  .cell { justify-content: center; padding: 6px; }
+  .cell button { width: 100%; height: 40px; border-radius: var(--r-ctl); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 15px; font-weight: 600; color: var(--text); background: color-mix(in srgb, var(--c) calc(var(--w) * 1%), transparent); transition: box-shadow 0.12s, transform 0.1s; }
+  .cell button:hover { box-shadow: 0 0 0 1px var(--line-2); }
+  .cell button:active { transform: scale(0.98); }
+  .cell button.sel { box-shadow: 0 0 0 2px var(--accent); }
+  .cell button.zero { color: var(--text-3); font-weight: 400; background: none; cursor: default; box-shadow: none; }
+  .cell .late { font-size: 11.5px; font-weight: 600; color: var(--danger); }
+  .tot { justify-content: flex-end; padding: 0 12px; font-weight: 600; gap: 6px; }
+  .grid .sum { background: #fafbfc; font-weight: 600; }
+  .grid .sum.name { color: var(--text-2); font-weight: 500; }
+
+  .list { flex: 1; min-height: 0; overflow: auto; padding: 0 4px 6px; }
+  .pipebox { margin-top: auto; flex: none; padding: 12px 16px 14px; border-top: 1px solid var(--line); }
+  .pipebox h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; display: flex; gap: 6px; }
+  .pipebox h3 span { color: var(--text-3); font-weight: 400; }
+  .pipe { display: flex; gap: 3px; height: 8px; border-radius: 4px; overflow: hidden; }
+  .pipe i { display: block; }
+  .pipe-l { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 8px; font-size: 12.5px; color: var(--text-2); }
+  .pipe-l b { display: block; font-size: 16px; color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+<script src="board.js"></script>
+<script>
+  const body = B.shell();
+  // 이 시안은 사무소 전체가 기본이다. 다른 시안에서 범위를 이미 골랐으면 그 선택을 따른다.
+  if (!B.hadStored) B.setScope('all', false);
+  const kinds = ['deal', 'listing', 'buyer', 'money', 'expiry'];
+  const role = { 김서연: '대표', 박준호: '팀장', 이도윤: '중개사', 최하린: '중개사', 정민재: '중개보조원' };
+  let pick = null; // { who, kind } | null
+
+  function render() {
+    const v = B.visible(true);
+    const staff = B.state.scope === 'all' ? B.staff : [B.ME];
+    const count = (who, k) => v.filter((it) => (!who || it.who === who) && (!k || it.kind === k));
+    // 범위를 바꿔 그 사람이 표에서 빠졌거나 칸의 일을 다 처리했으면 고른 칸을 푼다.
+    if (pick && (!staff.includes(pick.who) || !count(pick.who, pick.kind).length)) pick = null;
+    const cell = (who, k) => {
+      const list = count(who, k), late = list.filter((it) => it.off < 0).length;
+      if (!list.length) return `<div class="cell"><button class="zero" disabled>–</button></div>`;
+      const on = pick && pick.who === who && pick.kind === k;
+      return `<div class="cell"><button class="num ${on ? 'sel' : ''}" style="--c:var(--k-${k});--w:${Math.min(8 + list.length * 7, 30)}" data-who="${who}" data-k="${k}">${list.length}${late ? `<span class="late">놓침 ${late}</span>` : ''}</button></div>`;
+    };
+    const rows = staff.map((who) => {
+      const all = count(who), late = all.filter((it) => it.off < 0).length;
+      return `<div class="name">${B.whoChip(who)}<span>${who}<small>${role[who]}</small></span></div>${kinds.map((k) => cell(who, k)).join('')}<div class="tot num">${late ? `<span class="tag danger">${late}</span>` : ''}${all.length}</div>`;
+    }).join('');
+    const sum = `<div class="name sum">합계</div>${kinds.map((k) => `<div class="sum num" style="justify-content:center">${count(null, k).filter((it) => staff.includes(it.who)).length}</div>`).join('')}<div class="tot sum num">${v.filter((it) => staff.includes(it.who)).length}</div>`;
+
+    const shown = (pick ? count(pick.who, pick.kind) : v.filter((it) => staff.includes(it.who) && it.off < 0)).sort((a, b) => a.off - b.off);
+    const title = pick ? `${pick.who} · ${B.kinds[pick.kind].label}` : '놓친 것';
+    const totalDeals = B.pipeline.reduce((n, p) => n + p.n, 0);
+
+    body.innerHTML = B.brief() + B.kpiStrip() + `<div class="split">
+      <section class="pane">
+        <header><h2>담당자별 챙길 일</h2><span>칸을 누르면 오른쪽에 목록이 나옵니다</span></header>
+        <div class="grid">
+          <div class="h">담당</div>${kinds.map((k) => `<div class="h c"><span class="dot k-${k}"></span>${B.kinds[k].label}</div>`).join('')}<div class="h" style="justify-content:flex-end;padding-right:12px">합계</div>
+          ${rows}${staff.length > 1 ? sum : ''}
+        </div>
+        <div class="pipebox">
+          <h3>거래 진행 <span class="num">${totalDeals}건</span></h3>
+          <div class="pipe">${B.pipeline.map((p) => `<i style="flex:${p.n};background:${p.c}"></i>`).join('')}</div>
+          <div class="pipe-l num">${B.pipeline.map((p) => `<span><b>${p.n}</b>${p.label}</span>`).join('')}</div>
+        </div>
+      </section>
+      <section class="pane">
+        <header><h2>${title}</h2><span class="num">${shown.length}건</span>${pick ? '<button class="clear" data-clear>놓친 것 보기</button>' : ''}</header>
+        <div class="list">${shown.map((it) => B.row(it, { kind: true, who: true })).join('') || '<div class="empty">없습니다.</div>'}</div>
+      </section>
+    </div>`;
+  }
+  document.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-who]');
+    if (c) { pick = { who: c.dataset.who, kind: c.dataset.k }; render(); }
+    if (e.target.closest('[data-clear]')) { pick = null; render(); }
+  });
+  B.onChange(render);
+  render();
+</script>
+</body>
+</html>

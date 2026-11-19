@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<title>직원 정산 흐름 시안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<link rel="stylesheet" href="shared.css" />
+<style>
+  /*
+   * 직원 정산 흐름 시안 (2026-11-18)
+   * 네 화면이 같은 데이터를 본다: 입금·증빙 → 직원 정산, 그리고 그 계산을 정하는 정산 규칙·직원 조건.
+   * 규칙이나 조건을 바꾸면 정산 금액이 바로 다시 계산된다. 확정한 정산은 그때의 숫자로 고정된다.
+   * 색과 치수는 shared.css(앱 토큰)를 그대로 쓴다. 금액은 원 단위.
+   */
+  .view-tb { gap: 10px; }
+  .where { color: var(--faint); font-size: 12.5px; }
+  .tbl td.wrap { white-space: normal; }
+  .tbl tr.sub td { height: 34px; background: #fcfcfb; color: var(--muted-fg); font-size: 12.5px; }
+  .tbl tr.sub:hover td { background: #fafaf9; }
+  .tbl tr.sub .calc { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 5px 0; white-space: normal; }
+  .tbl tr.sub .calc b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .tbl tr.sub .calc i { color: var(--faint); font-style: normal; }
+  .tbl tr.tot td { border-top: 1px solid var(--head-line); background: #fbfbfa; font-weight: 600; }
+  .chev-btn.open { transform: rotate(90deg); }
+  .who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .who b { font-weight: 600; }
+  .av { display: grid; flex: none; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: var(--surface); color: var(--muted-fg-strong); font-size: 11.5px; font-weight: 600; }
+  .neg { color: var(--destructive-strong); }
+  .lock { display: inline-flex; align-items: center; gap: 6px; color: var(--muted-fg); font-size: 12.5px; }
+  .sec-head { display: flex; align-items: baseline; gap: 8px; padding: 18px 12px 8px; font-size: 13px; font-weight: 600; }
+  .sec-head span { color: var(--muted-fg); font-weight: 400; font-size: 12.5px; }
+
+  /* 설정 화면: 표가 아니라 읽고 고르는 양식 */
+  .set { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 40px; max-width: 1120px; padding: 22px 24px 40px; }
+  .set h2 { font-size: 15px; font-weight: 600; }
+  .set .lead { margin: 4px 0 18px; color: var(--muted-fg); font-size: 13px; line-height: 1.6; }
+  .rule { padding: 16px 0; border-top: 1px solid var(--border); }
+  .rule h3 { font-size: 14px; font-weight: 600; }
+  .rule > p { margin: 3px 0 10px; color: var(--muted-fg); font-size: 13px; line-height: 1.55; }
+  .opts { display: grid; gap: 6px; }
+  .opt { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; align-items: start; width: 100%; padding: 9px 12px; border: 1px solid var(--chip-line); border-radius: 8px; text-align: left; transition: border-color 120ms ease, background-color 120ms ease; }
+  .opt:hover { background: var(--hover); }
+  .opt[aria-checked="true"] { border-color: var(--fg); background: #fbfbfa; }
+  .opt .dot { width: 14px; height: 14px; margin-top: 3px; border: 1.5px solid #c4c1bc; border-radius: 50%; }
+  .opt[aria-checked="true"] .dot { border: 4.5px solid var(--fg); }
+  .opt b { display: block; font-size: 13.5px; font-weight: 500; }
+  .opt small { display: block; margin-top: 1px; color: var(--muted-fg); font-size: 12.5px; line-height: 1.5; }
+  .changed { margin-left: 6px; color: var(--orange); font-size: 12px; font-weight: 500; }
+  .savebar { display: flex; align-items: center; gap: 8px; padding: 14px 0 0; border-top: 1px solid var(--border); }
+  .savebar .note { flex: 1; color: var(--muted-fg); font-size: 12.5px; line-height: 1.5; }
+  .hist { margin-top: 22px; font-size: 12.5px; color: var(--muted-fg); }
+  .hist li { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; padding: 5px 0; border-top: 1px solid var(--hair); }
+  .prev { position: sticky; top: 22px; align-self: start; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 2px rgba(15, 15, 15, 0.04); }
+  .prev header { padding: 12px 14px 10px; border-bottom: 1px solid var(--hair); }
+  .prev header b { font-size: 13.5px; font-weight: 600; }
+  .prev header p { margin-top: 2px; color: var(--muted-fg); font-size: 12.5px; line-height: 1.5; }
+  .prev table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .prev th { height: 30px; padding: 0 14px; color: var(--muted-fg); font-size: 12px; font-weight: 500; text-align: right; }
+  .prev th:first-child, .prev td:first-child { text-align: left; }
+  .prev td { height: 36px; padding: 0 14px; border-top: 1px solid var(--hair); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .prev tr.tot td { font-weight: 600; background: #fbfbfa; }
+  .prev .was { color: var(--faint); text-decoration: line-through; font-size: 12px; }
+  .up { color: var(--success); } .down { color: var(--destructive-strong); }
+  .prev footer { padding: 10px 14px 12px; border-top: 1px solid var(--hair); color: var(--muted-fg); font-size: 12.5px; line-height: 1.55; }
+
+  /* 직원 조건: 사람 중심 명부 */
+  .roster { max-width: 1120px; padding: 22px 24px 40px; }
+  .person { display: grid; grid-template-columns: minmax(160px, 1.1fr) 180px 120px 170px minmax(140px, 1fr) 170px; gap: 18px; align-items: center; padding: 14px 0; border-top: 1px solid var(--border); }
+  .person .who .av { width: 32px; height: 32px; font-size: 13px; }
+  .person .who small { display: block; color: var(--muted-fg); font-size: 12.5px; }
+  .lab { display: block; margin-bottom: 4px; color: var(--muted-fg); font-size: 12px; }
+  .seg { display: inline-flex; height: 30px; padding: 2px; border-radius: 8px; background: var(--surface); }
+  .seg button { height: 26px; padding: 0 11px; border-radius: 6px; color: var(--muted-fg); font-size: 13px; }
+  .seg button[aria-pressed="true"] { background: #fff; color: var(--fg); font-weight: 500; box-shadow: 0 1px 2px rgba(15, 15, 15, 0.1); }
+  .pct { display: inline-flex; align-items: center; gap: 6px; }
+  .pct .input.wide { width: 110px; }
+  .pct .input { width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
+  .pct .input.bad { border-color: var(--destructive); box-shadow: 0 0 0 3px rgba(224, 62, 62, 0.12); }
+  .sw { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+  .sw i { position: relative; width: 30px; height: 18px; border-radius: 999px; background: #d3d1cb; transition: background-color 140ms ease; }
+  .sw i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(15, 15, 15, 0.25); transition: transform 160ms var(--ease); }
+  .sw[aria-checked="true"] i { background: var(--fg); }
+  .sw[aria-checked="true"] i::after { transform: translateX(12px); }
+  .person .pay { text-align: right; }
+  .person .pay b { display: block; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .person .hint { grid-column: 2 / -1; margin-top: -6px; color: var(--warning-strong); font-size: 12.5px; line-height: 1.5; }
+  .person .err { grid-column: 2 / -1; margin-top: -6px; color: var(--destructive-strong); font-size: 12.5px; }
+
+  /* 입금 기록 줄 */
+  .addrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
+  .addrow .input { height: 30px; font-size: 13px; }
+  .ev { display: inline-flex; align-items: center; gap: 6px; }
+  .ev .spin { width: 10px; height: 10px; border: 1.5px solid var(--info); border-right-color: transparent; border-radius: 50%; animation: spin 700ms linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .ev .spin { animation: none; } }
+  .kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .sum2 { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 12px; border-radius: 6px; background: var(--band); font-size: 13px; }
+  .sum2 b { font-variant-numeric: tabular-nums; }
+  @media (max-width: 1100px) { .set { grid-template-columns: minmax(0, 1fr); } .prev { position: static; } .person { grid-template-columns: 1fr 1fr; } .person .hint, .person .err { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="titlebar"><div class="tb-brand"><b>Estait</b></div><div class="tabs"><div class="tab"><span>직원 정산 흐름 시안</span></div></div></div>
+  <div class="body"><main class="main"><div class="page">
+    <div class="tb line view-tb">
+      <div class="pills" role="tablist" aria-label="화면" id="views"></div>
+      <span class="where" id="where"></span>
+      <span class="spacer"></span>
+      <span id="tools" style="display:flex;align-items:center;gap:8px"></span>
+    </div>
+    <div id="band"></div>
+    <div class="scroll" id="body"></div>
+    <div class="statusbar"><span>금액 단위 원 · 예시 데이터 · 오늘은 2026년 11월 30일로 가정</span><span id="stat"></span></div>
+  </div></main></div>
+</div>
+<dialog class="dlg" id="dlg"></dialog>
+<div class="toasts" id="toasts" role="status"></div>
+<script>
+(() => {
+  const TODAY = '2026-11-30', MONTH = '2026-11';
+  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const won = (n) => `${Math.round(n).toLocaleString('ko-KR')}원`;
+  const signed = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(Math.round(n)).toLocaleString('ko-KR');
+  const md = (d) => `${+d.slice(5, 7)}.${d.slice(8, 10)}`;
+  const CHEV = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
+
+  const VIEWS = [['settle', '직원 정산', '수수료/정산 › 직원 정산'], ['money', '입금·증빙', '수수료/정산 › 수금 원장'], ['rules', '정산 규칙', '설정 › 정산 규칙'], ['staff', '직원 조건', '설정 › 직원 및 권한']];
+  const RULES = {
+    timing: { title: '언제 정산하나', desc: '계약 때 수수료 일부를 먼저 받은 거래를 어느 달 정산에 넣을지 정합니다.', opts: [['closed', '잔금이 끝난 뒤', '잔금까지 끝난 거래만 정산합니다. 계약이 깨져도 돌려받을 돈이 생기지 않습니다.'], ['received', '돈이 들어온 달', '수수료가 들어온 달에 그 금액만큼 바로 정산합니다. 직원이 빨리 받습니다.']] },
+  };
+  const ruleLabel = (k, v) => RULES[k].opts.find((o) => o[0] === v)[1];
+
+  const S = {
+    view: 'settle',
+    rules: { timing: 'closed' },
+    draft: null,
+    history: [{ at: '2026.01.02', text: '처음 설정 · 잔금이 끝난 뒤' }],
+    staff: [
+      { id: 'kim', name: '김서연', role: '소속공인중개사', type: 'freelancer', ratio: 60, wh: true, base: 0 },
+      { id: 'park', name: '박준호', role: '소속공인중개사', type: 'freelancer', ratio: 50, wh: true, base: 500000 },
+      { id: 'choi', name: '최하늘', role: '소속공인중개사', type: 'freelancer', ratio: 70, wh: true, base: 0 },
+      { id: 'lee', name: '이도윤', role: '중개보조원', type: 'employee', ratio: 30, wh: false, base: 2200000 },
+    ],
+    ratioDraft: {}, // 직원 몫 입력 칸에 적는 중인 글
+    baseDraft: {},  // 기본급 입력 칸에 적는 중인 글
+    deals: [
+      { id: 'd1', name: '고덕그라시움 103동 3401호', tx: '매매', payer: '매수인 한지우', biz: false, supply: 7900000, discount: 0, closedOn: null, balanceOn: '2027-01-20', partner: null, split: [['kim', 100]],
+        receipts: [{ id: 'r1', date: '2026-11-12', gross: 4345000, method: '계좌이체', ev: { kind: 'cash', state: 'sent' } }] },
+      { id: 'd2', name: '고덕아르테온 215동 1102호', tx: '전세', payer: '임차인 서민아', biz: false, supply: 3000000, discount: 0, closedOn: '2026-11-05', partner: null, split: [['park', 40], ['kim', 60]],
+        receipts: [{ id: 'r2', date: '2026-11-05', gross: 3300000, method: '계좌이체', ev: { kind: 'cash', state: 'sent' } }] },
+      { id: 'd3', name: '고덕자이 201동 904호', tx: '매매', payer: '매도인 ㈜고덕상사', biz: true, supply: 2720000, discount: 200000, discountNote: '11.20 대표 승인', closedOn: '2026-11-21', partner: null, split: [['park', 100]],
+        receipts: [{ id: 'r3', date: '2026-11-21', gross: 2772000, method: '계좌이체', ev: null }] },
+      { id: 'd4', name: '고덕센트럴아이파크 107동 1503호', tx: '월세', payer: '임차인 윤태경', biz: false, supply: 1400000, discount: 0, closedOn: '2026-11-27', partner: null, split: [['lee', 100]],
+        receipts: [{ id: 'r4', date: '2026-11-27', gross: 1540000, method: '현금', ev: null }] },
+      { id: 'd5', name: '래미안힐스테이트 고덕 304동 702호', tx: '매매', payer: '매수인 정유진', biz: false, supply: 4000000, discount: 0, closedOn: '2026-11-18', partner: { name: '한빛공인중개사', pct: 50 }, split: [['choi', 100]],
+        receipts: [{ id: 'r5', date: '2026-11-18', gross: 4400000, method: '계좌이체', ev: { kind: 'cash', state: 'sent' } }] },
+      { id: 'd6', name: '고덕아이파크 110동 2201호', tx: '매매', payer: '매수인 오세훈', biz: false, supply: 5000000, discount: 0, closedOn: null, balanceOn: '2026-12-15', partner: null, split: [['choi', 50], ['park', 50]],
+        receipts: [{ id: 'r6', date: '2026-11-25', gross: 2750000, method: '계좌이체', ev: { kind: 'cash', state: 'sent' } }] },
+    ],
+    clawbacks: [{ staff: 'kim', amount: 1200000, note: '10월에 정산한 고덕자이 107동 1202호가 계약 해제돼 11.08에 수수료를 돌려줌' }],
+    open: new Set(['kim']), moneyOpen: new Set(['d3', 'd4']),
+    settle: { status: 'draft', snap: null, at: null, paid: {} },
+    form: null,  // { dealId, date, amount, method, err }
+    issue: null, // { dealId, rid, kind, idno, self, err }
+    seq: 10,
+  };
+  S.draft = { ...S.rules };
+
+  /* ───────── 계산 ───────── */
+  function withholding(taxable) {
+    const base = Math.max(0, taxable);
+    const income = Math.floor((base * 0.03) / 10) * 10; // 소득세 3%, 10원 미만 버림
+    return income + Math.floor((income * 0.1) / 10) * 10; // 지방소득세 0.3%
+  }
+  function compute(rules, staff) {
+    const rows = new Map(staff.map((s) => [s.id, { staff: s, lines: [], share: 0, base: 0, adj: 0, adjNote: '', wh: 0, net: 0, carry: 0, target: 0 }]));
+    const pending = [];
+    for (const d of S.deals) {
+      const inMonth = d.receipts.filter((r) => r.date.slice(0, 7) === MONTH);
+      const closedThisMonth = d.closedOn && d.closedOn.slice(0, 7) === MONTH;
+      const used = rules.timing === 'received' ? inMonth : closedThisMonth ? d.receipts : [];
+      const gross = used.reduce((a, r) => a + r.gross, 0);
+      if (!gross) {
+        const waiting = inMonth.reduce((a, r) => a + r.gross, 0);
+        if (waiting) pending.push({ deal: d, amount: waiting, reason: `잔금(${md(d.balanceOn)}) 뒤 정산` });
+        continue;
+      }
+      // 고정 규칙: 부가세는 항상 빼고 나눈다. 할인은 실제 받은 돈을 나누므로 사무소와 직원이 비율대로 부담한다.
+      const base = Math.round(gross / 1.1);
+      const keep = 1 - (d.partner ? d.partner.pct / 100 : 0);
+      const pool = base * keep;
+      const disc = d.discount * keep;
+      for (const [sid, pct] of d.split) {
+        const row = rows.get(sid); if (!row) continue;
+        const ratio = row.staff.ratio / 100, part = pct / 100;
+        let share = pool * part * ratio;
+        const discText = disc ? `할인 ${won(disc * part)}은 비율대로 부담` : '';
+        share = Math.round(share);
+        row.lines.push({ deal: d, gross, base, pool, pct, ratio: row.staff.ratio, share, discText, dates: used.map((r) => md(r.date)).join(', ') });
+        row.share += share; row.target += Math.round(pool * part);
+      }
+    }
+    for (const c of S.clawbacks) {
+      const row = rows.get(c.staff); if (!row) continue;
+      // 고정 규칙: 정산한 뒤 계약이 깨지면 지난 정산은 그대로 두고 이번 정산에서 뺀다.
+      row.adj -= c.amount; row.adjNote = c.note;
+    }
+    for (const row of rows.values()) {
+      const before = row.share + row.adj;
+      // 기본급은 실적과 상관없이 매달 나간다. 근로자의 기본급은 급여로 나가므로 여기서는 다루지 않는다.
+      row.base = row.staff.type === 'freelancer' ? row.staff.base || 0 : 0;
+      const gross = row.base + Math.max(0, before);
+      row.wh = row.staff.type === 'freelancer' && row.staff.wh ? withholding(gross) : 0;
+      row.net = gross - row.wh;
+      row.carry = before < 0 ? -before : 0; // 뺄 돈이 더 크면 다음 달로 넘긴다
+    }
+    return { rows: [...rows.values()], pending, rules: { ...rules } };
+  }
+  const live = () => compute(S.rules, S.staff);
+  const shown = () => (S.settle.status === 'confirmed' ? S.settle.snap : live());
+
+  /* ───────── 그리기 ───────── */
+  const $ = (id) => document.getElementById(id);
+  function toast(text) { setTimeout(() => { $('toasts').innerHTML = `<div class="toast">${esc(text)}</div>`; clearTimeout(toast.t); toast.t = setTimeout(() => ($('toasts').innerHTML = ''), 3200); }, 0); }
+  function render() {
+    const active = document.activeElement, fid = active?.dataset?.fid, sel = fid && active.selectionStart != null ? [active.selectionStart, active.selectionEnd] : null;
+    $('views').innerHTML = VIEWS.map(([k, l]) => `<button role="tab" aria-selected="${S.view === k}" class="${S.view === k ? 'on' : ''}" data-a="view" data-k="${k}" data-fid="view:${k}">${l}</button>`).join('');
+    $('where').textContent = VIEWS.find((v) => v[0] === S.view)[2];
+    ({ settle: drawSettle, money: drawMoney, rules: drawRules, staff: drawStaff })[S.view]();
+    if (fid) { const el = document.querySelector(`[data-fid="${CSS.escape(fid)}"]`); if (el) { el.focus({ preventScroll: true }); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]); } catch {} } }
+  }
+  const typeBadge = (s) => (s.type === 'freelancer' ? `<span class="badge t-gray">프리랜서</span>` : `<span class="badge t-info">근로자</span>`);
+  const who = (s) => `<span class="who"><span class="av" aria-hidden="true">${esc(s.name[0])}</span><b>${esc(s.name)}</b></span>`;
+
+  function drawSettle() {
+    const confirmed = S.settle.status === 'confirmed', data = shown();
+    const anyPaid = Object.keys(S.settle.paid).length > 0;
+    $('tools').innerHTML = `${confirmed ? `<span class="lock"><span class="badge t-success">확정</span>${S.settle.at} 확정 · 지급일 12월 10일</span>${anyPaid ? '' : `<button class="btn" data-a="unconfirm" data-fid="unconfirm">확정 취소</button>`}` : `<span class="lock"><span class="badge t-warning">작성 중</span>확정 전까지 입금과 규칙에 따라 다시 계산됩니다</span>`}
+      <button class="ghost" data-a="csv" data-fid="csv">세무사용 목록 내려받기</button>
+      ${confirmed ? '' : `<button class="primary" data-a="confirm" data-fid="confirm">11월 정산 확정</button>`}`;
+    const r = data.rules;
+    $('band').innerHTML = `<div class="band"><span class="item">2026년 11월</span><span class="item">기준 <b>${ruleLabel('timing', r.timing)}</b></span><span class="item">부가세를 빼고 나눔</span><span class="item">계약이 깨지면 다음 정산에서 뺌</span><span class="spacer"></span><button class="item" data-a="view" data-k="rules" data-fid="gorules">규칙 바꾸기</button></div>`;
+    let tShare = 0, tBase = 0, tAdj = 0, tWh = 0, tNet = 0, tTarget = 0;
+    const body = data.rows.map((row) => {
+      const s = row.staff, isOpen = S.open.has(s.id), paid = S.settle.paid[s.id];
+      tShare += row.share; tBase += row.base; tAdj += row.adj; tWh += row.wh; tNet += row.net; tTarget += row.target;
+      const whCell = s.type === 'employee' ? `<span class="tail">급여에서 계산</span>` : !s.wh ? `<span class="tail">공제 안 함</span>` : row.wh ? `−${row.wh.toLocaleString('ko-KR')}` : `<span class="empty-val">0</span>`;
+      const emp = s.type === 'employee';
+      const act = !confirmed ? `<span class="tail">${emp ? '확정 뒤 급여에 넘김' : '확정 뒤 지급'}</span>` : row.net <= 0 ? `<span class="tail">지급할 돈 없음</span>` : paid ? `<span class="tail">${paid} ${emp ? '급여에 넘김' : '지급함'}</span><button class="btn" data-a="unpay" data-k="${s.id}" data-fid="pay:${s.id}">취소</button>` : `<button class="btn dark" data-a="pay" data-k="${s.id}" data-fid="pay:${s.id}">${emp ? '급여에 넘김' : '지급 기록'}</button>`;
+      const head = `<tr><td><span class="name-cell"><button class="chev-btn${isOpen ? ' open' : ''}" data-a="open" data-k="${s.id}" data-fid="open:${s.id}" aria-expanded="${isOpen}" aria-label="${esc(s.name)} 계산 근거 ${isOpen ? '접기' : '펼치기'}">${CHEV}</button>${who(s)}</span></td>
+        <td>${typeBadge(s)} <span class="tail tnum">몫 ${s.ratio}%</span></td><td class="num">${row.lines.length}</td><td class="num">${row.target.toLocaleString('ko-KR')}</td><td class="num">${row.share.toLocaleString('ko-KR')}</td><td class="num">${row.base ? row.base.toLocaleString('ko-KR') : '<span class="empty-val">—</span>'}</td>
+        <td class="num ${row.adj < 0 ? 'neg' : ''}">${row.adj ? signed(row.adj) : '<span class="empty-val">—</span>'}</td><td class="num">${whCell}</td>
+        <td class="num strong"${row.carry || emp ? ' style="padding-top:5px;padding-bottom:5px;line-height:1.35"' : ''}>${row.net.toLocaleString('ko-KR')}${emp ? `<div class="tail" style="font-weight:400">세금 떼기 전 성과급</div>` : ''}${row.carry ? `<div class="tail neg" style="font-weight:400">다음 달로 넘김 ${row.carry.toLocaleString('ko-KR')}</div>` : ''}</td><td><span class="act-cell">${act}</span></td></tr>`;
+      if (!isOpen) return head;
+      const lines = row.lines.map((l) => `<tr class="sub"><td colspan="4" class="wrap"><span class="calc"><span class="indent"></span><b>${esc(l.deal.name)}</b><i>${l.dates} 입금</i> ${won(l.gross)}${l.base !== l.gross ? ` <i>→ 부가세 빼고</i> <b>${won(l.base)}</b>` : ''}${l.deal.partner ? ` <i>→ ${esc(l.deal.partner.name)} ${l.deal.partner.pct}% 빼고</i> <b>${won(l.pool)}</b>` : ''}${l.pct < 100 ? ` <i>→ 내 배분 ${l.pct}%</i> <b>${won(l.pool * l.pct / 100)}</b>` : ''} <i>× 몫 ${l.ratio}%</i>${l.discText ? ` <i>· ${esc(l.discText)}</i>` : ''}</span></td><td class="num">${l.share.toLocaleString('ko-KR')}</td><td colspan="5"></td></tr>`).join('');
+      const adj = row.adj ? `<tr class="sub"><td colspan="6" class="wrap"><span class="calc"><span class="indent"></span><b>지난 정산에서 뺄 돈</b><i>${esc(row.adjNote)}</i></span></td><td class="num neg">${signed(row.adj)}</td><td colspan="3"></td></tr>` : '';
+      const none = !row.lines.length && !row.adj ? `<tr class="sub"><td colspan="10"><span class="calc"><span class="indent"></span>이번 달 정산에 들어온 거래가 없습니다.</span></td></tr>` : '';
+      return head + lines + adj + none;
+    }).join('');
+    const pend = data.pending.length ? `<div class="sec-head">이번 달 정산에 들어가지 않은 입금 <span>${data.pending.length}건 · ${won(data.pending.reduce((a, p) => a + p.amount, 0))}</span></div>
+      <table class="tbl" style="--min:720px"><colgroup><col><col style="width:150px"><col style="width:220px"><col style="width:200px"></colgroup><tbody>${data.pending.map((p) => `<tr><td>${esc(p.deal.name)} <span class="tail">${esc(p.deal.payer)}</span></td><td class="num">${p.amount.toLocaleString('ko-KR')}</td><td class="muted">${esc(p.reason)}</td><td class="muted">${p.deal.split.map(([id, pct]) => `${esc(S.staff.find((x) => x.id === id).name)} ${pct}%`).join(' · ')}</td></tr>`).join('')}</tbody></table>` : '';
+    $('body').innerHTML = `<table class="tbl" style="--min:1150px"><colgroup><col><col style="width:150px"><col style="width:52px"><col style="width:120px"><col style="width:116px"><col style="width:112px"><col style="width:108px"><col style="width:112px"><col style="width:132px"><col style="width:168px"></colgroup>
+      <thead><tr><th>직원</th><th>구분</th><th class="num">건</th><th class="num" title="직원 몫을 곱하기 전 금액">정산 대상</th><th class="num" title="거래에서 나온 성과 몫">직원 몫</th><th class="num">기본급</th><th class="num">조정</th><th class="num" title="프리랜서에게 줄 돈에서 미리 떼어 세무서에 내는 세금">3.3% 공제</th><th class="num">지급액</th><th></th></tr></thead>
+      <tbody>${body}<tr class="tot"><td>합계</td><td></td><td></td><td class="num">${tTarget.toLocaleString('ko-KR')}</td><td class="num">${tShare.toLocaleString('ko-KR')}</td><td class="num">${tBase ? tBase.toLocaleString('ko-KR') : ''}</td><td class="num ${tAdj < 0 ? 'neg' : ''}">${tAdj ? signed(tAdj) : ''}</td><td class="num">${tWh ? '−' + tWh.toLocaleString('ko-KR') : ''}</td><td class="num">${tNet.toLocaleString('ko-KR')}</td><td></td></tr></tbody></table>${pend}`;
+    $('stat').textContent = confirmed ? `지급 ${Object.keys(S.settle.paid).length}/${data.rows.filter((x) => x.net > 0).length}명` : '';
+  }
+
+  const claimGross = (d) => Math.round((d.supply - d.discount) * 1.1);
+  const received = (d) => d.receipts.reduce((a, r) => a + r.gross, 0);
+  const EV = { cash: '현금영수증', tax: '세금계산서' };
+  function evCell(d, r) {
+    if (!r.ev) { const urgent = r.method === '현금' && r.gross >= 100000 && !d.biz; return `<span class="ev">${urgent ? `<span class="badge t-warning">현금 10만원 이상 · 5일 안에 발행</span>` : `<span class="badge t-gray">증빙 미발행</span>`}<button class="btn" data-a="issue" data-k="${d.id}:${r.id}" data-fid="issue:${r.id}">발행</button></span>`; }
+    const label = `${EV[r.ev.kind]}${r.ev.self ? ' (자진발급)' : ''}`;
+    if (r.ev.state === 'issued') return `<span class="ev"><span class="badge t-info">${label} 발행완료</span><span class="spin" aria-hidden="true"></span><span class="tail">국세청 전송 중</span><button class="btn" data-a="evcancel" data-k="${d.id}:${r.id}" data-fid="evc:${r.id}">발행 취소</button></span>`;
+    return `<span class="ev"><span class="badge t-success">${label} 전송 성공</span><span class="tail tnum">${esc(r.ev.no ?? '')}</span></span>`;
+  }
+  function drawMoney() {
+    $('tools').innerHTML = `<span class="lock">입금을 기록하면 직원 정산에 바로 반영됩니다</span>`;
+    $('band').innerHTML = '';
+    const rows = S.deals.map((d) => {
+      const g = claimGross(d), got = received(d), left = g - got, isOpen = S.moneyOpen.has(d.id);
+      const missing = d.receipts.filter((r) => !r.ev).length;
+      const status = left <= 0 ? `<span class="badge t-success">다 받음</span>` : got ? `<span class="badge t-info">일부 받음</span>` : `<span class="badge t-gray">받기 전</span>`;
+      const head = `<tr><td><span class="name-cell"><button class="chev-btn${isOpen ? ' open' : ''}" data-a="mopen" data-k="${d.id}" data-fid="mopen:${d.id}" aria-expanded="${isOpen}" aria-label="${esc(d.name)} 입금 기록 ${isOpen ? '접기' : '펼치기'}">${CHEV}</button><span class="nm strong">${esc(d.name)}</span><span class="tail">${esc(d.payer)}${d.biz ? ' · 사업자' : ''}</span></span></td>
+        <td>${status}</td><td class="num">${g.toLocaleString('ko-KR')}</td><td class="num">${got.toLocaleString('ko-KR')}</td><td class="num ${left > 0 ? 'strong' : 'muted'}">${Math.max(0, left).toLocaleString('ko-KR')}</td>
+        <td>${d.receipts.length ? (missing ? `<span class="amber">${d.receipts.length}건 중 ${missing}건 미발행</span>` : `<span class="muted">${d.receipts.length}건 모두 발행</span>`) : '<span class="empty-val">—</span>'}</td>
+        <td><span class="act-cell">${left > 0 ? `<button class="btn" data-a="addopen" data-k="${d.id}" data-fid="addopen:${d.id}">입금 기록</button>` : ''}</span></td></tr>`;
+      if (!isOpen) return head;
+      const sub = [`<tr class="sub"><td colspan="7" class="wrap"><span class="calc"><span class="indent"></span>청구 <b>${won(Math.round(d.supply * 1.1))}</b> <i>= 중개보수 ${won(d.supply)} + 부가세 ${won(Math.round(d.supply * 0.1))}</i>${d.discount ? ` <i>· 할인</i> <b class="neg">−${won(Math.round(d.discount * 1.1))}</b> <i>(${esc(d.discountNote)})</i>` : ''}${d.partner ? ` <i>· 공동중개 ${esc(d.partner.name)} 몫 ${d.partner.pct}%</i>` : ''}</span></td></tr>`];
+      for (const r of d.receipts) sub.push(`<tr class="sub"><td class="wrap"><span class="calc"><span class="indent"></span><b>${md(r.date)} 입금</b><i>${esc(r.method)}</i></span></td><td></td><td></td><td class="num" style="color:var(--fg)">${r.gross.toLocaleString('ko-KR')}</td><td></td><td colspan="2" style="overflow:visible">${evCell(d, r)}</td></tr>`);
+      if (!d.receipts.length) sub.push(`<tr class="sub"><td colspan="7"><span class="calc"><span class="indent"></span>아직 들어온 돈이 없습니다.</span></td></tr>`);
+      if (S.form?.dealId === d.id) { const f = S.form; sub.push(`<tr class="sub"><td colspan="7" style="overflow:visible"><div class="addrow"><span class="indent"></span>
+        <label class="sr" for="f-date">입금일</label><input class="input" id="f-date" type="date" style="width:150px" max="${TODAY}" value="${esc(f.date)}" data-in="f.date" data-fid="f.date">
+        <label class="sr" for="f-amt">받은 금액</label><input class="input tnum" id="f-amt" inputmode="numeric" placeholder="받은 금액 (원)" style="width:170px;text-align:right" value="${esc(f.amount)}" data-in="f.amount" data-fid="f.amount">
+        <label class="sr" for="f-m">받은 방법</label><select class="input" id="f-m" style="width:120px" data-in="f.method" data-fid="f.method">${['계좌이체', '현금', '카드'].map((m) => `<option${f.method === m ? ' selected' : ''}>${m}</option>`).join('')}</select>
+        <button class="btn dark" data-a="addsave" data-fid="addsave">기록</button><button class="btn" data-a="addclose" data-fid="addclose">닫기</button>
+        <span class="tail">남은 돈 ${won(left)}</span>${f.err ? `<span class="dlg-error" role="alert">${esc(f.err)}</span>` : ''}</div></td></tr>`); }
+      return head + sub.join('');
+    }).join('');
+    $('body').innerHTML = `<table class="tbl" style="--min:1080px"><colgroup><col><col style="width:92px"><col style="width:124px"><col style="width:124px"><col style="width:124px"><col style="width:190px"><col style="width:210px"></colgroup>
+      <thead><tr><th>거래 · 청구 대상</th><th>상태</th><th class="num">청구액</th><th class="num">받은 돈</th><th class="num">남은 돈</th><th>증빙</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    $('stat').textContent = '';
+  }
+
+  const dirty = () => Object.keys(S.rules).some((k) => S.rules[k] !== S.draft[k]);
+  function drawRules() {
+    $('tools').innerHTML = ''; $('band').innerHTML = '';
+    const confirmed = S.settle.status === 'confirmed', isDirty = dirty();
+    // 확정한 달은 확정 금액이 기준이다. 다시 계산한 값을 '지금'으로 보여 주면 직원 정산 화면과 숫자가 달라진다.
+    const now = confirmed ? S.settle.snap : compute(S.rules, S.staff);
+    // 확정 뒤에 고용 형태나 몫을 바꿨더라도 여기서는 확정 당시의 직원 조건으로 계산한다. 섞으면 지급액과 세전 성과급을 견주게 된다.
+    const next = compute(S.draft, confirmed ? S.settle.snap.rows.map((r) => r.staff) : S.staff);
+    const form = Object.entries(RULES).map(([k, rule]) => `<section class="rule"><h3>${rule.title}${S.rules[k] !== S.draft[k] ? `<span class="changed">바꾸는 중</span>` : ''}</h3><p>${rule.desc}</p>
+      <div class="opts" role="radiogroup" aria-label="${rule.title}">${rule.opts.map(([v, l, d]) => `<button class="opt" role="radio" aria-checked="${S.draft[k] === v}" data-a="rule" data-k="${k}:${v}" data-fid="rule:${k}:${v}"><span class="dot"></span><span><b>${l}</b><small>${d}</small></span></button>`).join('')}</div></section>`).join('');
+    let a = 0, b = 0;
+    const rows = now.rows.map((row, i) => { const n = next.rows[i]; a += row.net; b += n.net; const diff = n.net - row.net;
+      const mid = confirmed ? `<td>${row.net.toLocaleString('ko-KR')}</td><td>${n.net.toLocaleString('ko-KR')}</td>` : `<td>${isDirty && diff ? `<span class="was">${row.net.toLocaleString('ko-KR')}</span> ` : ''}${n.net.toLocaleString('ko-KR')}</td>`;
+      return `<tr><td>${esc(row.staff.name)}</td>${mid}<td class="${diff > 0 ? 'up' : diff < 0 ? 'down' : 'faint'}">${diff ? signed(diff) : '—'}</td></tr>`; }).join('');
+    const pendNow = now.pending.length, pendNext = next.pending.length;
+    $('body').innerHTML = `<div class="set"><div>
+        <h2>정산 규칙</h2><p class="lead">직원 몫을 계산하는 사무소의 규칙입니다. 고르면 오른쪽에서 11월 정산이 어떻게 달라지는지 바로 볼 수 있고, 저장하기 전에는 아무것도 바뀌지 않습니다. 부가세는 항상 빼고 나누고, 깎아 준 수수료는 실제로 받은 돈을 나누므로 사무소와 직원이 비율대로 부담합니다. 정산한 뒤 계약이 깨지면 이미 준 몫은 다음 정산에서 뺍니다. 3.3% 공제는 직원 조건에서 정합니다.</p>
+        ${form}
+        <div class="savebar"><span class="note">${confirmed ? '11월 정산은 이미 확정했습니다. 저장하면 12월 정산부터 적용됩니다.' : '저장하면 아직 확정하지 않은 11월 정산부터 적용됩니다.'}</span><button class="btn lg" data-a="rulereset" data-fid="rulereset" ${isDirty ? '' : 'disabled'}>되돌리기</button><button class="btn dark lg" data-a="rulesave" data-fid="rulesave" ${isDirty ? '' : 'disabled'}>저장</button></div>
+        <ul class="hist" aria-label="변경 이력">${S.history.map((h) => `<li><span class="tnum">${h.at}</span><span>${esc(h.text)}</span></li>`).join('')}</ul>
+      </div>
+      <aside class="prev" aria-live="polite"><header><b>${confirmed ? '11월에 이 규칙이었다면' : '11월 정산 미리보기'}</b><p>${confirmed ? '11월 정산은 확정돼 바뀌지 않습니다. 확정한 금액과 견줘 보는 계산이고, 직원 조건은 확정 당시 그대로 둡니다.' : isDirty ? '고른 규칙으로 계산한 지급액입니다.' : '지금 규칙의 지급액입니다. 규칙을 바꿔 보면 차이가 여기에 나옵니다.'}</p></header>
+        <table><thead><tr><th>직원</th>${confirmed ? '<th>확정 지급액</th><th>이 규칙이면</th>' : '<th>지급액</th>'}<th>차이</th></tr></thead><tbody>${rows}<tr class="tot"><td>합계</td>${confirmed ? `<td>${a.toLocaleString('ko-KR')}</td>` : ''}<td>${b.toLocaleString('ko-KR')}</td><td class="${b - a > 0 ? 'up' : b - a < 0 ? 'down' : 'faint'}">${b - a ? signed(b - a) : '—'}</td></tr></tbody></table>
+        <footer>정산에 들어가지 않고 기다리는 입금 ${pendNext}건${pendNow !== pendNext ? ` (${confirmed ? '확정 때' : '지금'} ${pendNow}건)` : ''}. ${S.draft.timing === 'closed' ? '잔금이 끝나면 그 달 정산에 들어갑니다.' : '들어온 돈은 모두 그 달에 정산합니다.'}</footer></aside></div>`;
+    $('stat').textContent = '';
+  }
+
+  function drawStaff() {
+    $('tools').innerHTML = `<span class="lock">${S.settle.status === 'confirmed' ? '11월 정산은 확정돼 있어 바꾼 조건은 12월부터 적용됩니다' : '바꾼 조건은 11월 정산에 바로 반영됩니다'}</span>`;
+    $('band').innerHTML = '';
+    const data = live(), snap = S.settle.status === 'confirmed' ? S.settle.snap : null;
+    $('body').innerHTML = `<div class="roster"><h2 style="font-size:15px;font-weight:600">직원 조건</h2><p class="lead" style="margin:4px 0 14px;color:var(--muted-fg);font-size:13px;line-height:1.6">직원마다 몫과 기본급, 세금 처리를 정합니다. 프리랜서는 기본급과 거래에서 나온 몫을 더해 3.3%를 떼고 지급합니다(3.3%는 끌 수 있습니다). 근로자는 거래에서 나온 성과급까지만 계산하고, 기본급과 세금·4대보험은 급여에서 처리합니다.</p>
+      ${S.staff.map((s) => { const row = data.rows.find((r) => r.staff.id === s.id), draft = S.ratioDraft[s.id], bad = draft != null && !validRatio(draft);
+        const bDraft = S.baseDraft[s.id], bBad = bDraft != null && !validBase(bDraft);
+        const fixed = snap?.rows.find((r) => r.staff.id === s.id), payNet = fixed ? fixed.net : row.net;
+        return `<div class="person"><span class="who"><span class="av" aria-hidden="true">${esc(s.name[0])}</span><span><b>${esc(s.name)}</b><small>${esc(s.role)}</small></span></span>
+          <div><span class="lab">구분</span><span class="seg" role="group" aria-label="${esc(s.name)} 구분">${[['freelancer', '프리랜서'], ['employee', '근로자']].map(([v, l]) => `<button aria-pressed="${s.type === v}" data-a="type" data-k="${s.id}:${v}" data-fid="type:${s.id}:${v}">${l}</button>`).join('')}</span></div>
+          <div><label class="lab" for="ratio-${s.id}">직원 몫</label><span class="pct"><input class="input${bad ? ' bad' : ''}" id="ratio-${s.id}" inputmode="numeric" value="${esc(draft ?? s.ratio)}" data-in="ratio:${s.id}" data-fid="ratio:${s.id}" aria-invalid="${bad}">%</span></div>
+          ${s.type === 'freelancer' ? `<div><label class="lab" for="base-${s.id}">기본급 (월)</label><span class="pct"><input class="input wide${bBad ? ' bad' : ''}" id="base-${s.id}" inputmode="numeric" placeholder="없음" value="${esc(bDraft ?? (s.base ? s.base.toLocaleString('ko-KR') : ''))}" data-in="base:${s.id}" data-fid="base:${s.id}" aria-invalid="${bBad}">원</span></div>` : `<div><span class="lab">기본급 (월)</span><span class="muted" style="font-size:13px">급여로 지급합니다</span></div>`}
+          <div><span class="lab">3.3% 공제</span>${s.type === 'freelancer' ? `<button class="sw" role="switch" aria-checked="${s.wh}" data-a="wh" data-k="${s.id}" data-fid="wh:${s.id}" aria-label="${esc(s.name)} 3.3% 공제"><i></i>${s.wh ? '떼고 지급' : '떼지 않음'}</button>` : `<span class="muted" style="font-size:13px">급여에서 계산합니다</span>`}</div>
+          <div class="pay"><span class="lab">${payName((fixed ?? row).staff.type)}${fixed ? ' (확정)' : ''}</span><b id="pay-${s.id}">${won(payNet)}</b>${fixed && (row.net !== fixed.net || s.type !== fixed.staff.type) ? `<span class="lab" style="margin:2px 0 0">${fixed.staff.type !== s.type ? `확정 때는 ${typeName(fixed.staff.type)} · ` : ''}지금 조건이면 ${s.type === 'employee' ? '성과급' : '지급액'} ${won(row.net)}${s.type === 'employee' ? ' (세금 떼기 전)' : ''} · 12월부터 적용</span>` : ''}</div>
+          ${bBad ? `<p class="err" role="alert">기본급은 숫자로 적어 주세요. 없으면 비워 둡니다. 지금은 ${won(s.base || 0)}으로 계산하고 있습니다.</p>` : ''}
+          ${bad ? `<p class="err" role="alert">직원 몫은 0부터 100 사이의 숫자로 적어 주세요. 지금은 ${s.ratio}%로 계산하고 있습니다.</p>` : ''}
+          ${s.type === 'freelancer' && !s.wh ? `<p class="hint">3.3%를 떼지 않고 전액 지급합니다. 세무사용 목록에는 "공제 안 함"으로 표시되고, 원천징수 신고는 사무소가 따로 챙겨야 합니다.</p>` : ''}</div>`; }).join('')}</div>`;
+    $('stat').textContent = '';
+  }
+  const parseBase = (v) => Number(String(v).replace(/[,\s원]/g, '') || 0);
+  const validBase = (v) => /^[\d,\s]*원?$/.test(String(v).trim()) && parseBase(v) <= 99999999;
+  const typeName = (t) => (t === 'employee' ? '근로자' : '프리랜서');
+  const payName = (t) => (t === 'employee' ? '11월 성과급 (세금 떼기 전)' : '11월 지급액');
+  const validRatio = (v) => /^\d{1,3}$/.test(String(v).trim()) && +v <= 100;
+
+  /* ───────── 증빙 발행 창 ───────── */
+  function drawIssue() {
+    const x = S.issue, d = S.deals.find((q) => q.id === x.dealId), r = d.receipts.find((q) => q.id === x.rid);
+    const supply = Math.round(r.gross / 1.1), vat = r.gross - supply;
+    $('dlg').innerHTML = `<form method="dialog" novalidate><div class="dlg-head"><h2>증빙 발행</h2><p>${esc(d.name)} · ${esc(d.payer)} · ${md(r.date)} ${esc(r.method)} 입금</p></div>
+      <div class="dlg-body"><div class="field"><span class="lab">종류</span><div class="kinds" role="radiogroup" aria-label="증빙 종류">${[['cash', '현금영수증', '개인 손님, 사업자의 지출증빙'], ['tax', '세금계산서', '사업자등록증을 낸 사업자']].map(([k, l, s]) => `<button type="button" class="opt" role="radio" aria-checked="${x.kind === k}" data-a="ikind" data-k="${k}" data-fid="ikind:${k}"><span class="dot"></span><span><b>${l}</b><small>${s}</small></span></button>`).join('')}</div>
+        <small>한 거래에 현금영수증과 세금계산서를 함께 낼 수 없습니다.</small></div>
+        <div class="sum2"><span>공급가액</span><b>${won(supply)}</b><span>부가세</span><b>${won(vat)}</b><span class="strong">발행 금액</span><b>${won(r.gross)}</b></div>
+        <div class="field"><label for="i-no">${x.kind === 'cash' ? '휴대폰 번호 또는 사업자번호' : '사업자등록번호'}</label><input class="input tnum" id="i-no" inputmode="numeric" placeholder="${x.kind === 'cash' ? '숫자만 10~11자리' : '숫자만 10자리'}" value="${esc(x.idno)}" ${x.self ? 'disabled' : ''} data-in="i.idno" data-fid="i.idno">
+          ${x.kind === 'cash' ? `<label class="check-line" style="margin-top:4px"><input type="checkbox" ${x.self ? 'checked' : ''} data-a="iself" data-fid="iself">번호를 모릅니다 (국세청 지정번호로 자진발급)</label>` : ''}
+          ${x.err ? `<span class="dlg-error" role="alert">${esc(x.err)}</span>` : ''}</div></div>
+      <div class="dlg-foot"><button type="button" class="btn lg" data-a="iclose" data-fid="iclose">닫기</button><button type="button" class="btn dark lg" data-a="isend" data-fid="isend">발행</button></div></form>`;
+  }
+
+  /* ───────── 동작 ───────── */
+  const ACT = {
+    view: (k) => { S.view = k; for (const id of Object.keys(S.baseDraft)) if (validBase(S.baseDraft[id])) delete S.baseDraft[id]; }, // 화면을 옮길 때 맞게 적힌 기본급은 쉼표를 넣어 다시 보여 준다
+    open: (k) => { S.open.has(k) ? S.open.delete(k) : S.open.add(k); },
+    mopen: (k) => { S.moneyOpen.has(k) ? S.moneyOpen.delete(k) : S.moneyOpen.add(k); },
+    confirm: () => { S.settle = { status: 'confirmed', snap: JSON.parse(JSON.stringify(live())), at: '11.30', paid: {} }; toast('11월 정산을 확정했습니다. 이제 이 숫자는 바뀌지 않습니다.'); },
+    unconfirm: () => { S.settle = { status: 'draft', snap: null, at: null, paid: {} }; toast('확정을 취소했습니다. 다시 계산합니다.'); },
+    pay: (k) => { const st = S.settle.snap.rows.find((r) => r.staff.id === k).staff; S.settle.paid[k] = '11.30'; /* 확정 당시의 고용 형태로 안내한다 */ toast(st.type === 'employee' ? `${st.name} 님의 성과급을 이번 달 급여에 넘긴 것으로 기록했습니다.` : `${st.name} 님에게 지급한 것으로 기록했습니다.`); },
+    unpay: (k) => { delete S.settle.paid[k]; toast('지급 기록을 취소했습니다.'); },
+    csv: () => {
+      const data = shown(), head = ['이름', '구분', '직원 몫', '기본급', '조정', '3.3% 공제', '지급액', '비고'];
+      const lines = data.rows.map((r) => [r.staff.name, r.staff.type === 'freelancer' ? '프리랜서' : '근로자', r.share, r.base, r.adj, r.wh, r.net, r.staff.type === 'freelancer' && !r.staff.wh ? '공제 안 함' : r.staff.type === 'employee' ? '세금 떼기 전 성과급 · 급여에 합산' : ''].join(','));
+      const url = URL.createObjectURL(new Blob(['﻿' + [head.join(','), ...lines].join('\n')], { type: 'text/csv' }));
+      const a = Object.assign(document.createElement('a'), { href: url, download: '2026-11-직원정산.csv' }); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast('2026-11-직원정산.csv를 내려받았습니다.');
+    },
+    rule: (k) => { const [key, v] = k.split(':'); S.draft[key] = v; },
+    rulereset: () => { S.draft = { ...S.rules }; },
+    rulesave: () => {
+      const changed = Object.keys(S.rules).filter((k) => S.rules[k] !== S.draft[k]).map((k) => `${RULES[k].title}: ${ruleLabel(k, S.rules[k])} → ${ruleLabel(k, S.draft[k])}`);
+      S.rules = { ...S.draft }; S.history.unshift({ at: '2026.11.30', text: `${changed.join(' / ')} (${S.settle.status === 'confirmed' ? '12월' : '11월'} 정산부터)` });
+      toast('정산 규칙을 저장했습니다.');
+    },
+    type: (k) => { const [id, v] = k.split(':'); const s = S.staff.find((q) => q.id === id); s.type = v; if (v === 'freelancer' && s.whTouched !== true) s.wh = true; },
+    wh: (k) => { const s = S.staff.find((q) => q.id === k); s.wh = !s.wh; s.whTouched = true; },
+    addopen: (k) => { S.moneyOpen.add(k); S.form = { dealId: k, date: TODAY, amount: '', method: '계좌이체', err: '' }; setTimeout(() => $('f-amt')?.focus(), 0); },
+    addclose: () => { const id = S.form?.dealId; S.form = null; setTimeout(() => document.querySelector(`[data-fid="addopen:${id}"]`)?.focus(), 0); },
+    addsave: () => {
+      const f = S.form, d = S.deals.find((q) => q.id === f.dealId), left = claimGross(d) - received(d), amt = Number(String(f.amount).replace(/[,\s원]/g, ''));
+      if (!f.date || f.date > TODAY) return void (f.err = '입금일을 오늘이나 그 전 날짜로 골라 주세요.');
+      if (!Number.isInteger(amt) || amt <= 0) return void (f.err = '받은 금액을 숫자로 적어 주세요.');
+      if (amt > left) return void (f.err = `남은 돈 ${won(left)}보다 많습니다.`);
+      d.receipts.push({ id: `r${++S.seq}`, date: f.date, gross: amt, method: f.method, ev: null });
+      d.receipts.sort((a, b) => a.date.localeCompare(b.date)); S.form = null;
+      toast(`${md(f.date)} 입금 ${won(amt)}을 기록했습니다.${S.settle.status === 'confirmed' ? ' 확정한 11월 정산에는 들어가지 않습니다.' : ''}`);
+    },
+    issue: (k) => { const [dealId, rid] = k.split(':'); const d = S.deals.find((q) => q.id === dealId); S.issue = { dealId, rid, kind: d.biz ? 'tax' : 'cash', idno: '', self: false, err: '' }; drawIssue(); $('dlg').showModal(); },
+    ikind: (k) => { S.issue.kind = k; S.issue.err = ''; if (k === 'tax') S.issue.self = false; drawIssue(); document.querySelector(`[data-fid="ikind:${k}"]`)?.focus(); },
+    iself: () => { S.issue.self = !S.issue.self; S.issue.err = ''; drawIssue(); document.querySelector('[data-fid="iself"]')?.focus(); },
+    iclose: () => closeIssue(),
+    isend: () => {
+      const x = S.issue, no = x.idno.replace(/\D/g, '');
+      if (!x.self) {
+        if (x.kind === 'tax' && no.length !== 10) { x.err = '사업자등록번호 10자리를 적어 주세요.'; drawIssue(); $('i-no').focus(); return; }
+        if (x.kind === 'cash' && (no.length < 10 || no.length > 11)) { x.err = '휴대폰 번호나 사업자번호를 숫자 10~11자리로 적어 주세요.'; drawIssue(); $('i-no').focus(); return; }
+      }
+      const d = S.deals.find((q) => q.id === x.dealId), r = d.receipts.find((q) => q.id === x.rid);
+      r.ev = { kind: x.kind, state: 'issued', self: x.self, no: null };
+      const rid = x.rid; closeIssue(true); render();
+      toast(`${EV[r.ev.kind]}을 발행했습니다. 국세청으로 보내는 중입니다.`);
+      setTimeout(() => { if (r.ev?.state === 'issued') { r.ev.state = 'sent'; r.ev.no = `승인 ${String(20261130)}${String(1000 + S.seq++)}`; if (S.view === 'money') render(); } }, 2600);
+      setTimeout(() => document.querySelector(`[data-fid="evc:${rid}"]`)?.focus(), 0);
+    },
+    evcancel: (k) => { const [dealId, rid] = k.split(':'); const r = S.deals.find((q) => q.id === dealId).receipts.find((q) => q.id === rid); if (r.ev?.state === 'issued') { r.ev = null; toast('국세청으로 보내기 전이라 발행을 취소했습니다.'); setTimeout(() => document.querySelector(`[data-fid="issue:${rid}"]`)?.focus(), 0); } },
+  };
+  function closeIssue(done) {
+    const x = S.issue; if (!x) return;
+    if (!done && x.idno.trim() && !confirm('적은 번호가 사라집니다. 닫을까요?')) return;
+    S.issue = null; $('dlg').close();
+    if (!done) setTimeout(() => document.querySelector(`[data-fid="issue:${x.rid}"]`)?.focus(), 0);
+  }
+  $('dlg').addEventListener('cancel', (e) => { e.preventDefault(); closeIssue(); });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-a]'); if (!b || b.disabled) return;
+    const a = b.dataset.a; if (!ACT[a]) return;
+    ACT[a](b.dataset.k);
+    if (!a.startsWith('i') || a === 'issue') render();
+  });
+  document.addEventListener('input', (e) => {
+    const key = e.target.dataset?.in; if (!key) return;
+    const v = e.target.value;
+    if (key === 'f.date') S.form.date = v;
+    else if (key === 'f.amount') S.form.amount = v;
+    else if (key === 'f.method') S.form.method = v;
+    else if (key === 'i.idno') S.issue.idno = v;
+    else if (key.startsWith('base:')) {
+      const id = key.slice(5), st = S.staff.find((q) => q.id === id);
+      S.baseDraft[id] = v;
+      if (validBase(v)) st.base = parseBase(v);
+      render();
+    }
+    else if (key.startsWith('ratio:')) {
+      const id = key.slice(6), s = S.staff.find((q) => q.id === id);
+      S.ratioDraft[id] = v;
+      if (validRatio(v)) { s.ratio = +v; if (String(+v) === v.trim()) delete S.ratioDraft[id]; }
+      render(); // 포커스와 커서는 data-fid로 되찾는다
+    }
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.dataset?.in?.startsWith('f.') && !e.isComposing) { e.preventDefault(); ACT.addsave(); render(); } });
+  render();
+  window.__S = S; window.__compute = compute;
+})();
+</script>
+</body>
+</html>

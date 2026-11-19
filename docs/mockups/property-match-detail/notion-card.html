@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>매칭 펼침 영역 — 고객 조건 카드 시안</title>
+<style>
+  /* 색은 apps/desktop/src/renderer/app.css 토큰 값 그대로 */
+  :root {
+    --fg: #2c2c2b;
+    --fg-sub: #5f5e59;
+    --fg-muted: #79766f;
+    --icon: #8e8b86;
+    --line: #f0efed;
+    --input: #e6e5e3;
+    --ring: #2383e2;
+    --info: #2383e2; --info-soft: #d3e5ef; --info-strong: #1b64b1;
+    --success: #0f7b6c; --success-soft: #dbeddb;
+    --warning: #cb912f; --warning-soft: #fdecc8; --warning-strong: #8a5a13;
+    --violet: #6940a5; --violet-soft: #e8deee;
+    --orange: #d9730d; --orange-soft: #fadec9;
+    --destructive: #e03e3e; --destructive-soft: #ffe2dd; --destructive-strong: #bb3430;
+    --neutral-soft: #f1f1ef;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: "Pretendard", "Pretendard Variable", -apple-system, BlinkMacSystemFont,
+      "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: var(--fg); background: #fff; font-size: 14px; line-height: 21px;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:disabled { cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid rgba(35,131,226,.5); outline-offset: 1px; }
+  svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── 시안 조작 띠 (앱 화면이 아님) ── */
+  .demo-bar { display: flex; align-items: center; gap: 16px; padding: 8px 16px; background: #2c2c2b; color: #d9d7d2; font-size: 12px; }
+  .demo-bar b { color: #fff; font-weight: 600; font-size: 14px; }
+  .demo-seg { display: inline-flex; gap: 2px; background: rgba(255,255,255,.1); border-radius: 6px; padding: 2px; }
+  .demo-seg button { padding: 2px 10px; border-radius: 4px; color: #d9d7d2; }
+  .demo-seg button[aria-pressed="true"] { background: #fff; color: #2c2c2b; font-weight: 600; }
+  .demo-note { margin-left: auto; color: #a3a09a; }
+
+  /* ── 주변 화면 (참고용으로 그린 고정 화면) ── */
+  .sheet { padding-bottom: 60px; }
+  .prow, .mhead, .mrow { display: grid; align-items: center; border-bottom: 1px solid var(--line); }
+  .prow { grid-template-columns: 44px 70px 220px 70px 70px 80px 110px 1fr; height: 37px; font-weight: 450; }
+  .prow > * { padding: 0 10px; }
+  .prow .chev { color: var(--icon); display: grid; place-items: center; }
+  .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; font-size: 12px; line-height: 20px; white-space: nowrap; }
+  .tag.sale { background: #fdebec; color: #8f4b46; }
+  .panel-tabs { display: flex; gap: 2px; padding: 8px 10px 6px 34px; border-bottom: 1px solid var(--line); }
+  .panel-tabs span { height: 28px; padding: 0 10px; border-radius: 14px; display: inline-flex; align-items: center; font-weight: 500; color: var(--fg-muted); }
+  .panel-tabs .on { background: rgba(33,27,23,.05); color: var(--fg); }
+  .mhead, .mrow { grid-template-columns: 34px 150px 130px 150px 110px 1fr; }
+  .mhead { height: 32px; font-size: 12px; color: var(--fg-muted); }
+  .mhead > *, .mrow > * { padding: 0 10px; }
+  .mrow { height: 36px; }
+  .mrow .chev { padding: 0; display: grid; place-items: center; color: var(--icon); }
+  .mrow.open .chev svg { transform: rotate(90deg); }
+  .who { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+  .avatar { width: 20px; height: 20px; border-radius: 50%; background: var(--info-soft); color: var(--info-strong); font-size: 12px; display: grid; place-items: center; font-weight: 500; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 12px; line-height: 20px; white-space: nowrap; }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .muted { color: var(--fg-muted); }
+
+  /* ── 펼친 영역 ── */
+  .detail { padding: 8px 10px 18px 34px; border-bottom: 1px solid var(--line); }
+
+  /* 단계 띠 — 지금 앱과 같다(유지) */
+  .path { display: flex; gap: 2px; max-width: 940px; }
+  .step {
+    flex: 1; min-width: 0; height: 44px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px;
+    padding: 0 14px 0 22px; text-align: left; font-size: 12px; line-height: 16px;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%);
+    background: rgba(44,44,43,.035); color: rgba(121,118,111,.6);
+  }
+  .step:first-child { padding-left: 12px; border-radius: 5px 0 0 5px; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%); }
+  .step:last-child { border-radius: 0 5px 5px 0; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 10px 50%); }
+  .step .sub { min-height: 13px; font-size: 11px; line-height: 13px; opacity: .8; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* 지나온 단계 — 회색이 아니라 한 가지 색(초록)을 옅게 깔고 체크를 붙인다. 회색은 아직 안 온 단계만 쓴다 */
+  .step.done { background: color-mix(in srgb, var(--t-bg) 50%, #fff); color: color-mix(in srgb, var(--t-fg) 80%, #fff); }
+  .step .lab { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
+  .step .lab svg { width: 12px; height: 12px; stroke-width: 2.4; }
+  .step.current { font-weight: 600; }
+  .step.failed { background: var(--destructive-soft); color: var(--destructive); font-weight: 600; }
+  button.step:hover { filter: brightness(.95); }
+  /* 건너뛴 단계 — 끝낸 것이 아니므로 초록·체크를 주지 않는다 */
+  .step.skipped { background: rgba(44,44,43,.035); color: var(--fg-muted); }
+  .tone-neutral { --t-bg: #e9e8e5; --t-fg: var(--fg); }
+  .tone-info { --t-bg: var(--info-soft); --t-fg: var(--info-strong); }
+  .tone-violet { --t-bg: var(--violet-soft); --t-fg: var(--violet); }
+  .tone-orange { --t-bg: var(--orange-soft); --t-fg: var(--orange); }
+  .tone-warning { --t-bg: var(--warning-soft); --t-fg: var(--warning-strong); }
+  .tone-success { --t-bg: var(--success-soft); --t-fg: var(--success); }
+  .step.current, .pill[class*="tone-"] { background: var(--t-bg); color: var(--t-fg); }
+
+  /* ── 시안: 할 일 + 고객 조건 카드 ── */
+  .body { display: grid; grid-template-columns: minmax(280px, 1fr) 440px; gap: 32px; max-width: 940px; margin-top: 16px; align-items: start; }
+  @media (max-width: 860px) { .body { grid-template-columns: 1fr; } }
+
+  .todo h4 { margin: 4px 0 0; font-size: 14px; font-weight: 600; }
+  .alert { margin-top: 12px; display: flex; gap: 8px; padding: 8px 12px; border-radius: 6px; background: var(--warning-soft); color: var(--warning-strong); font-size: 12px; line-height: 18px; }
+  .alert svg { width: 14px; height: 14px; margin-top: 2px; }
+  .field-label { margin: 14px 0 6px; font-size: 12px; line-height: 18px; color: var(--fg-muted); }
+  .sched { display: flex; align-items: center; gap: 8px; }
+  .sched input { height: 32px; width: 220px; padding: 0 10px; border: 1px solid var(--input); border-radius: 6px; font: inherit; color: var(--fg); background: #fff; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 6px; font-weight: 500; white-space: nowrap; transition: background-color .12s, opacity .12s; }
+  .btn svg { width: 14px; height: 14px; }
+  .btn.primary { background: var(--fg); color: #fff; }
+  .btn.primary:hover { background: #454442; }
+  .btn.primary:disabled { opacity: .4; }
+  .btn.outline { box-shadow: inset 0 0 0 1px var(--input); }
+  .btn.outline:hover { background: rgba(33,27,23,.04); }
+  .btn.quiet { color: var(--fg-muted); font-weight: 400; }
+  .btn.quiet:hover { background: var(--destructive-soft); color: var(--destructive-strong); }
+  .field-label .opt { color: rgba(121,118,111,.75); }
+  .agreed { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+  .agreed label { display: inline-flex; align-items: center; gap: 8px; color: var(--fg-muted); }
+  .agreed input { height: 32px; padding: 0 10px; border: 1px solid var(--input); border-radius: 6px; font: inherit; color: var(--fg); background: #fff; font-variant-numeric: tabular-nums; }
+  .agreed .unit { position: relative; display: inline-flex; }
+  .agreed .unit input { width: 104px; padding-right: 28px; text-align: right; }
+  .agreed .unit i { position: absolute; right: 10px; top: 5.5px; font-style: normal; color: var(--fg-muted); pointer-events: none; }
+  .hint { margin-top: 6px; font-size: 12px; line-height: 18px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+  .hint.bad { color: var(--destructive-strong); }
+  .sched-read { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--fg-sub); }
+  .sched-read svg { color: var(--icon); }
+  .link { height: 24px; padding: 0 6px; border-radius: 4px; font-size: 12px; color: var(--fg-muted); }
+  .link:hover { background: rgba(33,27,23,.05); color: var(--fg); }
+  .btn.quiet.plain:hover { background: rgba(33,27,23,.05); color: var(--fg); }
+  .actions { display: flex; align-items: center; gap: 6px; margin-top: 14px; }
+  .history { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; line-height: 18px; color: var(--fg-muted); }
+  .history > button { display: inline-flex; align-items: center; gap: 4px; height: 24px; margin-left: -6px; padding: 0 6px; border-radius: 4px; }
+  .history > button:hover { background: rgba(33,27,23,.05); color: var(--fg); }
+  .history > button svg { width: 12px; height: 12px; transition: transform .15s; }
+  .history > button[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .history ul { list-style: none; margin: 4px 0 0; padding: 0; }
+  .history li { display: flex; gap: 10px; height: 24px; align-items: center; color: var(--fg-sub); }
+  .history time { width: 48px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+
+  /* Notion 카드 — 흰 판, 옅은 테두리와 얕은 그림자. 안은 Notion 속성 줄(아이콘 + 이름 | 값) */
+  .card {
+    background: #fff; border-radius: 10px;
+    box-shadow: 0 0 0 1px rgba(42,28,0,.09), 0 2px 4px rgba(25,25,25,.04), 0 10px 20px -12px rgba(25,25,25,.12);
+    overflow: hidden;
+  }
+  .card-head { display: flex; align-items: center; gap: 8px; padding: 12px 8px 6px 14px; }
+  .card-head .avatar { width: 24px; height: 24px; font-size: 12px; }
+  .card-head .name { font-weight: 600; }
+  .card-head .role { font-size: 12px; color: var(--fg-muted); }
+  .card-head .open { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--fg-muted); }
+  .card-head .open:hover { background: rgba(33,27,23,.05); color: var(--fg); }
+  .card-head .open svg { width: 12px; height: 12px; }
+  .props { padding: 0 6px 8px; }
+  .prop { display: grid; grid-template-columns: 112px minmax(0, 1fr); align-items: start; border-radius: 6px; }
+  .prop:hover { background: rgba(33,27,23,.03); }
+  .prop dt { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; color: var(--fg-muted); }
+  .prop dt svg { color: var(--icon); }
+  .prop dd { margin: 0; min-height: 32px; padding: 5.5px 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .prop dd.text { display: block; white-space: pre-wrap; }
+  .fit { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 12px; line-height: 20px; }
+  .fit::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .fit.in { background: var(--success-soft); color: var(--success); }
+  .fit.over { background: var(--destructive-soft); color: var(--destructive-strong); }
+  .card-note { border-top: 1px solid var(--line); padding: 6px 6px 8px; background: #fcfbfa; }
+  dl { margin: 0; }
+
+  /* ── 지금 화면(비교용) ── */
+  .now-grid { display: grid; grid-template-columns: minmax(300px, 420px) minmax(260px, 1fr); column-gap: 56px; margin-top: 8px; }
+  .now-grid h4 { margin: 8px 0 0; font-size: 14px; font-weight: 600; }
+  .now-label { margin: 14px 0 6px; font-size: 11.5px; line-height: 16px; color: var(--fg-muted); }
+  .now-dl { display: grid; grid-template-columns: 44px 1fr; row-gap: 4px; font-size: 12.5px; line-height: 18px; }
+  .now-dl dt { color: rgba(121,118,111,.7); }
+  .now-dl dd { margin: 0; white-space: pre-wrap; }
+  .now-memo { margin: 0; font-size: 12.5px; line-height: 18px; }
+  .now-actions { display: flex; align-items: center; margin-top: 16px; }
+  .now-actions .btn { height: 30px; font-size: 12px; }
+  .now-actions .spacer { flex: 1; }
+  .now .history { border-top: 0; padding-top: 0; margin-top: 14px; }
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+  <b>매칭 펼침 영역</b>
+  <span class="demo-seg" id="mode">
+    <button data-v="new" aria-pressed="true">시안</button>
+    <button data-v="now" aria-pressed="false">지금</button>
+  </span>
+  <span class="demo-seg" id="fit">
+    <button data-v="in" aria-pressed="true">예산 안</button>
+    <button data-v="over" aria-pressed="false">예산 초과</button>
+  </span>
+  <span class="demo-note">이 띠는 비교용이며 앱에 들어가지 않습니다 · 확정 버튼이나 단계 띠를 눌러 단계를 옮겨 볼 수 있습니다 · 가상 데이터</span>
+</div>
+
+<div class="sheet">
+  <div class="prow">
+    <span class="chev"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+    <span><span class="tag sale">매매</span></span>
+    <span>고덕그라시움</span><span class="num">101</span><span class="num">3401</span>
+    <span class="num">46.7평</span><span class="num">32억</span><span class="muted">매칭 2</span>
+  </div>
+  <div class="panel-tabs"><span class="on">매칭 2</span><span>광고 1</span><span>상담 3</span></div>
+  <div class="mhead"><span></span><span>고객</span><span>단계</span><span>예산</span><span>최근 변경</span><span>매칭 메모</span></div>
+  <div class="mrow open">
+    <span class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+    <span class="who"><span class="avatar">한</span>한서윤</span>
+    <span id="rowStage"></span>
+    <span class="num">30억 ~ 34억</span><span class="num muted" id="rowDate"></span>
+    <span class="muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">[DEMO] 한강뷰 여부를 먼저 물어봄</span>
+  </div>
+  <div class="detail" id="detail"></div>
+  <div class="mrow">
+    <span class="chev"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></span>
+    <span class="who"><span class="avatar">박</span>박도현</span>
+    <span><span class="pill tone-neutral">내부 후보</span></span>
+    <span class="num">28억 ~ 31억</span><span class="num muted">11. 14.</span><span class="muted">—</span>
+  </div>
+</div>
+
+<script>
+const I = {
+  tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+  won: '<circle cx="12" cy="12" r="9"/><path d="m7.5 9 2 6.5L12 9l2.5 6.5 2-6.5"/><path d="M7 12h10"/>',
+  ruler: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
+  cal: '<path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+  text: '<path d="M15 18H3M17 6H3M21 12H3"/>',
+  note: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  out: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+  chev: '<path d="m9 18 6-6-6-6"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+};
+const svg = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
+
+// 단계에 들어왔다고 끝난 것이 아니다. 확정해야 그 단계가 끝나고 다음 단계가 시작된다.
+// confirm: 이 단계를 끝내는 버튼 · title: 지금 할 일
+const STAGES = [
+  { id: 'suggested', label: '내부 후보', tone: 'neutral', confirm: '내부 후보 확정', title: '이 고객을 이 매물의 후보로 확정할지 정하세요', close: '후보에서 제외 · 종료' },
+  { id: 'interested', label: '고객 관심', tone: 'info', confirm: '고객 관심 확정', title: '매물을 안내하고, 고객이 관심을 보이면 확정하세요', close: '관심 없음 · 종료' },
+  { id: 'confirmed', label: '임장 조율', tone: 'violet', confirm: '방문 일정 확정', title: '집주인과 방문 일정을 조율하세요', close: '일정 불발 · 종료', schedule: true },
+  { id: 'viewing', label: '임장', tone: 'orange', confirm: '방문 완료', title: '방문을 진행하고 결과를 남기세요', close: '방문 후 거절 · 종료', schedule: true },
+  { id: 'negotiating', label: '협상', tone: 'warning', confirm: '조건 합의 · 거래전환', title: '가격과 입주일을 조율하세요', close: '협상 결렬 · 종료' },
+  { id: 'deal', label: '거래전환', tone: 'success', title: '거래관리에서 계약 준비 단계를 진행 중입니다' },
+];
+// 사용자가 적은 글을 HTML에 다시 넣을 때는 반드시 이걸 거친다 — 따옴표나 < 가 들어가면 입력칸이 깨진다
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const idx = (id) => STAGES.findIndex((s) => s.id === id);
+
+const state = {
+  mode: 'new', fit: 'in',
+  stage: 'interested', closedFrom: null,
+  entered: { suggested: '11. 13.', interested: '11. 15.' }, skipped: {},
+  schedule: '2026-11-21T14:00', scheduled: null, editSched: false,
+  // 협상에서 적는 합의 조건(둘 다 선택). 적는 대로 기억해 두고, 다시 그릴 때 여기서 채운다.
+  agreedPrice: '', agreedMoveIn: '',
+  showHistory: false,
+  events: [
+    { at: '11. 15.', text: '내부 후보 → 고객 관심' },
+    { at: '11. 13.', text: '매칭 만들어짐' },
+  ],
+};
+const TODAY = '11. 17.';
+
+function setStage(next) {
+  const from = state.closedFrom ? '종료' : STAGES[idx(state.stage)].label;
+  state.closedFrom = null;
+  const cur = idx(state.stage), to = idx(next);
+  // 앞으로 건너뛰면 그 사이 단계는 거치지 않은 것이다 — 확정한 것처럼 꾸미지 않고 '건너뜀'으로 남긴다.
+  // 방문 일정을 정하지 않고 임장 조율을 떠나 임장 너머로 가면 임장 조율도 건너뛴 것으로 본다.
+  if (to > cur) {
+    STAGES.slice(cur + 1, to).forEach((s) => { state.skipped[s.id] = true; delete state.entered[s.id]; });
+    if (state.stage === 'confirmed' && to > cur + 1 && !state.scheduled) state.skipped.confirmed = true;
+  }
+  // 뒤로 되돌리면 그 뒤 단계의 도달 날짜와 건너뜀 표시는 지운다
+  STAGES.slice(to + 1).forEach((s) => { delete state.entered[s.id]; delete state.skipped[s.id]; });
+  STAGES.slice(0, to).forEach((s) => { if (!state.skipped[s.id]) state.entered[s.id] ??= TODAY; });
+  delete state.skipped[next];
+  state.entered[next] = TODAY;
+  state.stage = next;
+  state.events.unshift({ at: TODAY, text: `${from} → ${STAGES[idx(next)].label}` });
+}
+function closeMatch() {
+  const s = STAGES[idx(state.stage)];
+  state.closedFrom = state.stage;
+  state.events.unshift({ at: TODAY, text: s.close });
+}
+
+function pathHtml() {
+  const cur = idx(state.stage);
+  const closed = !!state.closedFrom;
+  // '지금'은 앱의 현재 동작 그대로: 지나온 단계는 회색, 띠를 눌러 어느 단계로든 옮긴다
+  const isNow = state.mode === 'now';
+  return `<div class="path" role="list" aria-label="매칭 진행 경로">${STAGES.map((s, i) => {
+    const date = state.entered[s.id] ?? '';
+    let cls = '', sub = date;
+    if (closed && i === cur) { cls = 'failed'; sub = [date, '여기서 종료'].filter(Boolean).join(' · '); }
+    // 지금 단계는 아직 끝나지 않았다 — 체크 없이 들어온 날짜와 머문 기간만 적는다
+    else if (i === cur) { cls = `current tone-${s.tone}`; sub = s.id === 'deal' ? date : [date, date === TODAY ? '오늘' : '2일째'].join(' · '); }
+    // 지나온 단계는 지금 단계가 무엇이든 한 가지 색(초록)이다. 종료된 매칭만 회색으로 가라앉힌다.
+    else if (i < cur) cls = closed || isNow ? 'done tone-neutral' : 'done tone-success';
+    // 띠는 앱과 같이 어느 단계로든 누를 수 있다. 앞 단계를 누르면 그 사이 단계를 확정한 것으로 보고 넘어간다.
+    // 임장 없이 계약으로 가는 경우도 있으므로 방문 일정이 없어도 건너뛸 수 있다. 건너뛴 칸은 체크 대신 '건너뜀'으로 남는다.
+    const skipped = i < cur && state.skipped[s.id];
+    if (skipped) { cls = 'skipped'; sub = '건너뜀'; }
+    const clickable = !closed && i !== cur && s.id !== 'deal' && state.stage !== 'deal';
+    const inner = `<span class="lab">${i < cur && !isNow && !skipped ? svg('check') : ''}${s.label}</span><span class="sub">${sub}</span>`;
+    return clickable
+      ? `<button class="step ${cls}" role="listitem" data-stage="${s.id}" title="${i < cur ? '이 단계로 되돌리기' : '이 단계로 이동'}">${inner}</button>`
+      : `<div class="step ${cls}" role="listitem" ${i === cur ? 'aria-current="step"' : ''}>${inner}</div>`;
+  }).join('')}</div>`;
+}
+
+function parts() {
+  const s = STAGES[idx(state.stage)];
+  const closed = !!state.closedFrom;
+  const converted = state.stage === 'deal';
+  const nextStage = STAGES[idx(state.stage) + 1];
+  const isNow = state.mode === 'now';
+  // '지금'만: 일정을 따로 저장해야 다음으로 넘어간다. 시안은 날짜를 정하는 것이 곧 확정이라 막을 일이 없다.
+  const block = isNow && !closed && s.id === 'confirmed' && !state.scheduled ? '방문 일정을 저장해야 넘어갈 수 있습니다' : null;
+  const title = closed ? `종료된 매칭입니다 · ${s.close.split(' · ')[0]}` : s.title;
+  const primary = closed
+    ? `<button class="btn primary" data-act="resume">${s.label}에서 다시 진행</button>`
+    : converted
+      ? `<button class="btn primary" data-act="noop">거래관리 열기 ${svg('arrow')}</button>`
+      : isNow
+        ? `<button class="btn primary" data-act="next" ${block ? 'disabled' : ''}>다음: ${nextStage.label} ${svg('arrow')}</button>`
+        : `<button class="btn primary" data-act="next" ${block ? 'disabled' : ''}>${svg('check')}${s.confirm}</button>`;
+  const quiet = !closed && !converted ? `<button class="btn quiet" data-act="close">${s.close}</button>` : '';
+  // 지금: 임장 조율과 임장 두 단계 모두 같은 날짜 입력칸과 저장 버튼이 나온다.
+  const nowSched = `
+    <div class="now-label">방문 일정${state.scheduled ? ` · 예정 ${state.scheduled}` : ''}</div>
+    <div class="sched">
+      <input type="datetime-local" id="sched" aria-label="방문 일시" value="${esc(state.schedule)}">
+      <button class="btn outline" data-act="schedule">${state.scheduled ? '일정 변경' : '일정 저장'}</button>
+    </div>`;
+  // 시안: 날짜는 임장 조율에서 한 번만 정한다(정하고 확정 = 임장으로). 임장에서는 정해진 날짜를 글로 보여 주고,
+  // 바뀌었을 때만 "일정 변경"으로 입력칸을 연다.
+  const newSched = s.id === 'confirmed' ? `
+    <div class="field-label">방문 일시</div>
+    <div class="sched"><input type="datetime-local" id="sched" aria-label="방문 일시" value="${esc(state.schedule)}"></div>`
+    : state.editSched ? `
+    <div class="field-label">방문 일시 변경</div>
+    <div class="sched">
+      <input type="datetime-local" id="sched" aria-label="방문 일시" value="${esc(state.schedule)}">
+      <button class="btn outline" data-act="schedule">저장</button>
+      <button class="btn quiet plain" data-act="sched-cancel">취소</button>
+    </div>` : `
+    <div class="sched-read">${svg('cal')}<span class="num">방문 ${state.scheduled ?? '일정 없음'}</span>
+      <button class="link" data-act="sched-edit">${state.scheduled ? '일정 변경' : '일정 정하기'}</button></div>`;
+  const sched = closed || !s.schedule ? '' : isNow ? nowSched : newSched;
+  // 시안: 협상에서 합의한 가격과 입주일을 적어 둘 수 있다(선택). 거래전환하면 거래의 합의 조건으로 넘어간다.
+  const hint = priceHint();
+  const agreed = isNow || closed ? '' : s.id === 'negotiating' ? `
+    <div class="field-label">합의 조건 <span class="opt">선택 · 거래전환하면 거래로 넘어갑니다</span></div>
+    <div class="agreed">
+      <label><span>가격</span>
+        <span class="unit"><input id="agreedPrice" inputmode="decimal" autocomplete="off" aria-label="합의 가격(억)" aria-describedby="agreedPriceHint" value="${esc(state.agreedPrice)}"><i>억</i></span></label>
+      <label><span>입주일</span><input type="date" id="agreedMoveIn" aria-label="합의 입주일" value="${esc(state.agreedMoveIn)}"></label>
+    </div>
+    <div class="hint${hint.bad ? ' bad' : ''}" id="agreedPriceHint" ${hint.bad ? 'role="alert"' : ''}>${hint.text}</div>`
+    : s.id === 'deal' && agreedSummary() ? `<div class="sched-read">${svg('won')}<span class="num">${agreedSummary()}</span></div>` : '';
+  const alert = block ? `<div class="alert" role="alert">${svg('alert')}<span>${block}</span></div>` : '';
+  const history = `<div class="history">
+    <button aria-expanded="${state.showHistory}" data-act="history">${svg('chev')}전체 이력 ${state.events.length}건</button>
+    ${state.showHistory ? `<ul>${state.events.map((e) => `<li><time>${e.at}</time>${e.text}</li>`).join('')}</ul>` : ''}
+  </div>`;
+  return { title, primary, quiet, sched, alert, history, nextStage, agreed };
+}
+
+const BUDGET = '30억 ~ 34억';
+const MEMO = '[DEMO] VIP 고객\n고층·한강뷰 필수, 대단지·펜트하우스 선호';
+const MATCH_MEMO = '[DEMO] 한강뷰 여부를 먼저 물어봄. 주말 방문 선호.';
+
+function newHtml() {
+  const p = parts();
+  const fit = state.fit === 'in' ? '<span class="fit in">예산 안</span>' : '<span class="fit over">예산 초과 1억</span>';
+  return `${pathHtml()}
+  <div class="body">
+    <div class="todo">
+      <h4>${p.title}</h4>
+      ${p.sched}${p.agreed}${p.alert}
+      <div class="actions">${p.primary}${p.quiet}</div>
+    </div>
+    <section class="card" aria-label="고객 조건">
+      <div class="card-head">
+        <span class="avatar">한</span><span class="name">한서윤</span><span class="role">고객 조건</span>
+        <button class="open" data-act="noop" title="희망조건 화면에서 열기">희망조건 열기 ${svg('out')}</button>
+      </div>
+      <dl class="props">
+        <div class="prop"><dt>${svg('tag')}거래</dt><dd><span class="tag sale">매매</span></dd></div>
+        <div class="prop"><dt>${svg('won')}예산</dt><dd class="num">${BUDGET} ${fit}</dd></div>
+        <div class="prop"><dt>${svg('ruler')}면적</dt><dd class="num">40평 ~ 50평</dd></div>
+        <div class="prop"><dt>${svg('cal')}입주</dt><dd class="num">2027. 2. 이후</dd></div>
+        <div class="prop"><dt>${svg('text')}기타</dt><dd class="text">${MEMO}</dd></div>
+      </dl>
+      <dl class="card-note">
+        <div class="prop"><dt>${svg('note')}매칭 메모</dt><dd class="text">${MATCH_MEMO}</dd></div>
+      </dl>
+    </section>
+  </div>`;
+}
+
+function nowHtml() {
+  const p = parts();
+  const fit = state.fit === 'in' ? ' · 예산 안' : ' · <span style="color:var(--destructive)">예산 초과 1억</span>';
+  return `${pathHtml()}
+  <div class="now-grid now">
+    <div><h4>${p.title}</h4>${p.alert}${p.sched}</div>
+    <div>
+      <div class="now-label">고객 조건</div>
+      <dl class="now-dl num">
+        <dt>거래</dt><dd>매매</dd>
+        <dt>예산</dt><dd>${BUDGET}${fit}</dd>
+        <dt>면적</dt><dd>40평 ~ 50평</dd>
+        <dt>입주</dt><dd>2027. 2. 이후</dd>
+        <dt>기타</dt><dd>${MEMO}</dd>
+      </dl>
+      <div class="now-label">매칭 메모</div>
+      <p class="now-memo">${MATCH_MEMO}</p>
+      ${p.history}
+    </div>
+  </div>
+  <div class="now-actions">${p.quiet}<span class="spacer"></span>${p.primary}</div>`;
+}
+
+function dropScheduleEdit() {
+  if (!state.editSched) return;
+  state.editSched = false;
+  state.schedule = state.scheduleBefore;
+}
+
+// 합의 가격은 억 단위로 적는다(31.5 → 31억 5,000만). 비어 있으면 null, 숫자가 아니면 NaN.
+function parseAgreedPrice() {
+  const raw = state.agreedPrice.trim();
+  if (!raw) return null;
+  // 쉼표는 천 단위 자리에 있을 때만 받는다. "31,5"를 315로 읽으면 31.5억을 315억으로 저장하게 된다.
+  if (!/^(\d+|\d{1,3}(,\d{3})+)(\.\d{1,4})?$/.test(raw)) return NaN;
+  const value = Number(raw.replace(/,/g, ''));
+  return value > 0 && value < 10000 ? value : NaN;
+}
+function formatEok(value) {
+  const man = Math.round(value * 10000);
+  const eok = Math.floor(man / 10000), rest = man % 10000;
+  return [eok ? `${eok}억` : '', rest ? `${rest.toLocaleString()}만` : ''].filter(Boolean).join(' ');
+}
+function priceHint() {
+  const value = parseAgreedPrice();
+  return value === null ? { text: '억 단위 · 예: 31.5', bad: false }
+    : Number.isNaN(value) ? { text: '숫자로 적어 주세요 · 예: 31.5', bad: true }
+    : { text: formatEok(value), bad: false };
+}
+function formatDay(value) {
+  const [y, m, d] = value.split('-').map(Number);
+  return `${y}. ${m}. ${d}.`;
+}
+function agreedSummary() {
+  const price = parseAgreedPrice();
+  return [price && !Number.isNaN(price) ? `합의 가격 ${formatEok(price)}` : '', state.agreedMoveIn ? `입주 ${formatDay(state.agreedMoveIn)}` : '']
+    .filter(Boolean).join(' · ');
+}
+
+const detail = document.getElementById('detail');
+function render() {
+  detail.innerHTML = state.mode === 'new' ? newHtml() : nowHtml();
+  const s = STAGES[idx(state.stage)];
+  document.getElementById('rowStage').innerHTML = state.closedFrom
+    ? '<span class="pill" style="background:var(--destructive-soft);color:var(--destructive-strong)">종료</span>'
+    : `<span class="pill tone-${s.tone}">${s.label}</span>`;
+  document.getElementById('rowDate').textContent = state.events[0].at;
+}
+
+detail.addEventListener('click', (e) => {
+  const step = e.target.closest('[data-stage]');
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  // 일정을 고치다 말고 다른 동작(단계 이동·확정·종료 등)을 하면, 저장하지 않은 날짜는 버리고 저장돼 있던 날짜로 되돌린다
+  if (state.editSched && (step || (act && act !== 'schedule' && act !== 'sched-cancel'))) dropScheduleEdit();
+  const saveSchedule = () => {
+    if (!state.schedule) return false;
+    const d = new Date(state.schedule);
+    state.scheduled = `${d.getMonth() + 1}. ${d.getDate()}. ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    state.events.unshift({ at: TODAY, text: `방문 일정 ${state.scheduled}` });
+    state.editSched = false;
+    return true;
+  };
+  if (step) {
+    // 시안의 임장 조율에서 바로 다음(임장)으로 갈 때만 확정 버튼과 같이 고른 날짜를 저장한다(비어 있으면 넘어가지 않는다).
+    // 임장 너머로 건너뛰는 것은 방문 없이 가는 경우이므로 날짜를 묻지도 저장하지도 않는다.
+    const toNext = idx(step.dataset.stage) === idx(state.stage) + 1;
+    if (state.mode === 'new' && state.stage === 'confirmed' && toNext && !saveSchedule()) {
+      document.getElementById('sched')?.focus();
+      return;
+    }
+    setStage(step.dataset.stage);
+  }
+  else if (act === 'next') {
+    // 시안의 임장 조율: 고른 날짜를 저장하면서 확정한다. 날짜가 비어 있으면 넘어가지 않는다.
+    if (state.mode === 'new' && state.stage === 'confirmed' && !saveSchedule()) {
+      document.getElementById('sched')?.focus();
+      return;
+    }
+    // 협상: 합의 가격은 비워 둬도 되지만, 적었다면 숫자여야 넘어간다
+    if (state.mode === 'new' && state.stage === 'negotiating' && Number.isNaN(parseAgreedPrice())) {
+      document.getElementById('agreedPrice')?.focus();
+      return;
+    }
+    setStage(STAGES[idx(state.stage) + 1].id);
+  }
+  else if (act === 'sched-edit') { state.editSched = true; state.scheduleBefore = state.schedule; }
+  // 취소하면 고치던 값을 버리고 저장돼 있던 날짜로 되돌린다
+  else if (act === 'sched-cancel') dropScheduleEdit();
+  else if (act === 'close') closeMatch();
+  else if (act === 'resume') setStage(state.closedFrom);
+  else if (act === 'history') state.showHistory = !state.showHistory;
+  else if (act === 'schedule') { if (!saveSchedule()) return; }
+  else return;
+  render();
+});
+// 일정 입력은 다시 그리지 않고 값만 기억한다
+detail.addEventListener('input', (e) => {
+  if (e.target.id === 'sched') state.schedule = e.target.value;
+  else if (e.target.id === 'agreedMoveIn') state.agreedMoveIn = e.target.value;
+  else if (e.target.id === 'agreedPrice') {
+    state.agreedPrice = e.target.value;
+    // 입력칸은 그대로 두고 아래 안내 글만 바꾼다
+    const hint = priceHint(), el = document.getElementById('agreedPriceHint');
+    el.textContent = hint.text;
+    el.classList.toggle('bad', hint.bad);
+    hint.bad ? el.setAttribute('role', 'alert') : el.removeAttribute('role');
+  }
+});
+
+document.querySelectorAll('.demo-seg').forEach((seg) => seg.addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  // 시안/지금을 바꿀 때도 고치던 날짜는 버린다('지금'에는 취소 버튼이 없다)
+  dropScheduleEdit();
+  state[seg.id] = b.dataset.v;
+  seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+  render();
+}));
+render();
+</script>
+</body>
+</html>

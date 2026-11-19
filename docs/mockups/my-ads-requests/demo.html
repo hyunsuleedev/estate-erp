@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내광고관리 · 기록 수정 / 변경 요청 시안</title>
+<style>
+  :root {
+    --fg: #2c2c2b; --fg-sub: #5f5e59; --muted: #79766f; --icon: #8e8b86; --faint: #a3a09a;
+    --line: #f0efed; --line-strong: #e6e5e3; --side: #f9f8f7;
+    --hover: rgba(33, 27, 23, 0.05); --row-hover: #f9f8f7; --row-on: #f2f7fd; --ring: #2383e2;
+    --success: #44745a; --success-soft: #eef3ed;
+    --warning: #8f6b1f; --warning-soft: #fbf3db;
+    --info: #337ea9; --info-soft: #e7f3f8;
+    --red: #8f4b46; --red-soft: #fdebec;
+    --neutral: #787774; --neutral-soft: #f1f1ef;
+    --pop: 0 20px 24px rgba(25,25,25,.05), 0 5px 8px rgba(25,25,25,.027), 0 0 0 1px rgba(42,28,0,.07);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
+    -webkit-font-smoothing: antialiased; color: var(--fg); background: #fff;
+    font-size: 14px; line-height: 21px; display: flex; flex-direction: column; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+  button:disabled { cursor: not-allowed; }
+  input, textarea, select { font: inherit; color: inherit; }
+  dl, dd, dt, h2, h3, p { margin: 0; }
+  :focus-visible { outline: 2px solid rgba(35,131,226,.55); outline-offset: 1px; }
+  svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  [hidden] { display: none !important; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── 시안 안내 띠 (앱 화면이 아님) ── */
+  .demo-bar { display: flex; align-items: center; gap: 16px; flex: none; padding: 8px 16px; background: #2c2c2b; color: #d9d7d2; font-size: 12.5px; }
+  .demo-bar b { color: #fff; font-weight: 600; }
+  .demo-bar button { padding: 3px 10px; border-radius: 4px; background: rgba(255,255,255,.12); color: #fff; }
+  .demo-bar span:last-of-type { margin-left: auto; color: #a3a09a; }
+
+  /* ── 위쪽 줄 ── */
+  .top { display: flex; align-items: center; gap: 8px; height: 50px; padding: 0 12px; border-bottom: 1px solid var(--line); flex: none; }
+  .tabs { display: inline-flex; gap: 2px; background: var(--neutral-soft); border-radius: 999px; padding: 2px; }
+  .tabs button { height: 26px; padding: 0 12px; border-radius: 999px; font-size: 13px; color: var(--muted); }
+  .tabs button[aria-pressed="true"] { background: var(--fg); color: #fff; font-weight: 500; }
+  .tabs button span { margin-left: 5px; opacity: .65; }
+  .grow { flex: 1; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; white-space: nowrap; transition: background-color .12s ease, opacity .12s ease; }
+  .btn-line { box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--fg); }
+  .btn-line:hover:not(:disabled) { background: var(--hover); }
+  .btn-dark { background: var(--fg); color: #fff; }
+  .btn-dark:hover:not(:disabled) { background: #1f1f1e; }
+  .btn:disabled { opacity: .42; }
+  .btn .count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: rgba(33,27,23,.08); font-size: 12px; line-height: 18px; text-align: center; }
+  .btn-dark .count { background: rgba(255,255,255,.2); }
+  .sep { width: 1px; height: 18px; background: var(--line-strong); margin: 0 2px; }
+  .hint { height: 0; position: relative; }
+  .hint p { position: absolute; right: 12px; top: 4px; z-index: 5; padding: 6px 10px; border-radius: 8px; background: #fff; box-shadow: var(--pop); font-size: 12.5px; color: var(--fg-sub); }
+
+  /* ── 표 ── */
+  .scroll { flex: 1; min-height: 0; overflow: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 1120px; table-layout: fixed; }
+  th { position: sticky; top: 0; z-index: 2; height: 34px; padding: 0 10px; background: #fff; border-bottom: 1px solid var(--line-strong); text-align: left; font-size: 13px; font-weight: 400; color: var(--muted); white-space: nowrap; }
+  th svg.i { color: var(--icon); vertical-align: -3px; margin-right: 6px; }
+  td { height: 37px; padding: 0 10px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); font-weight: 450; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  td:last-child { border-right: 0; }
+  tbody tr:hover td { background: var(--row-hover); }
+  tbody tr[aria-selected="true"] td { background: var(--row-on); }
+  .check { width: 36px; padding: 0; text-align: center; }
+  input[type=checkbox] { width: 15px; height: 15px; margin: 0; vertical-align: -2px; accent-color: #2383e2; }
+  .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; font-size: 13px; font-weight: 400; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 9px 0 7px; border-radius: 999px; font-size: 13px; font-weight: 400; }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .7; }
+  .t-sale { background: var(--red-soft); color: var(--red); } .t-jeonse { background: var(--info-soft); color: var(--info); } .t-monthly { background: var(--warning-soft); color: var(--warning); }
+  .t-ok { background: var(--success-soft); color: var(--success); } .t-warn { background: var(--warning-soft); color: var(--warning); } .t-neutral { background: var(--neutral-soft); color: #5f5e5b; }
+  .t-info { background: var(--info-soft); color: var(--info); }
+  .empty { color: var(--faint); }
+  .changed { animation: flash 1.4s ease; }
+  @keyframes flash { 0% { background: #fbf3db; } 100% { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) { .changed { animation: none; } }
+
+  .status { display: flex; align-items: center; gap: 14px; height: 30px; padding: 0 12px; border-top: 1px solid var(--line); background: var(--side); font-size: 12px; color: var(--muted); flex: none; }
+  .status button { color: var(--fg-sub); text-decoration: underline; text-underline-offset: 2px; }
+
+  /* ── 창 ── */
+  .veil { position: fixed; inset: 0; z-index: 20; background: rgba(15,15,15,.36); display: grid; place-items: center; padding: 16px; }
+  .dialog { width: 100%; max-height: calc(100vh - 32px); display: flex; flex-direction: column; background: #fff; border-radius: 12px; box-shadow: 0 24px 60px rgba(15,15,15,.22), 0 0 0 1px rgba(42,28,0,.08); overflow: hidden; }
+  .dialog header { padding: 16px 20px 12px; border-bottom: 1px solid var(--line); }
+  .dialog h2 { font-size: 15px; font-weight: 600; }
+  .dialog header p { margin-top: 4px; font-size: 12.5px; line-height: 18px; color: var(--muted); }
+  .dialog .body { min-height: 0; overflow-y: auto; padding: 12px 20px 16px; }
+  .dialog footer { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); }
+  .dialog footer p { flex: 1; min-width: 0; font-size: 12.5px; color: var(--muted); }
+  .dialog footer p.bad { color: #bb3430; }
+  .row { display: grid; grid-template-columns: 96px minmax(0,1fr); align-items: start; min-height: 34px; padding: 3px 0; }
+  .row > dt { display: flex; align-items: center; min-height: 28px; font-size: 13px; color: var(--muted); }
+  .row > dd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 28px; }
+  .seg { display: inline-flex; gap: 2px; }
+  .seg button { height: 28px; padding: 0 10px; border-radius: 6px; font-size: 13px; color: var(--muted); }
+  .seg button:hover { background: var(--hover); }
+  .seg button[aria-pressed="true"] { background: var(--fg); color: #fff; }
+  .field { height: 30px; padding: 0 8px; border: 0; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--line-strong); background: #fff; font-size: 13px; }
+  .field:focus { outline: none; box-shadow: inset 0 0 0 2px var(--ring); }
+  .field[aria-invalid="true"] { box-shadow: inset 0 0 0 2px #e03e3e; }
+  textarea.field { height: auto; padding: 6px 8px; width: 100%; resize: vertical; line-height: 19px; }
+  .money { position: relative; display: inline-block; }
+  .money .field { width: 132px; padding-right: 34px; text-align: right; }
+  .money span { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 11.5px; color: var(--muted); pointer-events: none; }
+  .targets { margin: 8px 0 4px; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+  .targets .t-head, .targets .t-row { display: grid; grid-template-columns: minmax(0,1fr) 130px 170px; align-items: center; gap: 12px; padding: 0 12px; }
+  .targets.no-value .t-head, .targets.no-value .t-row { grid-template-columns: minmax(0,1fr) 130px; }
+  .targets .t-head { height: 30px; background: #f7f7f5; font-size: 12px; color: var(--muted); }
+  .targets .t-row { min-height: 44px; border-top: 1px solid var(--line); }
+  .targets .t-row.fail { background: #fff7f6; }
+  .targets .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .targets .name small { display: block; font-size: 12px; line-height: 16px; color: var(--muted); }
+  .targets .name small.err { color: #bb3430; white-space: normal; }
+  .section-label { margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .note { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #f7f7f5; font-size: 12.5px; line-height: 18px; color: var(--fg-sub); }
+
+  .toast { position: fixed; right: 16px; bottom: 44px; z-index: 30; padding: 10px 14px; border-radius: 10px; background: #fff; box-shadow: var(--pop); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+  <b>시안</b>
+  <span>줄을 고른 뒤 위쪽의 <b>기록 수정</b> · <b>변경 요청</b>을 눌러 보세요. 표는 읽기 전용입니다.</span>
+  <button type="button" id="demoReset">처음으로</button>
+  <span>가짜 데이터 · 저장되지 않음</span>
+</div>
+
+<div class="top">
+  <div class="tabs" role="group" aria-label="보기">
+    <button type="button" aria-pressed="true">전체<span class="num">6</span></button>
+    <button type="button" aria-pressed="false">연결 안 됨<span class="num">1</span></button>
+    <button type="button" aria-pressed="false">요청 중<span class="num" id="tabRequested">1</span></button>
+    <button type="button" aria-pressed="false">검토 필요<span class="num">3</span></button>
+  </div>
+  <span class="grow"></span>
+  <button type="button" class="btn btn-line" id="btnEdit" disabled aria-describedby="selHint">
+    <svg class="i" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+    기록 수정
+  </button>
+  <button type="button" class="btn btn-line" id="btnRequest" disabled aria-describedby="selHint">
+    <svg class="i" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>
+    변경 요청 <span class="count num" id="reqCount" hidden></span>
+  </button>
+  <span class="sep"></span>
+  <button type="button" class="btn btn-dark" id="btnAdd">
+    <svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>광고 등록
+  </button>
+</div>
+<div class="hint"><p id="selHint" role="status" hidden></p></div>
+
+<div class="scroll">
+  <table>
+    <colgroup><col style="width:36px"><col style="width:150px"><col style="width:60px"><col style="width:74px"><col style="width:98px"><col style="width:64px"><col style="width:132px"><col style="width:84px"><col style="width:110px"><col style="width:190px"><col style="width:96px"><col></colgroup>
+    <thead>
+      <tr>
+        <th class="check"><input type="checkbox" id="checkAll" aria-label="보이는 광고 모두 선택"></th>
+        <th>단지</th><th>동</th><th>호</th><th>매물</th><th>거래</th><th>가격/보증금</th><th>월세</th><th>CP사</th><th>요청</th><th>랭킹</th><th>경쟁 대비</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<div class="status">
+  <span class="num" id="statusCount">표시 6 / 전체 6건</span>
+  <span id="statusSel" hidden></span>
+  <button type="button" id="clearSel" hidden>선택 해제</button>
+</div>
+
+<!-- 변경 요청 -->
+<div class="veil" id="reqVeil" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="reqTitle" style="max-width: 640px">
+    <header>
+      <h2 id="reqTitle">변경 요청</h2>
+      <p>에이전트나 직원이 CP에서 바꾸도록 업무를 만듭니다. 광고마다 업무가 하나씩 생기고, <b>광고 값은 처리된 뒤에 바뀝니다.</b></p>
+    </header>
+    <div class="body">
+      <dl>
+        <div class="row">
+          <dt>종류</dt>
+          <dd><div class="seg" id="reqKind" role="group" aria-label="요청 종류">
+            <button type="button" data-kind="price" aria-pressed="true">가격 변경</button>
+            <button type="button" data-kind="floor" aria-pressed="false">층 노출 변경</button>
+            <button type="button" data-kind="readvertise" aria-pressed="false">재광고</button>
+            <button type="button" data-kind="takedown" aria-pressed="false">내리기</button>
+          </div></dd>
+        </div>
+      </dl>
+
+      <div class="targets" id="reqTargets"></div>
+
+      <dl>
+        <div class="row">
+          <dt>맡길 사람</dt>
+          <dd>
+            <select class="field" id="reqAssignee" aria-label="맡길 사람">
+              <option value="agent">에이전트 (담당자 없이 등록)</option>
+              <option value="이현수">이현수</option>
+              <option value="김서연">김서연</option>
+              <option value="박준호">박준호</option>
+            </select>
+          </dd>
+        </div>
+        <div class="row">
+          <dt>기한</dt>
+          <dd><input type="date" class="field" id="reqDue" aria-label="기한"><span class="empty" style="font-size:12.5px">비워 두면 기한 없음</span></dd>
+        </div>
+        <div class="row">
+          <dt>메모</dt>
+          <dd><textarea class="field" id="reqMemo" rows="2" placeholder="예: 집주인이 31.5억까지 조정 가능하다고 함" aria-label="메모"></textarea></dd>
+        </div>
+      </dl>
+    </div>
+    <footer>
+      <p id="reqProblem" role="status"></p>
+      <button type="button" class="btn btn-line" data-close>취소</button>
+      <button type="button" class="btn btn-dark" id="reqSubmit">요청 만들기</button>
+    </footer>
+  </div>
+</div>
+
+<!-- 기록 수정 -->
+<div class="veil" id="editVeil" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="editTitle" style="max-width: 460px">
+    <header>
+      <h2 id="editTitle">기록 수정</h2>
+      <p><b>CP에 올라간 광고는 바뀌지 않습니다.</b> 이미 CP에서 바꾼 내용을 우리 기록에 맞출 때 씁니다. 업무는 생기지 않습니다.</p>
+    </header>
+    <div class="body">
+      <p id="editName" style="font-weight:600"></p>
+      <dl style="margin-top:6px">
+        <div class="row" id="editPriceRow"><dt id="editPriceLabel">매매가</dt><dd><span class="money"><input class="field num" id="editPrice" inputmode="numeric" aria-labelledby="editPriceLabel"><span>만원</span></span><span class="empty num" id="editPriceRead"></span></dd></div>
+        <div class="row" id="editRentRow"><dt>월세</dt><dd><span class="money"><input class="field num" id="editRent" inputmode="numeric" aria-label="월세"><span>만원</span></span></dd></div>
+        <div class="row"><dt>층 노출</dt><dd><div class="seg" id="editFloor" role="group" aria-label="층 노출">
+          <button type="button" data-v="exact" aria-pressed="false">노출 (정확한 층)</button>
+          <button type="button" data-v="band" aria-pressed="false">미노출 (저·중·고)</button>
+        </div></dd></div>
+        <div class="row"><dt>네이버 번호</dt><dd><input class="field num" id="editNaver" style="width:170px" aria-label="네이버 매물번호"></dd></div>
+        <div class="row"><dt>메모</dt><dd><textarea class="field" id="editMemo" rows="2" aria-label="메모"></textarea></dd></div>
+      </dl>
+      <p class="note" id="editNote"></p>
+    </div>
+    <footer>
+      <p id="editProblem" role="status"></p>
+      <button type="button" class="btn btn-line" data-close>취소</button>
+      <button type="button" class="btn btn-dark" id="editSubmit">저장</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(() => {
+  const TX = { sale: ['매매', 't-sale'], jeonse: ['전세', 't-jeonse'], monthly: ['월세', 't-monthly'] };
+  const KIND = { price: '가격 변경', floor: '층 노출 변경', readvertise: '재광고', takedown: '내리기' };
+  const seed = () => [
+    { id: 'a1', site: '고덕그라시움', dong: '101', ho: '3401', link: '연결됨', tx: 'sale', price: 319000, rent: null, cp: '이실장플러스', source: 'cp', floor: 'exact', naver: '9900000001', memo: '', rank: '2/6위', signal: ['즉시 경고 없음', 't-ok'], requests: [] },
+    { id: 'a2', site: '고덕그라시움', dong: '101', ho: '3501', link: '연결됨', tx: 'sale', price: 268000, rent: null, cp: '이실장플러스', source: 'cp', floor: 'exact', naver: '9900000002', memo: '', rank: '3/6위', signal: ['더 싼 광고 있음', 't-warn'], requests: [{ kind: 'price', text: '26억 8,000만 → 26억 5,000만', who: '에이전트' }] },
+    { id: 'a3', site: '고덕그라시움', dong: '101', ho: '3501', link: '연결됨', tx: 'sale', price: 268000, rent: null, cp: '부동산뱅크', source: 'cp', floor: 'exact', naver: '9900000003', memo: '', rank: '9/12위', signal: ['순위 불리', 't-warn'], requests: [] },
+    { id: 'a4', site: '고덕그라시움', dong: '101', ho: '3404', link: '연결됨', tx: 'jeonse', price: 108000, rent: null, cp: '이실장플러스', source: 'cp', floor: 'band', naver: '9900000004', memo: '', rank: '2/5위', signal: ['층 노출 불리', 't-warn'], requests: [] },
+    { id: 'a5', site: '고덕그라시움', dong: '101', ho: '3403', link: '연결됨', tx: 'monthly', price: 5000, rent: 180, cp: '이실장플러스', source: 'manual', floor: 'exact', naver: '9900000007', memo: '', rank: '4/5위', signal: ['더 싼 광고 있음', 't-warn'], requests: [] },
+    { id: 'a6', site: '천호동 근린상가', dong: '', ho: 'B1', link: '매물 없음', tx: 'monthly', price: 5000, rent: 250, cp: '이실장플러스', source: 'cp', floor: 'exact', naver: '', memo: '', rank: '분석 대기', signal: ['네이버 링크 대기', 't-neutral'], requests: [] },
+  ];
+  let ads = seed();
+  const selected = new Set();
+  const $ = (id) => document.getElementById(id);
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const money = (v) => {
+    if (v == null) return '—';
+    const eok = Math.floor(v / 10000), man = v % 10000;
+    return [eok ? `${eok}억` : '', man ? `${man.toLocaleString()}만` : ''].filter(Boolean).join(' ') || '0';
+  };
+  // 쉼표·공백·전각 숫자는 받고, 그 밖의 글자가 섞이면 값으로 보지 않는다 ("12.5"를 125로 바꾸지 않는다)
+  const parseManwon = (text) => {
+    const compact = String(text).normalize('NFKC').replace(/[,\s]/g, '');
+    return /^\d+$/.test(compact) ? Number(compact) : null;
+  };
+  const nameOf = (ad) => [ad.site, ad.dong && `${ad.dong}동`, /^\d+$/.test(ad.ho) ? `${ad.ho}호` : ad.ho].filter(Boolean).join(' ');
+  const primaryLabel = (tx) => (tx === 'sale' ? '매매가' : tx === 'jeonse' ? '전세가' : '보증금');
+
+  let flash = new Set();
+  function render() {
+    $('rows').innerHTML = ads.map((ad) => {
+      const on = selected.has(ad.id);
+      const req = ad.requests[0];
+      const more = ad.requests.length - 1;
+      return `<tr data-id="${ad.id}" aria-selected="${on}">
+        <td class="check"><input type="checkbox" ${on ? 'checked' : ''} aria-label="${esc(nameOf(ad))} 선택"></td>
+        <td style="font-weight:500">${esc(ad.site)}</td>
+        <td>${ad.dong ? esc(ad.dong) : '<span class="empty">—</span>'}</td>
+        <td>${esc(ad.ho)}</td>
+        <td><span class="pill ${ad.link === '연결됨' ? 't-ok' : 't-warn'}">${esc(ad.link)}</span></td>
+        <td><span class="tag ${TX[ad.tx][1]}">${TX[ad.tx][0]}</span></td>
+        <td class="num ${flash.has(ad.id + ':price') ? 'changed' : ''}">${money(ad.price)}</td>
+        <td class="num ${flash.has(ad.id + ':price') ? 'changed' : ''}">${ad.rent != null ? money(ad.rent) : '<span class="empty">—</span>'}</td>
+        <td><span class="tag t-neutral">${esc(ad.cp)}</span></td>
+        <td class="${flash.has(ad.id + ':req') ? 'changed' : ''}" title="${esc(ad.requests.map((r) => `${r.text} · ${r.who}`).join('\n'))}">${req ? `<span class="tag t-info num">${esc(req.text)}</span>${more > 0 ? ` <span class="empty num">+${more}</span>` : ''}` : '<span class="empty">—</span>'}</td>
+        <td class="num">${esc(ad.rank)}</td>
+        <td><span class="pill ${ad.signal[1]}">${esc(ad.signal[0])}</span></td>
+      </tr>`;
+    }).join('');
+    flash = new Set();
+    const n = selected.size;
+    $('btnRequest').disabled = n === 0;
+    $('btnEdit').disabled = n !== 1;
+    $('reqCount').hidden = n === 0; $('reqCount').textContent = n;
+    $('statusSel').hidden = n === 0; $('statusSel').textContent = `${n}개 선택됨`;
+    $('clearSel').hidden = n === 0;
+    $('checkAll').checked = n === ads.length; $('checkAll').indeterminate = n > 0 && n < ads.length;
+    $('tabRequested').textContent = ads.filter((ad) => ad.requests.length).length;
+    hideHint();
+  }
+
+  // ── 선택 ──
+  $('rows').addEventListener('click', (event) => {
+    const row = event.target.closest('tr'); if (!row) return;
+    const id = row.dataset.id;
+    if (selected.has(id)) selected.delete(id); else selected.add(id);
+    render();
+  });
+  $('checkAll').addEventListener('change', (event) => { selected.clear(); if (event.target.checked) ads.forEach((ad) => selected.add(ad.id)); render(); });
+  $('clearSel').addEventListener('click', () => { selected.clear(); render(); });
+
+  // 꺼진 버튼에 올리거나 눌렀을 때 왜 꺼져 있는지 알려 준다
+  let hintTimer;
+  const showHint = (text) => { const el = $('selHint'); el.textContent = text; el.hidden = false; clearTimeout(hintTimer); hintTimer = setTimeout(hideHint, 2200); };
+  function hideHint() { $('selHint').hidden = true; }
+  for (const [id, text] of [['btnRequest', () => '요청할 광고를 먼저 선택하세요.'], ['btnEdit', () => (selected.size > 1 ? '기록 수정은 한 건씩 합니다. 한 건만 선택하세요.' : '수정할 광고를 먼저 선택하세요.')]]) {
+    const wrap = $(id);
+    wrap.addEventListener('pointerenter', () => { if (wrap.disabled) showHint(text()); });
+    wrap.addEventListener('pointerleave', hideHint);
+  }
+  $('btnAdd').addEventListener('click', () => toast('시안에서는 광고 등록 창을 열지 않습니다.'));
+
+  let toastTimer;
+  function toast(text) { const el = $('toast'); el.textContent = text; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3200); }
+
+  // ── 창 공통: 연 버튼으로 포커스를 돌려준다 ──
+  let opener = null;
+  function openDialog(veil, focusEl) { opener = document.activeElement; veil.hidden = false; (focusEl || veil.querySelector('button, input, select, textarea')).focus(); }
+  function closeDialog(veil) { veil.hidden = true; if (opener && opener.isConnected && !opener.disabled) opener.focus(); }
+  document.querySelectorAll('.veil').forEach((veil) => {
+    veil.addEventListener('mousedown', (event) => { if (event.target === veil) closeDialog(veil); });
+    veil.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeDialog(veil)));
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || event.isComposing) return;
+    const open = [...document.querySelectorAll('.veil')].find((veil) => !veil.hidden);
+    if (open) closeDialog(open);
+  });
+
+  // ── 변경 요청 ──
+  let reqKind = 'price';
+  let reqDrafts = {};   // 광고 id → 입력한 글자 (종류를 바꿨다 돌아와도 남는다)
+  let reqFloor = {};    // 광고 id → 'exact' | 'band'
+  let reqErrors = {};   // 광고 id → 실패 사유
+  let reqTargets = [];
+  $('btnRequest').addEventListener('click', () => {
+    reqTargets = ads.filter((ad) => selected.has(ad.id));
+    reqKind = 'price'; reqDrafts = {}; reqFloor = {}; reqErrors = {};
+    $('reqAssignee').value = 'agent'; $('reqDue').value = ''; $('reqMemo').value = '';
+    renderRequest();
+    openDialog($('reqVeil'), $('reqKind').querySelector('[aria-pressed="true"]'));
+  });
+  $('reqKind').addEventListener('click', (event) => {
+    const button = event.target.closest('button'); if (!button) return;
+    collectRequestInputs();
+    reqKind = button.dataset.kind; reqErrors = {};
+    renderRequest();
+    $('reqKind').querySelector(`[data-kind="${reqKind}"]`).focus();
+  });
+  function collectRequestInputs() {
+    $('reqTargets').querySelectorAll('input[data-id]').forEach((input) => { reqDrafts[`${input.dataset.id}:${input.dataset.key}`] = input.value; });
+  }
+  function renderRequest() {
+    $('reqKind').querySelectorAll('button').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.kind === reqKind)));
+    const hasValue = reqKind === 'price' || reqKind === 'floor';
+    const box = $('reqTargets');
+    box.classList.toggle('no-value', !hasValue);
+    const head = `<div class="t-head"><span>광고 ${reqTargets.length}건</span><span>지금</span>${hasValue ? `<span>${reqKind === 'price' ? '바꿀 값' : '바꿀 노출'}</span>` : ''}</div>`;
+    box.innerHTML = head + reqTargets.map((ad) => {
+      const error = reqErrors[ad.id];
+      const now = reqKind === 'floor' ? (ad.floor === 'exact' ? '노출' : '미노출') : ad.tx === 'monthly' ? `${money(ad.price)} / ${money(ad.rent)}` : money(ad.price);
+      let field = '';
+      if (reqKind === 'price') {
+        const value = (key) => esc(reqDrafts[`${ad.id}:${key}`] ?? '');
+        field = `<span style="display:flex;flex-direction:column;gap:4px;padding:6px 0">
+          <span class="money"><input class="field num" inputmode="numeric" data-id="${ad.id}" data-key="price" value="${value('price')}" placeholder="${ad.price}" aria-label="${esc(nameOf(ad))} ${primaryLabel(ad.tx)}"><span>만원</span></span>
+          ${ad.tx === 'monthly' ? `<span class="money"><input class="field num" inputmode="numeric" data-id="${ad.id}" data-key="rent" value="${value('rent')}" placeholder="${ad.rent}" aria-label="${esc(nameOf(ad))} 월세"><span>만원</span></span>` : ''}
+        </span>`;
+      } else if (reqKind === 'floor') {
+        const want = reqFloor[ad.id] ?? (ad.floor === 'exact' ? 'band' : 'exact');
+        reqFloor[ad.id] = want;
+        field = `<span class="tag t-info">${want === 'exact' ? '노출로' : '미노출로'}</span>`;
+      }
+      return `<div class="t-row ${error ? 'fail' : ''}">
+        <span class="name">${esc(nameOf(ad))}<small>${TX[ad.tx][0]} · ${esc(ad.cp)}${ad.source === 'manual' ? ' · 직접 입력' : ''}</small>${error ? `<small class="err">${esc(error)}</small>` : ''}</span>
+        <span class="num" style="color:var(--fg-sub)">${now}</span>${field}
+      </div>`;
+    }).join('');
+    $('reqSubmit').textContent = `${reqTargets.length}건 요청 만들기`;
+    $('reqProblem').textContent = ''; $('reqProblem').className = '';
+  }
+  $('reqSubmit').addEventListener('click', () => {
+    collectRequestInputs();
+    reqErrors = {};
+    const assignee = $('reqAssignee').value === 'agent' ? '에이전트' : $('reqAssignee').value;
+    const done = [];
+    for (const ad of reqTargets) {
+      // 직접 입력한 광고는 CP에 실체가 없어 요청할 곳이 없다
+      if (ad.source === 'manual') { reqErrors[ad.id] = '직접 입력한 광고는 요청하지 않습니다. 기록 수정으로 고쳐 주세요.'; continue; }
+      if (ad.requests.some((request) => request.kind === reqKind)) { reqErrors[ad.id] = `처리되지 않은 ${KIND[reqKind]} 요청이 이미 있습니다.`; continue; }
+      let text;
+      if (reqKind === 'price') {
+        const rawPrice = reqDrafts[`${ad.id}:price`] ?? '', rawRent = reqDrafts[`${ad.id}:rent`] ?? '';
+        const price = rawPrice.trim() ? parseManwon(rawPrice) : ad.price;
+        const rent = ad.tx === 'monthly' ? (rawRent.trim() ? parseManwon(rawRent) : ad.rent) : null;
+        if (price === null || (ad.tx === 'monthly' && rent === null)) { reqErrors[ad.id] = '금액은 만원 단위 숫자로 적어 주세요.'; continue; }
+        if (price === ad.price && rent === ad.rent) { reqErrors[ad.id] = '지금 광고 값과 다른 값을 적어 주세요.'; continue; }
+        text = [price !== ad.price ? `${money(ad.price)} → ${money(price)}` : null, rent !== ad.rent ? `월 ${money(ad.rent)} → ${money(rent)}` : null].filter(Boolean).join(', ');
+      } else if (reqKind === 'floor') {
+        text = reqFloor[ad.id] === 'exact' ? '층 미노출 → 층 노출' : '층 노출 → 층 미노출';
+      } else {
+        text = KIND[reqKind];
+      }
+      ad.requests.unshift({ kind: reqKind, text, who: assignee });
+      flash.add(ad.id + ':req'); done.push(ad.id);
+    }
+    const failed = reqTargets.filter((ad) => reqErrors[ad.id]);
+    render();
+    if (failed.length === 0) {
+      closeDialog($('reqVeil')); selected.clear(); render();
+      toast(`${done.length}건을 요청했습니다. ${assignee === '에이전트' ? '광고 업무에 등록됐습니다.' : `${assignee}님의 할 일에 등록됐습니다.`}`);
+      return;
+    }
+    // 실패한 광고만 창에 남긴다. 적어 둔 값은 그대로다.
+    reqTargets = failed;
+    const kept = reqErrors;
+    renderRequest(); reqErrors = kept; renderRequest();
+    $('reqProblem').className = 'bad';
+    $('reqProblem').textContent = `${failed.length}건을 요청하지 못했습니다${done.length ? ` (${done.length}건은 요청됨)` : ''}.`;
+    const firstInput = $('reqTargets').querySelector('input'); (firstInput || $('reqSubmit')).focus();
+  });
+
+  // ── 기록 수정 (한 건) ──
+  let editAd = null, editFloor = 'exact';
+  $('btnEdit').addEventListener('click', () => {
+    editAd = ads.find((ad) => selected.has(ad.id));
+    editFloor = editAd.floor;
+    $('editName').textContent = nameOf(editAd);
+    $('editPriceLabel').textContent = primaryLabel(editAd.tx);
+    $('editPrice').value = String(editAd.price);
+    $('editPriceRead').textContent = money(editAd.price);
+    $('editRentRow').hidden = editAd.tx !== 'monthly';
+    $('editRent').value = editAd.rent != null ? String(editAd.rent) : '';
+    $('editNaver').value = editAd.naver; $('editMemo').value = editAd.memo;
+    $('editNote').textContent = editAd.source === 'manual'
+      ? '직접 입력한 광고입니다. 여기서 고친 값이 그대로 남습니다.'
+      : 'CP에서 읽어 온 광고입니다. 다음 수집 때 CP의 값이 다르면 그 값으로 다시 바뀝니다.';
+    $('editProblem').textContent = ''; $('editProblem').className = '';
+    for (const id of ['editPrice', 'editRent']) $(id).removeAttribute('aria-invalid');
+    renderEditFloor();
+    openDialog($('editVeil'), $('editPrice'));
+  });
+  function renderEditFloor() { $('editFloor').querySelectorAll('button').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.v === editFloor))); }
+  $('editFloor').addEventListener('click', (event) => { const button = event.target.closest('button'); if (!button) return; editFloor = button.dataset.v; renderEditFloor(); });
+  $('editPrice').addEventListener('input', () => { const value = parseManwon($('editPrice').value); $('editPriceRead').textContent = value === null ? '' : money(value); });
+  $('editSubmit').addEventListener('click', () => {
+    const price = parseManwon($('editPrice').value);
+    const rent = editAd.tx === 'monthly' ? parseManwon($('editRent').value) : null;
+    $('editPrice').toggleAttribute('aria-invalid', price === null);
+    $('editRent').toggleAttribute('aria-invalid', editAd.tx === 'monthly' && rent === null);
+    if (price === null) $('editPrice').setAttribute('aria-invalid', 'true');
+    if (editAd.tx === 'monthly' && rent === null) $('editRent').setAttribute('aria-invalid', 'true');
+    if (price === null || (editAd.tx === 'monthly' && rent === null)) {
+      $('editProblem').className = 'bad'; $('editProblem').textContent = '금액은 만원 단위 숫자로 적어 주세요.';
+      (price === null ? $('editPrice') : $('editRent')).focus(); return;
+    }
+    const priceChanged = price !== editAd.price || rent !== editAd.rent;
+    const changed = priceChanged || editFloor !== editAd.floor || $('editNaver').value.trim() !== editAd.naver || $('editMemo').value.trim() !== editAd.memo;
+    if (!changed) { $('editProblem').className = ''; $('editProblem').textContent = '바꾼 내용이 없습니다.'; return; }
+    Object.assign(editAd, { price, rent, floor: editFloor, naver: $('editNaver').value.trim(), memo: $('editMemo').value.trim() });
+    if (priceChanged) flash.add(editAd.id + ':price');
+    closeDialog($('editVeil')); selected.clear(); render();
+    toast('기록을 고쳤습니다. 업무는 만들지 않았습니다.');
+  });
+
+  $('demoReset').addEventListener('click', () => { ads = seed(); selected.clear(); render(); });
+  render();
+})();
+</script>
+</body>
+</html>

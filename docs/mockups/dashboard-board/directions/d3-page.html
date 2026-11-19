@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>방향 ③ Notion 문서 · 대시보드</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="shared.css">
+<style>
+  /*
+   * 방향 ③ Notion 문서 — 카드를 아예 없앤다. 대시보드가 한 장의 문서다.
+   * 제목, 알림 상자(callout), 접었다 펴는 묶음(toggle), 할 일 블록, 문서 안의 데이터베이스(보드/표 전환)로만 이뤄진다.
+   * 테두리와 그림자가 없고, 구획은 제목과 여백과 가는 선이 나눈다. 줄에 올리면 왼쪽에 손잡이가 보인다.
+   */
+  .doc { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); column-gap: 44px; padding: 4px 8px 0; }
+  .colx { min-width: 0; min-height: 0; overflow: auto; padding: 0 6px 16px 22px; }
+  .h { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 6px; font-size: 18px; line-height: 26px; font-weight: 600; letter-spacing: -0.01em; }
+  .h:first-child { margin-top: 2px; }
+  .h small { font-size: 13px; font-weight: 400; color: var(--fg4); }
+  .h .views { margin-left: auto; }
+  .callout { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 12px 12px 14px; border-radius: 6px; background: #fbf3db; color: var(--fg); margin: 2px 0 10px; }
+  .callout svg { color: var(--amber); }
+  .callout b { font-weight: 600; }
+  .callout.ok { background: #edf3ec; }
+  .callout.ok svg { color: #0f7b6c; }
+  .lnk { height: 26px; padding: 0 8px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--fg2); white-space: nowrap; transition: background-color 120ms; }
+  .lnk:hover { background: rgba(33, 27, 23, 0.08); }
+  /* 블록: 올리면 왼쪽 여백에 손잡이 */
+  .blk { position: relative; border-radius: 4px; transition: background-color 100ms; }
+  .blk::before { content: "⋮⋮"; position: absolute; left: -19px; top: 5px; width: 16px; font-size: 12px; line-height: 20px; letter-spacing: -3px; color: var(--fg4); opacity: 0; transition: opacity 120ms; }
+  @media (hover: hover) and (pointer: fine) { .blk:hover::before { opacity: 1; } }
+  .row3 { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 5px 6px; }
+  .row3:hover { background: var(--hover); }
+  .row3 b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .row3 span.m { font-size: 12px; color: var(--fg3); white-space: nowrap; }
+  .now3 { display: flex; align-items: center; gap: 8px; height: 16px; padding: 0 6px; font-size: 11px; font-weight: 600; color: var(--red-strong); }
+  .now3 i { flex: 1; border-top: 1px solid var(--red-strong); opacity: 0.5; }
+  .tgl { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 6px 4px 2px; border-radius: 4px; font-weight: 500; text-align: left; transition: background-color 100ms; }
+  .tgl:hover { background: var(--hover); }
+  .tgl svg { width: 18px; height: 18px; color: var(--fg3); transition: transform 180ms var(--ease-out); }
+  .tgl[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .tgl .n { font-weight: 400; color: var(--fg4); }
+  .tgl.bad .n { color: var(--red); font-weight: 500; }
+  .kids { padding: 0 0 4px 22px; }
+  .todo3 { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 9px; align-items: start; padding: 4px 6px; }
+  .todo3:hover, .todo3:focus-within { background: var(--hover); }
+  .todo3.done { opacity: 0.45; }
+  .todo3.done .tt { text-decoration: line-through; }
+  .todo3 .tt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .todo3 .tt span { margin-left: 8px; font-size: 12px; color: var(--fg4); }
+  .hr { height: 1px; margin: 14px 0 0; background: var(--line); }
+  /* 문서 안의 데이터베이스: 보드 */
+  .kan { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .kan h4 { margin: 0 0 6px; font-size: 12px; font-weight: 400; display: flex; align-items: center; gap: 6px; }
+  .kan h4 i { font-style: normal; color: var(--fg4); }
+  .kcard { display: block; width: 100%; padding: 8px 9px; margin-bottom: 6px; border-radius: 6px; background: var(--bg); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(42, 28, 0, 0.05); text-align: left; transition: background-color 120ms, box-shadow 160ms; }
+  .kcard:hover { background: var(--muted); box-shadow: 0 0 0 1px rgba(42, 28, 0, 0.14), 0 2px 6px rgba(42, 28, 0, 0.08); }
+  .kcard b { display: block; font-weight: 500; white-space: nowrap; }
+  .kcard span { display: block; font-size: 12px; line-height: 17px; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kcard span.w { color: var(--amber); font-weight: 500; }
+  .kempty { height: 30px; border-radius: 6px; border: 1px dashed var(--line2); }
+  /* 표 */
+  .tb3 { display: grid; grid-template-columns: minmax(0, 1.2fr) 104px minmax(0, 1fr); border-top: 1px solid var(--line); }
+  .tb3 > * { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
+  .tb3 span { display: flex; align-items: center; min-width: 0; height: 36px; padding: 0 8px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
+  .tb3 span:first-child { border-left: 0; padding-left: 2px; }
+  .tb3 .hd3 span { height: 32px; gap: 5px; font-size: 12px; color: var(--fg4); }
+  .tb3 .hd3 svg { width: 13px; height: 13px; }
+  .tb3 button:hover span { background: var(--hover); }
+  .pg { display: flex; align-items: center; gap: 8px; padding: 5px 6px; color: var(--fg3); }
+  .pg svg { color: var(--fg4); }
+  .pg i { margin-left: auto; font-style: normal; font-size: 12px; color: var(--fg4); }
+</style>
+</head>
+<body>
+<script src="shared.js"></script>
+<script>
+(() => {
+  const { DAYS, DATES, TODAY, events, deals, ui, ic, esc, inScope, bucket, dueText, shown, isDone, hhmm, keepFocus } = DX;
+  const openSet = new Set(['late', 'today']);
+  let view = 'board';
+  const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
+  const STAGES = [[1, '계약 준비'], [2, '가계약'], [3, '본계약'], [4, '중도금/잔금'], [5, '잔금완료']];
+  const unit = (t) => t.replace('고덕그라시움 101동 ', '');
+
+  function paint() {
+    const area = document.getElementById('area');
+    keepFocus(area, () => {
+      const all = shown(), g = { late: [], today: [], soon: [] }; all.forEach((t) => g[bucket(t)].push(t));
+      const live = (k) => g[k].filter((t) => !isDone(t)).length;
+      const ev = events.filter((e) => e.day === TODAY && inScope(e)).sort((a, b) => a.time.localeCompare(b.time));
+      const now = hhmm(ui.hour); let put = false;
+      const oldest = g.late.filter((t) => !isDone(t))[0];
+      const group = (k, label) => `<div class="blk"><button class="tgl${k === 'late' && live(k) ? ' bad' : ''}" data-a="fold" data-key="${k}" aria-expanded="${openSet.has(k)}">${CHEV}${label}<span class="n num">${live(k)}</span></button>
+        ${openSet.has(k) ? `<div class="kids">${g[k].map((t) => `<div class="blk todo3${isDone(t) ? ' done' : ''}"><button class="chk" role="checkbox" aria-checked="${isDone(t)}" aria-label="${esc(t.t)} ${isDone(t) ? '완료 취소' : '완료 처리'}" data-a="check" data-key="${t.id}"><svg viewBox="0 0 12 12"><path pathLength="1" d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg></button><div class="tt">${esc(t.t)}<span>${esc(t.m)}</span></div><span class="due ${k === 'late' ? 'late' : ''}">${k === 'today' ? '' : dueText(t)}</span></div>`).join('') || '<div class="empty" style="padding:6px;text-align:left">비어 있어요</div>'}</div>` : ''}</div>`;
+      area.innerHTML = `<div class="doc">
+        <div class="colx">
+          <div class="h">오늘 <small class="num">11월 ${DATES[TODAY]}일 ${DAYS[TODAY]}요일</small></div>
+          ${live('late') ? `<div class="callout">${ic('alarm')}<span>기한이 지난 업무가 <b class="num">${live('late')}건</b> 있어요. 가장 오래된 것은 <b>${esc(oldest.t)}</b> (${dueText(oldest)}).</span><button class="lnk" data-a="unfold" data-key="late">지남 보기</button></div>`
+            : `<div class="callout ok">${ic('todo')}<span>밀린 업무가 없어요. 오늘 할 일만 챙기면 됩니다.</span><span></span></div>`}
+          <div class="h" style="font-size:15px">일정 <small class="num">${ev.length}</small></div>
+          ${ev.map((e) => { let pre = ''; if (!put && e.time > now) { pre = `<div class="now3"><span class="num">${now}</span><i></i></div>`; put = true; }
+            return `${pre}<div class="blk row3"><b>${e.time}</b><span class="t1">${esc(e.t)}</span><span class="m">${esc(e.m)}</span></div>`; }).join('') || '<div class="empty" style="padding:6px;text-align:left">오늘 잡힌 일정이 없어요</div>'}${put ? '' : `<div class="now3"><span class="num">${now}</span><i></i></div>`}
+          <div class="h" style="font-size:15px" id="todo-h">할 일 <small class="num">${live('late') + live('today') + live('soon')}</small></div>
+          ${group('late', '지남')}${group('today', '오늘')}${group('soon', '다가옴')}
+        </div>
+        <div class="colx">
+          <div class="h">진행 거래 <small class="num">${deals.length}</small><span class="views" role="tablist" aria-label="보기">${[['board', '보드'], ['table', '표']].map(([k, l]) => `<button class="view" role="tab" aria-selected="${view === k}" data-a="view" data-key="${k}">${l}</button>`).join('')}</span></div>
+          ${view === 'board' ? `<div class="kan">${STAGES.map(([s, label]) => { const list = deals.filter((x) => x.st === s);
+            return `<div><h4><span class="tag s${s}">${label}</span><i class="num">${list.length}</i></h4>${list.map((x) => `<button class="kcard" data-a="say" data-msg="${esc(x.t)} 거래를 엽니다"><b>${esc(unit(x.t))}</b><span class="num">${esc(x.a)}</span><span class="num ${x.cls === 'warn' ? 'w' : ''}">${esc(x.nx)}${x.d ? ' · ' + x.d : ''}</span></button>`).join('') || '<div class="kempty"></div>'}</div>`; }).join('')}</div>`
+          : `<div class="tb3"><div class="hd3"><span>${ic('aa')}거래</span><span>${ic('tagi')}단계</span><span>${ic('cal')}다음 일정</span></div>${deals.map((x) => `<button data-a="say" data-msg="${esc(x.t)} 거래를 엽니다"><span><b style="font-weight:500">${esc(x.t)}</b></span><span><i class="tag s${x.st}" style="font-style:normal">${x.stl}</i></span><span class="num" style="${x.cls === 'warn' ? 'color:var(--amber);font-weight:500' : ''}">${esc(x.nx)}${x.d ? ' · ' + x.d : ''}</span></button>`).join('')}</div>`}
+          <div class="hr"></div>
+          <div class="h" style="font-size:15px">공지사항 <small class="num">${DX.unread() ? `안 읽음 ${DX.unread()}` : '모두 읽음'}</small></div>
+          ${DX.noticeRows(4)}
+          <div class="h" style="font-size:15px">부동산 뉴스</div>
+          ${DX.newsRows(4)}
+          <div class="hr"></div>
+          <div class="blk pg" style="margin-top:8px">${ic('site')}<span>관리단지</span><span style="font-size:12px;color:var(--fg4)">단지별 매물 수와 시세 변동</span><i>준비 중</i></div>
+        </div></div>`;
+    });
+  }
+  DX.onRender(paint);
+  document.addEventListener('dx:act', (e) => {
+    const { a, key } = e.detail;
+    if (a === 'fold') openSet.has(key) ? openSet.delete(key) : openSet.add(key);
+    else if (a === 'unfold' || a === 'tab') openSet.add(key); // 알약(남은 업무·기한 지남)과 '지남 보기'는 그 묶음을 편다
+    else if (a === 'view') view = key;
+    else if (a !== 'jump') return;
+    paint();
+    if (a === 'unfold' || a === 'tab') document.querySelector(`[data-a="fold"][data-key="${key}"]`)?.focus();
+    if (a === 'jump') document.querySelector('.doc .colx')?.scrollTo({ top: 0 });
+  });
+  DX.start();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B 날짜 판 · 대시보드 시안</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="board.css">
+<style>
+  /* 날짜가 열이다. 놓친 것 → 오늘 → 내일 → 이번 주 → 그 뒤. 종류는 점과 위쪽 거름 단추로 본다. */
+  .filters { display: flex; align-items: center; gap: 6px; flex: none; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: var(--r-ctl); font-size: 13px; color: var(--text-2); box-shadow: 0 0 0 1px var(--line-2); background: var(--surface); transition: background 0.12s, color 0.12s, box-shadow 0.12s; }
+  .chip:hover { color: var(--text); }
+  .chip.off { background: transparent; box-shadow: 0 0 0 1px var(--line); color: var(--text-3); }
+  .chip.off .dot { opacity: 0.35; }
+  .chip .n { color: var(--text-3); }
+  .filters .hint { margin-left: auto; font-size: 12.5px; color: var(--text-3); }
+
+  .lanes { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1.25fr 1fr 1fr 1fr; background: var(--surface); border-radius: var(--r-panel); box-shadow: 0 0 0 1px var(--line), var(--shadow-1); overflow: hidden; }
+  .lane { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); }
+  .lane:first-child { border-left: 0; }
+  .lane header { padding: 12px 14px 10px; border-bottom: 1px solid var(--line); flex: none; }
+  .lane h2 { margin: 0; font-size: 14px; font-weight: 600; display: flex; align-items: baseline; gap: 7px; }
+  .lane h2 .n { font-weight: 400; color: var(--text-3); font-size: 13px; }
+  .lane .when { margin-top: 1px; font-size: 12.5px; color: var(--text-3); }
+  .lane .list { flex: 1; min-height: 0; overflow: auto; padding: 6px 4px; }
+  .lane.late header { background: linear-gradient(var(--danger-soft), var(--danger-soft)); }
+  .lane.late h2 { color: var(--danger); }
+  .lane.now { background: #fbfcff; }
+  .lane.now header { box-shadow: inset 0 2px 0 var(--accent); }
+  .hour { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: start; }
+  .hour > .tm { padding: 11px 0 0 10px; font-size: 12.5px; color: var(--text-2); font-weight: 500; }
+  .hour .row { padding-left: 6px; }
+  .day { padding: 10px 10px 2px; font-size: 12px; color: var(--text-3); }
+</style>
+</head>
+<body>
+<script src="board.js"></script>
+<script>
+  const body = B.shell();
+  const off = new Set();
+  const lanes = [
+    { key: 'late', label: '놓친 것', when: '기한이 지났습니다', test: (o) => o < 0 },
+    { key: 'now', label: '오늘', when: '11.16 (월)', test: (o) => o === 0 },
+    { key: 'd1', label: '내일', when: '11.17 (화)', test: (o) => o === 1 },
+    { key: 'wk', label: '이번 주', when: '11.18 (수) ~ 11.22 (일)', test: (o) => o >= 2 && o <= 6 },
+    { key: 'later', label: '그 뒤', when: '다음 주부터 60일 안', test: (o) => o > 6 },
+  ];
+
+  function render() {
+    const all = B.visible();
+    const v = all.filter((it) => !off.has(it.kind));
+    const chips = Object.entries(B.kinds).map(([k, m]) => `<button class="chip ${off.has(k) ? 'off' : ''}" data-kind="${k}"><span class="dot k-${k}"></span>${m.label}<span class="n num">${all.filter((it) => it.kind === k).length}</span></button>`).join('');
+    body.innerHTML = B.brief() + B.kpiStrip() + `<div class="filters">${chips}<span class="hint">종류를 눌러 가리거나 다시 봅니다</span></div>
+    <div class="lanes">${lanes.map((ln) => {
+      const list = v.filter((it) => ln.test(it.off)).sort((a, b) => a.off - b.off || (a.time ?? '99').localeCompare(b.time ?? '99'));
+      let inner = '';
+      if (ln.key === 'now') {
+        const timed = list.filter((it) => it.time), untimed = list.filter((it) => !it.time);
+        inner = (untimed.length ? `<div class="day">시간 없이 오늘 안에</div>${untimed.map((it) => B.row(it, { kind: true, date: false })).join('')}` : '')
+          + (timed.length ? `<div class="day">일정</div>${timed.map((it) => `<div class="hour"><span class="tm num">${it.time}</span>${B.row(it, { kind: true, date: false })}</div>`).join('')}` : '');
+      } else if (ln.key === 'wk' || ln.key === 'later') {
+        let last = null;
+        inner = list.map((it) => { const head = it.off !== last ? `<div class="day num">${B.dateLabel(it.off)} · ${B.dueLabel(it)}</div>` : ''; last = it.off; return head + B.row(it, { kind: true, date: false }); }).join('');
+      } else inner = list.map((it) => B.row(it, { kind: true, date: ln.key === 'late' })).join('');
+      return `<section class="lane ${ln.key}"><header><h2>${ln.label}<span class="n num">${list.length}</span></h2><div class="when num">${ln.when}</div></header><div class="list">${inner || '<div class="empty">없습니다.</div>'}</div></section>`;
+    }).join('')}</div>`;
+  }
+  document.addEventListener('click', (e) => {
+    const c = e.target.closest('[data-kind]');
+    if (!c) return;
+    off.has(c.dataset.kind) ? off.delete(c.dataset.kind) : off.add(c.dataset.kind);
+    render();
+  });
+  B.onChange(render);
+  render();
+</script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C 한 줄 목록 · 대시보드 시안</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="board.css">
+<style>
+  /* 급한 순서의 목록 하나와 옆의 상세. 키보드로 위아래 움직이고 E로 처리한다. */
+  .split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(380px, 1fr) minmax(0, 1.15fr); gap: 12px; }
+  .pane { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-radius: var(--r-panel); box-shadow: 0 0 0 1px var(--line), var(--shadow-1); }
+  .pane > header { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--line); flex: none; font-size: 13px; color: var(--text-2); }
+  .pane > header b { color: var(--text); font-weight: 600; font-size: 14px; }
+  .pane > header .keys { margin-left: auto; display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--text-3); }
+  .list { flex: 1; min-height: 0; overflow: auto; padding: 4px; }
+  .grp { padding: 12px 10px 4px; font-size: 12px; color: var(--text-3); display: flex; gap: 6px; }
+  .line { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; text-align: left; padding: 8px 10px; border-radius: var(--r-ctl); transition: background 0.1s, opacity 0.2s; }
+  .line:hover { background: #f6f7f9; }
+  .line.sel { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+  .line .t { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .line .s { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .line .r { display: flex; align-items: center; gap: 6px; }
+
+  .detail { flex: 1; min-height: 0; overflow: auto; padding: 22px 26px; }
+  .detail .kind { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-2); }
+  .detail h2 { margin: 8px 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+  .detail .lead { color: var(--text-2); }
+  .why { margin: 18px 0; padding: 12px 14px; border-radius: 10px; background: var(--sunken); display: flex; align-items: center; gap: 10px; }
+  .why.danger { background: var(--danger-soft); color: var(--danger); }
+  .why.warn { background: var(--warn-soft); color: var(--warn); }
+  .why.today { background: var(--accent-soft); color: var(--accent); }
+  .why b { font-weight: 600; }
+  .why .when { margin-left: auto; font-size: 13px; opacity: 0.85; }
+  .facts { display: grid; grid-template-columns: 96px minmax(0, 1fr); row-gap: 9px; font-size: 13.5px; margin: 0; }
+  .facts dt { color: var(--text-3); }
+  .facts dd { margin: 0; }
+  .sec { margin: 22px 0 8px; font-size: 12px; color: var(--text-3); }
+  .hist { list-style: none; margin: 0; padding: 0; font-size: 13.5px; }
+  .hist li { display: grid; grid-template-columns: 62px minmax(0, 1fr); padding: 6px 0; border-top: 1px solid var(--line); }
+  .hist li span { color: var(--text-3); }
+  .bar { display: flex; gap: 8px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--line); flex: none; }
+  .bar .sp { flex: 1; }
+  .side-kpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+</style>
+</head>
+<body>
+<script src="board.js"></script>
+<script>
+  const body = B.shell();
+  let sel = null;
+  const groups = [['놓친 것', (o) => o < 0], ['오늘', (o) => o === 0], ['이번 주', (o) => o > 0 && o <= 6], ['그 뒤', (o) => o > 6]];
+  const hist = {
+    deal: [['11.07', '가계약금 1,000만 입금 확인'], ['11.05', '매수·매도 조건 합의'], ['10.29', '집 보여주기 2회차']],
+    listing: [['10.24', '집주인 통화 · 조건 변동 없음'], ['10.11', '전세 7억 5,000만 → 7억 2,000만'], ['09.30', '의뢰 접수']],
+    buyer: [['11.04', '통화 · 12월 안에 결정 희망'], ['10.28', '그라시움 2곳 집 보여주기'], ['10.20', '구매 의뢰 접수']],
+    money: [['11.04', '잔금 완료 · 수수료 청구'], ['11.04', '세금계산서 발행'], ['10.14', '계약 체결']],
+    expiry: [['2025.01', '전세 계약 2년'], ['2024.12', '중개 · 우리 사무소']],
+  };
+
+  function order() {
+    return B.visible().sort((a, b) => a.off - b.off || (a.time ?? '99').localeCompare(b.time ?? '99'));
+  }
+  function render() {
+    const v = order();
+    if (!v.some((it) => it.id === sel)) sel = v[0]?.id ?? null;
+    const it = v.find((x) => x.id === sel);
+    const list = groups.map(([label, test]) => {
+      const g = v.filter((x) => test(x.off));
+      return g.length ? `<div class="grp"><span>${label}</span><span class="num">${g.length}</span></div>` + g.map((x) => `<button class="line ${x.id === sel ? 'sel' : ''}" data-sel="${x.id}" data-id="${x.id}">
+        <span class="dot k-${x.kind}"></span>
+        <span style="min-width:0"><div class="t">${B.esc(x.t)}</div><div class="s">${B.esc(x.why)} · ${B.esc(x.s)}</div></span>
+        <span class="r"><span class="tag ${B.tone(x)}">${B.dueLabel(x)}</span>${B.state.scope === 'all' ? B.whoChip(x.who) : ''}</span>
+      </button>`).join('') : '';
+    }).join('');
+    const detail = it ? `<div class="detail">
+        <div class="kind"><span class="dot k-${it.kind}"></span>${B.kinds[it.kind].label} · 담당 ${it.who}</div>
+        <h2>${B.esc(it.t)}</h2>
+        <div class="lead">${B.esc(it.s)}</div>
+        <div class="why ${B.tone(it)}"><b>${B.esc(it.why)}</b><span class="when num">${it.off === 0 ? '오늘' : B.dateLabel(it.off)} · ${B.dueLabel(it)}</span></div>
+        <dl class="facts num">
+          <dt>기준일</dt><dd>${B.dateLabel(it.off)}</dd>
+          <dt>담당</dt><dd>${it.who}</dd>
+          <dt>열리는 화면</dt><dd>${B.kinds[it.kind].to}</dd>
+        </dl>
+        <div class="sec">최근 기록</div>
+        <ul class="hist num">${hist[it.kind].map(([d, t]) => `<li><span>${d}</span>${t}</li>`).join('')}</ul>
+      </div>
+      <div class="bar"><button class="btn pri" data-act="${it.id}">${B.esc(it.act)}</button><button class="btn" data-snooze>내일 다시 보기</button><span class="sp"></span><button class="btn" data-done="${it.id}">처리함 <kbd>E</kbd></button></div>`
+      : '<div class="detail"><div class="empty">지금 챙길 일이 없습니다.</div></div>';
+    body.innerHTML = B.brief() + B.kpiStrip() + `<div class="split">
+      <section class="pane"><header><b>챙길 일</b><span class="num">${v.length}</span><span class="keys"><span><kbd>J</kbd> <kbd>K</kbd> 이동</span><span><kbd>E</kbd> 처리</span></span></header><div class="list">${list || '<div class="empty">지금 챙길 일이 없습니다.</div>'}</div></section>
+      <section class="pane">${detail}</section>
+    </div>`;
+    document.querySelector('.line.sel')?.scrollIntoView({ block: 'nearest' });
+  }
+  document.addEventListener('click', (e) => {
+    const l = e.target.closest('[data-sel]');
+    if (l) { sel = l.dataset.sel; render(); }
+    if (e.target.closest('[data-snooze]')) B.toast('내일 아침에 다시 올립니다');
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const v = order(); const i = v.findIndex((x) => x.id === sel);
+    const k = e.key.toLowerCase();
+    if (k === 'j' || e.key === 'ArrowDown') { sel = v[Math.min(i + 1, v.length - 1)]?.id; render(); e.preventDefault(); }
+    else if (k === 'k' || e.key === 'ArrowUp') { sel = v[Math.max(i - 1, 0)]?.id; render(); e.preventDefault(); }
+    else if (k === 'e' && sel) { const next = v[i + 1]?.id ?? v[i - 1]?.id; B.done(sel); sel = next; }
+  });
+  B.onChange(render);
+  render();
+</script>
+</body>
+</html>

@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대시보드 2판 · 조사 반영 시안</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="board.css">
+<style>
+  /* 2판: 단계 띠 + 지남·오늘·다가옴 세 열 + 줄마다 주 행동·미루기·완료. 상자 대신 한 면과 가는 선. */
+  .body { gap: 14px; }
+  .brief { font-size: 18px; }
+  .top .seg button:disabled { color: var(--text-3); opacity: 0.55; cursor: not-allowed; }
+
+  /* ── 단계 띠 ── */
+  .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--surface); border-radius: var(--r-panel); box-shadow: 0 0 0 1px var(--line), var(--shadow-1); flex: none; }
+  .stage { position: relative; display: block; width: 100%; text-align: left; padding: 12px 18px 11px 22px; border-left: 1px solid var(--line); transition: background 0.15s; }
+  .stage:first-child { border-left: 0; border-radius: var(--r-panel) 0 0 var(--r-panel); padding-left: 18px; }
+  .stage:last-child { border-radius: 0 var(--r-panel) var(--r-panel) 0; }
+  .stage:hover { background: #fafbfc; }
+  .stage.on { background: var(--accent-soft); box-shadow: inset 0 -2px 0 var(--accent); }
+  /* 칸 사이의 화살 모양: 왼쪽 경계선 가운데에 흰 꺾쇠 */
+  .stage + .stage::before { content: ""; position: absolute; left: -6px; top: 50%; width: 10px; height: 10px; margin-top: -5px; background: var(--surface); border-top: 1px solid var(--line-2); border-right: 1px solid var(--line-2); transform: rotate(45deg); }
+  .stage .l { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-2); }
+  .stage .v { margin-top: 1px; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+  .stage .v small { font-size: 13px; font-weight: 500; color: var(--text-3); margin-left: 3px; }
+  .stage .x { margin-top: 1px; font-size: 12.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stage .x .d { color: var(--danger); font-weight: 500; }
+  .stage .x .w { color: var(--warn); font-weight: 500; }
+  .stage .todo { position: absolute; right: 14px; top: 12px; font-size: 12px; color: var(--text-2); }
+  .stage .todo b { color: var(--text); font-weight: 600; }
+
+  /* ── 세 열 ── */
+  .work { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--r-panel); box-shadow: 0 0 0 1px var(--line), var(--shadow-1); overflow: hidden; }
+  .cols { flex: 1; min-height: 0; display: grid; }
+  .cols.by-date { grid-template-columns: 1fr 1.1fr 1fr; }
+  .cols.by-who { grid-template-columns: repeat(var(--n), minmax(0, 1fr)); }
+  .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-left: 1px solid var(--line); }
+  .col:first-child { border-left: 0; }
+  .col > header { display: flex; align-items: baseline; gap: 7px; padding: 13px 16px 9px; flex: none; }
+  .col h2 { margin: 0; font-size: 14px; font-weight: 600; }
+  .col h2.late { color: var(--danger); }
+  .col header .n { color: var(--text-3); font-size: 13px; }
+  .col header .sub { color: var(--text-3); font-size: 12.5px; }
+  .col header .link { margin-left: auto; font-size: 12.5px; color: var(--text-2); }
+  .col header .link:hover { color: var(--text); text-decoration: underline; }
+  .col .list { flex: 1; min-height: 0; overflow: auto; padding: 0 6px 8px; }
+  .day { padding: 9px 10px 3px; font-size: 12px; color: var(--text-3); }
+  .more { margin: 2px 10px; font-size: 12.5px; color: var(--text-2); padding: 5px 0; }
+  .more:hover { color: var(--text); text-decoration: underline; }
+  /* 담당자별은 열이 좁다. 동·호가 잘리지 않게 제목을 두 줄까지 쓴다. */
+  .by-who .rt { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: keep-all; line-height: 1.35; }
+  .pwho { display: flex; align-items: center; gap: 8px; }
+  .pwho small { color: var(--text-3); font-size: 12px; font-weight: 400; }
+
+  /* ── 항목 줄: 제목, 이유, 오른쪽 끝 날짜(글자색만). 올리면 행동 단추가 날짜 자리를 덮는다 ── */
+  .r { position: relative; display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; column-gap: 10px; align-items: start; padding: 8px 10px; border-radius: var(--r-ctl); outline: none; transition: background 0.1s, opacity 0.2s var(--ease); }
+  .r > .dot { margin-top: 7px; }
+  .r:hover, .r.sel { background: #f5f6f8; }
+  .r.sel { box-shadow: inset 2px 0 0 var(--accent); }
+  .r.leaving { opacity: 0; }
+  .rt { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rs { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rl { margin-top: 2px; font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rd { font-size: 12.5px; color: var(--text-3); white-space: nowrap; padding-top: 2px; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px; }
+  .rd.late { color: var(--danger); font-weight: 500; }
+  .rd.today { color: #b4540a; font-weight: 500; }
+  .ra { position: absolute; right: 6px; top: 5px; display: flex; opacity: 0; pointer-events: none; align-items: center; gap: 4px; padding-left: 28px; background: linear-gradient(90deg, transparent, #f5f6f8 24px); }
+  /* 안 보일 때도 Tab으로 닿는다. 닿으면 focus-within으로 드러난다. */
+  .r:hover .ra, .r.sel .ra, .r.menu-open .ra, .r:focus-within .ra { opacity: 1; pointer-events: auto; }
+  .r:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+  .toast .prev { color: #aab4c4; max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ib { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: var(--text-2); background: var(--surface); box-shadow: 0 0 0 1px var(--line-2); }
+  .ib:hover { color: var(--text); background: #fff; box-shadow: 0 0 0 1px var(--text-3); }
+  .ib svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ── 아래 줄: 먼 일은 건수로 ── */
+  .foot { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--line); flex: none; font-size: 12.5px; color: var(--text-2); }
+  .cue { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border-radius: 6px; color: var(--text-2); }
+  .cue:hover { background: var(--sunken); color: var(--text); }
+  .cue.on { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+  .cue b { color: var(--text); font-weight: 600; }
+  .cue.on b { color: inherit; }
+  .foot .sp { flex: 1; }
+  .foot .keys { display: flex; gap: 10px; color: var(--text-3); font-size: 12px; align-items: center; }
+  .filt { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--accent); background: var(--accent-soft); flex: none; }
+  .filt button { margin-left: auto; color: var(--accent); font-weight: 500; }
+  .filt button:hover { text-decoration: underline; }
+
+  /* ── 미루기 메뉴 (알림보다 위 층, 크기 고정) ── */
+  .menu { position: fixed; z-index: 70; width: 188px; padding: 4px; border-radius: 10px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-2), var(--shadow-2); }
+  .menu button { display: flex; width: 100%; align-items: center; height: 30px; padding: 0 9px; border-radius: 6px; font-size: 13px; text-align: left; }
+  .menu button:hover { background: var(--sunken); }
+  .menu button span { margin-left: auto; color: var(--text-3); font-size: 12px; }
+
+  /* ── 통화 결과 창 ── */
+  .veil { position: fixed; inset: 0; z-index: 60; background: rgba(16, 20, 24, 0.28); display: grid; place-items: center; }
+  .dlg { width: 420px; max-width: calc(100vw - 32px); background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-2); overflow: hidden; }
+  .dlg header { padding: 16px 18px 4px; }
+  .dlg h3 { margin: 0; font-size: 16px; font-weight: 600; }
+  .dlg header p { margin: 3px 0 0; font-size: 13px; color: var(--text-2); }
+  .dlg .in { padding: 12px 18px 4px; }
+  .dlg .lb { font-size: 12.5px; color: var(--text-2); margin: 8px 0 6px; }
+  .opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .opt { height: 52px; border-radius: 8px; box-shadow: 0 0 0 1px var(--line-2); font-size: 13px; font-weight: 500; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+  .opt small { font-weight: 400; font-size: 11.5px; color: var(--text-3); }
+  .opt:hover { background: #f8f9fb; }
+  .opt.on { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .opt.on small { color: var(--accent); }
+  .dlg textarea { width: 100%; height: 72px; resize: none; padding: 8px 10px; border: 0; border-radius: 8px; box-shadow: 0 0 0 1px var(--line-2); font: inherit; font-size: 13.5px; color: var(--text); }
+  .dlg textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+  .err { min-height: 18px; margin-top: 6px; font-size: 12.5px; color: var(--danger); }
+  .dlg footer { display: flex; gap: 8px; justify-content: flex-end; align-items: center; padding: 10px 18px 16px; }
+  .dlg footer .q { margin-right: auto; font-size: 13px; color: var(--text); }
+
+  /* ── 오늘 처리한 일 ── */
+  .donebox { position: fixed; right: 24px; bottom: 64px; z-index: 40; width: 380px; max-height: 360px; display: flex; flex-direction: column; background: var(--surface); border-radius: 12px; box-shadow: 0 0 0 1px var(--line-2), var(--shadow-2); }
+  .donebox header { display: flex; align-items: center; padding: 12px 14px 8px; font-size: 14px; font-weight: 600; }
+  .donebox header button { margin-left: auto; font-size: 12.5px; font-weight: 400; color: var(--text-2); }
+  .donebox .list { overflow: auto; padding: 0 6px 8px; }
+  .dn { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 8px; }
+  .dn:hover { background: #f5f6f8; }
+  .dn .rt { color: var(--text-2); text-decoration: line-through; text-decoration-color: var(--line-2); }
+  .toast { z-index: 50; }
+</style>
+</head>
+<body>
+<script>
+(() => {
+  const ME = '김서연';
+  const TODAY = new Date(2026, 10, 16); // 예시 기준일 2026-11-16 (월)
+  const WD = ['일', '월', '화', '수', '목', '금', '토'];
+  const STAFF = [['김서연', '대표'], ['박준호', '팀장'], ['이도윤', '중개사'], ['최하린', '중개사'], ['정민재', '중개보조원']];
+  const KIND = { listing: ['의뢰', '매물관리'], buyer: ['매칭', '희망매물'], deal: ['거래', '거래관리'], money: ['수금', '수금 원장'], expiry: ['만기', '관리단지'] };
+  const SVG = {
+    snooze: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8.5" r="5.5"/><path d="M8 5.5v3l2 1.5M5 1.8L2.6 3.6M11 1.8l2.4 1.8"/></svg>',
+    check: '<svg viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7"/></svg>',
+  };
+
+  // off: 기준일에서 며칠 뒤(음수는 지남). call: 주 행동이 전화라 결과 기록으로 이어진다.
+  const items = [
+    { id: 'd3', kind: 'deal', off: -2, who: '김서연', t: '래미안힐스테이트 고덕 304동 702호', why: '본계약 예정일 지남', s: '매매 13억 2,000만 · 가계약 뒤 9일째', act: '계약일 잡기' },
+    { id: 'd2', kind: 'deal', off: 0, who: '박준호', t: '고덕아르테온 215동 1102호', why: '중도금 입금일', s: '전세 7억 5,000만 · 중도금 1억', act: '입금 확인' },
+    { id: 'd0', kind: 'deal', off: 0, time: '10:30', who: '김서연', t: '고덕그라시움 103동 3401호', why: '잔금 서류 점검', s: '등기부등본 발급', act: '서류 열기' },
+    { id: 'd1', kind: 'deal', off: 3, who: '김서연', t: '고덕그라시움 103동 3401호', why: '잔금일', s: '매매 15억 8,000만 · 잔금 9억 4,800만', act: '잔금 준비 확인' },
+    { id: 'd4', kind: 'deal', off: 4, who: '이도윤', t: '고덕센트럴아이파크 107동 1503호', why: '본계약일', s: '월세 1억 / 250만', act: '계약서 열기' },
+    { id: 'd5', kind: 'deal', off: 8, who: '최하린', t: '고덕자이 201동 904호', why: '잔금일', s: '전세 6억 8,000만', act: '잔금 준비 확인' },
+    { id: 'l1', kind: 'listing', off: -9, who: '김서연', t: '고덕그라시움 121동 803호', why: '확인 23일 경과', s: '전세 7억 2,000만 · 집주인 정미란', act: '전화', call: true },
+    { id: 'l2', kind: 'listing', off: -2, who: '박준호', t: '고덕아르테온 209동 2301호', why: '확인 16일 경과', s: '매매 16억 5,000만 · 집주인 배성호', act: '전화', call: true },
+    { id: 'l4', kind: 'listing', off: 0, who: '이도윤', t: '래미안힐스테이트 고덕 311동 1204호', why: '부재중 2회, 다시 걸 날', s: '매매 14억 9,000만 · 집주인 권영숙', act: '전화', call: true },
+    { id: 'l3', kind: 'listing', off: 1, who: '김서연', t: '고덕센트럴아이파크 103동 502호', why: '광고 만료', s: '월세 5,000 / 180만 · 네이버', act: '광고 연장', ad: true },
+    { id: 'l5', kind: 'listing', off: 3, who: '최하린', t: '고덕자이 105동 1801호', why: '광고 만료', s: '전세 6억 5,000만 · 네이버', act: '광고 연장', ad: true },
+    { id: 'b1', kind: 'buyer', off: -5, who: '김서연', t: '한지우 손님', why: '연락 12일 없음', s: '전세 6~7억 · 84㎡ · 고덕동', act: '전화', call: true },
+    { id: 'b5', kind: 'buyer', off: -1, who: '정민재', t: '문가은 손님', why: '연락 8일 없음', s: '전세 5~6억 · 59㎡ · 상일동', act: '전화', call: true },
+    { id: 'b2', kind: 'buyer', off: 0, who: '김서연', t: '윤태경 손님', why: '조건 맞는 새 매물 2건', s: '매매 14~16억 · 84㎡ 이상', act: '매물 보내기' },
+    { id: 'b3', kind: 'buyer', off: 0, time: '15:00', who: '박준호', t: '서민아 손님', why: '방문 상담', s: '월세 상담 · 사무소', act: '상담 기록' },
+    { id: 'b6', kind: 'buyer', off: 0, time: '17:30', who: '김서연', t: '윤태경 손님', why: '집 보여주기', s: '고덕아르테온 215동', act: '길 안내 보내기' },
+    { id: 'b4', kind: 'buyer', off: 1, time: '11:00', who: '김서연', t: '강도현 손님', why: '임장', s: '매매 12~13억 · 그라시움 2곳', act: '매물 묶음 보기' },
+    { id: 'm1', kind: 'money', off: -12, who: '김서연', t: '고덕그라시움 118동 1502호 수수료', why: '연체 12일', s: '매도인 660만 미수', act: '전화', call: true },
+    { id: 'm2', kind: 'money', off: 2, who: '박준호', t: '고덕아르테온 203동 704호 수수료', why: '수금 만기', s: '임차인 280만', act: '입금 확인' },
+    { id: 'm3', kind: 'money', off: 5, who: '최하린', t: '한빛공인 공동중개 분배', why: '지급 예정일', s: '줄 돈 195만', act: '지급 기록' },
+    { id: 'e2', kind: 'expiry', off: 27, who: '이도윤', t: '고덕자이 112동 603호', why: '계약 만기', s: '전세 5억 9,000만 · 세입자 조은별', act: '전화', call: true },
+    { id: 'e1', kind: 'expiry', off: 41, who: '김서연', t: '고덕그라시움 109동 2203호', why: '계약 만기', s: '전세 6억 8,000만 · 세입자 임수빈', act: '전화', call: true },
+    { id: 'e3', kind: 'expiry', off: 58, who: '정민재', t: '고덕센트럴아이파크 101동 1101호', why: '계약 만기', s: '월세 3,000 / 210만 · 세입자 노하준', act: '전화', call: true },
+  ];
+  const STAGES = [
+    { kind: 'listing', v: '9<small>건</small>', cap: '이번달 신규 접수', x: '<span class="w">확인 필요 5건</span> · 거래 가능 48건' },
+    { kind: 'buyer', v: '12<small>건</small>', cap: '진행 중인 매칭', x: '<span class="w">연락 끊김 2명</span> · 구매 의뢰 23건' },
+    { kind: 'deal', v: '7<small>건</small>', cap: '진행 거래', x: '<span class="d">지연·정체 1건</span> · 본계약 2 · 잔금 2' },
+    { kind: 'money', v: '2,340<small>만원</small>', cap: '이번달 수금', x: '<span class="d">연체 660만원</span> · 만기 미수 1,120만원' },
+  ];
+
+  const ui = { scope: 'mine', group: 'date', filter: null, sel: null, open: new Set(), menu: null, call: null, doneOpen: false, undo: null };
+
+  /* ── 날짜 글자 ── */
+  const dateOf = (off) => { const d = new Date(TODAY); d.setDate(d.getDate() + off); return d; };
+  const dayLabel = (off) => { const d = dateOf(off); return `${d.getMonth() + 1}.${d.getDate()} (${WD[d.getDay()]})`; };
+  const when = (it) => (it.off < 0 ? `${-it.off}일 지남` : it.off === 0 ? (it.time ?? '오늘') : it.off === 1 ? `내일${it.time ? ' ' + it.time : ''}` : it.off <= 7 ? dayLabel(it.off) : `D-${it.off}`);
+  const tone = (it) => (it.off < 0 ? 'late' : it.off === 0 ? 'today' : '');
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const byWhen = (a, b) => a.off - b.off || (a.time ?? '99').localeCompare(b.time ?? '99');
+
+  /* ── 보이는 항목 ── */
+  const inScope = (it) => !it.done && (ui.scope === 'all' || it.who === ME);
+  const matches = (it) => !ui.filter || (ui.filter.type === 'kind' ? it.kind === ui.filter.kind : ui.filter.type === 'expiry' ? it.kind === 'expiry' : !!it.ad);
+  // 평소에는 7일 안의 일만 판에 올린다. 거름을 걸면 그 종류는 먼 날짜까지 보인다.
+  const onBoard = (it) => inScope(it) && matches(it) && (ui.filter ? true : it.off <= 7);
+  const filterLabel = () => (!ui.filter ? '' : ui.filter.type === 'kind' ? `${KIND[ui.filter.kind][0]}만 보는 중` : ui.filter.type === 'expiry' ? '60일 안 계약 만기만 보는 중' : '광고 만료 임박만 보는 중');
+
+  /* ── 상태 바꾸기: 직전 변경 하나만 되돌린다 ── */
+  const snapshot = () => JSON.stringify(items.map(({ id, off, time, done, snoozedFrom, log }) => ({ id, off, time, done, snoozedFrom, log })));
+  const restore = (snap) => JSON.parse(snap).forEach((s) => { const it = items.find((x) => x.id === s.id); Object.keys(it).forEach((k) => { if (['off', 'time', 'done', 'snoozedFrom', 'log'].includes(k)) delete it[k]; }); Object.assign(it, s); });
+  function mutate(label, fn) {
+    const snap = snapshot();
+    fn();
+    ui.undo = { snap };
+    ui.menu = null;
+    render();
+    toast(label, true);
+  }
+  const SNOOZE = [['내일', 1], ['이번 주 금요일', 4], ['다음 주 월요일', 7]];
+  function snoozeTo(it, off) {
+    if (it.snoozedFrom == null) it.snoozedFrom = when(it); // 원래 날짜를 줄에 남긴다. 미뤄도 밀린 사실이 사라지지 않게.
+    it.off = off; delete it.time;
+  }
+
+  /* ── 알림 ── */
+  let toastTimer;
+  function toast(msg, undoable) {
+    let el = document.querySelector('.toast');
+    if (!el) { el = document.createElement('div'); el.className = 'toast'; document.body.append(el); }
+    // 안내 알림이 떠도 직전 변경은 되돌릴 수 있어야 한다. 되돌릴 것이 남아 있으면 같은 알림에 함께 보여 준다.
+    if (undoable && ui.undo) ui.undo.label = msg;
+    const u = ui.undo;
+    el.innerHTML = undoable ? `<span>${esc(msg)}</span><button data-a="undo">되돌리기</button>` : `<span>${esc(msg)}</span>${u ? `<span class="prev">직전: ${esc(u.label)}</span><button data-a="undo">되돌리기</button>` : ''}`;
+    requestAnimationFrame(() => el.classList.add('on'));
+    clearTimeout(toastTimer);
+    // 알림이 사라지면 되돌리기도 끝난다. 오래된 되돌리기가 뒤의 변경을 덮지 않게.
+    toastTimer = setTimeout(() => { el.classList.remove('on'); ui.undo = null; }, 6000);
+  }
+  const hideToast = () => { document.querySelector('.toast')?.classList.remove('on'); clearTimeout(toastTimer); };
+
+  /* ── 그리기 ── */
+  function row(it, { showDate = true, who = false } = {}) {
+    const log = it.log ? `<div class="rl">오늘 통화 · ${esc(it.log.outcome)}${it.log.memo ? ' · ' + esc(it.log.memo) : ''}</div>` : '';
+    const snoozed = it.snoozedFrom != null ? `<div class="rl">미룸 · 원래 ${esc(it.snoozedFrom)}</div>` : '';
+    return `<div class="r${ui.sel === it.id ? ' sel' : ''}${ui.menu?.id === it.id ? ' menu-open' : ''}" data-id="${it.id}" tabindex="0" role="group" aria-label="${esc(it.t)}, ${esc(it.why)}, ${esc(when(it))}">
+      <span class="dot k-${it.kind}" title="${KIND[it.kind][0]}"></span>
+      <div style="min-width:0"><div class="rt">${esc(it.t)}</div><div class="rs">${esc(it.why)} · ${esc(it.s)}</div>${log}${snoozed}</div>
+      <div class="rd ${tone(it)}">${showDate ? esc(when(it)) : esc(it.time ?? '')}${who ? whoChip(it.who) : ''}</div>
+      <div class="ra">
+        <button class="btn sm" data-a="act" data-id="${it.id}">${esc(it.act)}</button>
+        <button class="ib" data-a="menu" data-id="${it.id}" title="미루기 (H는 내일로)" aria-label="미루기">${SVG.snooze}</button>
+        <button class="ib" data-a="done" data-id="${it.id}" title="완료 (E)" aria-label="완료">${SVG.check}</button>
+      </div>
+    </div>`;
+  }
+  const whoChip = (name) => `<span class="who${name === ME ? ' me' : ''}" title="${esc(name)}">${esc(name[0])}</span>`;
+  function capped(key, list, cap, render1) {
+    const open = ui.open.has(key);
+    const shown = open ? list : list.slice(0, cap);
+    return shown.map(render1).join('') + (list.length > cap ? `<button class="more" data-a="more" data-key="${key}">${open ? '접기' : `${list.length - cap}건 더 보기`}</button>` : '');
+  }
+
+  function dateCols(v) {
+    const late = v.filter((it) => it.off < 0).sort(byWhen);
+    const today = v.filter((it) => it.off === 0).sort(byWhen);
+    const soon = v.filter((it) => it.off > 0).sort(byWhen);
+    const who = ui.scope === 'all';
+    const untimed = today.filter((it) => !it.time), timed = today.filter((it) => it.time);
+    let last = null;
+    const soonHtml = capped('soon', soon, 7, (it) => { const head = it.off !== last ? `<div class="day num">${it.off === 1 ? '내일' : it.off <= 7 ? dayLabel(it.off) : `${dayLabel(it.off)} · D-${it.off}`}</div>` : ''; last = it.off; return head + row(it, { showDate: false, who }); });
+    return `<div class="cols by-date">
+      <section class="col"><header><h2 class="late">지남</h2><span class="n num">${late.length}</span>${late.length > 1 ? '<button class="link" data-a="bulk">모두 내일로</button>' : ''}</header>
+        <div class="list">${capped('late', late, 6, (it) => row(it, { who })) || '<div class="empty">밀린 일이 없습니다.</div>'}</div></section>
+      <section class="col"><header><h2>오늘</h2><span class="n num">${today.length}</span><span class="sub num">11.16 (월)</span></header>
+        <div class="list">${today.length ? (timed.length ? `<div class="day">일정</div>${timed.map((it) => row(it, { who })).join('')}` : '') + (untimed.length ? `<div class="day">오늘 안에</div>${untimed.map((it) => row(it, { who })).join('')}` : '') : '<div class="empty">오늘 챙길 일을 다 했습니다.</div>'}</div></section>
+      <section class="col"><header><h2>다가옴</h2><span class="n num">${soon.length}</span><span class="sub">${ui.filter ? '60일 안' : '7일 안'}</span></header>
+        <div class="list">${soonHtml || '<div class="empty">다가오는 일이 없습니다.</div>'}</div></section>
+    </div>`;
+  }
+  function whoCols(v) {
+    return `<div class="cols by-who" style="--n:${STAFF.length}">${STAFF.map(([name, role]) => {
+      const list = v.filter((it) => it.who === name).sort(byWhen);
+      const late = list.filter((it) => it.off < 0).length, today = list.filter((it) => it.off === 0).length;
+      return `<section class="col"><header><h2 class="pwho">${whoChip(name)}<span>${name} <small>${role}</small></span></h2></header>
+        <div class="day num" style="padding:0 16px 6px">${late ? `<span style="color:var(--danger);font-weight:500">지남 ${late}</span> · ` : ''}오늘 ${today} · 다가옴 ${list.length - late - today}</div>
+        <div class="list">${capped('who-' + name, list, 5, (it) => row(it)) || '<div class="empty">챙길 일이 없습니다.</div>'}</div></section>`;
+    }).join('')}</div>`;
+  }
+
+  // 다시 그리기 전에 포커스가 있던 곳을 적어 두었다가, 같은 것을 찾아 되돌린다. 없어졌으면 고른 줄로 간다.
+  const FOCUS_KEYS = ['a', 'id', 'type', 'kind', 'off', 'key', 'scope', 'group', 'o', 'label'];
+  function focusKey(scope) {
+    const el = document.activeElement;
+    if (!el || el === document.body || !scope.contains(el)) return null;
+    if (el.id) return '#' + el.id;
+    if (el.classList.contains('r')) return `.r[data-id="${el.dataset.id}"]`;
+    const parts = FOCUS_KEYS.filter((k) => el.dataset[k] != null).map((k) => `[data-${k}="${CSS.escape(el.dataset[k])}"]`);
+    return parts.length ? el.tagName.toLowerCase() + parts.join('') : '';
+  }
+  function refocus(key, scope) {
+    if (key == null) return;
+    const el = (key && scope.querySelector(key)) || document.querySelector('.dlg .opt') || document.querySelector('.r.sel') || document.querySelector('.r');
+    el?.focus({ preventScroll: true });
+  }
+
+  // keepFocus=false: 부른 쪽이 포커스를 직접 옮길 때(줄 이동). 이때 옛 자리로 되돌리면 그 줄이 다시 고른 줄이 되어 이동이 취소된다.
+  function render(keepFocus = true) {
+    const fk = keepFocus ? focusKey(document.body) : null;
+    // 범위가 '내 것'이면 담당자별 묶기는 뜻이 없다. 날짜별로 되돌린다.
+    if (ui.scope === 'mine') ui.group = 'date';
+    const scoped = items.filter(inScope);
+    const v = items.filter(onBoard);
+    if (ui.sel && !v.some((it) => it.id === ui.sel)) ui.sel = null;
+    const late = scoped.filter((it) => it.off < 0).length, today = scoped.filter((it) => it.off === 0).length;
+    const expiry = scoped.filter((it) => it.kind === 'expiry').length, ads = scoped.filter((it) => it.ad).length;
+    const doneList = items.filter((it) => it.done);
+    const isF = (f) => ui.filter && ui.filter.type === f.type && ui.filter.kind === f.kind;
+
+    document.getElementById('body').innerHTML = `
+      <p class="brief">${ui.scope === 'all' ? '사무소에' : '서연 님,'} 오늘 챙길 일 <b class="num">${today}건</b>${late ? `<span> · </span><b class="d num">지난 일 ${late}건</b>` : ''}<span>이 있어요.</span></p>
+      <div class="flow">${STAGES.map((st) => { const n = scoped.filter((it) => it.kind === st.kind && it.off <= 7).length; return `<button class="stage${isF({ type: 'kind', kind: st.kind }) ? ' on' : ''}" data-a="filter" data-type="kind" data-kind="${st.kind}">
+        <div class="l"><span class="dot k-${st.kind}"></span>${KIND[st.kind][0]} <span style="color:var(--text-3)">· ${st.cap}</span></div>
+        <div class="v num">${st.v}</div><div class="x num">${st.x}</div>
+        <span class="todo num">챙길 일 <b>${n}</b></span></button>`; }).join('')}</div>
+      <div class="work">
+        ${ui.filter ? `<div class="filt"><span>${filterLabel()}</span><button data-a="clear">전체 보기</button></div>` : ''}
+        ${ui.group === 'who' ? whoCols(v) : dateCols(v)}
+        <div class="foot num">
+          <button class="cue${isF({ type: 'expiry' }) ? ' on' : ''}" data-a="filter" data-type="expiry">60일 안 계약 만기 <b>${expiry}건</b></button>
+          <button class="cue${isF({ type: 'ad' }) ? ' on' : ''}" data-a="filter" data-type="ad">광고 만료 임박 <b>${ads}건</b></button>
+          <span class="sp"></span>
+          <span class="keys"><span><kbd>J</kbd> <kbd>K</kbd> 이동</span><span><kbd>E</kbd> 완료</span><span><kbd>H</kbd> 내일로</span></span>
+          <button class="cue${ui.doneOpen ? ' on' : ''}" data-a="donebox">오늘 처리한 일 <b>${doneList.length}건</b></button>
+        </div>
+      </div>`;
+
+    document.querySelectorAll('[data-scope]').forEach((b) => b.classList.toggle('on', b.dataset.scope === ui.scope));
+    document.querySelectorAll('[data-group]').forEach((b) => { b.classList.toggle('on', b.dataset.group === ui.group); if (b.dataset.group === 'who') { b.disabled = ui.scope === 'mine'; b.title = ui.scope === 'mine' ? '사무소 전체에서 쓸 수 있습니다' : ''; } });
+    renderLayers(doneList, true);
+    refocus(fk, document.body);
+  }
+
+  function renderLayers(doneList = items.filter((it) => it.done), fromRender = false) {
+    const host = document.getElementById('layers');
+    const lk = fromRender ? null : focusKey(host);
+    const m = ui.menu, c = ui.call;
+    const it = m && items.find((x) => x.id === m.id);
+    const ci = c && items.find((x) => x.id === c.id);
+    host.innerHTML =
+      (ui.doneOpen ? `<div class="donebox"><header>오늘 처리한 일<button data-a="donebox">닫기</button></header><div class="list">${doneList.map((d) => `<div class="dn"><div style="min-width:0"><div class="rt">${esc(d.t)}</div><div class="rs">${esc(d.why)}${d.log ? ` · 통화 ${esc(d.log.outcome)}${d.log.memo ? ' · ' + esc(d.log.memo) : ''}` : ''}</div></div><button class="btn sm" data-a="reopen" data-id="${d.id}">다시 올리기</button></div>`).join('') || '<div class="empty">아직 처리한 일이 없습니다.</div>'}</div></div>` : '') +
+      (it ? `<div class="menu" style="left:${m.x}px;top:${m.y}px">${SNOOZE.filter(([, off]) => off > it.off).map(([label, off]) => `<button data-a="snooze" data-id="${it.id}" data-off="${off}">${label}<span class="num">${dayLabel(off)}</span></button>`).join('') || '<button disabled style="color:var(--text-3)">더 미룰 날짜가 없습니다</button>'}</div>` : '') +
+      (ci ? `<div class="veil" data-a="call-close"><div class="dlg" role="dialog" aria-modal="true" aria-label="통화 결과" data-stop>
+        <header><h3>통화 결과</h3><p>${esc(ci.t)} · ${esc(ci.why)}</p></header>
+        <div class="in">
+          <div class="lb">어떻게 됐나요</div>
+          <div class="opts">${[['통화됨', '완료로 옮김'], ['부재중', '내일 다시'], ['다시 걸기로 함', '금요일에 다시']].map(([o, sub]) => `<button class="opt${c.outcome === o ? ' on' : ''}" data-a="call-opt" data-o="${o}">${o}<small>${sub}</small></button>`).join('')}</div>
+          <div class="lb">메모 (선택)</div>
+          <textarea id="memo" maxlength="200" placeholder="예: 12월 초에 다시 보자고 함">${esc(c.memo)}</textarea>
+          <div class="err" role="alert">${esc(c.err)}</div>
+        </div>
+        <footer>${c.asking ? `<span class="q">적은 내용을 버릴까요?</span><button class="btn" data-a="call-keep">계속 쓰기</button><button class="btn pri" data-a="call-drop">버리기</button>` : `<button class="btn" data-a="call-close">취소</button><button class="btn pri" data-a="call-save">저장</button>`}</footer>
+      </div></div>` : '');
+    refocus(lk, host);
+  }
+
+  /* ── 통화 결과 창 ── */
+  function closeCall(force) {
+    const c = ui.call; if (!c) return;
+    if (!force && (c.outcome || c.memo.trim())) { c.asking = true; renderLayers(); return; }
+    const id = c.id; ui.call = null; renderLayers();
+    (document.querySelector(`.r[data-id="${id}"]`) ?? document.querySelector('.r'))?.focus({ preventScroll: true });
+  }
+  function saveCall() {
+    const c = ui.call; const it = items.find((x) => x.id === c.id);
+    if (!c.outcome) { c.err = '통화 결과를 골라 주세요.'; c.asking = false; renderLayers(); document.getElementById('memo')?.focus(); return; }
+    const memo = c.memo.trim();
+    ui.call = null;
+    mutate(`통화 기록 · ${it.t} · ${c.outcome}`, () => {
+      it.log = { outcome: c.outcome, memo };
+      if (c.outcome === '통화됨') it.done = true;
+      else snoozeTo(it, c.outcome === '부재중' ? 1 : 4); // 창에 적힌 그대로: 부재중은 내일, 다시 걸기로 했으면 금요일
+    });
+  }
+
+  /* ── 누르기 ── */
+  document.addEventListener('input', (e) => { if (e.target.id === 'memo' && ui.call) { ui.call.memo = e.target.value; ui.call.err = ''; } });
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('a[href="#"]')) e.preventDefault(); // 시안의 이동 링크는 주소를 바꾸지 않는다
+    const b = e.target.closest('[data-a], [data-scope], [data-group]');
+    // 창 안의 빈 곳을 누른 것은 바깥 누르기가 아니다.
+    if (b?.dataset.a === 'call-close' && b.classList.contains('veil') && e.target.closest('[data-stop]')) return;
+    if (ui.menu && !(b && ['menu', 'snooze'].includes(b.dataset.a))) { ui.menu = null; render(); if (!b) return; }
+    if (!b) return;
+    const d = b.dataset; const it = d.id && items.find((x) => x.id === d.id);
+    if (d.scope) { ui.scope = d.scope; ui.open.clear(); return render(); }
+    if (d.group) { if (b.disabled) return; ui.group = d.group; ui.open.clear(); return render(); }
+    switch (d.a) {
+      case 'filter': { const f = { type: d.type, kind: d.kind }; ui.filter = ui.filter && ui.filter.type === f.type && ui.filter.kind === f.kind ? null : f; ui.open.clear(); return render(); }
+      case 'clear': ui.filter = null; return render();
+      case 'more': ui.open.has(d.key) ? ui.open.delete(d.key) : ui.open.add(d.key); return render();
+      case 'done': return complete(it);
+      case 'menu': { if (ui.menu?.id === it.id) { ui.menu = null; return render(); } const r = b.getBoundingClientRect(); ui.sel = it.id; ui.menu = { id: it.id, x: Math.min(r.right - 188, innerWidth - 200), y: Math.min(r.bottom + 4, innerHeight - 110) }; render(); return document.querySelector('.menu button')?.focus(); }
+      case 'snooze': return mutate(`${SNOOZE.find(([, o]) => o === +d.off)[0]}(으)로 미룸 · ${it.t}`, () => snoozeTo(it, +d.off));
+      case 'bulk': { const late = items.filter((x) => onBoard(x) && x.off < 0); return mutate(`지난 일 ${late.length}건을 내일로 미뤘습니다`, () => late.forEach((x) => snoozeTo(x, 1))); }
+      case 'act': if (it.call) { ui.sel = it.id; ui.call = { id: it.id, outcome: null, memo: '', err: '', asking: false }; render(); document.querySelector('.opt')?.focus(); } else toast(`${it.act} → ${KIND[it.kind][1]} 화면에서 엽니다`); return;
+      case 'undo': if (ui.undo) { restore(ui.undo.snap); ui.undo = null; hideToast(); render(); } return;
+      case 'donebox': ui.doneOpen = !ui.doneOpen; render(); return (ui.doneOpen ? document.querySelector('.donebox header button') : document.querySelector('.foot [data-a=donebox]'))?.focus();
+      case 'reopen': return mutate(`다시 올림 · ${it.t}`, () => { delete it.done; });
+      case 'call-opt': ui.call.outcome = d.o; ui.call.err = ''; ui.call.asking = false; return keepMemoFocus(() => renderLayers());
+      case 'call-save': return saveCall();
+      case 'call-close': return closeCall(false);
+      case 'call-keep': ui.call.asking = false; renderLayers(); return document.getElementById('memo')?.focus();
+      case 'call-drop': return closeCall(true);
+    }
+  });
+  // 다시 그려도 메모 칸의 커서 자리를 잃지 않는다.
+  function keepMemoFocus(fn) {
+    const el = document.getElementById('memo'); const had = document.activeElement === el; const pos = el?.selectionStart;
+    fn();
+    if (had) { const n = document.getElementById('memo'); n.focus(); n.setSelectionRange(pos, pos); }
+  }
+  function complete(it) {
+    if (!it || it.done) return;
+    const el = document.querySelector(`.r[data-id="${it.id}"]`);
+    const order = [...document.querySelectorAll('.r')].map((r) => r.dataset.id); const i = order.indexOf(it.id);
+    if (ui.sel === it.id) ui.sel = order[i + 1] ?? order[i - 1] ?? null;
+    el?.classList.add('leaving');
+    mutate(`완료 · ${it.t}`, () => { it.done = true; });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (ui.call) return closeCall(false);
+      if (ui.menu) { const id = ui.menu.id; ui.menu = null; render(); return document.querySelector(`[data-a="menu"][data-id="${id}"]`)?.focus(); }
+      if (ui.doneOpen) { ui.doneOpen = false; render(); return document.querySelector('.foot [data-a=donebox]')?.focus(); }
+      return;
+    }
+    // 창이 떠 있으면 Tab이 창 밖으로 나가지 않는다.
+    if (ui.call && e.key === 'Tab') {
+      const f = [...document.querySelectorAll('.dlg button, .dlg textarea')]; const i = f.indexOf(document.activeElement);
+      if (i === -1 || (e.shiftKey && i === 0) || (!e.shiftKey && i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+      return;
+    }
+    // 미루기 메뉴: 위아래 화살표로 고르고, Tab을 누르면 닫고 원래 단추로 돌아간다.
+    if (ui.menu) {
+      const f = [...document.querySelectorAll('.menu button:not(:disabled)')]; const i = f.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); f[(i + (e.key === 'ArrowDown' ? 1 : f.length - 1) + (i === -1 && e.key === 'ArrowUp' ? 1 : 0)) % f.length]?.focus(); }
+      else if (e.key === 'Tab') { e.preventDefault(); const id = ui.menu.id; ui.menu = null; render(); document.querySelector(`[data-a="menu"][data-id="${id}"]`)?.focus(); }
+      return;
+    }
+    // 줄에 포커스를 두고 Enter를 누르면 주 행동이다.
+    if (e.key === 'Enter' && e.target.classList?.contains('r')) { e.preventDefault(); return e.target.querySelector('[data-a=act]').click(); }
+    if (ui.call || e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    const order = [...document.querySelectorAll('.r')].map((r) => r.dataset.id); if (!order.length) return;
+    const i = order.indexOf(ui.sel); const k = e.key.toLowerCase();
+    if (k === 'j' || e.key === 'ArrowDown') ui.sel = order[Math.min(i + 1, order.length - 1)];
+    else if (k === 'k' || e.key === 'ArrowUp') ui.sel = order[Math.max(i - 1, 0)];
+    else if (k === 'e' && ui.sel) return complete(items.find((x) => x.id === ui.sel));
+    else if (k === 'h' && ui.sel) { const it = items.find((x) => x.id === ui.sel); if (it.off >= 1) return toast('이미 내일 이후입니다. 미루기 단추에서 날짜를 고르세요'); return mutate(`내일로 미룸 · ${it.t}`, () => snoozeTo(it, 1)); }
+    else return;
+    e.preventDefault(); ui.menu = null; render(false);
+    const selEl = document.querySelector('.r.sel'); selEl?.focus({ preventScroll: true }); selEl?.scrollIntoView({ block: 'nearest' });
+  });
+  // Tab으로 줄에 들어오면 그 줄이 고른 줄이 된다 (다시 그리지 않고 표시만 옮긴다).
+  document.addEventListener('focusin', (e) => {
+    const r = e.target.closest?.('.r'); if (!r || ui.sel === r.dataset.id) return;
+    ui.sel = r.dataset.id;
+    document.querySelectorAll('.r.sel').forEach((x) => x.classList.remove('sel')); r.classList.add('sel');
+  });
+  window.addEventListener('resize', () => { if (ui.menu) { ui.menu = null; render(); } });
+  document.addEventListener('scroll', () => { if (ui.menu) { ui.menu = null; render(); } }, true);
+
+  /* ── 틀 ── */
+  const NAV = [['시작', [['대시보드', '']]], ['매물·공간', [['매물관리', '48'], ['관리단지', ''], ['광고관리', '']]], ['고객·상담', [['고객 원장', ''], ['연락처', ''], ['상담분석', '']]], ['거래·계약', [['희망매물', '12'], ['거래관리', '7'], ['계약서 관리', ''], ['수수료/정산', '']]], ['업무·운영', [['업무', ''], ['캘린더', ''], ['직원관리', '']]]];
+  document.body.insertAdjacentHTML('afterbegin', `<div class="app">
+    <nav class="side"><div class="office"><span class="mark">E</span>고덕 에스테잇 부동산</div>${NAV.map(([g, links]) => `<div class="grp">${g}</div>${links.map(([l, c]) => `<a href="#" class="${l === '대시보드' ? 'on' : ''}">${l}${c ? `<span class="cnt num">${c}</span>` : ''}</a>`).join('')}`).join('')}</nav>
+    <div class="main">
+      <header class="top"><h1>대시보드</h1><span class="date num">11월 16일 월요일</span><span class="sp"></span>
+        <div class="seg" aria-label="묶기"><button data-group="date" class="on">날짜별</button><button data-group="who">담당자별</button></div>
+        <div class="seg" aria-label="범위"><button data-scope="mine" class="on">내 것</button><button data-scope="all">사무소 전체</button></div>
+      </header>
+      <div class="body" id="body"></div>
+    </div></div><div id="layers"></div>`);
+  render();
+})();
+</script>
+</body>
+</html>

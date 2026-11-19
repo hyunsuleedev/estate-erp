@@ -11,7 +11,7 @@ paths:
 ## 이름과 타입
 
 - 모델은 `PascalCase`, 필드는 `camelCase` + `@map("snake_case")`, 표는 `@@map("snake_case_복수형")`
-- 가격은 `Int`, 만원 단위. 면적은 `Decimal`, m² 단위
+- 가격은 `Int`, 만원 단위. 면적은 `Decimal`, m² 단위. 예외로 수수료 입금 기록(`CommissionReceipt`)과 직원 정산(`Settlement`, `SettlementLine`)의 금액 칸은 이름이 `…Won`이고 원 단위다
 - id는 UUID. 법정동 마스터만 코드가 PK다 (Province `"11"`, District `"11740"`, Ward `"1174010100"`)
 - 좌표는 `Unsupported("geometry(Point, 5179)")`. Prisma로 읽고 쓸 수 없으므로 `$queryRaw`를 쓴다
 

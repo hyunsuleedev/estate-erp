@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>방향 ③-2 Notion 문서 2판 · 대시보드</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="shared.css">
+<style>
+  /*
+   * 방향 ③-2 — Notion 문서(③)를 고친 판. 바꾼 것:
+   *  1. 노란 알림 상자 대신 "오늘 요약" 한 문단. 문장 안의 알약이 곧 바로가기다.
+   *  2. 일정은 오늘 한 줄이 아니라 이번 주 띠. 요일마다 일정 점과 할 일 수가 보이고, 누르면 그날 일정이 나온다.
+   *  3. 할 일 줄에서 바로: 올리면 "내일로", 묶음 끝에 "+ 새 할 일" 입력.
+   *  4. 거래 보드는 빈 단계를 숨기고, 카드에 단계 진행 점과 남은 날을 넣었다.
+   *  5. 필독 공지는 오른쪽 맨 위에 고정. 공지와 뉴스는 두 단으로 나란히.
+   *  6. 무엇을 누르든 옆 패널(peek)이 열린다. 앱의 다른 목록 화면과 같은 방식.
+   */
+  .doc { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr); column-gap: 44px; padding: 4px 8px 0; }
+  .colx { min-width: 0; min-height: 0; overflow: auto; padding: 0 6px 16px 22px; }
+  .h { display: flex; align-items: center; gap: 8px; margin: 16px 0 6px; font-size: 15px; line-height: 24px; font-weight: 600; letter-spacing: -0.01em; }
+  .h:first-child { margin-top: 2px; }
+  .h svg { width: 16px; height: 16px; color: var(--icon); }
+  .h small { font-size: 13px; font-weight: 400; color: var(--fg4); }
+  .h .views, .h .go { margin-left: auto; }
+  /* 1. 요약 문단 */
+  .lead { margin: 2px 0 4px; font-size: 15px; line-height: 30px; color: var(--fg2); word-break: keep-all; }
+  .men { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 7px; margin: 0 1px; border-radius: 5px; background: rgba(33, 27, 23, 0.06); font-size: 14px; font-weight: 500; color: var(--fg); vertical-align: 1px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; transition: background-color 120ms; }
+  .men:hover { background: rgba(33, 27, 23, 0.11); }
+  .men.bad { background: #ffe2dd; color: var(--red); }
+  .men svg { width: 13px; height: 13px; color: var(--fg3); }
+  /* 2. 이번 주 띠 */
+  .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+  .wd { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0 7px; border-radius: 8px; transition: background-color 120ms; }
+  .wd:hover { background: var(--hover); }
+  .wd[aria-pressed="true"] { background: var(--sel); }
+  .wd .dn { font-size: 12px; color: var(--fg4); }
+  .wd .dd { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 13px; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .wd.today .dd { background: var(--red-strong); color: #fff; }
+  .wd.past .dd { color: var(--fg4); }
+  .wd .dots { display: flex; gap: 3px; height: 6px; }
+  .wd .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--c, var(--fg4)); }
+  .wd .tn { height: 14px; font-size: 11px; line-height: 14px; color: var(--fg4); }
+  .blk { position: relative; border-radius: 4px; transition: background-color 100ms; }
+  .blk::before { content: "⋮⋮"; position: absolute; left: -19px; top: 5px; width: 16px; font-size: 12px; line-height: 20px; letter-spacing: -3px; color: var(--fg4); opacity: 0; transition: opacity 120ms; }
+  @media (hover: hover) and (pointer: fine) { .blk:hover::before { opacity: 1; } }
+  .row3 { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; width: 100%; padding: 5px 6px; text-align: left; }
+  .row3:hover { background: var(--hover); }
+  .row3 b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .row3 span.m { font-size: 12px; color: var(--fg3); white-space: nowrap; }
+  .now3 { display: flex; align-items: center; gap: 8px; height: 16px; padding: 0 6px; font-size: 11px; font-weight: 600; color: var(--red-strong); }
+  .now3 i { flex: 1; border-top: 1px solid var(--red-strong); opacity: 0.5; }
+  /* 3. 할 일 */
+  .tgl { display: flex; align-items: center; gap: 6px; width: 100%; padding: 4px 6px 4px 2px; border-radius: 4px; font-weight: 500; text-align: left; transition: background-color 100ms; }
+  .tgl:hover { background: var(--hover); }
+  .tgl svg { width: 18px; height: 18px; color: var(--fg3); transition: transform 180ms var(--ease-out); }
+  .tgl[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .tgl .n { font-weight: 400; color: var(--fg4); }
+  .tgl.bad .n { color: var(--red); font-weight: 500; }
+  .kids { padding: 0 0 4px 22px; }
+  .todo3 { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto; gap: 9px; align-items: center; padding: 3px 6px; min-height: 30px; }
+  .todo3:hover, .todo3:focus-within { background: var(--hover); }
+  .todo3.done { opacity: 0.45; }
+  .todo3.done .ttb { text-decoration: line-through; }
+  .ttb { min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; }
+  .ttb span { margin-left: 8px; font-size: 12px; color: var(--fg4); }
+  .todo3 .chk { margin-top: 0; }
+  .mini { height: 22px; padding: 0 7px; border-radius: 5px; font-size: 12px; font-weight: 500; color: var(--fg3); box-shadow: inset 0 0 0 1px var(--line2); background: var(--bg); opacity: 0; transition: opacity 120ms, background-color 120ms; }
+  .todo3:hover .mini, .todo3:focus-within .mini { opacity: 1; }
+  .mini:hover { background: var(--muted); color: var(--fg); }
+  @media (hover: none) { .mini { opacity: 1; } }
+  .addrow { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 9px; align-items: center; padding: 3px 6px; min-height: 30px; color: var(--fg4); }
+  .addrow svg { width: 14px; height: 14px; }
+  .addin { width: 100%; height: 24px; border: 0; outline: 0; background: transparent; font: inherit; color: var(--fg); }
+  .addin::placeholder { color: var(--fg4); }
+  .addrow:focus-within { background: var(--hover); border-radius: 4px; }
+  /* 5. 필독 고정 */
+  .pinned { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; padding: 10px 12px; border-radius: 6px; background: #f7f6f3; text-align: left; transition: background-color 120ms; }
+  .pinned:hover { background: #f1efeb; }
+  .pinned .tt { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pinned .mm { font-size: 12px; color: var(--fg4); white-space: nowrap; }
+  /* 4. 거래 보드 */
+  .kan { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 10px; }
+  .kan h4 { margin: 0 0 6px; font-size: 12px; font-weight: 400; display: flex; align-items: center; gap: 6px; }
+  .kan h4 i { font-style: normal; color: var(--fg4); }
+  .kcard { display: block; width: 100%; padding: 9px 10px 8px; margin-bottom: 6px; border-radius: 6px; background: var(--bg); box-shadow: 0 0 0 1px var(--line), 0 1px 2px rgba(42, 28, 0, 0.05); text-align: left; transition: background-color 120ms, box-shadow 160ms, transform 160ms var(--ease-out); }
+  @media (hover: hover) and (pointer: fine) { .kcard:hover { box-shadow: 0 0 0 1px rgba(42, 28, 0, 0.14), 0 3px 8px rgba(42, 28, 0, 0.08); transform: translateY(-1px); } }
+  .kcard b { display: flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
+  .kcard span { display: block; font-size: 12px; line-height: 17px; color: var(--fg3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dd5, .kcard .dd5 { display: inline-flex; gap: 3px; margin-left: auto; overflow: visible; }
+  .dd5 i { width: 5px; height: 5px; border-radius: 50%; background: #dddbd7; }
+  .dd5 i.on { background: var(--fg); }
+  .kfoot { display: flex !important; align-items: center; gap: 6px; margin-top: 6px; }
+  .dday { padding: 0 5px; border-radius: 4px; font-size: 11px; font-weight: 600; line-height: 17px; background: #f1f1ef; color: var(--fg2); }
+  .dday.near { background: #fadec9; color: #a4560a; }
+  .dday.warn { background: #fbf3db; color: var(--amber); }
+  .hid { margin-top: 2px; font-size: 12px; color: var(--fg4); }
+  .tb3 { display: grid; grid-template-columns: minmax(0, 1.2fr) 104px minmax(0, 1fr); border-top: 1px solid var(--line); }
+  .tb3 > * { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
+  .tb3 span { display: flex; align-items: center; min-width: 0; height: 36px; padding: 0 8px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); white-space: nowrap; overflow: hidden; }
+  .tb3 span:first-child { border-left: 0; padding-left: 2px; }
+  .tb3 .hd3 span { height: 32px; gap: 5px; font-size: 12px; color: var(--fg4); }
+  .tb3 .hd3 svg { width: 13px; height: 13px; }
+  .tb3 button:hover span { background: var(--hover); }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; }
+  .two .nrow { padding-left: 2px; }
+  .two .nrow .mm { display: none; }
+  .two .nrow { grid-template-columns: 8px minmax(0, 1fr); }
+  .two .nrow.nw { grid-template-columns: auto minmax(0, 1fr); }
+  .pg { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 6px; border-top: 1px solid var(--line); color: var(--fg3); }
+  .pg svg { width: 15px; height: 15px; color: var(--fg4); }
+  .pg i { margin-left: auto; font-style: normal; font-size: 12px; color: var(--fg4); }
+  /* 6. 옆 패널 */
+  .peek { position: fixed; top: 36px; right: 0; bottom: 0; z-index: 30; width: min(400px, 92vw); display: flex; flex-direction: column; background: var(--bg); box-shadow: -1px 0 0 var(--line), -18px 0 40px -24px rgba(42, 28, 0, 0.3); transform: translateX(100%); visibility: hidden; transition: transform 240ms var(--ease-out), visibility 0s 240ms; }
+  .peek.on { transform: none; visibility: visible; transition: transform 240ms var(--ease-out); }
+  @media (prefers-reduced-motion: reduce) { .peek, .peek.on { transition: none; } }
+  .peek .bar { display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 10px; flex: none; font-size: 12px; color: var(--fg4); }
+  .peek .x { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; color: var(--fg3); font-size: 18px; line-height: 1; }
+  .peek .x:hover { background: var(--hover); }
+  .peek .body { flex: 1; min-height: 0; overflow: auto; padding: 8px 28px 24px; }
+  .peek h2 { margin: 6px 0 16px; font-size: 24px; line-height: 32px; font-weight: 700; letter-spacing: -0.02em; word-break: keep-all; }
+  .prop { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: center; min-height: 32px; }
+  .prop dt { font-size: 13px; color: var(--fg3); }
+  .prop dd { margin: 0; min-width: 0; }
+  .peek .acts { display: flex; gap: 8px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .ghost { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 6px; font-weight: 500; color: var(--fg2); box-shadow: inset 0 0 0 1px var(--line2); }
+  .ghost:hover { background: var(--hover); }
+  .peek p { margin: 16px 0 0; color: var(--fg3); line-height: 22px; }
+</style>
+</head>
+<body>
+<script src="shared.js"></script>
+<script>
+(() => {
+  const { DAYS, DATES, TODAY, tasks, events, deals, notices, ui, ic, esc, inScope, bucket, dueText, shown, isDone, hhmm, keepFocus, toast } = DX;
+  const openSet = new Set(['late', 'today']);
+  let view = 'board', day = TODAY, draft = '', seq = 0;
+  let peek = null;   // { kind: 'deal' | 'task' | 'notice', id }
+  let opener = null; // 옆 패널을 닫으면 포커스를 돌려줄 곳 (data-a, data-key)
+  const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
+  const PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+  const STAGES = [[1, '계약 준비'], [2, '가계약'], [3, '본계약'], [4, '중도금/잔금'], [5, '잔금완료']];
+  const unit = (t) => t.replace('고덕그라시움 101동 ', '');
+  const dots5 = (st) => `<span class="dd5" aria-label="다섯 단계 중 ${st}번째">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= st ? 'on' : ''}"></i>`).join('')}</span>`;
+  const dday = (x) => (x.cls === 'warn' ? `<i class="dday warn" style="font-style:normal">${esc(x.nx)}</i>` : x.d ? `<i class="dday${parseInt(x.d.slice(2), 10) <= 7 ? ' near' : ''}" style="font-style:normal">${x.d}</i>` : '');
+  const taskDay = (t) => (t.off != null && t.off >= 0 && TODAY + t.off <= 6 ? TODAY + t.off : null);
+
+  function paint() {
+    const area = document.getElementById('area');
+    // 입력 중에 다른 이유(되돌리기 시간이 끝남, 시계)로 다시 그려져도 입력 칸의 포커스와 커서를 지킨다
+    const typing = document.activeElement?.id === 'addin' ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+    keepFocus(area, () => {
+      const all = shown(), g = { late: [], today: [], soon: [] }; all.forEach((t) => g[bucket(t)].push(t));
+      const live = (k) => g[k].filter((t) => !isDone(t)).length;
+      const mine = (d) => events.filter((e) => e.day === d && inScope(e)).sort((a, b) => a.time.localeCompare(b.time));
+      const ev = mine(day), now = hhmm(ui.hour); let put = day !== TODAY;
+      const oldest = g.late.find((t) => !isDone(t));
+      const next = events.filter((e) => inScope(e) && (e.day > TODAY || (e.day === TODAY && e.time > now))).sort((a, b) => a.day - b.day || a.time.localeCompare(b.time))[0];
+      const todayEv = mine(TODAY);
+      const lead = `${todayEv.length ? `오늘 일정은 <b>${todayEv.length}건</b>입니다.` : '오늘은 잡힌 일정이 없습니다.'} ${next ? `다음 일정은 <button class="men" data-a="day" data-key="${next.day}">${ic('cal')}${next.day === TODAY ? '오늘' : DAYS[next.day] + '요일'} ${next.time} ${esc(next.t)}</button>이고,` : ''} ${oldest ? `밀린 업무가 <button class="men bad" data-a="unfold" data-key="late">${live('late')}건</button> 있습니다. 가장 오래된 것은 <button class="men" data-a="peek" data-key="task:${oldest.id}">${ic('todo')}${esc(oldest.t)}</button>입니다.` : '밀린 업무는 없습니다.'}`;
+      const group = (k, label) => `<div class="blk"><button class="tgl${k === 'late' && live(k) ? ' bad' : ''}" data-a="fold" data-key="${k}" aria-expanded="${openSet.has(k)}">${CHEV}${label}<span class="n num">${live(k)}</span></button>
+        ${openSet.has(k) ? `<div class="kids">${g[k].map((t) => `<div class="blk todo3${isDone(t) ? ' done' : ''}"><button class="chk" role="checkbox" aria-checked="${isDone(t)}" aria-label="${esc(t.t)} ${isDone(t) ? '완료 취소' : '완료 처리'}" data-a="check" data-key="${t.id}"><svg viewBox="0 0 12 12"><path pathLength="1" d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg></button><button class="ttb" data-a="peek" data-key="task:${t.id}">${esc(t.t)}<span>${esc(t.m)}</span></button>${!isDone(t) && t.off !== 1 ? `<button class="mini" data-a="snooze" data-key="${t.id}" aria-label="${esc(t.t)} 내일로 미루기">내일로</button>` : '<span></span>'}<span class="due ${k === 'late' ? 'late' : ''}">${k === 'today' ? '' : dueText(t)}</span></div>`).join('') || (k === 'today' ? '' : '<div class="empty" style="padding:6px;text-align:left">비어 있어요</div>')}
+        ${k === 'today' ? `<label class="addrow">${PLUS}<input class="addin" id="addin" placeholder="새 할 일을 적고 Enter" aria-label="오늘 할 일 추가" value="${esc(draft)}" autocomplete="off"></label>` : ''}</div>` : ''}</div>`;
+      const must = notices.find((n) => n.must && !n.read);
+      const used = STAGES.filter(([s]) => deals.some((x) => x.st === s)), hidden = STAGES.length - used.length;
+      area.innerHTML = `<div class="doc">
+        <div class="colx">
+          <p class="lead">${lead}</p>
+          <div class="h">${ic('cal')}이번 주<button class="go" data-a="say" data-msg="캘린더 화면으로 갑니다">캘린더${ic('arrow')}</button></div>
+          <div class="week" role="group" aria-label="이번 주">${DAYS.map((d, i) => { const e = mine(i), n = all.filter((t) => taskDay(t) === i && !isDone(t)).length;
+            return `<button class="wd${i === TODAY ? ' today' : ''}${i < TODAY ? ' past' : ''}" data-a="day" data-key="${i}" aria-pressed="${i === day}" aria-label="11월 ${DATES[i]}일 ${d}요일, 일정 ${e.length}건, 할 일 ${n}건"><span class="dn">${d}</span><span class="dd">${DATES[i]}</span><span class="dots">${e.slice(0, 3).map((x) => `<i${x.c ? ` style="--c:${x.c}"` : ''}></i>`).join('')}</span><span class="tn num">${n ? `할 일 ${n}` : ''}</span></button>`; }).join('')}</div>
+          <div style="margin-top:4px">${ev.map((e) => { let pre = ''; if (!put && e.time > now) { pre = `<div class="now3"><span class="num">${now}</span><i></i></div>`; put = true; }
+            return `${pre}<div class="blk row3"><b>${e.time}</b><span class="t1">${esc(e.t)}</span><span class="m">${esc(e.m)}</span></div>`; }).join('') || `<div class="empty" style="padding:6px;text-align:left">${DAYS[day]}요일에는 잡힌 일정이 없어요</div>`}${put ? '' : `<div class="now3"><span class="num">${now}</span><i></i></div>`}</div>
+          <div class="h">${ic('todo')}할 일 <small class="num">${live('late') + live('today') + live('soon')}</small><button class="go" data-a="say" data-msg="업무 화면으로 갑니다">업무${ic('arrow')}</button></div>
+          ${group('late', '지남')}${group('today', '오늘')}${group('soon', '다가옴')}
+        </div>
+        <div class="colx">
+          ${must ? `<button class="pinned" data-a="peek" data-key="notice:${must.id}"><span class="must" style="margin:0">필독</span><span class="tt">${esc(must.t)}</span><span class="mm">${must.who} · ${must.d}</span></button>` : ''}
+          <div class="h"${must ? '' : ' style="margin-top:2px"'}>${ic('deal')}진행 거래 <small class="num">${deals.length}</small><span class="views" role="tablist" aria-label="보기">${[['board', '보드'], ['table', '표']].map(([k, l]) => `<button class="view" role="tab" aria-selected="${view === k}" data-a="view" data-key="${k}">${l}</button>`).join('')}</span></div>
+          ${view === 'board' ? `<div class="kan">${used.map(([s, label]) => { const list = deals.filter((x) => x.st === s);
+            return `<div><h4><span class="tag s${s}">${label}</span><i class="num">${list.length}</i></h4>${list.map((x) => `<button class="kcard" data-a="peek" data-key="deal:${deals.indexOf(x)}"><b>${esc(unit(x.t))}${dots5(x.st)}</b><span class="num">${esc(x.a)}</span><span class="kfoot num">${x.cls === 'warn' ? '' : esc(x.nx)}${dday(x)}</span></button>`).join('')}</div>`; }).join('')}</div>${hidden ? `<div class="hid">거래가 없는 단계 ${hidden}개는 숨겼어요</div>` : ''}`
+          : `<div class="tb3"><div class="hd3"><span>${ic('aa')}거래</span><span>${ic('tagi')}단계</span><span>${ic('cal')}다음 일정</span></div>${deals.map((x, i) => `<button data-a="peek" data-key="deal:${i}"><span><b style="font-weight:500">${esc(x.t)}</b></span><span><i class="tag s${x.st}" style="font-style:normal">${x.stl}</i></span><span class="num" style="gap:6px">${x.cls === 'warn' ? '' : esc(x.nx)}${dday(x)}</span></button>`).join('')}</div>`}
+          <div class="two">
+            <div><div class="h">${ic('mega')}공지사항 <small class="num">${DX.unread() ? `안 읽음 ${DX.unread()}` : '모두 읽음'}</small></div>
+              ${notices.map((x) => `<button class="nrow${x.read ? '' : ' unread'}" data-a="peek" data-key="notice:${x.id}" aria-label="${esc(x.t)}${x.read ? '' : ' (안 읽음)'}"><span class="dot"></span><span class="tt">${x.must ? '<span class="must">필독</span>' : ''}${esc(x.t)}</span></button>`).join('')}</div>
+            <div><div class="h">${ic('news')}부동산 뉴스</div>${DX.newsRows(4)}</div>
+          </div>
+          <div class="pg">${ic('site')}<span>관리단지</span><span style="font-size:12px;color:var(--fg4)">단지별 매물 수와 시세 변동</span><i>준비 중</i></div>
+        </div></div>`;
+    });
+    if (typing) { openSet.add('today'); const el = document.getElementById('addin'); if (el) { el.focus({ preventScroll: true }); el.setSelectionRange(typing[0], typing[1]); } }
+    paintPeek();
+  }
+
+  // 옆 패널: #area 밖에 있어서 본문을 다시 그려도 남는다
+  const panel = document.createElement('aside');
+  panel.className = 'peek'; panel.setAttribute('aria-label', '자세히 보기');
+  function paintPeek() {
+    if (!peek) { panel.classList.remove('on'); panel.setAttribute('aria-hidden', 'true'); return; }
+    const had = panel.contains(document.activeElement) ? document.activeElement.dataset.a : null;
+    let kind = '', title = '', props = [], acts = '', body = '';
+    if (peek.kind === 'deal') { const x = deals[+peek.id]; kind = '거래'; title = x.t;
+      props = [['단계', `<span class="tag s${x.st}">${x.stl}</span>`], ['진행', dots5(x.st).replace('margin-left', 'x')], ['금액', `<span class="num">${esc(x.a)}</span>`], ['다음 일정', `<span class="num">${esc(x.nx)}</span> ${x.cls === 'warn' ? '' : dday(x)}`]];
+      acts = `<button class="btn" data-a="say" data-msg="${esc(x.t)} 거래를 엽니다">거래 열기</button>`; }
+    else if (peek.kind === 'task') { const t = tasks.find((x) => x.id === peek.id); if (!t) { peek = null; return paintPeek(); } kind = '할 일'; title = t.t; const done = isDone(t);
+      props = [['상태', done ? '<span class="tag s5">완료</span>' : '<span class="tag">진행 전</span>'], ['기한', `<span class="due ${bucket(t) === 'late' ? 'late' : ''}" style="font-size:14px">${dueText(t)}</span>`], ['담당', esc(t.who)], ['관련', esc(t.m || '없음')]];
+      acts = `<button class="btn" data-a="check" data-key="${t.id}">${done ? '완료 취소' : '완료'}</button>${!done && t.off !== 1 ? `<button class="ghost" data-a="snooze" data-key="${t.id}">내일로 미루기</button>` : ''}`; }
+    else { const n = notices.find((x) => x.id === peek.id); kind = '공지사항'; title = n.t;
+      props = [['작성', esc(n.who)], ['날짜', n.d], ['구분', n.must ? '<span class="must" style="margin:0">필독</span>' : '일반']];
+      body = '<p>공지 본문이 여기에 나옵니다. (예시 화면이라 본문은 비어 있어요.)</p>'; }
+    panel.innerHTML = `<div class="bar"><button class="x" data-a="closepeek" aria-label="닫기">×</button>${kind}<span style="margin-left:auto">Esc로 닫기</span></div>
+      <div class="body"><h2>${esc(title)}</h2><dl style="margin:0">${props.map(([k, v]) => `<div class="prop"><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>${body}${acts ? `<div class="acts">${acts}</div>` : ''}</div>`;
+    panel.classList.add('on'); panel.removeAttribute('aria-hidden');
+    if (had) (panel.querySelector(`[data-a="${had}"]`) ?? panel.querySelector('.x')).focus();
+  }
+  function closePeek() {
+    if (!peek) return; peek = null; paintPeek();
+    const back = opener && document.querySelector(`#area [data-a="${opener.a}"][data-key="${CSS.escape(opener.key)}"]`);
+    (back ?? document.querySelector('#area [data-a]'))?.focus(); opener = null;
+  }
+
+  DX.onRender(paint);
+  document.addEventListener('dx:act', (e) => {
+    const { a, key, el } = e.detail;
+    if (a === 'fold') openSet.has(key) ? openSet.delete(key) : openSet.add(key);
+    else if (a === 'unfold' || a === 'tab') openSet.add(key);
+    else if (a === 'view') view = key;
+    else if (a === 'day') day = +key;
+    else if (a === 'jump') day = TODAY;
+    else if (a === 'closepeek') return closePeek();
+    else if (a === 'peek') {
+      const [kind, id] = key.split(':'); peek = { kind, id };
+      if (!panel.contains(el)) opener = { a, key };
+      if (kind === 'notice') { const n = notices.find((x) => x.id === id); if (n) n.read = true; }
+      paint(); panel.querySelector('.x').focus(); return;
+    }
+    else if (a === 'snooze') {
+      const t = tasks.find((x) => x.id === key); if (!t) return;
+      t.off = 1; openSet.add('soon'); paint(); DX.syncPins(); toast('내일로 미뤘습니다', t.t);
+      if (!panel.contains(document.activeElement)) (document.querySelector(`#area [data-a="check"][data-key="${key}"]`))?.focus();
+      return;
+    }
+    else return;
+    paint();
+    if (a === 'unfold' || a === 'tab') document.querySelector(`[data-a="fold"][data-key="${key}"]`)?.focus();
+    if (a === 'jump') document.querySelector(`[data-a="day"][data-key="${TODAY}"]`)?.focus();
+    if (a === 'day' && el?.classList.contains('men')) document.querySelector(`.wd[data-key="${key}"]`)?.focus();
+  });
+  document.addEventListener('input', (e) => { if (e.target.id === 'addin') draft = e.target.value; });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && peek) { e.preventDefault(); return closePeek(); }
+    if (e.key === 'Enter' && e.target.id === 'addin' && !e.isComposing) {
+      const text = draft.trim(); if (!text) return;
+      tasks.push({ id: `new${++seq}`, off: 0, who: '나', t: text, m: '' });
+      draft = ''; paint(); DX.syncPins(); toast('오늘 할 일에 추가했습니다', text);
+      document.getElementById('addin')?.focus();
+    }
+  });
+  DX.start();
+  document.body.appendChild(panel);
+  paintPeek();
+})();
+</script>
+</body>
+</html>

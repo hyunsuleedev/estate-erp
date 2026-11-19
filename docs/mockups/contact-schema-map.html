@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>연락처 연결 지도</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px 16px 28px;
+    background: var(--background, #fff); color: var(--foreground, #171717);
+    font-family: var(--font-sans, -apple-system, "Apple SD Gothic Neo", "Pretendard", system-ui, sans-serif);
+    font-size: 13px; line-height: 1.55;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
+  .lede { color: var(--muted-foreground, #6b6b6b); margin: 0 0 12px; max-width: 70ch; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; color: var(--muted-foreground, #6b6b6b); font-size: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid; background: var(--card, #fff); }
+  .ln { width: 22px; height: 0; border-top: 1.5px solid var(--muted-foreground, #6b6b6b); }
+  .ln.dash { border-top-style: dashed; }
+  .ln.dot { border-top-style: dotted; }
+
+  .scroll { overflow-x: auto; border-top: 1px solid var(--border, #e5e5e5); border-bottom: 1px solid var(--border, #e5e5e5); }
+  svg { display: block; width: 100%; min-width: 820px; height: auto; }
+  svg text { font-family: inherit; fill: var(--foreground, #171717); }
+  .halo { paint-order: stroke; stroke: var(--background, #fff); stroke-width: 5px; stroke-linejoin: round; }
+
+  .node { cursor: pointer; outline: none; }
+  .node:focus-visible rect { stroke-width: 2.4; }
+  .node rect { fill: var(--card, #fff); stroke: var(--border, #d4d4d4); stroke-width: 1.2; }
+  .node .t { font-size: 13px; font-weight: 600; }
+  .node .s { font-size: 11px; fill: var(--muted-foreground, #6b6b6b); }
+  .node.person rect { stroke: var(--chart-1, #2563eb); stroke-width: 1.8; }
+  .node.self rect   { stroke: var(--chart-1, #2563eb); }
+  .node.link rect   { stroke: var(--chart-2, #16a34a); stroke-width: 1.6; }
+  .node.link .s     { fill: var(--chart-2, #16a34a); }
+  .node.target rect { stroke: var(--foreground, #171717); }
+  .node.record rect { stroke: var(--chart-3, #d97706); }
+  .node.mini rect   { stroke-dasharray: 3 3; }
+  .node.mini .t     { font-size: 11.5px; font-weight: 500; }
+  .node.sel rect    { fill: var(--muted, #f5f5f4); stroke-width: 2.4; }
+
+  .edge { fill: none; stroke: var(--muted-foreground, #8a8a8a); stroke-width: 1.4; }
+  .edge.dash { stroke-dasharray: 5 4; }
+  .edge.flow { stroke-dasharray: 2 4; stroke-width: 1.2; }
+  .elabel { font-size: 11px; fill: var(--muted-foreground, #6b6b6b); }
+  .zone-label { font-size: 11px; font-weight: 600; fill: var(--muted-foreground, #6b6b6b); letter-spacing: .02em; }
+  .flagc { fill: var(--foreground, #171717); }
+  .flagt { fill: var(--background, #fff); font-size: 10px; font-weight: 700; }
+
+  svg.focus .edge, svg.focus .elabel, svg.focus .node { opacity: .2; transition: opacity .12s; }
+  svg.focus .edge.on, svg.focus .elabel.on, svg.focus .node.on { opacity: 1; }
+  svg.focus .edge.on { stroke: var(--foreground, #171717); stroke-width: 2; }
+  @media (prefers-reduced-motion: reduce) { svg.focus .edge, svg.focus .elabel, svg.focus .node { transition: none; } }
+
+  .detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 4px 28px; padding: 14px 0 4px; }
+  .detail h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .mono { font-family: var(--font-mono, ui-monospace, Menlo, monospace); font-size: 11px; color: var(--muted-foreground, #6b6b6b); }
+  .detail p { margin: 6px 0 0; }
+  .detail ul { margin: 0; padding: 0; list-style: none; }
+  .detail li { padding: 3px 0; border-bottom: 1px solid var(--border, #eee); display: grid; grid-template-columns: 110px 1fr; gap: 10px; }
+  .detail li:last-child { border-bottom: 0; }
+  .detail li b { font-weight: 500; }
+  .detail li span { color: var(--muted-foreground, #6b6b6b); }
+  .warn { margin-top: 8px; padding-left: 10px; border-left: 2px solid var(--foreground, #171717); }
+  .hint { color: var(--muted-foreground, #6b6b6b); font-size: 12px; margin: 8px 0 0; }
+  @media (max-width: 640px) { .detail { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>연락처 연결 지도</h1>
+  <p class="lede">가운데 <b>연락처</b>에서 뻗은 선을 따라가면 됩니다. 왼쪽은 사람 자체에 붙는 것, 오른쪽은 매물·의뢰·거래로 가는 길, 아래는 기록입니다. 상자를 누르면 그 상자와 이어진 선만 남고 아래에 설명이 나옵니다.</p>
+  <div class="legend">
+    <span><i class="sw" style="border-color:var(--chart-1,#2563eb)"></i>사람</span>
+    <span><i class="sw" style="border-color:var(--chart-2,#16a34a)"></i>연결 표 (역할이 적히는 곳)</span>
+    <span><i class="sw" style="border-color:var(--foreground,#171717)"></i>업무 대상</span>
+    <span><i class="sw" style="border-color:var(--chart-3,#d97706)"></i>기록</span>
+    <span><i class="ln"></i>DB에서 이어짐</span>
+    <span><i class="ln dash"></i>비워 둘 수 있거나 글자로만 맞춤</span>
+    <span><i class="ln dot"></i>업무 흐름</span>
+  </div>
+  <div class="scroll"><svg id="map" viewBox="0 0 970 715" role="img" aria-label="연락처와 다른 표의 연결 지도"></svg></div>
+  <p class="hint">검은 번호는 구조상 애매한 곳입니다. 번호가 붙은 상자를 누르면 이유가 나옵니다. 빈 곳을 누르면 전체가 다시 보입니다.</p>
+  <div class="detail" id="detail" aria-live="polite"></div>
+</div>
+
+<script>
+const NODES = [
+  { id:'contact', kind:'person', x:380, y:300, w:140, h:90, title:'연락처', sub:'사람 한 명 = 한 줄', model:'Contact',
+    desc:'사무소마다 따로 가지는 사람 목록입니다. 소유자인지 매수인인지는 여기 적지 않고, 오른쪽 초록 상자(연결 표)에 적습니다.',
+    fields:[['이름','필수'],['이메일','선택'],['태그','글자 목록. 그룹 소속도 여기에 적힘'],['메모','']],
+    flag:2, warn:'분류 칸이 없습니다. 개인인지 법인인지, 담당 직원이 누구인지, 어디서 온 손님인지 적을 곳이 연락처에 없습니다.' },
+
+  { id:'phone', kind:'self', x:20, y:120, w:170, h:50, title:'전화번호', sub:'종류 · 대표 번호 · 메모', model:'ContactPhone',
+    desc:'한 사람에 번호를 여러 개 붙입니다. 연락처를 지우면 번호도 함께 지워집니다.',
+    fields:[['번호','숫자만 저장'],['종류','휴대폰 · 집 · 직장 · 사무실 · 팩스 · 기타'],['대표 번호','한 사람에 하나'],['메모','']],
+    flag:3, warn:'번호 하나는 사무소 안에서 한 사람만 가질 수 있습니다. 부부가 같이 쓰는 집 전화는 한쪽에만 붙습니다.' },
+  { id:'group', kind:'self', x:20, y:235, w:170, h:50, title:'그룹', sub:'이름만 기억', model:'ContactGroup',
+    desc:'사무소가 직접 만드는 분류입니다. 연락처가 아직 없는 그룹도 목록에 남도록 이름만 저장합니다.',
+    fields:[['그룹 이름','사무소 안에서 유일']],
+    flag:1, warn:'연락처와 DB에서 이어져 있지 않습니다. 누가 속하는지는 연락처의 태그에 같은 글자가 있는지로 정합니다. 그래서 그룹과 태그는 사실상 같은 데이터입니다.' },
+  { id:'relation', kind:'link', x:20, y:350, w:170, h:50, title:'사람 ↔ 사람 관계', sub:'배우자 · 부모 · 법무사 등 7가지', model:'ContactRelation',
+    desc:'연락처 두 명을 잇습니다. 기준 인물과 상대 인물이 있고, 양쪽 화면에서 보일 이름을 따로 적을 수 있습니다.',
+    fields:[['관계 종류','부모 · 배우자 · 자녀 · 형제 · 법무사 · 세무사 · 기타'],['보충 이름','기준 쪽 "큰어머니" / 상대 쪽 "조카"'],['메모','']],
+    flag:4, warn:'법무사·세무사는 여기에도, 매물 관계자의 역할에도 있습니다. 같은 사실을 두 군데에 적을 수 있습니다.' },
+  { id:'other', kind:'person', x:20, y:460, w:170, h:46, title:'다른 연락처', sub:'상대 인물', model:'Contact',
+    desc:'관계의 반대편에 있는 또 다른 연락처입니다. 같은 연락처 표의 다른 줄입니다.', fields:[] },
+
+  { id:'pc', kind:'link', x:610, y:55, w:170, h:50, title:'매물 관계자', sub:'소유자 · 대리인 등 5가지', model:'PropertyContact',
+    desc:'이 사람이 이 매물에서 무엇인지 적는 연결입니다. 한 사람이 여러 매물에, 한 매물에 여러 사람이 걸릴 수 있습니다.',
+    fields:[['역할','소유자 · 공동소유자 · 대리인 · 법무사 · 세무사'],['지분 %','소유자 · 공동소유자만'],['실거주 여부',''],['주 연락 창구','매물마다 한 명'],['상태','현재 · 넘김 · 보관']],
+    flag:5, warn:'날짜가 없습니다. 상태로 현재와 과거는 가르지만 언제부터 언제까지 소유했는지는 남지 않습니다.' },
+  { id:'tenant', kind:'link', x:610, y:135, w:170, h:50, title:'세입자', sub:'보증금 · 월세 · 계약 기간', model:'Tenant',
+    desc:'이 사람이 이 매물에 세 들어 산다는 연결입니다. 매물 관계자와 달리 계약 기간을 가집니다.',
+    fields:[['보증금 · 월세','만원'],['계약 시작 · 종료',''],['퇴거일',''],['상태','거주 중 · 이사 예정 · 이사함']] },
+  { id:'bic', kind:'link', x:610, y:235, w:170, h:50, title:'구매 의뢰 참여자', sub:'매수인 · 대리인 등 6가지', model:'BuyerIntakeContact',
+    desc:'이 사람이 이 구매 의뢰에서 무엇인지 적는 연결입니다.',
+    fields:[['역할','매수인 · 공동매수인 · 대리인 · 조력자 · 조언자 · 기타'],['주 연락 창구','의뢰마다 한 명']] },
+  { id:'cp', kind:'link', x:610, y:545, w:170, h:50, title:'계약서 당사자', sub:'계약서에 찍힌 이름 · 전화', model:'ContractParty',
+    desc:'계약서에 들어가는 당사자 줄입니다. 이름·전화·주소·식별번호를 연락처와 별개로 따로 보관합니다. 연락처 연결은 선택이고, 연락처를 지우면 연결만 끊기고 줄은 남습니다.',
+    fields:[['쪽','매도·임대 / 매수·임차 / 중개사무소'],['순번','1 = 대표, 2부터 공동 당사자'],['이름 · 전화 · 주소','계약서용 사본'],['식별번호 · 지분',''],['연락처 연결','선택']],
+    flag:6, warn:'같은 사람이 거래의 칸, 계약의 칸, 이 줄까지 세 군데에 적힙니다. 공동 매수인은 이 줄에만 나타납니다.' },
+
+  { id:'property', kind:'target', x:815, y:100, w:130, h:50, title:'관리 매물', sub:'우리가 관리하는 호실', model:'Property',
+    desc:'사무소가 관리하는 호실입니다. 소유자와 세입자는 초록 연결 표를 거쳐 여기에 붙습니다.', fields:[] },
+  { id:'intake', kind:'target', x:815, y:235, w:130, h:50, title:'구매 의뢰', sub:'희망조건을 가짐', model:'BuyerIntake',
+    desc:'손님이 집을 구해 달라고 한 의뢰입니다. 아래에 희망조건(매매·전세·월세별)이 달립니다.', fields:[] },
+  { id:'match', kind:'mini', x:848, y:306, w:64, h:24, title:'매칭', sub:'', model:'Match',
+    desc:'매물의 거래 조건과 손님의 희망조건을 짝지은 것입니다. 연락처를 직접 가리키지 않고, 매물과 의뢰를 거쳐 사람에 닿습니다.', fields:[] },
+  { id:'deal', kind:'target', x:815, y:345, w:130, h:50, title:'거래', sub:'매수인 칸 · 매도인 칸', model:'Deal',
+    desc:'매칭이 거래로 넘어간 건입니다. 연결 표 없이 매수인 연락처와 매도인 연락처를 칸으로 직접 가집니다.',
+    fields:[['매수인 연락처','한 명, 비울 수 있음'],['매도인 연락처','한 명, 비울 수 있음']],
+    flag:6, warn:'한 명씩만 들어갑니다. 공동 매수인이나 대리인은 여기 적을 자리가 없습니다.' },
+  { id:'contract', kind:'target', x:815, y:455, w:130, h:50, title:'계약', sub:'매수인 칸 · 매도인 칸', model:'Contract',
+    desc:'거래의 계약서입니다. 거래와 똑같이 매수인·매도인 연락처 칸을 가지고, 추가로 계약서 당사자 줄을 여러 개 가집니다.',
+    fields:[['매수인 연락처','한 명, 비울 수 있음'],['매도인 연락처','한 명, 비울 수 있음'],['당사자 줄','여러 명 (계약서 당사자)']],
+    flag:6, warn:'거래의 칸과 같은 값을 한 번 더 가집니다.' },
+
+  { id:'consult', kind:'record', x:150, y:640, w:120, h:50, title:'상담', sub:'연락처 필수', model:'Consultation',
+    desc:'누구와 한 상담인지 반드시 적습니다. 기록 가운데 연락처가 필수인 것은 상담뿐입니다.', fields:[] },
+  { id:'call', kind:'record', x:290, y:640, w:120, h:50, title:'통화', sub:'기록 · 녹음', model:'CallLog · CallRecording',
+    desc:'전화 기록과 통화 녹음입니다. 번호로 사람을 찾으면 연결되고, 못 찾으면 비어 있습니다. 녹음에서 뽑은 업무 제안도 연락처를 가리킵니다.', fields:[] },
+  { id:'task', kind:'record', x:430, y:640, w:120, h:50, title:'할 일 · 일정', sub:'선택', model:'Task · CalendarEvent',
+    desc:'누구에 관한 일인지 붙일 수 있습니다. 비워 둘 수 있습니다.', fields:[] },
+  { id:'pay', kind:'record', x:570, y:640, w:120, h:50, title:'중개보수 입금', sub:'낸 사람', model:'CommissionPayment',
+    desc:'중개보수를 낸 사람입니다. 비워 둘 수 있습니다.', fields:[] },
+];
+
+const curve = (x1,y1,x2,y2) => { const m=(x1+x2)/2; return `M${x1} ${y1} C${m} ${y1} ${m} ${y2} ${x2} ${y2}`; };
+const EDGES = [
+  { a:'contact', b:'phone',    d:curve(380,318,190,145), label:'1명 : 번호 여러 개', lx:286, ly:222 },
+  { a:'contact', b:'group',    d:curve(380,338,190,260), dash:true, label:'선 없음 · 태그 글자로 맞춤', lx:286, ly:292 },
+  { a:'contact', b:'relation', d:curve(380,358,190,375), label:'기준 인물', lx:286, ly:382 },
+  { a:'relation', b:'other',   d:'M105 400 V460', label:'상대 인물', lx:112, ly:434, anchor:'start' },
+
+  { a:'contact', b:'pc',       d:curve(520,315,610,80) },
+  { a:'pc', b:'property',      d:curve(780,80,815,115) },
+  { a:'contact', b:'tenant',   d:curve(520,327,610,160) },
+  { a:'tenant', b:'property',  d:curve(780,160,815,135) },
+  { a:'contact', b:'bic',      d:curve(520,339,610,260) },
+  { a:'bic', b:'intake',       d:'M780 260 H815' },
+  { a:'contact', b:'deal',     d:curve(520,351,815,370), label:'연결 표 없이 칸으로 직접 (한 명씩)', lx:668, ly:352 },
+  { a:'contact', b:'contract', d:curve(520,363,815,480), label:'칸으로 직접 (한 명씩)', lx:672, ly:432 },
+  { a:'contact', b:'cp',       d:curve(520,375,610,570), dash:true, label:'선택 연결', lx:560, ly:500, anchor:'end' },
+  { a:'cp', b:'contract',      d:'M780 570 H880 V505' },
+
+  { a:'property', b:'match',   d:'M945 125 H958 V318 H912', flow:true },
+  { a:'intake', b:'match',     d:'M880 285 V306', flow:true },
+  { a:'match', b:'deal',       d:'M880 330 V345', flow:true },
+  { a:'deal', b:'contract',    d:'M880 395 V455', flow:true },
+
+  { a:'contact', b:'consult',  d:'M450 390 V615 H210 V640' },
+  { a:'contact', b:'call',     d:'M450 390 V615 H350 V640', dash:true },
+  { a:'contact', b:'task',     d:'M450 390 V615 H490 V640', dash:true },
+  { a:'contact', b:'pay',      d:'M450 390 V615 H630 V640', dash:true },
+];
+
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('map');
+const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+
+[['사람 자체', 20, 100], ['역할이 적히는 연결', 610, 36], ['업무 대상', 815, 82], ['기록', 150, 628]].forEach(([t, x, y]) =>
+  svg.appendChild(el('text', { class: 'zone-label', x, y }, t)));
+
+EDGES.forEach((e, i) => {
+  e.path = el('path', { class: 'edge' + (e.dash ? ' dash' : '') + (e.flow ? ' flow' : ''), d: e.d });
+  svg.appendChild(e.path);
+});
+EDGES.forEach((e) => {
+  if (!e.label) return;
+  e.text = el('text', { class: 'elabel halo', x: e.lx, y: e.ly, 'text-anchor': e.anchor || 'middle' }, e.label);
+  svg.appendChild(e.text);
+});
+
+NODES.forEach((n) => {
+  const g = el('g', { class: 'node ' + n.kind, tabindex: 0, role: 'button', 'aria-label': n.title });
+  g.appendChild(el('rect', { x: n.x, y: n.y, width: n.w, height: n.h, rx: n.kind === 'link' ? 14 : 7 }));
+  const cx = n.x + n.w / 2;
+  if (n.sub) {
+    g.appendChild(el('text', { class: 't', x: cx, y: n.y + n.h / 2 - 3, 'text-anchor': 'middle' }, n.title));
+    g.appendChild(el('text', { class: 's', x: cx, y: n.y + n.h / 2 + 14, 'text-anchor': 'middle' }, n.sub));
+  } else {
+    g.appendChild(el('text', { class: 't', x: cx, y: n.y + n.h / 2 + 4, 'text-anchor': 'middle' }, n.title));
+  }
+  if (n.flag) {
+    g.appendChild(el('circle', { class: 'flagc', cx: n.x + n.w - 2, cy: n.y + 2, r: 8 }));
+    g.appendChild(el('text', { class: 'flagt', x: n.x + n.w - 2, y: n.y + 5.5, 'text-anchor': 'middle' }, n.flag));
+  }
+  g.addEventListener('click', (ev) => { ev.stopPropagation(); select(n.id); });
+  g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); select(n.id); } });
+  n.g = g; svg.appendChild(g);
+});
+svg.addEventListener('click', () => select(null));
+
+const byId = Object.fromEntries(NODES.map((n) => [n.id, n]));
+const detail = document.getElementById('detail');
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+function select(id) {
+  svg.classList.toggle('focus', !!id);
+  NODES.forEach((n) => n.g.classList.remove('on', 'sel'));
+  EDGES.forEach((e) => { e.path.classList.remove('on'); if (e.text) e.text.classList.remove('on'); });
+  const n = byId[id || 'contact'];
+  if (id) {
+    n.g.classList.add('on', 'sel');
+    EDGES.forEach((e) => {
+      if (e.a !== id && e.b !== id) return;
+      e.path.classList.add('on'); if (e.text) e.text.classList.add('on');
+      byId[e.a].g.classList.add('on'); byId[e.b].g.classList.add('on');
+    });
+  }
+  const linked = EDGES.filter((e) => e.a === n.id || e.b === n.id).map((e) => byId[e.a === n.id ? e.b : e.a].title);
+  detail.innerHTML =
+    `<div><h2>${esc(n.title)}</h2><div class="mono">${esc(n.model)}</div><p>${esc(n.desc)}</p>` +
+    (n.warn ? `<p class="warn"><b>애매한 곳 ${n.flag}.</b> ${esc(n.warn)}</p>` : '') + `</div>` +
+    `<ul>` + n.fields.map(([k, v]) => `<li><b>${esc(k)}</b><span>${esc(v)}</span></li>`).join('') +
+    `<li><b>이어진 곳</b><span>${esc([...new Set(linked)].join(' · '))}</span></li></ul>`;
+}
+select(null);
+</script>
+</body>
+</html>

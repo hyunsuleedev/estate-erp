@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A 일의 판 · 대시보드 시안</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="board.css">
+<style>
+  /* 종류별 다섯 열. 열마다 놓친 것이 맨 위에 온다. */
+  .board { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+  .col { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-radius: var(--r-panel); box-shadow: 0 0 0 1px var(--line), var(--shadow-1); }
+  .col header { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; flex: none; }
+  .col header h2 { margin: 0; font-size: 14px; font-weight: 600; }
+  .col header .n { color: var(--text-3); font-size: 13px; }
+  .col header .late { margin-left: auto; }
+  .col .list { flex: 1; min-height: 0; overflow: auto; padding: 0 4px 6px; }
+  .col .sub { padding: 10px 10px 2px; font-size: 12px; color: var(--text-3); }
+  .col footer { white-space: nowrap; flex: none; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--text-2); display: flex; }
+  .col footer a:hover { color: var(--text); }
+  .col footer .go { margin-left: auto; color: var(--text-3); }
+  .pipe { display: flex; gap: 3px; height: 6px; margin: 2px 14px 4px; border-radius: 3px; overflow: hidden; }
+  .pipe i { display: block; height: 100%; }
+  .pipe-l { display: flex; gap: 10px; padding: 2px 14px 6px; font-size: 12px; color: var(--text-2); flex-wrap: wrap; }
+  .pipe-l b { font-weight: 600; color: var(--text); }
+</style>
+</head>
+<body>
+<script src="board.js"></script>
+<script>
+  const body = B.shell();
+  const order = ['deal', 'listing', 'buyer', 'money', 'expiry'];
+  const foot = { deal: '진행 거래 7건', listing: '거래 가능 매물 48건', buyer: '진행 중인 구매 의뢰 23건', money: '만기 미수 1,120만원', expiry: '60일 안 만기 3건' };
+
+  function render() {
+    const v = B.visible();
+    body.innerHTML = B.brief() + B.kpiStrip() + `<div class="board">${order.map((k) => {
+      const list = v.filter((it) => it.kind === k).sort((a, b) => a.off - b.off);
+      const late = list.filter((it) => it.off < 0);
+      const rest = list.filter((it) => it.off >= 0);
+      const pipe = k === 'deal' ? `<div class="pipe">${B.pipeline.map((p) => `<i style="flex:${p.n};background:${p.c}" title="${p.label} ${p.n}건"></i>`).join('')}</div><div class="pipe-l num">${B.pipeline.map((p) => `<span>${p.label} <b>${p.n}</b></span>`).join('')}</div>` : '';
+      return `<section class="col">
+        <header><span class="dot k-${k}"></span><h2>${B.kinds[k].label}</h2><span class="n num">${list.length}</span>${late.length ? `<span class="tag danger late num">놓침 ${late.length}</span>` : ''}</header>
+        ${pipe}
+        <div class="list">
+          ${late.length ? `<div class="sub">놓친 것</div>${late.map((it) => B.row(it)).join('')}` : ''}
+          ${rest.length ? `<div class="sub">${late.length ? '다가오는 것' : '챙길 것'}</div>${rest.map((it) => B.row(it)).join('')}` : ''}
+          ${list.length ? '' : '<div class="empty">지금 챙길 것이 없습니다.</div>'}
+        </div>
+        <footer class="num"><span>${foot[k]}</span><a class="go" href="#">${B.kinds[k].to} →</a></footer>
+      </section>`;
+    }).join('')}</div>`;
+  }
+  B.onChange(render);
+  render();
+</script>
+</body>
+</html>

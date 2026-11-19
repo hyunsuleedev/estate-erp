@@ -1,0 +1,2061 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>희망매물 — Notion형 시안</title>
+<!--
+  희망매물(/wanted-properties) Notion형 시안. 2026-11-16.
+  - 위쪽: 문서관리와 같은 보기 탭 + 도구 줄(필터 줄 접기 · 검색 · 표시 설정 · 보기 전환 · 매칭 생성), 아이콘 칩 필터 줄.
+    필터 종류와 규칙(단계 · 지역·단지 · 매물 유형 · 예산 · 월세 · 희망 평형 · 상태 · 담당자 · 긴급도 · 입주 희망일)은 지금과 같다.
+  - 고객별: 고객(희망 조건) 줄을 펼치면 그 아래에 "표 안의 표"가 나온다. 매물관리에서 매물 줄을 펼쳤을 때의
+    "연결 구매고객" 패널을 뒤집은 구조다: 들여 쓴 흰 바탕, 자체 머리글과 칸 세로선, 거래 전환된 매물이 맨 위,
+    맨 아래 "매물 연결" 줄, 접혀 있는 "종료 n건" (사용자 의견 2026-11-16).
+    그 패널의 머리 탭(연결 구매고객 ↔ 광고)은 패널이 둘이라 있는 것이어서 여기에는 두지 않았다. 정렬 · 열 너비 조절 · 줄 선택도
+    지금 희망매물에 없던 기능이라 옮기지 않았다.
+  - 메모는 칸에 넣지 않고 줄 아래 한 줄 전체로 둔다 (사용자 의견 2026-11-16): 고객 메모는 펼친 자리의 첫 줄,
+    매칭 메모는 매물 줄 바로 아래. 매칭 메모는 그 자리에서 눌러 고치고, 메모가 없는 줄은 올리면 나오는 "메모"로 추가한다.
+  - 단계는 매물관리 연결 구매고객 표와 같은 알약 + 선택 메뉴(막힌 단계는 이유를 알려 준다).
+    알약 옆 자리에는 지금 가장 필요한 것 하나만 둔다: 방문 일정 › 거래 단계 › 종료 사유 › n/6.
+  - 매칭 상세는 가운데 창 대신 옆 패널. 진행 경로 · 다음 작업 · 방문 일정 · 메모 · 상담 기록 · 후속 태스크.
+  - 단계별: 상자 없이 한 표 안의 묶음.
+  치수는 매물관리 표 · 문서관리 목록에서 쓰는 Notion 실측값, 색은 app.css 토큰 값이다. 데이터는 모두 가상이다.
+-->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  :root {
+    --fg: #2c2c2b;
+    --fg-sub: #5f5e59;
+    --muted: #79766f;
+    --icon: #8e8b86;
+    --faint: #a3a09a;
+    --line: #f0efed;
+    --line-strong: #e6e5e3;
+    --side: #f9f8f7;
+    --hover: rgba(33, 27, 23, 0.05);
+    --hover-soft: rgba(33, 27, 23, 0.03);
+    --row-hover: #f9f8f7;
+    --row-on: #f2f7fd;
+    --ring: #2383e2;
+    --success: #0f7b6c; --success-soft: #dbeddb;
+    --warning: #cb912f; --warning-strong: #8a5a13; --warning-soft: #fdecc8;
+    --info: #2383e2; --info-strong: #1b64b1; --info-soft: #d3e5ef;
+    --violet: #6940a5; --violet-soft: #e8deee;
+    --orange: #d9730d; --orange-strong: #9c4f09; --orange-soft: #fadec9; /* orange-strong은 토큰에 없는 진한 글자색 */
+    --red: #e03e3e; --red-strong: #bb3430; --red-soft: #ffe2dd;
+    --neutral-soft: #f1f1ef;
+    --pop: 0 20px 24px rgba(25, 25, 25, 0.05), 0 5px 8px rgba(25, 25, 25, 0.027), 0 0 0 1px rgba(42, 28, 0, 0.07);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+      "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: var(--fg); background: #fff;
+    font-size: 14px; line-height: 21px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+  button:disabled { cursor: not-allowed; }
+  input, textarea, select { font: inherit; color: inherit; }
+  dl, dd, dt, h2, h3, h4, p { margin: 0; }
+  :focus-visible { outline: 2px solid rgba(35, 131, 226, 0.55); outline-offset: -2px; }
+  svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  [hidden] { display: none !important; }
+  .num { font-variant-numeric: tabular-nums; }
+  .tr { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .faint { color: var(--faint); }
+  .sub { color: var(--fg-sub); }
+  .grow { flex: 1; }
+
+  /* ── 시안 조작 띠 (앱 화면이 아님) ── */
+  .demo-bar { display: flex; align-items: center; gap: 18px; flex: none; padding: 8px 16px; background: #2c2c2b; color: #d9d7d2; font-size: 12.5px; white-space: nowrap; }
+  .demo-bar b { color: #fff; font-weight: 600; }
+  .demo-seg { display: inline-flex; gap: 2px; background: rgba(255,255,255,.1); border-radius: 6px; padding: 2px; }
+  .demo-seg button { padding: 3px 10px; border-radius: 4px; color: #d9d7d2; }
+  .demo-seg button[aria-pressed="true"] { background: #fff; color: #2c2c2b; font-weight: 600; }
+  .demo-note { margin-left: auto; color: #a3a09a; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── 앱 틀 (고정 그림) ── */
+  .app { flex: 1; min-height: 0; display: flex; }
+  .side { width: 256px; flex: none; background: var(--side); border-right: 1px solid var(--line); padding: 10px 8px; overflow: hidden; }
+  .side .office { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; margin-bottom: 4px; font-weight: 600; }
+  .side .office i { width: 22px; height: 22px; border-radius: 5px; background: var(--fg); color: #fff; display: grid; place-items: center; font-style: normal; font-size: 12px; font-weight: 700; }
+  .side .grp { margin: 14px 8px 4px; font-size: 12px; font-weight: 500; color: var(--muted); }
+  .side .nav { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 6px; color: var(--fg-sub); }
+  .side .nav svg { color: var(--icon); }
+  .side .nav.on { background: #eeedec; color: var(--fg); font-weight: 500; }
+  .side .nav.on svg { color: var(--fg-sub); }
+  .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .tabstrip { height: 36px; flex: none; display: flex; align-items: flex-end; gap: 2px; padding: 0 8px; background: var(--side); border-bottom: 1px solid var(--line); }
+  .tabstrip .t { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px 8px 0 0; font-size: 13px; color: var(--muted); }
+  .tabstrip .t svg { width: 14px; height: 14px; }
+  .tabstrip .t.on { height: 31px; margin-bottom: -1px; background: #fff; color: var(--fg); font-weight: 500; border: 1px solid var(--line); border-bottom-color: #fff; }
+  .page { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
+
+  /* ── 보기 탭 + 도구 줄 ── */
+  .viewbar { height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 16px 0; }
+  .tabs { display: flex; align-items: center; gap: 2px; margin-left: -4px; flex: none; }
+  .vtab { height: 32px; padding: 0 12px; border-radius: 20px; font-size: 14px; font-weight: 500; color: var(--muted); display: inline-flex; align-items: center; transition: background-color .12s, color .12s; }
+  .vtab:hover, .vtab[aria-selected="true"] { background: var(--hover); color: var(--fg); }
+  .tools { margin-left: auto; display: flex; align-items: center; gap: 2px; min-width: 0; }
+  .tool { width: 28px; height: 28px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: var(--muted); flex: none; transition: background-color .12s, color .12s; }
+  .tool:hover, .tool[aria-expanded="true"] { background: var(--hover); color: var(--fg); }
+  .tool.count { width: auto; padding: 0 6px; color: var(--info); font-size: 13px; font-weight: 500; }
+  .tool.count:hover { color: var(--info); }
+  .sep { width: 1px; height: 16px; margin: 0 6px; background: var(--line-strong); flex: none; }
+  .search { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px 0 6px; border-radius: 6px; min-width: 0; }
+  .search:focus-within { background: rgba(33, 27, 23, 0.04); }
+  .search > svg { color: var(--muted); }
+  .search input { width: 216px; min-width: 60px; height: 28px; border: 0; outline: 0; background: transparent; font-size: 14px; }
+  .search input::placeholder { color: var(--muted); }
+  .search .clr { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); flex: none; visibility: hidden; }
+  .search.has .clr { visibility: visible; }
+  .search .clr:hover { background: rgba(33, 27, 23, 0.08); color: var(--fg); }
+  .search .clr svg { width: 12px; height: 12px; }
+  .seg { display: flex; height: 30px; padding: 2px; gap: 1px; border-radius: 15px; background: rgba(55, 53, 47, 0.08); flex: none; }
+  .seg button { height: 26px; padding: 0 12px; border-radius: 13px; font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .seg button svg { width: 14px; height: 14px; }
+  .seg button:hover { color: var(--fg); }
+  .seg button[aria-pressed="true"] { background: #fff; color: var(--fg); font-weight: 500; box-shadow: 0 1px 2px rgba(40, 35, 25, 0.12); }
+  .btn-primary { height: 30px; margin-left: 8px; padding: 0 12px 0 10px; border-radius: 8px; background: var(--fg); color: #fff; font-size: 13.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; }
+  .btn-primary:hover { background: #000; }
+  .btn-primary svg { width: 14px; height: 14px; }
+
+  /* ── 필터 줄 ── */
+  .filters { flex: none; display: flex; align-items: flex-start; gap: 8px; padding: 0 16px 6px; }
+  .chips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-left: -2px; }
+  .chip { display: inline-flex; align-items: center; height: 28px; max-width: 280px; border-radius: 14px; font-size: 13px; color: #6f6c66; transition: background-color .12s, color .12s; }
+  .chip:hover, .chip.open { background: rgba(60, 52, 40, 0.06); color: var(--fg); }
+  .chip .main { display: inline-flex; align-items: center; gap: 6px; height: 100%; min-width: 0; padding: 0 10px; border-radius: 14px; white-space: nowrap; }
+  .chip svg.i { width: 14px; height: 14px; color: var(--faint); }
+  .chip svg.cv { width: 12px; height: 12px; color: #a5a39f; }
+  .chip.on { background: rgba(35, 131, 226, 0.1); color: #2383e2; }
+  .chip.on:hover { background: rgba(35, 131, 226, 0.15); color: #2383e2; }
+  .chip.on .main { padding: 0 4px 0 10px; }
+  .chip.on svg.i { color: currentColor; }
+  .chip.on b { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .chip .x { width: 22px; height: 22px; margin-right: 3px; border-radius: 50%; display: grid; place-items: center; color: #2383e2; flex: none; }
+  .chip .x:hover { background: rgba(35, 131, 226, 0.18); }
+  .chip .x svg { width: 12px; height: 12px; color: currentColor; }
+  .ghost { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12.5px; color: var(--muted); flex: none; white-space: nowrap; }
+  .ghost:hover { background: rgba(55, 53, 47, 0.08); color: var(--fg); }
+  .ghost svg { width: 14px; height: 14px; }
+
+  /* ── 표 ── */
+  .scroller { flex: 1; min-height: 0; overflow: auto; }
+  .scroller::-webkit-scrollbar { width: 10px; height: 10px; }
+  .scroller::-webkit-scrollbar-thumb { background: rgba(55, 53, 47, 0.16); border-radius: 5px; border: 2px solid #fff; }
+  .row { display: grid; grid-template-columns: var(--cols); outline: 0; }
+  .cell { min-width: 0; min-height: 37px; padding: 7.5px 8px; display: flex; align-items: flex-start; gap: 6px; white-space: nowrap; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); background: #fff; font-size: 14px; font-weight: 450; line-height: 21px; }
+  .row > .cell:last-child { border-right: 0; }
+  .cell.wrap { display: block; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; }
+  .cell.strong { font-weight: 500; }
+  .pinA, .pinB, .pinC { position: sticky; z-index: 2; }
+  .pinA { left: 0; } .pinB { left: 28px; } .pinC { left: 64px; }
+  .pinP { position: sticky; left: calc(28px + var(--name-w)); z-index: 2; }
+  .hd { position: sticky; top: 0; z-index: 5; }
+  .hd .cell { height: 37px; min-height: 0; padding: 0 8px; align-items: center; border-top: 1px solid var(--line); font-size: 13px; font-weight: 400; color: var(--muted); white-space: nowrap; }
+  .hd .cell > svg.i { color: var(--icon); }
+  .hd .cell.sel { padding: 0; }
+  .row:not(.hd):hover > .cell { background: var(--row-hover); }
+  .row.selected > .cell, .row.current > .cell { background: var(--row-on); }
+  .row:focus-visible > .cell { background: var(--row-hover); box-shadow: inset 0 1px 0 rgba(35,131,226,.5), inset 0 -1px 0 rgba(35,131,226,.5); }
+  .row.child, .row.srow { cursor: default; }
+  .row.flash > .cell { animation: flash 1.6s ease-out; }
+  @keyframes flash { from { background: #fff6dd; } to { background: #fff; } }
+
+  .cell.sel { padding: 7px 0 0; justify-content: center; border-right: 0; }
+  .cbx { width: 28px; height: 22px; display: grid; place-items: center; border-radius: 4px; }
+  .sel .cbx, .ghead .cbx { opacity: 0; transition: opacity .1s; }
+  .row:hover .sel .cbx, .ghead:hover .cbx, .cbx:focus-visible, .cbx[aria-checked="true"], .cbx[aria-checked="mixed"], .any-sel .cbx { opacity: 1; }
+  .cb { width: 14px; height: 14px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px #c5c3bd; background: #fff; display: inline-grid; place-items: center; flex: none; }
+  .cb svg { grid-area: 1 / 1; width: 10px; height: 10px; fill: none; stroke: #fff; stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+  .cb.on, .cb.mixed { background: var(--ring); box-shadow: none; }
+  .cb.on svg { opacity: 1; }
+  .cb.mixed::after { content: ''; grid-area: 1 / 1; width: 8px; height: 2px; border-radius: 1px; background: #fff; }
+
+  .cell.name { gap: 4px; padding: 6px 8px 6px 4px; overflow: hidden; }
+  .hd .cell.name { padding: 0 8px 0 4px; }
+  .tw { width: 22px; height: 22px; margin-top: 1px; border-radius: 4px; display: grid; place-items: center; color: var(--icon); flex: none; }
+  .hd .tw { margin-top: 0; }
+  button.tw:hover { background: var(--hover); color: var(--fg); }
+  .tw svg { width: 14px; height: 14px; transition: transform .12s; }
+  .tw[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .who { display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 24px; padding: 0 8px 0 2px; border-radius: 12px; font-weight: 500; transition: background-color .12s; }
+  .who:hover { background: rgba(35, 131, 226, 0.09); }
+  .who .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .av { width: 20px; height: 20px; border-radius: 50%; background: var(--info-soft); color: var(--info-strong); font-size: 11px; font-weight: 500; font-style: normal; line-height: 1; display: grid; place-items: center; flex: none; }
+  .urgent { margin-top: 1.5px; font-size: 11px; font-weight: 500; color: var(--red); flex: none; }
+  .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; font-size: 13px; line-height: 20px; white-space: nowrap; flex: none; }
+  .tag.hold { margin-top: 2px; background: var(--neutral-soft); color: var(--muted); font-size: 12px; }
+  .tag.success { background: var(--success-soft); color: var(--success); }
+  .tag.warning { background: var(--warning-soft); color: var(--warning-strong); }
+  .tag.gray { background: var(--neutral-soft); color: var(--fg-sub); }
+  .tag.info { background: var(--info-soft); color: var(--info-strong); }
+  .tag.violet { background: var(--violet-soft); color: var(--violet); }
+
+  /* 고객 줄 아래 펼침: 표 안의 표. 매물관리에서 매물 줄을 펼쳤을 때의 "연결 구매고객" 패널과 같은 구조다
+     (들여 쓴 흰 바탕 · 자체 머리글 · 칸 세로선 · 맨 아래 연결 줄 · 접힌 종료 묶음). 가로로 굴려도 보이는 폭 안에 머문다. */
+  .nest { border-bottom: 1px solid var(--line); background: #fff; }
+  .nest-in { position: sticky; left: 60px; width: calc(var(--view-w, 100vw) - 76px); margin-left: 60px; padding: 4px 0 12px; }
+  .cmemo { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 0 8px; padding: 4px 8px 6px; }
+  .cmemo dt { font-size: 13px; color: var(--muted); }
+  .cmemo dd { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-sub); }
+  .mtwrap { overflow-x: auto; }
+  .mt .row.mhd > .cell { height: 36px; min-height: 0; padding: 0 8px; align-items: center; border-right: 0; background: #fff; font-size: 13px; font-weight: 400; color: var(--muted); }
+  .mt .row.mhd > .cell > svg.i { color: var(--icon); }
+  .madd { display: flex; align-items: center; gap: 6px; width: 100%; height: 34px; padding: 0 8px; border-radius: 4px; color: #a19e99; font-size: 14px; }
+  .madd:hover, .madd:focus-visible { background: rgba(33, 27, 23, 0.03); color: var(--muted); }
+  .madd svg { width: 14px; height: 14px; }
+  .mclosed { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 8px 0 5px; border-radius: 4px; font-size: 13px; color: var(--muted); }
+  .mclosed:hover { color: var(--fg); }
+  .mclosed svg { width: 12px; height: 12px; transition: transform .12s; }
+  .mclosed[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .mdiv { display: flex; align-items: flex-end; height: 30px; padding: 0 8px 6px; border-bottom: 1px solid var(--line); font-size: 11.5px; color: var(--faint); }
+  /* 매물 한 줄 + 그 아래 메모 한 줄이 한 항목이다: 함께 밝아지고, 둘 사이에는 선을 긋지 않는다 */
+  .mgrp:hover > .row > .cell { background: var(--row-hover); }
+  .mgrp.has-memo > .row > .cell { border-bottom-color: transparent; }
+  .ttl { display: flex; align-items: baseline; gap: 5px; min-width: 0; flex: 0 1 auto; }
+  .ttl .site { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ttl .du { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .plain { color: var(--muted); }
+  .dim > .cell, .dim .ttl, .dim .plain { color: var(--muted); }
+  .fit { flex: 0 999 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+  .fit.over { color: var(--red-strong); }
+  .addr { flex: 1 1 0; font-size: 13px; }
+  .hasacts { position: relative; overflow: hidden; }
+
+  /* 행에 올리면 뜨는 열기 · 작업 버튼 (Notion 표의 "열기") */
+  .acts { position: absolute; right: 4px; top: 7px; z-index: 3; display: none; align-items: center; gap: 1px; padding: 2px; border-radius: 6px; background: #fff; box-shadow: 0 8px 12px rgba(25,25,25,.027), 0 2px 6px rgba(25,25,25,.027), 0 0 0 1px rgba(42,28,0,.07); }
+  .row:hover .acts, .row:focus-within .acts, .mgrp:hover .acts, .acts.keep { display: flex; }
+  .acts button { height: 20px; padding: 0 4px; border-radius: 4px; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; letter-spacing: .5px; color: #7d7a75; white-space: nowrap; }
+  .acts button:hover { background: rgba(33, 27, 23, 0.051); }
+  .acts svg.i { width: 14px; height: 14px; }
+  .acts svg.pki { width: 15.25px; height: 20px; color: var(--icon); flex: none; }
+
+  .trade { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; font-size: 14px; font-weight: 450; line-height: 20px; white-space: nowrap; flex: none; }
+  .trade.sale { background: #fdebec; color: #8f4b46; }
+  .trade.jeonse { background: #e7f3f8; color: #337ea9; }
+  .trade.monthly { background: #fbf3db; color: #8f6b1f; }
+  .cell > .trade, .cell > .pill { margin-top: .5px; }
+
+  /* 단계 색: 바탕(--tb) · 글자(--tf) · 점(--dot). 알약과 옆 패널의 진행 경로가 함께 쓴다 */
+  .gray { --tb: #f1f1ef; --tf: #5f5e59; --dot: #a3a09a; }
+  .info { --tb: var(--info-soft); --tf: var(--info-strong); --dot: var(--info); }
+  .orange { --tb: var(--orange-soft); --tf: var(--orange-strong); --dot: var(--orange); }
+  .violet { --tb: var(--violet-soft); --tf: var(--violet); --dot: var(--violet); }
+  .warning { --tb: var(--warning-soft); --tf: var(--warning-strong); --dot: var(--warning); }
+  .success { --tb: var(--success-soft); --tf: var(--success); --dot: var(--success); }
+  .destructive { --tb: var(--red-soft); --tf: var(--red-strong); --dot: var(--red); }
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 9px 0 7px; border-radius: 10px; background: var(--tb); color: var(--tf); font-size: 14px; font-weight: 450; line-height: 20px; white-space: nowrap; flex: none; }
+  .pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--dot); flex: none; }
+  .pill.dim { --tb: #f1f1ef; --tf: var(--muted); --dot: #b9b6b0; }
+
+  .cell.stage { padding: 0; }
+  .stagebtn { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: 36px; padding: 0 8px; overflow: hidden; }
+  .stagebtn:hover { background: rgba(44, 44, 43, 0.035); }
+  .stagebtn[aria-expanded="true"], .stagebtn:focus-visible { outline: 0; box-shadow: inset 0 0 0 2px #2383e2; }
+  .stagebtn.as-prop { width: auto; min-height: 28px; margin-left: -6px; padding: 0 6px; border-radius: 6px; }
+  .aux { flex: none; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .aux.visit { display: inline-flex; align-items: center; gap: 3px; color: var(--info-strong); }
+  .aux.visit svg { width: 12px; height: 12px; }
+  .aux.deal { color: var(--success); }
+  .aux.reason { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+  .sum { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg-sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .sum span { display: inline-flex; align-items: center; gap: 5px; }
+  .sum i { width: 6px; height: 6px; border-radius: 50%; background: var(--dot); }
+  .none { font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .linkbtn { display: inline-flex; align-items: center; gap: 3px; height: 22px; margin-top: -.5px; padding: 0 6px 0 4px; border-radius: 4px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .linkbtn:hover { background: var(--hover); color: var(--fg); }
+  .linkbtn svg { width: 13px; height: 13px; }
+  .cell.match { position: relative; }
+  .addbtn { position: absolute; right: 6px; top: 7px; width: 22px; height: 22px; border-radius: 4px; display: none; place-items: center; background: #fff; color: var(--muted); box-shadow: 0 2px 6px rgba(25,25,25,.03), 0 0 0 1px rgba(42,28,0,.07); }
+  .row:hover .addbtn, .row:focus-within .addbtn { display: grid; }
+  .addbtn:hover { background: #f6f5f4; color: var(--fg); }
+  .addbtn svg { width: 14px; height: 14px; }
+
+  /* 메모는 칸에 넣지 않는다. 줄 바로 아래에 한 줄 전체를 차지하고(끝까지 읽힌다), 눌러서 그 자리에서 고친다. */
+  .mmemo { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 8px; padding: 0 12px 7px 8px; border-bottom: 1px solid var(--line); background: #fff; cursor: text; }
+  .mmemo.flat { position: sticky; left: 0; width: var(--view-w, 100%); padding-left: 72px; }
+  .mmemo .lbl { font-size: 13px; line-height: 21px; color: var(--muted); }
+  .row.current + .mmemo, .row.selected + .mmemo { background: var(--row-on); }
+  .mgrp:hover > .mmemo { background: var(--row-hover); }
+  .memobtn { display: block; width: calc(100% + 8px); min-height: 21px; margin: 0 -4px; padding: 0 4px; border-radius: 3px; cursor: text; text-align: left; }
+  .memobtn:hover { background: rgba(44, 44, 43, 0.045); }
+  .clamp { display: block; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-sub); }
+  .row.dim + .mmemo .clamp { color: var(--muted); }
+  .clamp.ph { color: var(--faint); }
+  /* 고치는 칸은 떠 있지 않고 메모가 있던 자리에 그대로 놓인다. 쓰는 만큼 아래로 늘어난다. */
+  .memoedit { display: block; width: calc(100% + 8px); min-height: 21px; margin: 0 -4px; padding: 0 4px; border: 0; outline: 0; resize: none; overflow: hidden; border-radius: 3px; background: #fff; font-size: 14px; font-weight: 450; line-height: 21px; box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.57); }
+
+  /* 단계별 묶음 머리 */
+  .ghead { border-bottom: 1px solid var(--line); background: #fff; }
+  .ghead .in { position: sticky; left: 0; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 4px 8px 0 0; }
+  .ghead .cnt { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .ghead + .ghead, .mgrp + .ghead { margin-top: 6px; }
+
+  .addrow { position: sticky; left: 0; display: flex; align-items: center; gap: 8px; width: 100%; height: 36px; padding: 0 8px 0 32px; color: #a19e99; font-size: 14px; }
+  .addrow:hover, .addrow:focus-visible { background: rgba(33, 27, 23, 0.03); color: var(--muted); }
+  .addwrap { border-bottom: 1px solid var(--line); }
+  .empty { position: sticky; left: 0; width: min(100%, 100vw - 256px); padding: 56px 16px; text-align: center; color: var(--muted); }
+  .empty .btn { margin-top: 12px; }
+
+  .selbar { flex: none; display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 16px; border-top: 1px solid var(--line); font-size: 12.5px; }
+  .selbar b { font-weight: 500; }
+  .selbar button { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .selbar button:hover { text-decoration: underline; text-underline-offset: 2px; }
+  .foot { flex: none; display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ── 버튼 · 입력 ── */
+  .btn { height: 30px; padding: 0 12px; border-radius: 6px; font-size: 13.5px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; flex: none; }
+  .btn svg { width: 14px; height: 14px; }
+  .btn.dark { background: var(--fg); color: #fff; }
+  .btn.dark:hover { background: #000; }
+  .btn.dark:disabled { opacity: .38; }
+  .btn.line { box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .btn.line:hover { background: var(--hover-soft); }
+  .btn.quiet { padding: 0 8px; font-weight: 400; color: var(--muted); }
+  .btn.quiet:hover { background: var(--red-soft); color: var(--red-strong); }
+  .btn.danger { background: var(--red); color: #fff; }
+  .btn.danger:hover { background: #cf3636; }
+  .field { height: 32px; padding: 0 10px; border: 0; outline: 0; border-radius: 6px; background: #fff; font-size: 14px; box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .field:focus { box-shadow: inset 0 0 0 2px rgba(35, 131, 226, 0.6); }
+  textarea.field { height: auto; padding: 7px 10px; line-height: 21px; resize: vertical; }
+  .field.bad { box-shadow: inset 0 0 0 2px rgba(224, 62, 62, 0.55); }
+  .err { margin-top: 8px; font-size: 12.5px; line-height: 19px; color: var(--red-strong); }
+
+  /* ── 옆 상세 패널 ── */
+  .peek { position: absolute; top: 0; right: 0; bottom: 0; z-index: 20; width: 560px; max-width: calc(100% - 72px); display: flex; flex-direction: column; background: #fff; border-left: 1px solid var(--line-strong); box-shadow: -2px 0 8px rgba(0, 0, 0, 0.03); }
+  .peek:focus { outline: 0; }
+  .peek.in { animation: slide .18s ease-out; }
+  @keyframes slide { from { transform: translateX(28px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .peek.in, .toast, .row.flash > .cell { animation: none; } }
+  .peek-bar { height: 44px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 12px; }
+  .peek-bar .tool svg { width: 18px; height: 18px; stroke-width: 1.6; }
+  .peek-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 24px 48px; }
+  .peek h2 { font-size: 22px; font-weight: 700; line-height: 1.3; letter-spacing: -.01em; word-break: keep-all; }
+  .peek .where { margin-top: 2px; font-size: 13px; color: var(--muted); }
+  .props { margin-top: 14px; }
+  .prop { display: grid; grid-template-columns: 104px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 34px; }
+  .prop dt { display: flex; align-items: center; gap: 6px; color: var(--muted); white-space: nowrap; }
+  .prop dt svg { color: var(--icon); }
+  .prop dd { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+  .prop.top { align-items: start; } .prop.top dt, .prop.top dd { padding-top: 6.5px; }
+  .sec { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .sec h3 { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
+  .sec h3 .n { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sec h3 .linkbtn { margin: 0 -6px 0 auto; font-weight: 400; }
+  .sec .props { margin-top: 6px; }
+  .hint { font-size: 12.5px; line-height: 19px; color: var(--muted); }
+  .path { display: flex; gap: 2px; margin-top: 12px; }
+  .step { flex: 1 1 0; min-width: 0; height: 44px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; padding: 0 8px 0 18px; font-size: 12px; line-height: 15px; background: rgba(44, 44, 43, 0.035); color: rgba(121, 118, 111, 0.72); clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%); }
+  .step:first-child { padding-left: 10px; border-radius: 5px 0 0 5px; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%); }
+  .step:last-child { border-radius: 0 5px 5px 0; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 10px 50%); }
+  .step b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: inherit; }
+  .step small { min-height: 13px; font-size: 11px; line-height: 13px; opacity: .8; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .step.done { background: rgba(44, 44, 43, 0.07); color: var(--muted); }
+  .step.cur { flex-grow: 1.5; background: var(--tb); color: var(--tf); font-weight: 600; }
+  .step.fail { background: var(--red-soft); color: var(--red-strong); font-weight: 600; }
+  .step.blocked { opacity: .55; cursor: not-allowed; }
+  button.step:hover { filter: brightness(.96); }
+  .guide { margin-top: 14px; font-size: 14px; font-weight: 600; }
+  .alert { display: flex; gap: 8px; margin-top: 10px; padding: 8px 12px; border-radius: 6px; background: var(--warning-soft); color: var(--warning-strong); font-size: 12.5px; line-height: 19px; }
+  .alert svg { width: 14px; height: 14px; margin-top: 2.5px; }
+  .sublabel { margin: 14px 0 6px; font-size: 12px; color: var(--muted); }
+  .inline { display: flex; align-items: center; gap: 8px; }
+  .actrow { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+  .pmemo { display: block; width: calc(100% + 16px); min-height: 34px; margin: 6px -8px 0; padding: 6.5px 8px; border-radius: 6px; white-space: pre-wrap; cursor: text; }
+  .pmemo:hover { background: var(--hover-soft); }
+  .pmemo.ph { color: var(--faint); }
+  .pmemo-edit { display: block; width: calc(100% + 16px); margin: 6px -8px 0; }
+  .log { margin-top: 8px; }
+  .log li { list-style: none; padding: 7px 0; }
+  .log ul, ul.log { margin: 8px 0 0; padding: 0; }
+  .log .meta { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .log .meta .tag { height: 18px; font-size: 12px; line-height: 18px; }
+  .form { display: grid; gap: 8px; margin-top: 10px; padding: 12px; border-radius: 8px; background: var(--side); }
+  .form .inline { justify-content: flex-end; }
+  .form select.field { padding: 0 8px; }
+
+  /* ── 떠 있는 판 · 메뉴 ── */
+  /* 판은 알림(#toasts, 90)보다 위에 둔다. 방금 연 메뉴의 아래쪽이 남아 있던 알림에 가려지면 안 보이는 항목을 누르게 된다. 창(.scrim)이 열릴 때는 판을 먼저 닫으므로 서로 겹치지 않는다. */
+  .pop { position: fixed; z-index: 95; max-height: calc(100vh - 16px); overflow: auto; border-radius: 8px; background: #fff; box-shadow: var(--pop); }
+  .menu { width: 240px; padding: 0; }
+  .menu .grp { padding: 4px; }
+  .menu .grp + .grp { border-top: 1px solid var(--line); }
+  .menu .lbl { padding: 4px 8px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--muted); }
+  .mi { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; padding: 0 8px; border-radius: 6px; font-size: 14px; font-weight: 450; white-space: nowrap; }
+  .mi:hover, .mi:focus-visible { outline: 0; background: rgba(33, 27, 23, 0.055); }
+  .mi > svg.i { width: 14px; height: 14px; color: var(--muted); }
+  .mi > svg.pki { width: 13px; height: 17px; color: var(--icon); flex: none; }
+  .mi .end { margin-left: auto; display: inline-flex; color: var(--muted); }
+  .mi .end svg { width: 14px; height: 14px; }
+  .mi.red { color: var(--red-strong); }
+  .mi.red > svg.i { color: currentColor; }
+  .mi[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+  .mi.blocked .pill { opacity: .45; }
+  .why { padding: 8px 12px; border-top: 1px solid var(--line); font-size: 12px; line-height: 18px; color: var(--muted); }
+  .panel { padding: 4px; }
+  .find { display: flex; align-items: center; gap: 6px; height: 34px; margin: -4px -4px 4px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .find svg { width: 14px; height: 14px; }
+  .find input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 13.5px; }
+  .find input::placeholder { color: var(--muted); }
+  .opts { max-height: 288px; overflow: auto; }
+  .opt { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 4px 8px; border-radius: 6px; font-size: 13.5px; }
+  .opt:hover, .opt:focus-visible { outline: 0; background: rgba(33, 27, 23, 0.055); }
+  .opt .kind { margin-left: auto; font-size: 12px; color: var(--faint); }
+  .opt .pill { font-size: 13.5px; }
+  .nomatch { padding: 14px 8px; text-align: center; font-size: 13px; color: var(--muted); }
+  .pft { display: flex; align-items: center; justify-content: space-between; margin: 4px -4px -4px; padding: 6px 12px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+  .pft button:hover { color: var(--fg); text-decoration: underline; text-underline-offset: 2px; }
+  .range { width: 316px; padding: 14px; }
+  .range h4 { font-size: 14px; font-weight: 600; }
+  .range .hint { margin: 2px 0 12px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  .presets button { height: 26px; padding: 0 10px; border-radius: 13px; font-size: 12.5px; color: var(--fg-sub); box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .presets button:hover { background: var(--hover-soft); }
+  .presets button[aria-pressed="true"] { background: rgba(35, 131, 226, 0.1); color: #2383e2; font-weight: 500; box-shadow: none; }
+  .minmax { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .minmax .field { flex: 1; width: 0; }
+  .range .ft { display: flex; justify-content: flex-end; gap: 6px; margin-top: 14px; }
+
+  /* ── 창 ── */
+  .scrim { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px; background: rgba(15, 15, 15, 0.4); }
+  .dlg { width: min(780px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; border-radius: 12px; background: #fff; box-shadow: 0 24px 48px rgba(15, 15, 15, 0.18), 0 0 0 1px rgba(42, 28, 0, 0.07); }
+  .dlg.sm { width: min(460px, 100%); }
+  .dlg header { padding: 18px 20px 0; }
+  .dlg h2 { font-size: 16px; font-weight: 600; }
+  .dlg header p { margin-top: 4px; font-size: 13px; line-height: 20px; color: var(--muted); }
+  .dlg .body { min-height: 0; overflow: auto; padding: 16px 20px 4px; }
+  .dlg footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 20px 16px; }
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .lab { display: block; font-size: 13px; font-weight: 500; color: var(--fg-sub); }
+  .lab em { font-style: normal; color: var(--red); }
+  .lab + .box, .lab > .field { margin-top: 6px; }
+  .lab > .field { display: block; width: 100%; font-weight: 400; color: var(--fg); }
+  .box { border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line-strong); overflow: hidden; }
+  .box .find { margin: 0; }
+  .box .list { height: 244px; overflow: auto; padding: 4px; }
+  .pk { display: grid; gap: 1px; width: 100%; padding: 6px 8px; border-radius: 6px; }
+  .pk:hover { background: var(--hover-soft); }
+  .pk[aria-selected="true"] { background: rgba(35, 131, 226, 0.1); }
+  .pk[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+  .pk .l1 { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 500; }
+  .pk .l1 .trade { height: 18px; font-size: 12.5px; line-height: 18px; }
+  .pk .l2 { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; line-height: 18px; color: var(--muted); }
+  .fixed { padding: 10px 12px; }
+  .kv { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 8px 8px; align-items: center; }
+  .kv dt { color: var(--muted); }
+  .dlg .alert { margin: 12px 0 0; }
+  .dlg .hint { margin-top: 12px; }
+  .amount { display: grid; gap: 10px; margin-top: 16px; }
+  .amount .eq { margin-top: 4px; font-size: 12.5px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* ── 알림 ── */
+  #toasts { position: fixed; right: 20px; bottom: 20px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
+  .toast { display: flex; align-items: flex-start; gap: 10px; max-width: 400px; padding: 10px 12px 10px 14px; border-radius: 8px; background: #fff; font-size: 13.5px; box-shadow: 0 8px 24px rgba(15, 15, 15, 0.12), 0 0 0 1px rgba(42, 28, 0, 0.07); animation: rise .16s ease-out; }
+  @keyframes rise { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .toast .ti { margin-top: 2.5px; color: var(--success); }
+  .toast.warn .ti { color: var(--warning); }
+  .toast small { display: block; font-size: 12.5px; line-height: 19px; color: var(--muted); }
+  .toast { pointer-events: auto; }   /* 알림 밑의 안 보이는 것이 눌리지 않게. 알림 사이 빈틈(#toasts)만 통과시킨다 */
+  .toast button { margin: -2px 0; padding: 2px 8px; border-radius: 4px; font-size: 13px; font-weight: 500; color: var(--info-strong); white-space: nowrap; }
+  .toast button:hover { background: rgba(35, 131, 226, 0.1); }
+
+  /* ── 지금 화면 (비교용 고정 그림) ── */
+  .now { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .now .bar1 { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .now .ptabs, .now .ptoggle { display: flex; gap: 1px; height: 30px; padding: 2px; border-radius: 15px; background: #f1f0ec; flex: none; }
+  .now .ptabs span { display: inline-flex; align-items: center; height: 26px; padding: 0 12px; border-radius: 13px; font-size: 13px; color: var(--muted); }
+  .now .ptabs .on { background: var(--fg); color: #fff; font-weight: 500; }
+  .now .psearch { flex: 1; min-width: 200px; max-width: 520px; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 15px; background: #f1f0ec; font-size: 13px; color: var(--muted); }
+  .now .psearch svg { width: 14px; height: 14px; }
+  .now .ptoggle { margin-left: auto; }
+  .now .ptoggle span { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 12px; color: var(--muted); }
+  .now .ptoggle svg { width: 14px; height: 14px; }
+  .now .ptoggle .on { background: #fff; color: var(--fg); font-weight: 500; }
+  .now .pbtn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 15px; background: var(--fg); color: #fff; font-size: 13px; font-weight: 500; flex: none; }
+  .now .pbtn svg { width: 14px; height: 14px; }
+  .now .bar2 { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .now .bchip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 12px; border: 1px solid #e3e2de; border-radius: 14px; background: #fff; font-size: 12.5px; color: var(--muted); }
+  .now .bchip svg { width: 12px; height: 12px; color: #a5a39f; }
+  .now .nscroll { flex: 1; min-height: 0; overflow: auto; }
+  .now .ntbl { min-width: 874px; }
+  .now .nhd, .now .nrow { display: grid; grid-template-columns: 40px 28px 88px 128px 96px 112px minmax(140px, 200px) minmax(110px, 1fr) 132px; }
+  .now .nhd { position: sticky; top: 0; z-index: 3; height: 36px; background: #f7f7f5; border-bottom: 1px solid var(--line); }
+  .now .nhd > div, .now .nrow > div { display: flex; align-items: center; min-width: 0; padding: 0 10px; border-right: 1px solid var(--line); }
+  .now .nhd > div:first-child, .now .nrow > div:first-child { justify-content: center; padding: 0; border-right: 0; }
+  .now .nhd > div:last-child, .now .nrow > div:last-child { border-right: 0; }
+  .now .nhd > div { gap: 4px; font-size: 12px; color: var(--muted); }
+  .now .nhd svg { width: 12px; height: 12px; opacity: .7; }
+  .now .ngroup { border-bottom: 1px solid var(--line); }
+  .now .nrow { min-height: 40px; font-size: 13px; }
+  .now .nrow.line { border-bottom: 1px solid var(--line); }
+  .now .nrow .nm { font-weight: 600; }
+  .now .nrow .bud { font-weight: 500; }
+  .now .nrow .place { padding: 8px 10px; line-height: 20px; word-break: keep-all; }
+  .now .nrow > div:nth-child(2) { justify-content: center; padding: 0; color: var(--muted); }
+  .now .nrow > div:nth-child(2) svg { width: 16px; height: 16px; }
+  .now .nhold { margin-left: 6px; padding: 2px 4px; border-radius: 6px; background: var(--side); font-size: 11px; font-weight: 400; color: var(--muted); }
+  .now .ncnt { gap: 4px; flex-wrap: wrap; font-size: 11.5px; }
+  .now .ncnt b { padding: 2px 6px; border-radius: 6px; font-weight: 500; }
+  .now .ncnt .a { background: var(--info-soft); color: var(--info-strong); }
+  .now .ncnt .c { background: var(--success-soft); color: var(--success); }
+  .now .ncnt .x { background: var(--red-soft); color: var(--red-strong); }
+  .now .nmemo { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 0 8px; padding: 6px 12px 6px 78px; border-bottom: 1px solid var(--line); font-size: 12px; line-height: 20px; }
+  .now .nmemo span:first-child { color: var(--muted); }
+  .now .nbranch { position: relative; margin: 8px 12px 12px 78px; padding-left: 48px; display: grid; gap: 4px; }
+  .now .nbranch::before { content: ''; position: absolute; left: 0; top: -8px; bottom: 34px; width: 1.5px; background: #e6e5e3; }
+  .now .lane { position: relative; display: grid; grid-template-columns: minmax(230px, .8fr) minmax(0, 1.6fr) 28px; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 6px; }
+  .now .lane > svg.conn { position: absolute; left: -48px; top: 50%; width: 48px; height: 64px; margin-top: -32px; overflow: visible; fill: none; stroke: #e6e5e3; stroke-width: 1.5; stroke-linecap: round; }
+  .now .lt { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+  .now .lt .trade { height: 20px; font-size: 11.5px; font-weight: 500; }
+  .now .nbadge { padding: 1px 8px; border: 1px solid; border-radius: 6px; font-size: 12px; font-weight: 500; }
+  .now .ls { display: flex; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .now .ls b { font-weight: 500; color: var(--fg); }
+  .now .track { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+  .now .nchip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border: 1px solid; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
+  .now .nchip svg { width: 14px; height: 14px; }
+  .now .nchip.done { border-color: rgba(15, 123, 108, .35); background: var(--success-soft); color: var(--success); }
+  .now .nchip.cur { border-color: rgba(35, 131, 226, .4); background: var(--info-soft); color: var(--info-strong); box-shadow: 0 0 0 1px rgba(35, 131, 226, .15); }
+  .now .nchip.pend { border-color: var(--line); background: var(--side); color: var(--muted); }
+  .now .nchip.fail { border-color: rgba(224, 62, 62, .35); background: var(--red-soft); color: var(--red-strong); }
+  .now .nline { width: 12px; height: 2px; border-radius: 1px; background: var(--line); flex: none; }
+  .now .nline.done { background: rgba(15, 123, 108, .45); }
+  .now .nline.cur { background: rgba(35, 131, 226, .45); }
+  .now .lm { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; padding-left: 4px; font-size: 12px; color: var(--muted); }
+  .now .lm i { color: var(--faint); }
+  .now .lmore { color: var(--muted); }
+  .now .lmore svg { width: 14px; height: 14px; }
+  .now .nstatus { flex: none; display: flex; align-items: center; min-height: 28px; padding: 0 12px; border-top: 1px solid var(--line); background: #faf9f6; font-size: 11px; color: var(--muted); }
+  .now .ncb { width: 16px; height: 16px; border-radius: 4px; box-shadow: inset 0 0 0 1px #d6d5d0; background: #fff; }
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+  <b>희망매물 · Notion형</b>
+  <span class="demo-seg" id="mode">
+    <button data-v="new" aria-pressed="true">시안</button>
+    <button data-v="now" aria-pressed="false">지금</button>
+  </span>
+  <span class="demo-seg" id="size">
+    <button data-v="normal" aria-pressed="true">고객 10명</button>
+    <button data-v="many" aria-pressed="false">고객 26명</button>
+  </span>
+  <span class="demo-note">이 띠와 왼쪽 메뉴는 비교용 그림입니다 · 고객·매물·금액은 가상 데이터 · 저장되지 않습니다</span>
+</div>
+
+<div class="app">
+  <aside class="side" id="side" aria-hidden="true"></aside>
+  <div class="content">
+    <div class="tabstrip" id="tabstrip" aria-hidden="true"></div>
+    <main class="page" id="page"></main>
+  </div>
+</div>
+<div id="layer"></div>
+<div id="toasts" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+/* ── 아이콘 ── */
+const I = {
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  chevronDown: '<path d="m6 9 6 6 6-6"/>',
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
+  chevronsRight: '<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>',
+  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  moreV: '<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  userRound: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+  ruler: '<path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/>',
+  won: '<circle cx="12" cy="12" r="9"/><path d="m8 9 1.6 6 2.4-5 2.4 5L16 9"/><path d="M7.5 12h9"/>',
+  mapPin: '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  branch: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  text: '<path d="M15 12H3"/><path d="M17 18H3"/><path d="M21 6H3"/>',
+  pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  swap: '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+  filter: '<path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/>',
+  sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  circleDot: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/>',
+  circleDashed: '<circle cx="12" cy="12" r="9" stroke-dasharray="3.6 3.47"/>',
+  circleOff: '<path d="m2 2 20 20"/><path d="M8.35 2.69A10 10 0 0 1 21.3 15.65"/><path d="M19.08 19.08A10 10 0 1 1 4.92 4.92"/>',
+  calendar: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+  arrowRight: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+  listOrdered: '<path d="M10 12h11"/><path d="M10 18h11"/><path d="M10 6h11"/><path d="M4 10h2"/><path d="M4 6h1v4"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>',
+  hash: '<line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/>',
+  unfold: '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>',
+  fold: '<path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>',
+  building: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/>',
+  dashboard: '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  map: '<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>',
+  megaphone: '<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+  message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  userSearch: '<circle cx="10" cy="7" r="4"/><path d="M10.3 15H7a4 4 0 0 0-4 4v2"/><circle cx="17" cy="17" r="3"/><path d="m21 21-1.9-1.9"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  wallet: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+  checkSquare: '<path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+};
+const ic = (n, c = '') => `<svg class="i ${c}" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
+const PEEK = '<svg class="pki" viewBox="0 0 16 20" fill="none" aria-hidden="true"><rect x="1" y="4.75" width="14" height="10.5" rx="1.5" stroke="currentColor" stroke-width="1.25"/><rect x="7.75" y="6.125" width="5.5" height="7.75" rx=".5" fill="currentColor"/></svg>';
+const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+/* ── 용어 (앱의 status-config와 같은 이름) ── */
+const STAGES = ['suggested', 'buyerInterested', 'viewingConfirmed', 'viewing', 'negotiating', 'dealCreated'];
+const ORDER = [...STAGES, 'closed'];
+const STAGE = {
+  suggested: { label: '내부 후보', tone: 'gray' }, buyerInterested: { label: '고객 관심', tone: 'info' },
+  viewingConfirmed: { label: '임장 조율', tone: 'orange' }, viewing: { label: '임장', tone: 'violet' },
+  negotiating: { label: '협상', tone: 'warning' }, dealCreated: { label: '거래전환', tone: 'success' },
+  closed: { label: '종료', tone: 'destructive' },
+};
+const COPY = {
+  suggested: ['고객에게 제안', '후보에서 제외 · 종료'], buyerInterested: ['관심 있음 · 임장 조율로', '관심 없음 · 종료'],
+  viewingConfirmed: ['조율 완료 · 임장으로', '임장 불가 · 종료'], viewing: ['임장 후 관심 있음 · 협상으로', '임장 후 관심 없음 · 종료'],
+  negotiating: ['조건 합의 · 거래로 전환', '협상 결렬 · 종료'],
+};
+const GUIDE = {
+  suggested: '고객에게 이 매물을 제안하세요', buyerInterested: '고객의 방문 의사를 확인하세요',
+  viewingConfirmed: '집주인과 방문 일정을 조율하세요', viewing: '방문을 진행하고 결과를 남기세요', negotiating: '가격과 입주일을 조율하세요',
+};
+const PICKER = [['검토', ['suggested', 'buyerInterested']], ['진행', ['viewingConfirmed', 'viewing', 'negotiating']], ['결과', ['dealCreated', 'closed']]];
+const DEAL_FLOW = ['preparing', 'contracted', 'settling', 'completed'];
+const DEAL_LABEL = { preparing: '계약 준비', contracted: '본계약', settling: '중도금/잔금', completed: '잔금완료' };
+const TRADE = { sale: '매매', jeonse: '전세', monthly: '월세' };
+const TYPE = { apartment: '아파트', officetel: '오피스텔', villa: '빌라', house: '주택', commercial: '상가', land: '토지', living_accommodation: '생활숙박' };
+const STATUS = { active: '활성', hold: '보류' };
+const URGENCY = { urgent: '급함', normal: '보통', flexible: '여유' };
+const CONFIRM = { verified: ['확인 완료', 'success'], overdue: ['확인 기한 지남', 'warning'], no_answer: ['연락 안 됨', 'warning'], unverified: ['미확인', 'gray'] };
+const CONSULT = { phone: '전화', visit: '방문', online: '온라인' };
+const BUDGET_LABEL = { '': '예산', sale: '매매가', jeonse: '전세가', monthly: '보증금' };
+
+/* ── 가상 데이터 (금액은 만원, 면적은 평) ── */
+const NOW = new Date('2026-11-16T10:00:00');
+const NOW_STR = '2026-11-16T10:00';
+const ME = '이서연';
+const LISTS = {
+  l1: { site: '고덕그라시움', dong: '103동', unit: '1503호', type: 'apartment', py: 34, ut: '84A', trade: 'sale', price: 135000, ward: '고덕동', road: '고덕로 333', owner: '박정호', ownerPhone: '010-9876-5432', confirm: 'verified', reg: '2026-10-21' },
+  l2: { site: '고덕아르테온', dong: '215동', unit: '802호', type: 'apartment', py: 33, ut: '84B', trade: 'sale', price: 142000, ward: '상일동', road: '고덕로 360', owner: '최은정', ownerPhone: '010-4411-2087', confirm: 'verified', reg: '2026-10-28' },
+  l3: { site: '고덕센트럴아이파크', dong: '109동', unit: '1201호', type: 'apartment', py: 34, ut: '84A', trade: 'sale', price: 128000, ward: '상일동', road: '상일로6길 26', owner: '윤태식', ownerPhone: '010-3320-7741', confirm: 'verified', reg: '2026-10-02' },
+  l4: { site: '고덕자이', dong: '204동', unit: '903호', type: 'apartment', py: 25, ut: '59A', trade: 'jeonse', price: 62000, ward: '상일동', road: '고덕로97길 20', owner: '강미란', ownerPhone: '010-2290-5518', confirm: 'verified', reg: '2026-10-30' },
+  l5: { site: '고덕롯데캐슬베네루체', dong: '311동', unit: '1502호', type: 'apartment', py: 25, ut: '59B', trade: 'jeonse', price: 60000, ward: '상일동', road: '고덕로 399', owner: '서동욱', ownerPhone: '010-7135-9024', confirm: 'verified', reg: '2026-11-04' },
+  l6: { site: '고덕역 효성해링턴타워', dong: 'B동', unit: '1107호', type: 'officetel', py: 12, ut: '29', trade: 'monthly', deposit: 2000, rent: 85, ward: '고덕동', road: '고덕로 262', owner: '장현수', ownerPhone: '010-5567-1203', confirm: 'verified', reg: '2026-11-01' },
+  l7: { site: '천호 한강푸르지오시티', dong: '', unit: '705호', type: 'officetel', py: 11, ut: '26', trade: 'monthly', deposit: 1000, rent: 95, ward: '천호동', road: '올림픽로 664', owner: '배소연', ownerPhone: '010-8842-3317', confirm: 'overdue', reg: '2026-09-18' },
+  l8: { site: '고덕래미안힐스테이트', dong: '215동', unit: '1803호', type: 'apartment', py: 43, ut: '114A', trade: 'sale', price: 210000, ward: '고덕동', road: '아리수로50길 50', owner: '한명숙', ownerPhone: '010-6603-4875', confirm: 'verified', reg: '2026-10-11' },
+  l9: { site: '래미안솔베뉴', dong: '108동', unit: '702호', type: 'apartment', py: 25, ut: '59A', trade: 'sale', price: 103000, ward: '명일동', road: '상암로 225', owner: '조영훈', ownerPhone: '010-3178-6642', confirm: 'verified', reg: '2026-09-25' },
+  l10: { site: '고덕그라시움', dong: '141동', unit: '505호', type: 'apartment', py: 25, ut: '59C', trade: 'sale', price: 108000, ward: '고덕동', road: '고덕로 333', owner: '임수정', ownerPhone: '010-9214-5530', confirm: 'verified', reg: '2026-10-05' },
+  l11: { site: '고덕비즈밸리 상가', dong: '', unit: '1층 104호', type: 'commercial', py: 15, ut: '', trade: 'monthly', deposit: 5000, rent: 280, ward: '고덕동', road: '고덕비즈밸리로 26', owner: '(주)동명개발', ownerPhone: '02-441-2200', confirm: 'verified', reg: '2026-10-14' },
+  l12: { site: '고덕역 효성해링턴타워', dong: 'A동', unit: '1512호', type: 'officetel', py: 17, ut: '42', trade: 'jeonse', price: 32000, ward: '고덕동', road: '고덕로 262', owner: '신재원', ownerPhone: '010-2456-8890', confirm: 'verified', reg: '2026-11-08' },
+  l13: { site: '강동역 SK리더스뷰', dong: '', unit: '908호', type: 'officetel', py: 18, ut: '45', trade: 'jeonse', price: 36000, ward: '천호동', road: '천호대로 1077', owner: '오세라', ownerPhone: '010-7790-1124', confirm: 'verified', reg: '2026-11-05' },
+  l14: { site: '암사동 선사빌', dong: '', unit: '302호', type: 'villa', py: 22, ut: '', trade: 'sale', price: 47000, ward: '암사동', road: '올림픽로98길 31', owner: '노영자', ownerPhone: '010-3345-9082', confirm: 'verified', reg: '2026-10-19' },
+  l15: { site: '강동롯데캐슬퍼스트', dong: '112동', unit: '1404호', type: 'apartment', py: 33, ut: '84A', trade: 'jeonse', price: 68000, ward: '암사동', road: '상암로 11', owner: '권혁진', ownerPhone: '010-5512-7743', confirm: 'verified', reg: '2026-11-10' },
+  l16: { site: '강일리버파크 3단지', dong: '305동', unit: '1102호', type: 'apartment', py: 25, ut: '59A', trade: 'sale', price: 82000, ward: '강일동', road: '아리수로93길 40', owner: '도현아', ownerPhone: '010-6678-2219', confirm: 'unverified', reg: '2026-11-12' },
+  l17: { site: '고덕아르테온', dong: '302동', unit: '1705호', type: 'apartment', py: 34, ut: '84A', trade: 'sale', price: 139000, ward: '상일동', road: '고덕로 360', owner: '백승호', ownerPhone: '010-8123-4456', confirm: 'verified', reg: '2026-11-13' },
+  l18: { site: '고덕자이', dong: '112동', unit: '1401호', type: 'apartment', py: 34, ut: '84A', trade: 'jeonse', price: 69000, ward: '상일동', road: '고덕로97길 20', owner: '진미경', ownerPhone: '010-4409-3321', confirm: 'verified', reg: '2026-11-09' },
+};
+const BASE_REQS = [
+  { id: 'r1', name: '김민서', phone: '010-2345-6789', status: 'active', urgency: 'urgent', assignee: '이서연', trade: 'sale', types: ['apartment'], areaMin: 30, areaMax: 34, priceMin: 120000, priceMax: 140000, regions: ['고덕동'], sites: ['고덕그라시움', '고덕아르테온'], moveIn: '2027-01-15', memo: '초등학교 가까운 곳, 남향 선호. 대출 4억 예정.' },
+  { id: 'r2', name: '박준형', phone: '010-3456-1290', status: 'active', urgency: 'normal', assignee: '최도윤', trade: 'jeonse', types: ['apartment', 'officetel'], areaMin: 24, areaMax: 30, priceMin: 50000, priceMax: 65000, regions: ['상일동', '고덕동'], sites: ['고덕자이'], moveIn: '2026-12-20', memo: '반려견 가능한 집이어야 함.' },
+  { id: 'r3', name: '이하늘', phone: '010-5521-8830', status: 'active', urgency: 'urgent', assignee: '이서연', trade: 'monthly', types: ['officetel'], areaMin: 10, areaMax: 15, depMin: 1000, depMax: 3000, rentMax: 90, regions: ['천호동', '고덕동'], sites: ['고덕역 효성해링턴타워'], moveIn: '2026-11-30', memo: '' },
+  { id: 'r4', name: '정유진', phone: '010-7781-0042', status: 'hold', urgency: 'flexible', assignee: '한지호', trade: 'sale', types: ['apartment'], areaMin: 40, areaMax: null, priceMin: 180000, priceMax: 220000, regions: ['고덕동'], sites: ['고덕래미안힐스테이트'], moveIn: null, memo: '기존 집 매도 후 진행. 내년 봄 예상.' },
+  { id: 'r5', name: '최서준', phone: '010-9087-3315', status: 'active', urgency: 'normal', assignee: '최도윤', trade: 'sale', types: ['apartment'], areaMin: 24, areaMax: 26, priceMin: 90000, priceMax: 105000, regions: ['명일동', '고덕동'], sites: ['래미안솔베뉴', '고덕그라시움'], moveIn: '2027-02-28', memo: '신혼부부. 역세권 우선.' },
+  { id: 'r6', name: '한소희', phone: '010-4132-7765', status: 'active', urgency: 'normal', assignee: '한지호', trade: 'jeonse', types: ['apartment'], areaMin: 30, areaMax: 34, priceMin: null, priceMax: 70000, regions: ['암사동'], sites: ['강동롯데캐슬퍼스트'], moveIn: '2027-02-10', memo: '아이 전학 때문에 2월 전 입주 희망.' },
+  { id: 'r7', name: '오지호', phone: '010-6240-1187', status: 'active', urgency: 'flexible', assignee: '이서연', trade: 'monthly', types: ['commercial'], areaMin: null, areaMax: null, depMin: null, depMax: 5000, rentMax: 300, regions: ['고덕동'], sites: ['고덕비즈밸리 상가'], moveIn: null, memo: '카페 창업. 1층 코너 자리 선호.' },
+  { id: 'r8', name: '윤채원', phone: '010-8875-2203', status: 'active', urgency: 'normal', assignee: '최도윤', trade: 'sale', types: ['apartment', 'officetel'], areaMin: 20, areaMax: 25, priceMin: 70000, priceMax: 85000, regions: ['강일동', '상일동'], sites: ['강일리버파크 3단지'], moveIn: null, memo: '' },
+  { id: 'r9', name: '강도현', phone: '010-2098-5541', status: 'active', urgency: 'urgent', assignee: '한지호', trade: 'jeonse', types: ['officetel'], areaMin: 15, areaMax: 20, priceMin: 25000, priceMax: 35000, regions: ['천호동', '고덕동'], sites: [], moveIn: '2026-12-05', memo: '직장이 강동역 근처. 12월 초 입주.' },
+  { id: 'r10', name: '문예린', phone: '010-3367-9912', status: 'active', urgency: 'flexible', assignee: '', trade: 'sale', types: ['villa', 'house'], areaMin: 20, areaMax: null, priceMin: null, priceMax: 50000, regions: ['암사동', '천호동'], sites: [], moveIn: null, memo: '주차 1대 필수.' },
+];
+const BASE_MATCHES = [
+  { id: 'm1', req: 'r1', listing: 'l1', stage: 'viewing', created: '2026-10-27', since: '2026-11-13', updated: '2026-11-14', viewing: '2026-11-21T14:00', memo: '집주인 주말만 가능. 토요일 오후 방문 예정.',
+    consults: [{ type: 'phone', at: '2026-11-13', by: '이서연', text: '집주인과 통화. 21일(토) 오후 2시 방문 가능하다고 함.' }, { type: 'phone', at: '2026-11-06', by: '이서연', text: '고객에게 매물 설명. 남향·고층이라 관심 있다고 함.' }],
+    tasks: [{ title: '등기부등본 확인 후 고객에게 전달', due: '2026-11-19' }] },
+  { id: 'm2', req: 'r1', listing: 'l2', stage: 'buyerInterested', created: '2026-11-05', since: '2026-11-10', updated: '2026-11-14', memo: '가격 조정 여지 확인 중.' },
+  { id: 'm3', req: 'r1', listing: 'l3', stage: 'closed', closedFrom: 'viewing', closedReason: '임장 후 관심 없음', created: '2026-10-20', since: '2026-11-08', updated: '2026-11-08', memo: '저층·북동향이라 제외.' },
+  { id: 'm4', req: 'r2', listing: 'l4', stage: 'negotiating', created: '2026-10-31', since: '2026-11-12', updated: '2026-11-15', memo: '보증금 6억으로 조정 요청. 집주인 회신 대기.',
+    consults: [{ type: 'visit', at: '2026-11-11', by: '최도윤', text: '임장 완료. 채광과 구조 만족. 보증금이 조정되면 계약 의사 있음.' }] },
+  { id: 'm5', req: 'r2', listing: 'l5', stage: 'viewingConfirmed', created: '2026-11-07', since: '2026-11-12', updated: '2026-11-12', memo: '세입자와 방문 시간 조율 중.' },
+  { id: 'm6', req: 'r3', listing: 'l6', stage: 'buyerInterested', created: '2026-11-09', since: '2026-11-13', updated: '2026-11-13', memo: '' },
+  { id: 'm7', req: 'r3', listing: 'l7', stage: 'suggested', created: '2026-11-12', since: '2026-11-12', updated: '2026-11-12', memo: '' },
+  { id: 'm8', req: 'r4', listing: 'l8', stage: 'suggested', created: '2026-11-02', since: '2026-11-02', updated: '2026-11-02', memo: '보류가 풀리면 바로 제안.' },
+  { id: 'm9', req: 'r5', listing: 'l9', stage: 'dealCreated', created: '2026-10-12', since: '2026-11-06', updated: '2026-11-10', deal: { id: 'd1', stage: 'contracted', price: 103000 }, memo: '11.10 계약금 입금 완료.' },
+  { id: 'm10', req: 'r5', listing: 'l10', stage: 'closed', closedFrom: 'negotiating', closedReason: '협상 결렬', created: '2026-10-15', since: '2026-11-03', updated: '2026-11-03', memo: '매도인이 가격 조정 불가.' },
+  { id: 'm11', req: 'r7', listing: 'l11', stage: 'viewing', created: '2026-11-04', since: '2026-11-12', updated: '2026-11-13', viewing: '2026-11-18T11:00', memo: '' },
+  { id: 'm12', req: 'r9', listing: 'l12', stage: 'suggested', created: '2026-11-14', since: '2026-11-14', updated: '2026-11-14', memo: '' },
+  { id: 'm13', req: 'r9', listing: 'l13', stage: 'buyerInterested', created: '2026-11-10', since: '2026-11-13', updated: '2026-11-13', memo: '예산보다 1,000만 높지만 위치가 좋아 관심.' },
+  { id: 'm14', req: 'r10', listing: 'l14', stage: 'negotiating', created: '2026-10-25', since: '2026-11-11', updated: '2026-11-14', memo: '잔금일 1월 말로 협의 중.' },
+];
+const EXTRA_NAMES = ['서지우', '임하준', '배수아', '조은호', '신유나', '권태양', '황보람', '안시우', '송다인', '류건우', '홍예준', '전소율', '남궁민', '차은서', '고은별', '표지훈'];
+
+let REQS = [], MATCHES = [], SEQ = 0;
+const clone = (v) => JSON.parse(JSON.stringify(v));
+/**
+ * 데이터는 한 번만 만든다. 위 띠의 "고객 26명"은 extra 표시가 붙은 고객을 함께 보여 줄 뿐이라,
+ * 데이터 양을 바꿔도 시안에서 고친 내용(단계 · 메모 · 새 매칭)이 남는다.
+ */
+function loadData() {
+  REQS = clone(BASE_REQS);
+  MATCHES = clone(BASE_MATCHES);
+  const flow = ['suggested', 'buyerInterested', 'viewingConfirmed', 'viewing', 'negotiating'];
+  EXTRA_NAMES.forEach((name, i) => {
+    const base = BASE_REQS[i % BASE_REQS.length];
+    const id = 'x' + i;
+    REQS.push({ ...clone(base), id, name, extra: true, phone: `010-${String(3100 + i * 137).slice(-4)}-${String(2040 + i * 311).slice(-4)}`,
+      urgency: ['normal', 'flexible', 'urgent'][i % 3], status: i % 7 === 3 ? 'hold' : 'active', memo: i % 3 === 0 ? base.memo : '' });
+    BASE_MATCHES.filter((m) => m.req === base.id && m.stage !== 'closed' && m.stage !== 'dealCreated').slice(0, i % 3).forEach((m, k) => {
+      const stage = LISTS[m.listing].confirm === 'verified' ? flow[(i + k) % 5] : 'suggested';
+      MATCHES.push({ ...clone(m), id: `${id}-${k}`, req: id, extra: true, stage, viewing: stage === 'viewing' ? `2026-11-${19 + ((i + k) % 6)}T${10 + (i % 6)}:00` : null,
+        deal: null, consults: [], tasks: [], memo: k ? '' : m.memo, since: `2026-11-${String(8 + (i % 7)).padStart(2, '0')}` });
+    });
+  });
+  MATCHES.forEach((m) => {
+    m.consults = m.consults || []; m.tasks = m.tasks || []; m.memo = m.memo || '';
+    // 단계별 도달일: 등록일과 지금 단계에 들어온 날 사이를 고르게 나눈다
+    const reach = m.stage === 'closed' ? m.closedFrom : m.stage;
+    const n = STAGES.indexOf(reach), a = +DT(m.created), b = +DT(m.since);
+    m.entered = {};
+    for (let i = 0; i <= n; i += 1) m.entered[STAGES[i]] = new Date(n ? a + (b - a) * (m.stage === 'closed' ? i / (n + 1) : i / n) : a).toISOString();
+  });
+}
+/** 지금 화면에 보이는 범위 */
+const reqs = () => (S.size === 'many' ? REQS : REQS.filter((r) => !r.extra));
+const matches = () => (S.size === 'many' ? MATCHES : MATCHES.filter((m) => !m.extra));
+const REQ = (id) => REQS.find((r) => r.id === id);
+const M = (id) => MATCHES.find((m) => m.id === id);
+
+/* ── 표기 ── */
+const pad = (n) => String(n).padStart(2, '0');
+function DT(s) { return new Date(s.length <= 10 ? s + 'T09:00:00' : s); }
+const fmtMD = (s) => { const d = DT(s); return `${d.getMonth() + 1}.${d.getDate()}`; };
+const fmtMDHM = (s) => { const d = DT(s); return `${fmtMD(s)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtFull = (s) => { const d = DT(s); return `${d.getMonth() + 1}.${d.getDate()}(${'일월화수목금토'[d.getDay()]}) ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const fmtYMD = (s) => { const d = DT(s); return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`; };
+const daysIn = (m) => Math.max(0, Math.floor((NOW - DT(m.since)) / 864e5));
+const daysLabel = (m) => (daysIn(m) === 0 ? '오늘' : `${daysIn(m)}일째`);
+const money = (v) => {
+  if (v == null) return '—';
+  const e = Math.floor(v / 10000), m = v % 10000;
+  return [e ? `${e.toLocaleString()}억` : '', m ? `${m.toLocaleString()}만` : ''].filter(Boolean).join('\u00a0') || '0';
+};
+const range = (a, b) => (a && b ? (a === b ? money(a) : `${money(a)}\u00a0~ ${money(b)}`) : a ? `${money(a)}\u00a0이상` : b ? `${money(b)}\u00a0이하` : '협의');
+const budgetText = (r) => (r.trade === 'monthly' ? `${range(r.depMin, r.depMax)} / 월\u00a0${r.rentMax ? `${money(r.rentMax)}\u00a0이하` : '협의'}` : range(r.priceMin, r.priceMax));
+const areaText = (r) => (r.areaMin && r.areaMax ? (r.areaMin === r.areaMax ? `${r.areaMin}평` : `${r.areaMin} ~ ${r.areaMax}평`) : r.areaMin ? `${r.areaMin}평 이상` : r.areaMax ? `${r.areaMax}평 이하` : '평형 협의');
+const placeText = (r) => [r.regions.join(', '), r.sites.join(', ')].filter(Boolean).join(' · ') || '지역 협의';
+const typeText = (r) => (r.types.length ? r.types.map((t) => TYPE[t]).join(', ') : '유형 협의');
+const priceText = (l) => (l.trade === 'monthly' ? `${money(l.deposit)} / 월\u00a0${money(l.rent)}` : money(l.price));
+const duText = (l) => [l.dong, l.unit].filter(Boolean).join(' ');
+const title = (l) => [l.site, duText(l)].join(' ');
+/** 매물 가격이 고객 예산 상한 안인지 (매물관리 연결 구매고객 표와 같은 판정) */
+function fit(l, r) {
+  if (l.trade === 'monthly') {
+    const d = l.deposit != null && r.depMax != null ? l.deposit - r.depMax : null;
+    const n = l.rent != null && r.rentMax != null ? l.rent - r.rentMax : null;
+    if (d == null && n == null) return null;
+    if (d > 0) return { label: `보증금 ${money(d)} 초과`, over: true };
+    if (n > 0) return { label: `월세 ${money(n)} 초과`, over: true };
+    return { label: '예산 안', over: false };
+  }
+  if (l.price == null || r.priceMax == null || l.trade !== r.trade) return null;
+  return l.price > r.priceMax ? { label: `${money(l.price - r.priceMax)} 초과`, over: true } : { label: '예산 안', over: false };
+}
+const fitHtml = (f, dim) => (f ? `<span class="fit${f.over && !dim ? ' over' : ''}" title="${f.label}">${f.label}</span>` : '');
+
+/* ── 상태 ── */
+const emptyFilters = () => ({ stages: [], locations: [], types: [], budget: null, rent: null, area: null, statuses: [], assignees: [], urgencies: [], from: '', to: '' });
+const S = {
+  mode: 'new', size: 'normal', view: 'buyer', trade: '', q: '', searching: false, filterOpen: true, f: emptyFilters(),
+  showPhones: true, showAssignee: false, collapsed: new Set(), stageCollapsed: new Set(['dealCreated', 'closed']), sel: new Set(), peek: null,
+  closedPref: new Map(),   // 고객별로 "종료 n건"을 직접 여닫은 기록 { auto, open } (같은 상황에서만 따른다)
+  memoFor: null,           // 메모가 없던 매칭에 방금 메모 줄을 연 경우 그 매칭
+};
+/** 옆 패널에서 쓰던 글(상담 · 태스크 · 방문 일시)은 매칭별로 기억한다. 화면이 다시 그려지거나 패널을 닫았다 열어도 남는다. */
+const drafts = new Map();
+const draftOf = (id) => {
+  if (!drafts.has(id)) drafts.set(id, { consult: false, cType: 'phone', cText: '', task: false, tTitle: '', tDue: '2026-11-18', visit: '' });
+  return drafts.get(id);
+};
+let pop = null, dlg = null, D = null, lastFocus = null;
+const layer = $('#layer'), toasts = $('#toasts');
+
+/* ── 단계 규칙 (앱의 getMatchStageBlockReason과 같은 순서) ── */
+const nextStage = (st) => { const i = STAGES.indexOf(st); return i < 0 || i >= STAGES.length - 1 ? null : STAGES[i + 1]; };
+function blockReason(m, target) {
+  // 거래로 넘어간 매칭의 단계는 거래관리가 맡는다. 여기서 되돌리거나 종료하면 연결된 거래와 어긋난다.
+  if (m.stage === 'dealCreated' && m.deal && target !== 'dealCreated') return '거래로 전환된 매칭입니다. 이후 단계는 거래관리에서 진행합니다.';
+  if (target === 'closed' || m.stage === 'closed') return null;
+  const cur = STAGES.indexOf(m.stage), ti = STAGES.indexOf(target), l = LISTS[m.listing];
+  if (cur < 1 && ti >= 1) {
+    if (l.confirm === 'no_answer') return '집주인·의뢰인 확인이 되지 않았습니다. 다시 확인한 뒤 진행해 주세요.';
+    if (l.confirm === 'overdue') return '매물 확인 기한이 지났습니다. 다시 확인한 뒤 고객에게 제안해 주세요.';
+    if (l.confirm !== 'verified') return '매물 확인을 완료한 뒤 고객 관심 단계로 이동할 수 있습니다.';
+  }
+  if (target === 'viewing' && cur < 2) return '집주인·점유자와 임장 조율을 먼저 완료해 주세요.';
+  if (ti > cur + 1) return `${STAGE[STAGES[cur + 1]].label} 단계를 먼저 완료해 주세요.`;
+  return null;
+}
+function nodeState(m, s) {
+  const i = STAGES.indexOf(s);
+  if (m.stage === 'closed') { const c = STAGES.indexOf(m.closedFrom || 'suggested'); return i < c ? 'completed' : i === c ? 'failed' : 'pending'; }
+  const c = STAGES.indexOf(m.stage);
+  return i < c ? 'completed' : i === c ? 'current' : 'pending';
+}
+function changeStage(id, target) {
+  const m = M(id);
+  if (!m || m.stage === target) return;
+  const why = blockReason(m, target);
+  if (why) { toast('단계 이동 전 확인이 필요합니다', { desc: why, tone: 'warn' }); return; }
+  if (target === 'dealCreated') { openConvert(id); return; }
+  applyStage(m, target);
+}
+/**
+ * 되돌리기는 바로 앞의 변경 하나에만 쓴다. 그 뒤에 다른 변경(메모 · 일정 · 거래 전환 · 삭제 등)이 생기면
+ * 예전 알림의 되돌리기 버튼을 없앤다. 낡은 상태로 덮어써서 뒤의 변경이 사라지는 일을 막는다.
+ */
+let undoToast = null;
+function expireUndo() {
+  if (!undoToast) return;
+  const b = $('button', undoToast);
+  if (b) b.remove();
+  undoToast = null;
+}
+function applyStage(m, target, silent) {
+  expireUndo();
+  const snap = clone(m);                      // 되돌릴 때는 매칭 전체를 변경 전으로 돌린다
+  if (target === 'closed') {
+    m.closedFrom = m.stage;
+    m.closedReason = COPY[m.closedFrom] ? COPY[m.closedFrom][1].split(' · ')[0] : null;
+  } else {
+    m.closedFrom = null; m.closedReason = null;
+    const ti = STAGES.indexOf(target);
+    STAGES.forEach((s, i) => { if (i > ti) delete m.entered[s]; else if (!m.entered[s]) m.entered[s] = NOW_STR; });
+    m.entered[target] = NOW_STR;
+  }
+  m.stage = target; m.since = NOW_STR; m.updated = NOW_STR;
+  renderBody(); renderPeek();
+  // 종료한 매칭의 줄이 접힌 "종료 n건" 안으로 들어가 포커스가 갈 곳을 잃었으면, 그 묶음의 여닫이로 옮긴다
+  if (target === 'closed' && (!document.activeElement || document.activeElement === document.body)) {
+    const t = document.querySelector(`#tbl [data-fid="ctw:${m.req}"]`) || document.querySelector('#tbl [data-fid="tw:g:closed"]');   // 단계별 보기에서는 종료 묶음의 머리
+    if (t) t.focus({ preventScroll: true });
+  }
+  if (silent) return;
+  undoToast = toast(target === 'closed' ? '매칭을 종료했습니다' : `${STAGE[target].label} 단계로 변경했습니다`, { action: ['되돌리기', () => {
+    undoToast = null;
+    for (const k of Object.keys(m)) delete m[k];
+    Object.assign(m, snap);
+    renderBody(); renderPeek();
+  }] });
+}
+
+/* ── 필터 ── */
+const overlap = (a, b, f) => (f.max == null || a == null || a <= f.max) && (f.min == null || b == null || b >= f.min);
+function reqPasses(r) {
+  const f = S.f;
+  if (f.locations.length && !f.locations.some((v) => (v[0] === 'r' ? r.regions : r.sites).includes(v.slice(2)))) return false;
+  if (f.types.length && !f.types.some((t) => r.types.includes(t))) return false;
+  if (f.budget && !(r.trade === 'monthly' ? overlap(r.depMin, r.depMax, f.budget) : overlap(r.priceMin, r.priceMax, f.budget))) return false;
+  if (f.rent && S.trade === 'monthly' && !overlap(null, r.rentMax, f.rent)) return false;
+  if (f.area && !overlap(r.areaMin, r.areaMax, f.area)) return false;
+  if (f.statuses.length && !f.statuses.includes(r.status)) return false;
+  if (f.assignees.length && !f.assignees.includes(r.assignee || 'none')) return false;
+  if (f.urgencies.length && !f.urgencies.includes(r.urgency)) return false;
+  if (f.from || f.to) {
+    if (!r.moveIn) return false;
+    if (f.from && r.moveIn < f.from) return false;
+    if (f.to && r.moveIn > f.to) return false;
+  }
+  return true;
+}
+/** '매칭 없음'은 고객별 보기에만 있다 */
+const stageFilters = () => (S.view === 'stage' ? S.f.stages.filter((s) => s !== 'none') : S.f.stages);
+const reqText = (r) => [r.name, r.phone, r.phone.replace(/-/g, ''), r.regions.join(' '), r.sites.join(' '), r.memo].join(' ').toLowerCase();
+const matchText = (m) => { const l = LISTS[m.listing], r = REQ(m.req); return [title(l), l.ward, l.road, r.name, r.phone, r.phone.replace(/-/g, ''), m.memo].join(' ').toLowerCase(); };
+/** 고객별: 희망 조건 한 건이 한 줄. 매칭이 없는 조건도 남는다 (앱의 groupMatchesByRequirement와 같은 규칙) */
+function buyerGroups() {
+  const q = S.q.trim().toLowerCase(), sf = stageFilters();
+  return reqs().flatMap((r) => {
+    if ((S.trade && r.trade !== S.trade) || !reqPasses(r)) return [];
+    const all = MATCHES.filter((m) => m.req === r.id);
+    const staged = all.filter((m) => !sf.length || sf.includes(m.stage));
+    if (sf.length && !staged.length && !(all.length === 0 && sf.includes('none'))) return [];
+    const hit = !q || reqText(r).includes(q);
+    const ms = hit ? staged : staged.filter((m) => matchText(m).includes(q));
+    if (!hit && !ms.length) return [];
+    const closedLast = (m) => (m.stage === 'closed' ? 1 : 0);
+    return [{ r, ms: ms.sort((a, b) => closedLast(a) - closedLast(b) || a.created.localeCompare(b.created)) }];
+  }).sort((a, b) => a.r.name.localeCompare(b.r.name, 'ko'));
+}
+function stageList() {
+  const q = S.q.trim().toLowerCase(), sf = stageFilters();
+  return matches().filter((m) => {
+    if (sf.length && !sf.includes(m.stage)) return false;
+    if (!reqPasses(REQ(m.req))) return false;
+    if (S.trade && LISTS[m.listing].trade !== S.trade) return false;
+    return !q || matchText(m).includes(q);
+  });
+}
+
+const CHIPS = [
+  { key: 'stages', label: '단계', icon: 'circleDot', kind: 'check', w: 196 },
+  { key: 'locations', label: '지역·단지', icon: 'mapPin', kind: 'check', w: 280, search: true },
+  { key: 'types', label: '매물 유형', icon: 'tag', kind: 'check', w: 196 },
+  { key: 'budget', label: () => BUDGET_LABEL[S.trade], icon: 'won', kind: 'range' },
+  { key: 'rent', label: '월세', icon: 'won', kind: 'range', show: () => S.trade === 'monthly' },
+  { key: 'area', label: '희망 평형', icon: 'ruler', kind: 'range' },
+  { key: 'statuses', label: '상태', icon: 'circleDashed', kind: 'check', w: 180 },
+  { key: 'assignees', label: '담당자', icon: 'userRound', kind: 'check', w: 200 },
+  { key: 'urgencies', label: '긴급도', icon: 'zap', kind: 'check', w: 180 },
+  { key: 'moveIn', label: '입주 희망일', icon: 'calendar', kind: 'date' },
+];
+const CHIP = Object.fromEntries(CHIPS.map((c) => [c.key, c]));
+const chipLabel = (c) => (typeof c.label === 'function' ? c.label() : c.label);
+function optionsFor(key) {
+  const ko = (a, b) => a.localeCompare(b, 'ko');
+  if (key === 'stages') return [...(S.view === 'buyer' ? [['none', '매칭 없음']] : []), ...ORDER.map((s) => [s, STAGE[s].label])];
+  if (key === 'locations') {
+    const regions = [...new Set(reqs().flatMap((r) => r.regions))].sort(ko), sites = [...new Set(reqs().flatMap((r) => r.sites))].sort(ko);
+    return [...regions.map((n) => ['r:' + n, n, '지역']), ...sites.map((n) => ['s:' + n, n, '단지'])];
+  }
+  if (key === 'types') return Object.entries(TYPE);
+  if (key === 'statuses') return Object.entries(STATUS);
+  if (key === 'assignees') return [...[...new Set(reqs().map((r) => r.assignee).filter(Boolean))].sort(ko).map((n) => [n, n]), ...(reqs().some((r) => !r.assignee) ? [['none', '담당자 없음']] : [])];
+  if (key === 'urgencies') return Object.entries(URGENCY);
+  return [];
+}
+const RANGES = {
+  budget: { unit: '억', scale: 10000, desc: '고객이 원하는 금액 범위와 겹치면 표시합니다.',
+    presets: () => (S.trade === 'monthly' ? [['1,000만 이하', null, 1000], ['1,000만~5,000만', 1000, 5000], ['5,000만~1억', 5000, 10000], ['1억 이상', 10000, null]]
+      : S.trade === 'jeonse' ? [['3억 이하', null, 30000], ['3억~5억', 30000, 50000], ['5억~7억', 50000, 70000], ['7억 이상', 70000, null]]
+      : [['5억 이하', null, 50000], ['5억~10억', 50000, 100000], ['10억~15억', 100000, 150000], ['15억~20억', 150000, 200000], ['20억 이상', 200000, null]]) },
+  rent: { unit: '만원', scale: 1, desc: '고객이 원하는 월세 범위와 겹치면 표시합니다.',
+    presets: () => [['100만 이하', null, 100], ['100만~200만', 100, 200], ['200만~400만', 200, 400], ['400만 이상', 400, null]] },
+  area: { unit: '평', scale: 1, desc: '공급면적 기준 · 고객이 원하는 평형 범위와 겹치면 표시합니다.',
+    presets: () => [['20평 미만', null, 19], ['20평대', 20, 29], ['30평대', 30, 39], ['40평 이상', 40, null]] },
+};
+function rangeLabel(key, f) {
+  const hit = RANGES[key].presets().find(([, a, b]) => a === f.min && b === f.max);
+  if (hit) return hit[0];
+  const u = key === 'budget' ? money : key === 'rent' ? (v) => `${v}만` : (v) => `${v}평`;
+  return f.min != null && f.max != null ? `${u(f.min)}~${u(f.max)}` : f.min != null ? `${u(f.min)} 이상` : `${u(f.max)} 이하`;
+}
+function chipSummary(key) {
+  const f = S.f;
+  if (key === 'moveIn') return f.from && f.to ? `${f.from}~${f.to}` : f.from ? `${f.from} 이후` : f.to ? `${f.to} 이전` : null;
+  if (RANGES[key]) return f[key] ? rangeLabel(key, f[key]) : null;
+  const arr = key === 'stages' ? stageFilters() : f[key];
+  if (!arr.length) return null;
+  const first = (optionsFor(key).find((o) => o[0] === arr[0]) || [])[1] || arr[0];
+  return arr.length === 1 ? first : `${first} 외 ${arr.length - 1}`;
+}
+const chipCount = () => CHIPS.filter((c) => (!c.show || c.show()) && chipSummary(c.key)).length;
+const hasActive = () => S.q.trim() !== '' || S.trade !== '' || chipCount() > 0;
+function clearFilter(key) {
+  if (key === 'moveIn') { S.f.from = ''; S.f.to = ''; } else if (RANGES[key]) S.f[key] = null; else S.f[key] = [];
+}
+function resetFilters() {
+  S.q = ''; S.trade = ''; S.f = emptyFilters(); S.searching = false;
+  closePop(); renderToolbar(); renderBody();
+}
+
+/* ── 작은 조각 ── */
+const pill = (stage, dim) => `<span class="pill ${dim ? 'dim' : STAGE[stage].tone}">${STAGE[stage].label}</span>`;
+const tradeTag = (t) => `<span class="trade ${t}">${TRADE[t]}</span>`;
+const cbMark = (state) => `<span class="cb${state === true || state === 'true' ? ' on' : state === 'mixed' ? ' mixed' : ''}">${CHECK}</span>`;
+const cbx = (state, act, id, label) => `<button class="cbx" role="checkbox" aria-checked="${state}" aria-label="${esc(label)}" data-act="${act}" data-id="${id}" data-fid="cb:${act}:${id}">${cbMark(state)}</button>`;
+const who = (r, key) => `<button class="who" data-act="openReq" data-id="${r.id}" data-fid="who:${key}" title="${esc(r.name)} · 희망 조건 열기"><i class="av">${esc(r.name.slice(0, 1))}</i><span class="t">${esc(r.name)}</span></button>`;
+const ttl = (l) => `<span class="ttl" title="${esc(title(l))}"><span class="site">${esc(l.site)}</span><span class="du">${esc(duText(l))}</span></span>`;
+function rowActs(m, open) {
+  const label = `${REQ(m.req).name} · ${title(LISTS[m.listing])}`;
+  return `<span class="acts"><button data-act="peek" data-id="${m.id}" data-fid="open:${m.id}" aria-expanded="${open}" aria-label="${esc(label)} 상세 ${open ? '닫기' : '열기'}" title="${open ? '사이드 보기 닫기' : '사이드 보기에서 열기'}">${PEEK}${open ? '닫기' : '열기'}</button>`
+    + (m.memo || S.memoFor === m.id ? '' : `<button data-act="memoAdd" data-id="${m.id}" data-fid="memoadd:${m.id}" aria-label="${esc(label)} 메모 추가" title="메모 추가">${ic('pencil')}메모</button>`)
+    + `<button data-act="rowMenu" data-id="${m.id}" data-fid="menu:${m.id}" aria-haspopup="menu" aria-label="${esc(label)} 매칭 작업 메뉴" title="매칭 작업 메뉴">${ic('more')}</button></span>`;
+}
+function stageBtn(m, fid, inline, dim) {
+  const closed = m.stage === 'closed', idx = STAGES.indexOf(m.stage);
+  const visit = m.viewing && DT(m.viewing) >= NOW ? m.viewing : null;
+  let aux = '';
+  if (closed) aux = m.closedReason ? `<span class="aux reason">${esc(m.closedReason)}</span>` : '';
+  else if (m.stage === 'dealCreated') aux = m.deal ? `<span class="aux deal">${DEAL_LABEL[m.deal.stage]}</span>` : '';
+  else if (visit && !inline) aux = `<span class="aux visit num">${ic('calendar')}${fmtMDHM(visit)}</span>`;
+  else aux = `<span class="aux num">${idx + 1}/${STAGES.length}</span>`;
+  const tip = closed ? `${fmtMD(m.updated)} 종료` : `${idx + 1}/${STAGES.length} 단계 · 이 단계 ${daysLabel(m)} · ${fmtMD(m.updated)} 수정${visit ? ` · 방문 ${fmtFull(visit)}` : ''}`;
+  return `<button class="stagebtn${inline ? ' as-prop' : ''}" data-act="stageMenu" data-id="${m.id}" data-fid="${fid}" aria-haspopup="menu" aria-expanded="false" aria-label="단계 ${STAGE[m.stage].label} · 변경" title="${tip}">${pill(m.stage, closed || dim)}${aux}</button>`;
+}
+/** 매칭 메모: 줄 바로 아래에 한 줄 전체로 둔다. 메모가 없으면 줄도 없다 (줄에 올리면 나오는 "메모"로 추가한다). */
+function memoLine(m, flat) {
+  if (!m.memo && S.memoFor !== m.id) return '';
+  const label = `${REQ(m.req).name} · ${title(LISTS[m.listing])}`;
+  return `<div class="mmemo${flat ? ' flat' : ''}"><span class="lbl">메모</span><button class="memobtn" data-act="memo" data-id="${m.id}" data-fid="memo:${m.id}" aria-label="${esc(label)} 매칭 메모 편집" title="눌러서 메모 편집"><span class="clamp${m.memo ? '' : ' ph'}">${m.memo ? esc(m.memo) : '메모 추가'}</span></button></div>`;
+}
+const grid = (c) => ({ cols: c.map(([w, fr]) => (fr ? `minmax(${w}px,${fr}fr)` : `${w}px`)).join(' '), minw: c.reduce((a, [w]) => a + w, 0) });
+const H = (icon, label, cls = '') => `<div class="cell ${cls}" role="columnheader">${ic(icon)}<span class="tr">${label}</span></div>`;
+
+/* ── 고객별 표 ── */
+/**
+ * 고객(희망 조건) 줄을 펼치면 그 아래에 "표 안의 표"가 나온다. 매물관리에서 매물 줄을 펼쳤을 때 나오는
+ * "연결 구매고객" 패널을 뒤집은 구조다: 들여 쓴 흰 바탕, 자체 머리글과 칸 세로선, 거래 전환된 매물이 맨 위,
+ * 맨 아래 "매물 연결" 줄, 접혀 있는 "종료 n건".
+ */
+const MT = grid([[210, 1.3], [64], [76], [64], [184], [124, 1], [180], [92]]);
+const MT_HEAD = `<div class="row mhd" role="row">${H('building', '매물')}${H('swap', '거래')}${H('tag', '유형')}${H('ruler', '면적')}${H('won', '가격')}${H('mapPin', '주소')}${H('circleDot', '단계')}${H('clock', '최근 수정')}</div>`;
+function splitMatches(ms) {
+  const won = [], rest = [], closed = [];
+  for (const m of ms) (m.stage === 'dealCreated' ? won : m.stage === 'closed' ? closed : rest).push(m);
+  return { won, rest, closed };
+}
+/**
+ * 종료된 매칭은 접어 둔다. 단계 필터 · 검색을 쓰는 중이거나 지금 열어 본(또는 메모를 쓰는) 매칭이 그 안에 있으면 펼친다.
+ * 직접 여닫은 것은 그때와 같은 상황에서만 따른다: 평소에 접어 둔 것이 나중에 건 필터 · 검색의 결과까지 가리면 안 된다.
+ */
+const closedAuto = (closed) => stageFilters().length > 0 || S.q.trim() !== '' || closed.some((m) => m.id === S.peek || m.id === S.memoFor);
+function closedShown(r, closed) {
+  const auto = closedAuto(closed), pref = S.closedPref.get(r.id);
+  return pref && pref.auto === auto ? pref.open : auto;
+}
+/** 매물 한 줄 + (있으면) 그 아래 메모 한 줄 */
+function matchItem(m, r, dim) {
+  const l = LISTS[m.listing], cur = S.peek === m.id, line = memoLine(m);
+  return `<div class="mgrp${line ? ' has-memo' : ''}">
+    <div class="row child${dim ? ' dim' : ''}${cur ? ' current' : ''}" role="row" tabindex="0" data-row="match" data-id="${m.id}" data-fid="row:${m.id}">
+      <div class="cell hasacts">${ttl(l)}${rowActs(m, cur)}</div>
+      <div class="cell">${dim ? `<span class="plain">${TRADE[l.trade]}</span>` : tradeTag(l.trade)}</div>
+      <div class="cell"><span class="tr">${TYPE[l.type]}</span></div>
+      <div class="cell num">${l.py}평</div>
+      <div class="cell num"><span class="tr" title="${priceText(l)}">${priceText(l)}</span>${fitHtml(fit(l, r), dim)}</div>
+      <div class="cell"><span class="tr sub" title="${esc(l.ward)} · ${esc(l.road)}">${esc(l.ward)} · ${esc(l.road)}</span></div>
+      <div class="cell stage">${stageBtn(m, 'stage:' + m.id, false, dim)}</div>
+      <div class="cell num sub" title="${fmtYMD(m.updated)} 수정">${fmtMD(m.updated)}</div>
+    </div>${line}</div>`;
+}
+function nestHtml(g) {
+  const r = g.r, { won, rest, closed } = splitMatches(g.ms);
+  let h = '<div class="nest" role="row"><div class="nest-in" role="cell">';
+  // 고객 메모는 칸에 넣지 않고 펼친 자리의 첫 줄에 한 줄 전체로 둔다 (읽기 전용, 지금 화면과 같다)
+  if (r.memo) h += `<dl class="cmemo"><dt>고객 메모</dt><dd>${esc(r.memo)}</dd></dl>`;
+  if (g.ms.length) {
+    const shown = closed.length > 0 && closedShown(r, closed);
+    h += `<div class="mtwrap"><div class="mt" role="table" aria-label="${esc(r.name)} 연결 매물" style="--cols:${MT.cols};min-width:${MT.minw}px">${MT_HEAD}`;
+    h += won.map((m) => matchItem(m, r, false)).join('');
+    // 거래로 넘어간 매물이 있으면 나머지는 한 걸음 물러난다 (매물관리의 "다른 고객 n명 · 이 매물은 거래 진행 중"과 같은 자리)
+    if (won.length && rest.length) h += `<div class="mdiv">다른 매물 ${rest.length}건 · 이 고객은 거래 진행 중</div>`;
+    h += rest.map((m) => matchItem(m, r, won.length > 0)).join('');
+    h += `<button class="madd" data-act="create" data-req="${r.id}" data-fid="madd:${r.id}" aria-label="${esc(r.name)} 고객에게 매물 연결">${ic('plus')}매물 연결</button>`;
+    if (closed.length) {
+      h += `<div><button class="mclosed" data-act="toggleClosed" data-id="${r.id}" data-fid="ctw:${r.id}" aria-expanded="${shown}">${ic('chevronRight')}종료 ${closed.length}건</button></div>`;
+      if (shown) h += closed.map((m) => matchItem(m, r, true)).join('');
+    }
+    h += '</div></div>';
+  }
+  return h + '</div></div>';
+}
+function buyerTable(groups) {
+  const ids = groups.map((g) => g.r.id), n = ids.filter((id) => S.sel.has(id)).length;
+  const head = n && n === ids.length ? 'true' : n ? 'mixed' : 'false';
+  const foldable = groups.filter((g) => g.ms.length || g.r.memo), anyOpen = foldable.some((g) => !S.collapsed.has(g.r.id));
+  let h = `<div class="row hd" role="row">
+    <div class="cell sel pinA">${cbx(head, 'selAll', '', '보이는 희망 조건 전체 선택')}</div>
+    <div class="cell name pinB" role="columnheader">${foldable.length ? `<button class="tw" data-act="toggleAll" data-fid="tw:all" aria-expanded="${anyOpen}" aria-label="${anyOpen ? '메모와 연결 매물 모두 접기' : '메모와 연결 매물 모두 펼치기'}" title="${anyOpen ? '모두 접기' : '모두 펼치기'}">${ic('chevronRight')}</button>` : '<span class="tw"></span>'}${ic('user')}<span>고객</span></div>
+    ${S.showPhones ? H('phone', '연락처', 'pinP') : ''}${H('swap', '거래')}${H('tag', '매물 유형')}${H('ruler', '희망 평형')}${H('won', '예산')}${H('mapPin', '희망 지역·단지')}${H('branch', '매칭')}${S.showAssignee ? H('userRound', '담당') : ''}
+  </div>`;
+  for (const g of groups) {
+    const r = g.r, ms = g.ms, open = !S.collapsed.has(r.id), on = S.sel.has(r.id), has = ms.length > 0 || !!r.memo;
+    const act = ms.filter((m) => m.stage !== 'dealCreated' && m.stage !== 'closed').length, conv = ms.filter((m) => m.stage === 'dealCreated').length, cl = ms.filter((m) => m.stage === 'closed').length;
+    const summary = ms.length
+      ? `<span class="sum">${act ? `<span><i style="--dot:var(--info)"></i>진행 ${act}</span>` : ''}${conv ? `<span><i style="--dot:var(--success)"></i>거래 ${conv}</span>` : ''}${cl ? `<span><i style="--dot:var(--red)"></i>종료 ${cl}</span>` : ''}</span>`
+      : `<span class="none">매칭 없음</span><button class="linkbtn" data-act="create" data-req="${r.id}" data-fid="add:${r.id}" aria-label="${esc(r.name)} 매칭 생성">${ic('plus')}매물 연결</button>`;
+    h += `<div class="row parent${on ? ' selected' : ''}" role="row" tabindex="0" data-row="req" data-id="${r.id}" data-fid="row:${r.id}"${has ? ` aria-expanded="${open}"` : ''}>
+      <div class="cell sel pinA">${cbx(on, 'sel', r.id, `${r.name} 선택`)}</div>
+      <div class="cell name pinB">${has ? `<button class="tw" data-act="toggle" data-id="${r.id}" data-fid="tw:${r.id}" aria-expanded="${open}" aria-label="${esc(r.name)} ${ms.length ? '메모와 연결 매물' : '메모'} ${open ? '접기' : '펼치기'}">${ic('chevronRight')}</button>` : '<span class="tw"></span>'}${who(r, r.id)}${r.urgency === 'urgent' ? '<span class="urgent">급함</span>' : ''}${r.status === 'hold' ? '<span class="tag hold">보류</span>' : ''}</div>
+      ${S.showPhones ? `<div class="cell num pinP">${esc(r.phone)}</div>` : ''}
+      <div class="cell">${tradeTag(r.trade)}</div>
+      <div class="cell wrap">${esc(typeText(r))}</div>
+      <div class="cell num"><span class="tr">${areaText(r)}</span></div>
+      <div class="cell num strong wrap">${budgetText(r)}</div>
+      <div class="cell wrap">${esc(placeText(r))}</div>
+      <div class="cell match">${summary}${ms.length ? `<button class="addbtn" data-act="create" data-req="${r.id}" data-fid="add:${r.id}" title="이 고객에게 매물 연결" aria-label="${esc(r.name)} 매칭 생성">${ic('plus')}</button>` : ''}</div>
+      ${S.showAssignee ? `<div class="cell">${r.assignee ? esc(r.assignee) : '<span class="faint">—</span>'}</div>` : ''}
+    </div>`;
+    if (open && has) h += nestHtml(g);
+  }
+  return h;
+}
+
+/* ── 단계별 표 ── */
+function stageTable(list) {
+  const ids = list.map((m) => m.id), n = ids.filter((id) => S.sel.has(id)).length;
+  const head = n && n === ids.length ? 'true' : n ? 'mixed' : 'false';
+  let h = `<div class="row hd" role="row">
+    <div class="cell sel pinA">${cbx(head, 'selAll', '', '현재 매칭 목록 전체 선택')}</div>
+    <div class="cell pinB" role="columnheader" title="번호">No</div>${H('user', '고객', 'pinC')}${S.showPhones ? H('phone', '연락처') : ''}${H('building', '매물')}${H('swap', '거래')}${H('won', '가격')}${H('ruler', '구매조건')}${H('clock', '최근 수정')}
+  </div>`;
+  for (const stage of ORDER) {
+    const rows = list.filter((m) => m.stage === stage).sort((a, b) => b.updated.localeCompare(a.updated));
+    if (!rows.length) continue;
+    const open = !S.stageCollapsed.has(stage), gn = rows.filter((m) => S.sel.has(m.id)).length;
+    const gstate = gn && gn === rows.length ? 'true' : gn ? 'mixed' : 'false';
+    h += `<div class="ghead" role="row"><div class="in">${cbx(gstate, 'selGroup', stage, `${STAGE[stage].label} 매칭 전체 선택`)}<button class="tw" data-act="toggleStage" data-id="${stage}" data-fid="tw:g:${stage}" aria-expanded="${open}" aria-label="${STAGE[stage].label} ${open ? '접기' : '펼치기'}">${ic('chevronRight')}</button>${pill(stage)}<span class="cnt">${rows.length}</span></div></div>`;
+    if (!open) continue;
+    rows.forEach((m, i) => {
+      const l = LISTS[m.listing], r = REQ(m.req), on = S.sel.has(m.id), dim = stage === 'closed', cur = S.peek === m.id, line = memoLine(m, true);
+      h += `<div class="mgrp${line ? ' has-memo' : ''}"><div class="row srow${on ? ' selected' : ''}${dim ? ' dim' : ''}${cur ? ' current' : ''}" role="row" tabindex="0" data-row="match" data-id="${m.id}" data-fid="row:${m.id}">
+        <div class="cell sel pinA">${cbx(on, 'sel', m.id, `${r.name} · ${title(l)} 선택`)}</div>
+        <div class="cell num faint pinB">${i + 1}</div>
+        <div class="cell name pinC" style="padding-left:6px">${who(r, m.id)}${r.urgency === 'urgent' && !dim ? '<span class="urgent">급함</span>' : ''}</div>
+        ${S.showPhones ? `<div class="cell num">${esc(r.phone)}</div>` : ''}
+        <div class="cell hasacts">${ttl(l)}<span class="tr sub addr" title="${esc(l.ward)} · ${esc(l.road)}">${esc(l.ward)} · ${esc(l.road)}</span>${rowActs(m, cur)}</div>
+        <div class="cell">${dim ? `<span class="plain">${TRADE[l.trade]}</span>` : tradeTag(l.trade)}</div>
+        <div class="cell num"><span class="tr" title="${priceText(l)}">${priceText(l)}</span>${fitHtml(fit(l, r), dim)}</div>
+        <div class="cell"><span class="tr" title="${TRADE[r.trade]} · ${esc(budgetText(r))}">${TRADE[r.trade]} · ${budgetText(r)}</span></div>
+        <div class="cell num sub">${m.viewing && DT(m.viewing) >= NOW && stage === 'viewing' ? `<span class="aux visit" title="방문 ${fmtFull(m.viewing)}">${ic('calendar')}${fmtMDHM(m.viewing)}</span>` : fmtMD(m.updated)}</div>
+      </div>${line}</div>`;
+    });
+  }
+  return h;
+}
+
+/* ── 화면 그리기 ── */
+/**
+ * 다시 그린 뒤에도 쓰던 자리를 지킨다: 포커스가 있던 요소(data-fid 또는 id)와 입력칸의 커서 위치를 되찾는다.
+ * 옆 패널 안에서 누른 버튼이 사라졌으면 패널에 포커스를 둔다 (Esc · Tab이 패널에서 이어지도록).
+ */
+function keepFocus(fn) {
+  const a = document.activeElement, live = !!(a && a !== document.body && a.dataset);
+  const key = live ? (a.dataset.fid ? `[data-fid="${a.dataset.fid}"]` : a.id ? '#' + a.id : null) : null;
+  let caret = null;
+  try { if (live && typeof a.selectionStart === 'number') caret = [a.selectionStart, a.selectionEnd]; } catch (err) { caret = null; }
+  const inPeek = live && !!a.closest('#peek');
+  fn();
+  if (!key || (a.isConnected && document.activeElement === a)) return;
+  const el = document.querySelector(key);
+  if (el) {
+    el.focus({ preventScroll: true });
+    if (caret && el.setSelectionRange) { try { el.setSelectionRange(caret[0], caret[1]); } catch (err) { /* 커서 위치가 없는 칸 */ } }
+  } else if (inPeek) {
+    const peek = $('#peek');
+    if (peek && !peek.hidden) peek.focus({ preventScroll: true });
+  }
+}
+function render() {
+  closePop(); closeDialog();
+  const page = $('#page');
+  if (S.mode === 'now') { page.innerHTML = nowHtml(); return; }
+  page.innerHTML = '<div id="vb"></div><div id="fr"></div><div class="scroller" id="sc"><div id="tbl" role="table" aria-label="희망매물"></div></div><div id="sb"></div><div class="foot" id="ft"></div><aside class="peek" id="peek" tabindex="-1" aria-label="매칭 상세 패널" hidden></aside>';
+  // 표를 굴리면 표에 붙은 메뉴가 따라간다. 붙은 칸이 화면 밖으로 나가면 닫는다.
+  $('#sc').addEventListener('scroll', (e) => {
+    if (!pop || !pop.inTable) return;
+    const a = document.querySelector(pop.anchorSel), r = a && a.getBoundingClientRect(), box = e.currentTarget.getBoundingClientRect();
+    if (r && r.width && (r.bottom < box.top + 37 || r.top > box.bottom)) closePop(); else placePop();
+  }, { passive: true, capture: true });   // 안쪽 표를 가로로 굴릴 때도 받는다 (scroll은 위로 올라오지 않는다)
+  renderToolbar(); renderBody(); renderPeek();
+}
+const resetBtn = () => `<button class="ghost" data-act="reset" data-fid="reset">${ic('reset')}초기화</button>`;
+function renderToolbar() {
+  const vb = $('#vb'), fr = $('#fr');
+  if (!vb) return;
+  const n = chipCount(), open = S.searching || S.q !== '';
+  keepFocus(() => {
+    vb.innerHTML = `<div class="viewbar">
+    <div class="tabs" role="tablist" aria-label="거래유형">${[['', '전체'], ...Object.entries(TRADE)].map(([v, l]) => `<button class="vtab" role="tab" aria-selected="${S.trade === v}" data-act="trade" data-v="${v}" data-fid="tab:${v || 'all'}">${l}</button>`).join('')}</div>
+    <div class="tools">
+      ${!S.filterOpen && hasActive() ? resetBtn() : ''}
+      <button class="tool${!S.filterOpen && n ? ' count' : ''}" data-act="toggleFilters" data-fid="t-filter" aria-pressed="${S.filterOpen}" aria-label="${S.filterOpen ? '필터 줄 접기' : '필터 줄 펼치기'}" title="필터">${ic('filter')}${!S.filterOpen && n ? `<span class="num">${n}</span>` : ''}</button>
+      ${open
+        ? `<div class="search${S.q ? ' has' : ''}" id="searchbox">${ic('search')}<input id="q" value="${esc(S.q)}" placeholder="고객, 연락처, 매물, 주소 검색" aria-label="희망매물 검색" autocomplete="off" spellcheck="false"><button class="clr" data-act="clearSearch" aria-label="검색어 지우기">${ic('x')}</button></div>`
+        : `<button class="tool" data-act="openSearch" data-fid="t-search" aria-label="검색" title="검색 (/)">${ic('search')}</button>`}
+      <button class="tool" id="t-display" data-act="display" aria-haspopup="menu" aria-expanded="false" aria-label="표시 설정" title="표시 설정">${ic('sliders')}</button>
+      <span class="sep"></span>
+      <div class="seg" role="group" aria-label="희망매물 보기 방식">
+        <button data-act="view" data-v="buyer" data-fid="view:buyer" aria-pressed="${S.view === 'buyer'}" title="고객별 (1)">${ic('users')}고객별</button>
+        <button data-act="view" data-v="stage" data-fid="view:stage" aria-pressed="${S.view === 'stage'}" title="단계별 (2)">${ic('listOrdered')}단계별</button>
+      </div>
+      <button class="btn-primary" data-act="create" data-fid="create">${ic('plus')}매칭 생성</button>
+    </div>
+  </div>`;
+    fr.innerHTML = S.filterOpen ? `<div class="filters" role="group" aria-label="희망 조건 필터"><div class="chips">${CHIPS.filter((c) => !c.show || c.show()).map(chipHtml).join('')}</div>${hasActive() ? resetBtn() : ''}</div>` : '';
+  });
+  if (S.focusSearch) { S.focusSearch = false; const q = $('#q'); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
+  if (pop) placePop();
+}
+/** 검색어를 치는 동안에는 도구 줄을 다시 그리지 않는다(한글 조합이 깨진다). 초기화 버튼만 지금 상태에 맞춘다. */
+function syncReset() {
+  const host = S.filterOpen ? $('#fr .filters') : $('#vb .tools');
+  if (!host) return;
+  const cur = $('.ghost[data-act="reset"]', host), want = hasActive();
+  if (want && !cur) host.insertAdjacentHTML(S.filterOpen ? 'beforeend' : 'afterbegin', resetBtn());
+  else if (!want && cur) cur.remove();
+}
+function chipHtml(c) {
+  const label = chipLabel(c), sum = chipSummary(c.key), open = pop && pop.key === 'chip:' + c.key;
+  return `<span class="chip${sum ? ' on' : ''}${open ? ' open' : ''}" data-chip="${c.key}"><button class="main" data-act="chip" data-key="${c.key}" data-fid="chip:${c.key}" aria-haspopup="dialog" aria-expanded="${!!open}" aria-label="${label} 필터${sum ? ': ' + esc(sum) : ''}">${ic(c.icon)}<span>${label}</span>${sum ? `<b>${esc(sum)}</b>` : ic('chevronDown', 'cv')}</button>${sum ? `<button class="x" data-act="clearChip" data-key="${c.key}" aria-label="${label} 필터 해제">${ic('x')}</button>` : ''}</span>`;
+}
+function visibleIds() { return S.view === 'buyer' ? buyerGroups().map((g) => g.r.id) : stageList().map((m) => m.id); }
+function renderBody() {
+  const tbl = $('#tbl');
+  if (!tbl) return;
+  let g, html, foot, count;
+  if (S.view === 'buyer') {
+    const groups = buyerGroups(), ids = groups.map((x) => x.r.id);
+    for (const id of [...S.sel]) if (!ids.includes(id)) S.sel.delete(id);     // 보이지 않게 된 줄의 선택은 지운다
+    g = grid(S.showPhones ? [[28], [172], [122], [64], [96], [96], [190], [150, 1], [176], S.showAssignee && [76]].filter(Boolean)
+      : [[28], [230], [64], [96], [96], [190], [150, 1], [176], S.showAssignee && [76]].filter(Boolean));
+    html = buyerTable(groups); count = groups.length;
+    foot = `희망 조건 ${groups.length.toLocaleString()}건 · 매칭 ${groups.reduce((a, x) => a + x.ms.length, 0).toLocaleString()}건`;
+    if (count) html += `<div class="addwrap"><button class="addrow" data-act="newReq" data-fid="newreq">${ic('plus')}구함 의뢰 추가</button></div>`;
+  } else {
+    const list = stageList(), ids = list.map((m) => m.id);
+    for (const id of [...S.sel]) if (!ids.includes(id)) S.sel.delete(id);
+    g = grid([[28], [36], [164], S.showPhones && [122], [240, 1.2], [64], [176], [150, 1], [108]].filter(Boolean));
+    html = stageTable(list); count = list.length;
+    foot = `매칭 ${list.length.toLocaleString()}건`;
+  }
+  if (!count) html += `<div class="empty">현재 검색과 필터에 맞는 항목이 없습니다.<br><button class="btn line" data-act="reset" data-fid="reset-empty">${ic('reset')}검색·필터 초기화</button></div>`;
+  keepFocus(() => {
+    tbl.style.setProperty('--cols', g.cols);
+    tbl.style.setProperty('--name-w', S.showPhones ? '172px' : '230px');
+    tbl.style.setProperty('--view-w', $('#sc').clientWidth + 'px');
+    tbl.style.minWidth = g.minw + 'px';
+    tbl.classList.toggle('any-sel', S.sel.size > 0);
+    tbl.innerHTML = html;
+    tbl.style.setProperty('--view-w', $('#sc').clientWidth + 'px');   // 세로 굴림 막대가 생기거나 없어지면 보이는 폭이 달라진다
+    $('#sb').innerHTML = S.sel.size ? `<div class="selbar"><b>${S.view === 'buyer' ? '희망 조건' : '매칭'} ${S.sel.size.toLocaleString()}건 선택</b><button data-act="clearSel" data-fid="clearsel">선택 해제</button></div>` : '';
+    $('#ft').innerHTML = `<span>${foot}</span>`;
+  });
+  if (pop) placePop();
+}
+
+/* ── 옆 상세 패널 ── */
+function pathHtml(m) {
+  const closed = m.stage === 'closed';
+  return `<div class="path" role="list" aria-label="매칭 진행 경로">${STAGES.map((s) => {
+    const state = nodeState(m, s), cur = s === m.stage, br = closed || cur ? null : blockReason(m, s);
+    const date = m.entered[s] ? fmtMD(m.entered[s]) : '';
+    const sub = state === 'current' ? (m.stage === 'dealCreated' ? date : [date, daysLabel(m)].filter(Boolean).join(' · ')) : state === 'failed' ? '여기서 종료' : state === 'completed' ? date : '';
+    const cls = cur ? `cur ${STAGE[s].tone}` : state === 'completed' ? 'done' : state === 'failed' ? 'fail' : '';
+    const tip = br || (closed ? '' : cur ? '현재 단계' : state === 'completed' ? '이 단계로 되돌리기' : '이 단계로 이동');
+    const inner = `<b>${STAGE[s].label}</b><small>${sub}</small>`;
+    return closed || cur
+      ? `<div class="step ${cls}" role="listitem"${cur ? ' aria-current="step"' : ''} title="${esc(tip)}">${inner}</div>`
+      : `<button class="step ${cls}${br ? ' blocked' : ''}" role="listitem" data-act="pathStage" data-id="${m.id}" data-v="${s}" title="${esc(tip)}">${inner}</button>`;
+  }).join('')}</div>`;
+}
+function dealPathHtml(deal) {
+  const ci = DEAL_FLOW.indexOf(deal.stage);
+  return `<div class="path" role="list" aria-label="거래 진행 경로" style="max-width:420px">${DEAL_FLOW.map((s, i) => `<button class="step ${i === ci ? 'cur success' : i < ci ? 'done' : ''}" role="listitem" data-act="goDeal" title="거래관리에서 변경">${`<b>${DEAL_LABEL[s]}</b><small></small>`}</button>`).join('')}</div>`;
+}
+function peekHtml(m) {
+  const l = LISTS[m.listing], r = REQ(m.req), st = m.stage, closed = st === 'closed', conv = st === 'dealCreated', P = draftOf(m.id);
+  const next = nextStage(st), copy = COPY[st], why = next && !closed && !conv ? blockReason(m, next) : null;
+  const visit = m.viewing && DT(m.viewing) >= NOW ? m.viewing : null, canSchedule = st === 'viewingConfirmed' || st === 'viewing';
+  const resume = m.closedFrom || 'suggested';
+  const guide = closed ? `종료된 매칭입니다${m.closedReason ? ' · ' + m.closedReason : ''}` : conv ? (m.deal ? `거래관리에서 ${DEAL_LABEL[m.deal.stage]} 단계를 진행 중입니다` : '연결된 거래가 없습니다') : GUIDE[st];
+  const agreed = !m.deal ? '' : m.deal.price != null ? money(m.deal.price) : m.deal.deposit != null ? `${money(m.deal.deposit)} / 월 ${money(m.deal.rent)}` : '';
+  const prop = (icon, label, html, top) => `<div class="prop${top ? ' top' : ''}"><dt>${icon ? ic(icon) : ''}${label}</dt><dd>${html}</dd></div>`;
+  const actions = closed
+    ? `<span class="grow"></span><button class="btn dark" data-act="setStage" data-id="${m.id}" data-v="${resume}" data-fid="p:resume">${STAGE[resume].label}에서 다시 진행</button>`
+    : conv
+      ? (m.deal ? `<span class="grow"></span><button class="btn dark" data-act="goDeal" data-fid="p:deal">거래관리 열기${ic('arrowRight')}</button>` : '')
+      : `<button class="btn quiet" data-act="setStage" data-id="${m.id}" data-v="closed" data-fid="p:end">${copy ? copy[1] : '매칭 종료'}</button><span class="grow"></span>${next ? `<button class="btn dark" data-act="setStage" data-id="${m.id}" data-v="${next}" data-fid="p:next"${why ? ' disabled' : ''}>${copy ? copy[0] : `다음: ${STAGE[next].label}`}${ic('arrowRight')}</button>` : ''}`;
+  const confirm = CONFIRM[l.confirm];
+  return `<div class="peek-bar">
+      <button class="tool" data-act="closePeek" data-fid="p:close" aria-label="사이드 보기 닫기" title="닫기 (Esc)">${ic('chevronsRight')}</button>
+      <span class="grow"></span>
+      <button class="tool" data-act="rowMenu" data-id="${m.id}" data-fid="pmenu:${m.id}" aria-haspopup="menu" aria-expanded="false" aria-label="매칭 작업 메뉴" title="매칭 작업 메뉴">${ic('more')}</button>
+    </div>
+    <div class="peek-body">
+      <h2>${esc(title(l))}</h2>
+      <p class="where">${esc(l.ward)} · ${esc(l.road)}</p>
+      <dl class="props">
+        ${prop('circleDot', '단계', stageBtn(m, 'pstage:' + m.id, true))}
+        ${prop('user', '고객', `${who(r, 'p')}${S.showPhones ? `<span class="num sub">${esc(r.phone)}</span>` : ''}${r.urgency === 'urgent' ? '<span class="urgent" style="margin:0">급함</span>' : ''}`)}
+        ${prop('swap', '거래', tradeTag(l.trade))}
+        ${prop('won', '가격', `<span class="num" style="font-weight:500">${priceText(l)}</span>${fitHtml(fit(l, r), closed)}`)}
+        ${agreed ? prop('won', '합의 금액', `<span class="num" style="font-weight:500">${agreed}</span>`) : ''}
+        ${prop('ruler', '면적 · 유형', `<span class="num">${l.py}평${l.ut ? ` (${esc(l.ut)})` : ''}</span><span class="sub">${TYPE[l.type]}</span>`)}
+        ${prop('calendar', '방문 일정', visit ? `<span class="num">${fmtFull(visit)}</span>` : '<span class="faint">없음</span>')}
+        ${prop('clock', '최근 수정', `<span class="num sub">${fmtYMD(m.updated)}</span>`)}
+      </dl>
+
+      <section class="sec">
+        <h3>진행 단계</h3>
+        ${pathHtml(m)}
+        <p class="guide">${esc(guide)}</p>
+        ${why ? `<div class="alert" role="alert">${ic('alert')}<span>${esc(why)}</span></div>` : ''}
+        ${conv && m.deal ? `<p class="sublabel">거래 진행 · 여기서는 보기만 · 누르면 거래관리로 이동</p>${dealPathHtml(m.deal)}` : ''}
+        ${canSchedule ? `<p class="sublabel">방문 일정${visit ? ` · 예정 ${fmtFull(visit)}` : ''}</p>
+          <div class="inline"><input class="field" id="pv" data-draft="visit" type="datetime-local" aria-label="방문 일시" value="${P.visit || visit || '2026-11-17T14:00'}" style="width:216px"><button class="btn line" data-act="schedule" data-id="${m.id}" data-fid="p:schedule">${visit ? '일정 변경' : st === 'viewingConfirmed' ? '일정 잡고 임장으로' : '일정 저장'}</button></div>` : ''}
+        <div class="actrow">${actions}</div>
+      </section>
+
+      <section class="sec">
+        <h3>매칭 메모</h3>
+        <button class="pmemo${m.memo ? '' : ' ph'}" data-act="pmemo" data-id="${m.id}" data-fid="p:memo" aria-label="매칭 메모 편집">${m.memo ? esc(m.memo) : '메모 추가'}</button>
+      </section>
+
+      <section class="sec">
+        <h3>매물 정보</h3>
+        <dl class="props">
+          ${prop('', '주소', `서울 강동구 ${esc(l.ward)} ${esc(l.road)}`)}
+          ${prop('', '확인상태', `<span class="tag ${confirm[1]}">${confirm[0]}</span>`)}
+          ${prop('', '소유자', `${esc(l.owner)}${S.showPhones ? `<span class="num sub">${esc(l.ownerPhone)}</span>` : ''}`)}
+          ${prop('', '등록일', `<span class="num">${fmtYMD(l.reg)}</span>`)}
+        </dl>
+      </section>
+
+      <section class="sec">
+        <h3>구매자 정보</h3>
+        <dl class="props">
+          ${prop('', '희망 조건', `${TRADE[r.trade]} · ${budgetText(r)}`)}
+          ${prop('', '유형 · 평형', `${esc(typeText(r))} · ${areaText(r)}`)}
+          ${prop('', '지역·단지', esc(placeText(r)), true)}
+          ${prop('', '입주 희망일', r.moveIn ? `<span class="num">${fmtYMD(r.moveIn)}</span>` : '<span class="faint">비어 있음</span>')}
+          ${prop('', '담당', r.assignee ? esc(r.assignee) : '<span class="faint">비어 있음</span>')}
+          ${prop('', '요건 메모', r.memo ? esc(r.memo) : '<span class="faint">비어 있음</span>', true)}
+        </dl>
+      </section>
+
+      <section class="sec">
+        <h3>상담 기록 <span class="n">${m.consults.length}</span>${P.consult ? '' : `<button class="linkbtn" data-act="toggleForm" data-k="consult" data-fid="p:form:consult">${ic('plus')}상담 기록 추가</button>`}</h3>
+        ${P.consult ? `<div class="form"><div class="inline" style="justify-content:flex-start"><select class="field" id="pc-type" data-draft="cType" aria-label="상담 방식">${Object.entries(CONSULT).map(([v, t]) => `<option value="${v}"${P.cType === v ? ' selected' : ''}>${t}</option>`).join('')}</select><span class="hint">${esc(r.name)} 고객과의 상담으로 기록됩니다</span></div><textarea class="field" id="pc-text" data-draft="cText" rows="3" placeholder="상담 내용을 입력하세요" aria-label="상담 내용">${esc(P.cText)}</textarea><div class="inline"><button class="btn line" data-act="toggleForm" data-k="consult" data-fid="p:form:consult">취소</button><button class="btn dark" data-act="addConsult" data-id="${m.id}" data-fid="p:addConsult">등록</button></div></div>` : ''}
+        ${m.consults.length ? `<ul class="log">${m.consults.map((c) => `<li><div class="meta"><span class="tag gray">${CONSULT[c.type]}</span><span>${fmtYMD(c.at)}</span><span>${esc(c.by)}</span></div><div>${esc(c.text)}</div></li>`).join('')}</ul>` : P.consult ? '' : '<p class="hint" style="margin-top:6px">연결된 상담 기록이 없습니다.</p>'}
+      </section>
+
+      <section class="sec">
+        <h3>후속 태스크 <span class="n">${m.tasks.length}</span>${P.task ? '' : `<button class="linkbtn" data-act="toggleForm" data-k="task" data-fid="p:form:task">${ic('plus')}태스크 추가</button>`}</h3>
+        ${P.task ? `<div class="form"><input class="field" id="pt-title" data-draft="tTitle" value="${esc(P.tTitle)}" placeholder="할 일 제목 (예: 등기부 확인 후 고객 연락)" aria-label="할 일 제목"><div class="inline"><span class="hint">마감일</span><input class="field" id="pt-due" data-draft="tDue" type="date" aria-label="마감일" value="${P.tDue}"><span class="grow"></span><button class="btn line" data-act="toggleForm" data-k="task" data-fid="p:form:task">취소</button><button class="btn dark" data-act="addTask" data-id="${m.id}" data-fid="p:addTask">생성</button></div></div>` : ''}
+        ${m.tasks.length ? `<ul class="log">${m.tasks.map((t) => `<li><div>${esc(t.title)}</div><div class="meta">${t.due ? `마감 ${fmtYMD(t.due)}` : '마감일 없음'}</div></li>`).join('')}</ul>` : P.task ? '' : '<p class="hint" style="margin-top:6px">방문 확인, 서류 준비 등 후속 업무를 태스크로 남깁니다.</p>'}
+      </section>
+    </div>`;
+}
+function renderPeek() {
+  const el = $('#peek');
+  if (!el) return;
+  const m = S.peek && M(S.peek);
+  if (!m) { S.peek = null; el.hidden = true; el.innerHTML = ''; el.dataset.id = ''; return; }
+  const body = $('.peek-body', el), top = body ? body.scrollTop : 0, fresh = el.hidden || el.dataset.id !== m.id;
+  keepFocus(() => { el.hidden = false; el.dataset.id = m.id; el.innerHTML = peekHtml(m); });
+  if (fresh) { el.classList.remove('in'); void el.offsetWidth; el.classList.add('in'); } else $('.peek-body', el).scrollTop = top;
+  if (pop) placePop();
+}
+function openPeek(id) { S.peek = id; renderBody(); renderPeek(); }
+function closePeek() {
+  const id = S.peek;
+  if (!id) return;
+  S.peek = null; renderBody(); renderPeek();
+  const row = document.querySelector(`[data-fid="row:${id}"]`);
+  if (row) row.focus({ preventScroll: true });
+}
+
+/* ── 떠 있는 판 ── */
+function openPop(key, anchorSel, html, opts = {}) {
+  closePop();
+  const el = document.createElement('div');
+  el.className = 'pop';
+  el.innerHTML = html;
+  layer.appendChild(el);
+  const a = document.querySelector(anchorSel);
+  pop = { key, el, anchorSel, opts, inTable: !!(a && a.closest('#sc')), x: 0, y: 0, room: 0 };
+  markAnchor(true);
+  reservePop();
+  placePop();
+  const first = $('input, .mi, .opt, .presets button', el);
+  if (first) first.focus({ preventScroll: true });
+}
+function markAnchor(on) {
+  const a = pop && document.querySelector(pop.anchorSel);
+  if (!a) return;
+  const btn = a.matches('button') ? a : $('button', a);
+  if (btn && btn.hasAttribute('aria-expanded')) btn.setAttribute('aria-expanded', on);
+  a.classList.toggle('open', on);
+  const acts = a.closest('.acts');
+  if (acts) acts.classList.toggle('keep', on);
+}
+/**
+ * 판의 자리는 "가장 커졌을 때의 높이"로 잡는다.
+ * 막힌 단계의 이유 줄, 선택 건수 줄, 오류 문구처럼 나중에 나타나는 부분 때문에 판이 밀려 올라가면
+ * 마우스 아래 항목이 바뀐다. 단계 메뉴에서는 바뀐 항목이 이유 줄을 다시 숨겨서 판이 계속 떨렸다.
+ * 숨은 부분을 잠깐 모두 드러내 높이를 재고(비어 있는 줄은 data-room의 문구로 채워서) 그만큼 자리를 남겨 둔다.
+ */
+function reservePop() {
+  const el = pop.el, hid = [...el.querySelectorAll('[hidden]')], filled = [];
+  hid.forEach((n) => { n.hidden = false; if (!n.firstChild && n.dataset.room) { n.textContent = n.dataset.room; filled.push(n); } });
+  let h = el.scrollHeight;
+  const why = $('.why', el);
+  if (why) {
+    const keep = why.textContent;
+    for (const t of new Set([...el.querySelectorAll('[data-why]')].map((n) => n.dataset.why))) { why.textContent = t; h = Math.max(h, el.scrollHeight); }
+    why.textContent = keep;
+  }
+  filled.forEach((n) => { n.textContent = ''; });
+  hid.forEach((n) => { n.hidden = true; });
+  pop.room = h;
+}
+function placePop() {
+  const a = document.querySelector(pop.anchorSel);
+  const r = a ? a.getBoundingClientRect() : null;
+  if (r && r.width) {
+    const w = pop.el.offsetWidth, h = Math.min(Math.max(pop.el.offsetHeight, pop.room), innerHeight - 16);
+    let x = pop.opts.align === 'end' ? r.right - w : pop.opts.overlay ? r.left - 1 : r.left;
+    let y = pop.opts.overlay ? r.top : r.bottom + 4;
+    x = Math.max(8, Math.min(x, innerWidth - w - 8));
+    if (y + h > innerHeight - 8) y = Math.max(8, pop.opts.overlay ? innerHeight - h - 8 : r.top - h - 4);
+    pop.x = x; pop.y = y;
+    if (a && !a.classList.contains('open')) markAnchor(true);
+  }
+  pop.el.style.left = pop.x + 'px';
+  pop.el.style.top = pop.y + 'px';
+}
+function closePop(refocus) {
+  if (!pop) return;
+  // 행에 올려야 보이는 버튼(열기 · 작업)은 숨겨지기 전에 포커스를 받아야 계속 보인다
+  if (refocus) { const a = document.querySelector(pop.anchorSel), b = a && (a.matches('button') ? a : $('button', a)); if (b) b.focus({ preventScroll: true }); }
+  markAnchor(false);
+  pop.el.remove(); pop = null;
+}
+const togglePop = (key, anchorSel, html, opts) => (pop && pop.key === key ? closePop(true) : openPop(key, anchorSel, html, opts));
+
+function optsHtml(key, q) {
+  const sel = key === 'stages' ? stageFilters() : S.f[key];
+  const list = optionsFor(key).filter((o) => !q || o[1].includes(q));
+  if (!list.length) return `<div class="nomatch">${key === 'locations' ? '일치하는 지역·단지가 없습니다.' : '선택할 항목이 없습니다.'}</div>`;
+  return list.map(([v, label, kind]) => `<button class="opt" role="menuitemcheckbox" aria-checked="${sel.includes(v)}" data-act="opt" data-key="${key}" data-v="${esc(v)}" data-fid="opt:${key}:${esc(v)}">${cbMark(sel.includes(v))}${key === 'stages' && v !== 'none' ? pill(v) : `<span class="tr">${esc(label)}</span>`}${kind ? `<span class="kind">${kind}</span>` : ''}</button>`).join('');
+}
+const rangeErr = (R) => `0 이상의 숫자로 입력해 주세요 (단위: ${R.unit}).`;
+const pftHtml = (key) => { const n = (key === 'stages' ? stageFilters() : S.f[key]).length; return n ? `<span>${n}개 선택</span><button data-act="clearChip" data-key="${key}">선택 해제</button>` : ''; };
+function chipPanel(key) {
+  const c = CHIP[key], label = chipLabel(c);
+  if (c.kind === 'check') {
+    return `<div class="panel" style="width:${c.w}px" role="menu" aria-label="${label} 필터">${c.search ? `<div class="find">${ic('search')}<input id="pf" placeholder="지역 또는 단지 검색" aria-label="지역 또는 단지 검색" autocomplete="off"></div>` : ''}<div class="opts" id="po">${optsHtml(key, '')}</div><div class="pft" id="pft" data-room="1개 선택"${pftHtml(key) ? '' : ' hidden'}>${pftHtml(key)}</div></div>`;
+  }
+  if (c.kind === 'range') {
+    const R = RANGES[key], f = S.f[key], show = (v) => (v == null ? '' : String(v / R.scale));
+    return `<div class="range" role="dialog" aria-label="${label} 필터"><h4>${label}</h4><p class="hint">${R.desc}</p>
+      <div class="presets">${R.presets().map(([t, a, b]) => `<button data-act="preset" data-key="${key}" data-min="${a ?? ''}" data-max="${b ?? ''}" aria-pressed="${!!f && f.min === a && f.max === b}">${t}</button>`).join('')}</div>
+      <div class="minmax"><input class="field num" id="rmin" inputmode="decimal" autocomplete="off" placeholder="최소" aria-label="최소 (${R.unit})" value="${f ? show(f.min) : ''}"><span>~</span><input class="field num" id="rmax" inputmode="decimal" autocomplete="off" placeholder="최대" aria-label="최대 (${R.unit})" value="${f ? show(f.max) : ''}"><span>${R.unit}</span></div>
+      <p class="err" id="rerr" role="alert" data-room="${esc(rangeErr(R))}" hidden></p>
+      <div class="ft">${f ? `<button class="btn line" data-act="clearChip" data-key="${key}" data-close="1">해제</button>` : ''}<button class="btn dark" data-act="applyRange" data-key="${key}">적용</button></div></div>`;
+  }
+  const bad = S.f.from && S.f.to && S.f.from > S.f.to;
+  return `<div class="range" role="dialog" aria-label="입주 희망일 필터" style="width:296px"><h4>입주 희망일</h4><p class="hint">입주 희망일이 기간 안에 있는 조건만 표시합니다.</p>
+    <div class="minmax" style="margin-top:0"><input class="field num" id="dfrom" type="date" aria-label="입주 희망일 시작" value="${S.f.from}"><span>~</span><input class="field num" id="dto" type="date" aria-label="입주 희망일 종료" value="${S.f.to}"></div>
+    <p class="err" id="derr" role="alert"${bad ? '' : ' hidden'}>시작일이 종료일보다 늦습니다.</p>
+    <div class="ft" id="dft"${S.f.from || S.f.to ? '' : ' hidden'}><button class="btn line" data-act="clearChip" data-key="moveIn" data-close="1">해제</button></div></div>`;
+}
+function refreshChipPanel(key) {
+  if (!pop || pop.key !== 'chip:' + key) return;
+  if (CHIP[key].kind === 'check') {
+    const q = $('#pf', pop.el);
+    keepFocus(() => {
+      $('#po', pop.el).innerHTML = optsHtml(key, q ? q.value.trim() : '');
+      const ft = $('#pft', pop.el); ft.innerHTML = pftHtml(key); ft.hidden = !ft.innerHTML;
+    });
+  } else { pop.el.innerHTML = chipPanel(key); reservePop(); }
+  placePop();
+}
+function displayMenu() {
+  return `<div class="menu" role="menu" aria-label="표시 설정"><div class="grp"><div class="lbl">표시 설정</div>
+    <button class="mi" role="menuitemcheckbox" aria-checked="${S.showPhones}" data-act="toggleSet" data-k="showPhones" data-fid="set:showPhones">${cbMark(S.showPhones)}연락처 표시</button>
+    <button class="mi" role="menuitemcheckbox" aria-checked="${S.showAssignee}" data-act="toggleSet" data-k="showAssignee" data-fid="set:showAssignee"${S.view === 'stage' ? ' aria-disabled="true" title="고객별 보기에서 쓰는 열입니다"' : ''}>${cbMark(S.showAssignee)}담당 열 표시</button></div>
+    <div class="grp"><button class="mi" role="menuitem" data-act="foldAll" data-v="open">${ic('unfold')}모두 펼치기</button><button class="mi" role="menuitem" data-act="foldAll" data-v="close">${ic('fold')}모두 접기</button></div></div>`;
+}
+function rowMenu(m) {
+  const st = m.stage, closed = st === 'closed', conv = st === 'dealCreated', next = nextStage(st), copy = COPY[st], resume = m.closedFrom || 'suggested';
+  let h = S.peek === m.id ? '' : `<div class="grp"><button class="mi" role="menuitem" data-act="peek" data-id="${m.id}">${PEEK}상세 보기</button></div>`;
+  if (!closed && !conv && next) {
+    h += `<div class="grp"><div class="lbl">${STAGE[st].label} 결과</div>
+      <button class="mi" role="menuitem" data-act="setStage" data-id="${m.id}" data-v="${next}">${ic('arrowRight')}${copy ? copy[0] : `다음: ${STAGE[next].label}`}</button>
+      <button class="mi red" role="menuitem" data-act="setStage" data-id="${m.id}" data-v="closed">${ic('circleOff')}${copy ? copy[1] : '이 단계에서 종료'}</button></div>`;
+  }
+  if (closed) h += `<div class="grp"><div class="lbl">종료된 매칭</div><button class="mi" role="menuitem" data-act="setStage" data-id="${m.id}" data-v="${resume}">${ic('arrowRight')}${STAGE[resume].label}에서 다시 시작</button></div>`;
+  h += `<div class="grp"><button class="mi red" role="menuitem" data-act="askDelete" data-id="${m.id}"${m.deal ? ' aria-disabled="true" title="거래와 연결된 매칭은 삭제 대신 종료를 권장합니다"' : ''}>${ic('trash')}삭제</button></div>`;
+  return `<div class="menu" role="menu" aria-label="매칭 작업">${h}</div>`;
+}
+function stageMenu(m, why) {
+  const st = m.stage, resume = m.closedFrom || 'suggested';
+  const groups = st === 'closed' ? [['다시 진행', [resume]], ['종료', ['closed']]] : PICKER;
+  return `<div class="menu" role="menu" aria-label="매칭 단계 선택">${groups.map(([label, list]) => `<div class="grp"><div class="lbl">${label}</div>${list.map((s) => {
+    const cur = s === st, br = cur ? null : blockReason(m, s);
+    return `<button class="mi${br ? ' blocked' : ''}" role="menuitemradio" aria-checked="${cur}" data-act="pickStage" data-id="${m.id}" data-v="${s}"${br ? ` data-why="${esc(br)}"` : ''} aria-label="${STAGE[s].label}${cur ? ', 현재 단계' : br ? ', 선택 불가' : ''}">${pill(s)}<span class="end">${cur ? ic('check') : br ? ic('alert') : ''}</span></button>`;
+  }).join('')}</div>`).join('')}<div class="why" role="status"${why ? '' : ' hidden'}>${esc(why || '')}</div></div>`;
+}
+function setWhy(text) { const w = pop && $('.why', pop.el); if (!w) return; w.textContent = text || ''; w.hidden = !text; placePop(); }
+
+/* ── 창 ── */
+const fidOf = (el) => (el && el.dataset ? (el.dataset.fid ? `[data-fid="${el.dataset.fid}"]` : el.id ? '#' + el.id : null) : null);
+function showDialog(html, focusSel) {
+  closePop(); closeDialog();
+  lastFocus = fidOf(document.activeElement);
+  dlg = document.createElement('div');
+  dlg.innerHTML = html;
+  layer.appendChild(dlg);
+  for (const el of document.querySelectorAll('.app, .demo-bar')) el.inert = true;    // 창 뒤쪽은 누르거나 Tab으로 갈 수 없다
+  const f = (focusSel && $(focusSel, dlg)) || $('button', dlg);
+  if (f) f.focus();
+}
+function closeDialog() {
+  if (!dlg) return;
+  dlg.remove(); dlg = null; D = null;
+  for (const el of document.querySelectorAll('.app, .demo-bar')) el.inert = false;
+  const el = lastFocus && document.querySelector(lastFocus);
+  if (el) el.focus({ preventScroll: true });
+}
+/** 창에서 고르거나 적은 것이 있는지 */
+function dialogDirty() {
+  if (!dlg || !D) return false;
+  if (D.kind === 'create') return !!(D.listing || (D.req && !D.fixed) || $('#d-memo', dlg).value.trim());
+  if (D.kind === 'convert') return [...dlg.querySelectorAll('.amount input')].some((i) => i.value !== i.defaultValue);
+  return false;
+}
+/** 닫기(취소 · Esc · 바깥 누르기): 적은 것이 있으면 바로 버리지 않고 한 번 묻는다 */
+function requestClose() {
+  if (!dlg) return;
+  if (!dialogDirty()) { closeDialog(); return; }
+  if (D.asking) return;
+  D.asking = true;
+  const f = $('footer', dlg);
+  D.footer = f.innerHTML;
+  f.innerHTML = '<span class="hint" style="margin-right:auto">입력한 내용이 있습니다. 닫으면 사라집니다.</span><button class="btn line" data-act="keepDialog">계속 입력</button><button class="btn danger" data-act="discardDialog">버리고 닫기</button>';
+  $('[data-act="keepDialog"]', f).focus();
+}
+const isDup = (req, listing) => MATCHES.some((m) => m.req === req && m.listing === listing);
+function openCreate(reqId) {
+  D = { kind: 'create', fixed: reqId || null, req: reqId || null, listing: null };
+  const r = reqId ? REQ(reqId) : null;
+  showDialog(`<div class="scrim" data-act="scrim"><div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
+    <header><h2 id="dlg-t">매칭 생성</h2><p>매물과 구매조건을 연결해 매칭 파이프라인에 올립니다. 생성 후에는 ‘내부 후보’로 시작합니다.</p></header>
+    <div class="body">
+      <div class="cols2">
+        <div><span class="lab">매물 선택 <em>*</em></span><div class="box"><div class="find">${ic('search')}<input id="dq-l" placeholder="단지명, 주소로 검색" aria-label="매물 검색" autocomplete="off"></div><div class="list" id="dl-l" role="listbox" aria-label="매물"></div></div></div>
+        <div><span class="lab">구매조건 선택 <em>*</em></span>${r
+          ? `<div class="box"><div class="fixed"><div class="pk" style="padding:0;cursor:default"><span class="l1"><i class="av">${esc(r.name.slice(0, 1))}</i>${esc(r.name)}${r.urgency === 'urgent' ? '<span class="urgent" style="margin:0">급함</span>' : ''}</span><span class="l2">${TRADE[r.trade]} · ${budgetText(r)} · ${esc(areaText(r))}</span><span class="l2">${esc(placeText(r))}</span></div></div></div><p class="hint" style="margin-top:8px">현재 구함 조건의 고객으로 고정됩니다.</p>`
+          : `<div class="box"><div class="find">${ic('search')}<input id="dq-r" placeholder="고객명, 연락처로 검색" aria-label="구매조건 검색" autocomplete="off"></div><div class="list" id="dl-r" role="listbox" aria-label="구매조건"></div></div>`}</div>
+      </div>
+      <label class="lab" style="margin-top:14px">초기 메모<textarea class="field" id="d-memo" rows="2" placeholder="추천 사유 등 초기 메모 (선택)"></textarea></label>
+      <div id="d-warn"></div>
+    </div>
+    <footer><button class="btn line" data-act="closeDialog">취소</button><button class="btn dark" id="d-submit" data-act="submitCreate" disabled>매칭 생성</button></footer>
+  </div></div>`, '#dq-l');
+  renderCreateLists();
+}
+function renderCreateLists() {
+  if (!dlg || !D || D.kind !== 'create') return;
+  const r = D.req ? REQ(D.req) : null;
+  // 목록을 다시 채워도 굴려 둔 자리와 포커스가 남는다
+  const fill = (el, html) => { const top = el.scrollTop; keepFocus(() => { el.innerHTML = html; }); el.scrollTop = top; };
+  const ql = $('#dq-l', dlg).value.trim().toLowerCase();
+  // 고른 항목은 검색어에 걸리지 않아도 목록에 남긴다 (고른 것이 안 보이는 채로 생성되지 않게)
+  const items = Object.entries(LISTS).map(([id, l]) => ({ id, l, f: r ? fit(l, r) : null, dup: r ? isDup(r.id, id) : false }))
+    .filter((x) => x.id === D.listing || !ql || [title(x.l), x.l.ward, x.l.road].join(' ').toLowerCase().includes(ql));
+  // 고객이 정해졌으면 조건에 가까운 매물을 위로: 거래유형 › 예산 › 희망 단지 › 지역 › 유형 › 평형
+  const score = (x) => (x.dup ? -100 : 0) + (x.l.trade === r.trade ? 8 : 0) + (x.f && !x.f.over ? 4 : 0) + (r.sites.includes(x.l.site) ? 3 : 0)
+    + (r.regions.includes(x.l.ward) ? 2 : 0) + (r.types.includes(x.l.type) ? 1 : 0) + ((r.areaMin == null || x.l.py >= r.areaMin) && (r.areaMax == null || x.l.py <= r.areaMax) ? 1 : 0);
+  if (r) items.sort((a, b) => score(b) - score(a));
+  fill($('#dl-l', dlg), items.length ? items.map(({ id, l, f, dup }) => `<button class="pk" role="option" data-act="pickListing" data-id="${id}" data-fid="pk:l:${id}" aria-selected="${D.listing === id}"${dup ? ' aria-disabled="true"' : ''}><span class="l1"><span class="tr">${esc(title(l))}</span>${tradeTag(l.trade)}</span><span class="l2"><span class="num" style="color:var(--fg)">${priceText(l)}</span><span>${l.py}평 · ${TYPE[l.type]}</span>${dup ? '<span>이미 연결됨</span>' : fitHtml(f)}</span></button>`).join('') : '<div class="nomatch">검색 결과가 없습니다.</div>');
+  const lr = $('#dl-r', dlg);
+  if (lr) {
+    const qr = $('#dq-r', dlg).value.trim().toLowerCase();
+    const cand = reqs().filter((x) => x.id === D.req || !qr || [x.name, x.phone, x.phone.replace(/-/g, '')].join(' ').toLowerCase().includes(qr)).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    fill(lr, cand.length ? cand.map((x) => `<button class="pk" role="option" data-act="pickReq" data-id="${x.id}" data-fid="pk:r:${x.id}" aria-selected="${D.req === x.id}"><span class="l1"><i class="av">${esc(x.name.slice(0, 1))}</i>${esc(x.name)}${x.urgency === 'urgent' ? '<span class="urgent" style="margin:0">급함</span>' : ''}<span class="num sub" style="font-weight:400;font-size:12.5px">${esc(x.phone)}</span></span><span class="l2"><span class="tr">${TRADE[x.trade]} · ${budgetText(x)} · ${esc(placeText(x))}</span></span></button>`).join('') : '<div class="nomatch">검색 결과가 없습니다.</div>');
+  }
+  const dup = D.req && D.listing && isDup(D.req, D.listing);
+  $('#d-warn', dlg).innerHTML = dup ? `<div class="alert" role="alert">${ic('alert')}<span>이미 같은 매물과 구매조건으로 진행 중인 매칭이 있습니다.</span></div>` : '';
+  const submit = $('#d-submit', dlg);
+  if (submit) submit.disabled = !(D.req && D.listing) || dup;
+}
+function openConvert(id) {
+  const m = M(id), l = LISTS[m.listing], r = REQ(m.req), monthly = l.trade === 'monthly';
+  D = { kind: 'convert', id };
+  const amount = (fid, label, v) => `<label class="lab">${label} (만원)<input class="field num" id="${fid}" inputmode="numeric" autocomplete="off" value="${v ?? ''}" placeholder="${monthly ? '예: 10000' : '예: 158000'}"><span class="eq" data-eq="${fid}">${v != null ? `= ${money(v)}` : ''}</span></label>`;
+  showDialog(`<div class="scrim" data-act="scrim"><div class="dlg sm" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
+    <header><h2 id="dlg-t">거래 전환</h2><p>매칭을 거래 전환하면 계약 준비 단계의 거래가 생성되어 계약·대금·수수료 관리로 이어집니다.</p></header>
+    <div class="body">
+      <dl class="kv"><dt>고객</dt><dd>${esc(r.name)}</dd><dt>매물</dt><dd>${esc(title(l))}</dd><dt>거래유형</dt><dd>${tradeTag(l.trade)}</dd><dt>매물 가격</dt><dd class="num">${priceText(l)}</dd></dl>
+      <div class="amount">${monthly ? amount('cv-a', '합의 보증금', l.deposit) + amount('cv-b', '합의 월세', l.rent) : amount('cv-a', `합의 ${TRADE[l.trade]}가`, l.price)}</div>
+      <p class="err" id="cv-err" role="alert" hidden></p>
+      <p class="hint">매수인은 매칭 고객, 매도인은 매물 소유자로 자동 연결됩니다. 합의 금액 기준으로 수수료 수금 항목이 자동 생성됩니다.</p>
+    </div>
+    <footer><button class="btn line" data-act="closeDialog">취소</button><button class="btn dark" data-act="submitConvert">거래 생성하고 전환</button></footer>
+  </div></div>`, '#cv-a');
+}
+function openDelete(id) {
+  const m = M(id);
+  D = { kind: 'delete', id };
+  showDialog(`<div class="scrim" data-act="scrim"><div class="dlg sm" role="alertdialog" aria-modal="true" aria-labelledby="dlg-t">
+    <header><h2 id="dlg-t">매칭을 삭제하시겠습니까?</h2><p>${esc(REQ(m.req).name)} · ${esc(title(LISTS[m.listing]))} 매칭이 삭제됩니다. 진행 이력이 함께 사라지므로 종료 처리를 권장합니다.</p></header>
+    <footer><button class="btn line" data-act="closeDialog">취소</button><button class="btn danger" data-act="confirmDelete">삭제</button></footer>
+  </div></div>`);
+}
+
+/* ── 알림 ── */
+function toast(msg, o = {}) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (o.tone ? ' ' + o.tone : '');
+  t.setAttribute('role', 'status');
+  t.innerHTML = `<span class="ti">${ic(o.tone === 'warn' ? 'alert' : 'check')}</span><div><div>${esc(msg)}</div>${o.desc ? `<small>${esc(o.desc)}</small>` : ''}</div>${o.action ? `<button>${esc(o.action[0])}</button>` : ''}`;
+  if (o.action) $('button', t).addEventListener('click', () => { t.remove(); o.action[1](); });
+  // 누르고 있는 동안(클릭이 끝나기 전)에는 띄우지 않는다. 알림이 쌓여 올라오다 포인터 밑에 끼면 그 클릭이 사라진다.
+  // 단순 확인 알림("저장했습니다")은 쌓지 않고 새것으로 바꾼다. 연달아 저장할 때 알림 더미가 옆 패널 아래쪽 버튼을 덮지 않게.
+  renderSoon(() => {
+    for (const old of [...toasts.children]) if (!$('button', old) && !old.classList.contains('warn')) old.remove();
+    toasts.appendChild(t);
+    while (toasts.children.length > 3) toasts.firstChild.remove();
+  });
+  setTimeout(() => { t.remove(); if (undoToast === t) undoToast = null; }, o.action || o.desc ? 6000 : 3200);
+  return t;
+}
+
+/* ── 눌린 채(클릭이 끝나기 전)에 화면을 갈아 끼우면 그 클릭이 사라진다. 클릭이 끝난 뒤로 미룬다. ── */
+let pointerDown = false, pending = null;
+const flushPending = () => {
+  pointerDown = false;
+  if (!pending) return;
+  const fn = pending;
+  pending = null;
+  setTimeout(fn, 0);          // click은 pointerup과 같은 차례에 처리되므로, 그 다음 차례에 그린다
+};
+addEventListener('pointerdown', () => { pointerDown = true; }, true);
+addEventListener('pointerup', flushPending, true);
+addEventListener('pointercancel', flushPending, true);
+function renderSoon(fn) {
+  if (!pointerDown) { fn(); return; }
+  const prev = pending;
+  pending = () => { if (prev) prev(); fn(); };
+}
+/** 메모를 고치는 중이면 표를 갈아 끼우지 않는다(방금 연 편집 칸이 사라진다). 편집이 끝날 때 다시 그린다. */
+const refreshAll = () => { if ($('.memoedit, .pmemo-edit')) return; renderBody(); renderPeek(); };
+
+/* ── 그 자리에서 고치는 메모: Enter 저장 · Shift+Enter 줄바꿈 · Esc 취소 · 벗어나면 저장 ── */
+function editMemo(btn, inPeek) {
+  const m = M(btn.dataset.id), fid = btn.dataset.fid;
+  const ta = document.createElement('textarea');
+  ta.className = inPeek ? 'pmemo-edit field' : 'memoedit';
+  ta.rows = inPeek ? 3 : 1;
+  ta.value = m.memo; ta.placeholder = '메모 입력';
+  ta.setAttribute('aria-label', '매칭 메모');
+  ta.title = 'Enter 저장 · Shift+Enter 줄바꿈 · Esc 취소';
+  btn.hidden = true; btn.after(ta);           // 메모가 있던 자리에 그대로 놓는다
+  // 표의 메모 줄은 쓰는 만큼 아래로 늘어난다 (떠 있는 칸이 아래 줄을 가리지 않는다)
+  const fitH = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+  if (!inPeek) { fitH(); ta.addEventListener('input', fitH); }
+  ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  let done = false;
+  const finish = (save, byKey) => {
+    if (done) return;
+    done = true;
+    const v = ta.value.trim(), changed = save && v !== m.memo.trim();
+    if (changed) { expireUndo(); m.memo = v; m.updated = NOW_STR; }
+    // 다른 곳을 눌러서 끝난 경우 그 클릭이 살아 있도록, 여기서는 메모가 보이는 자리만 고친다.
+    // 자리 높이도 그대로 둔다: 고치던 칸이 더 컸으면 아래 것들이 밀려 올라가 그 클릭이 빗나간다.
+    const keep = byKey ? 0 : ta.offsetHeight;
+    ta.remove(); btn.hidden = false;
+    if (keep) btn.style.minHeight = keep + 'px';
+    for (const el of document.querySelectorAll(`[data-act="memo"][data-id="${m.id}"] .clamp, #peek .pmemo[data-id="${m.id}"]`)) {
+      el.textContent = m.memo || '메모 추가';
+      el.classList.toggle('ph', !m.memo);
+    }
+    if (S.memoFor === m.id) S.memoFor = null;
+    if (changed) toast('메모를 저장했습니다');
+    renderSoon(refreshAll);     // 메모 줄이 생기거나 없어지는 것, 수정일 같은 나머지는 클릭이 끝난 뒤에 전체를 다시 그려 맞춘다
+    if (byKey) { const b = fid && document.querySelector(`[data-fid="${fid}"]`) || document.querySelector(`#tbl [data-fid="row:${m.id}"]`); if (b) b.focus({ preventScroll: true }); }
+  };
+  ta.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.isComposing) return;
+    if (e.key === 'Escape') { e.preventDefault(); finish(false, true); } else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true, true); }
+  });
+  ta.addEventListener('blur', () => finish(true, false));
+}
+
+/* ── 조작 ── */
+function setView(v) {
+  if (S.view === v) return;
+  S.view = v; S.sel.clear(); closePop();
+  renderToolbar(); renderBody();
+}
+function openSearch() {
+  if (S.mode !== 'new') return;
+  closePop(); S.searching = true; S.focusSearch = true;
+  renderToolbar();
+  const q = $('#q'); if (q) q.select();
+}
+const ACT = {
+  trade(el) { S.trade = el.dataset.v; if (S.trade !== 'monthly') S.f.rent = null; closePop(); renderToolbar(); renderBody(); },
+  view(el) { setView(el.dataset.v); },
+  toggleFilters() { S.filterOpen = !S.filterOpen; closePop(); renderToolbar(); },
+  openSearch() { openSearch(); },
+  clearSearch() { S.q = ''; S.focusSearch = true; renderToolbar(); renderBody(); },
+  reset() { resetFilters(); },
+  display() { togglePop('display', '#t-display', displayMenu(), { align: 'end' }); },
+  toggleSet(el) { S[el.dataset.k] = !S[el.dataset.k]; renderBody(); if (pop) { keepFocus(() => { pop.el.innerHTML = displayMenu(); }); reservePop(); placePop(); } },
+  foldAll(el) {
+    const close = el.dataset.v === 'close';
+    if (S.view === 'buyer') { S.collapsed = new Set(close ? REQS.map((r) => r.id) : []); } else { S.stageCollapsed = new Set(close ? ORDER : []); }
+    closePop(true); renderBody();
+  },
+  chip(el) { const key = el.dataset.key; togglePop('chip:' + key, `[data-chip="${key}"]`, chipPanel(key)); },
+  opt(el) {
+    const key = el.dataset.key, v = el.dataset.v, arr = S.f[key], i = arr.indexOf(v);
+    if (i < 0) arr.push(v); else arr.splice(i, 1);
+    renderToolbar(); renderBody(); refreshChipPanel(key);
+  },
+  clearChip(el) {
+    const key = el.dataset.key, inside = !!el.closest('.pop'), stay = inside && !el.dataset.close;
+    clearFilter(key);
+    if (!stay) closePop();
+    renderToolbar(); renderBody();
+    if (stay) refreshChipPanel(key);
+    else { const b = document.querySelector(`[data-fid="chip:${key}"]`); if (b) b.focus({ preventScroll: true }); }
+  },
+  preset(el) {
+    const n = (v) => (v === '' ? null : Number(v));
+    S.f[el.dataset.key] = { min: n(el.dataset.min), max: n(el.dataset.max) };
+    closePop(true); renderToolbar(); renderBody();
+  },
+  applyRange(el) {
+    const key = el.dataset.key, R = RANGES[key];
+    const read = (sel) => {
+      const f = $(sel, pop.el), raw = f.value.trim().replace(/,/g, ''), v = raw === '' ? null : Number(raw);
+      return { f, v: v === null ? null : Number.isFinite(v) && v >= 0 ? Math.round(v * R.scale) : NaN };
+    };
+    const a = read('#rmin'), b = read('#rmax'), bad = Number.isNaN(a.v) ? a : Number.isNaN(b.v) ? b : null;
+    a.f.classList.toggle('bad', bad === a); b.f.classList.toggle('bad', bad === b);
+    const err = $('#rerr', pop.el);
+    if (bad) {                    // 잘못 쓴 값을 말없이 버리지 않는다: 판을 닫지 않고 알려 준다
+      err.hidden = false; err.textContent = rangeErr(R);
+      bad.f.focus(); bad.f.select(); placePop();
+      return;
+    }
+    let min = a.v, max = b.v;
+    if (min != null && max != null && min > max) [min, max] = [max, min];
+    S.f[key] = min == null && max == null ? null : { min, max };
+    closePop(true); renderToolbar(); renderBody();
+  },
+  create(el) { closePop(); openCreate(el.dataset.req || null); },
+  newReq() { toast('구함 의뢰 등록 화면으로 이동합니다', { desc: '시안에서는 이동하지 않습니다.' }); },
+  openReq(el) { toast(`${REQ(el.dataset.id).name} 고객의 희망 조건 상세로 이동합니다`, { desc: '시안에서는 이동하지 않습니다.' }); },
+  toggle(el) { const id = el.dataset.id; if (S.collapsed.has(id)) S.collapsed.delete(id); else S.collapsed.add(id); renderBody(); },
+  toggleAll() {
+    const gs = buyerGroups().filter((g) => g.ms.length || g.r.memo), anyOpen = gs.some((g) => !S.collapsed.has(g.r.id));
+    gs.forEach((g) => (anyOpen ? S.collapsed.add(g.r.id) : S.collapsed.delete(g.r.id)));
+    renderBody();
+  },
+  toggleStage(el) { const id = el.dataset.id; if (S.stageCollapsed.has(id)) S.stageCollapsed.delete(id); else S.stageCollapsed.add(id); renderBody(); },
+  sel(el) { const id = el.dataset.id; if (S.sel.has(id)) S.sel.delete(id); else S.sel.add(id); renderBody(); },
+  selAll() { const ids = visibleIds(), all = ids.length && ids.every((id) => S.sel.has(id)); ids.forEach((id) => (all ? S.sel.delete(id) : S.sel.add(id))); renderBody(); },
+  selGroup(el) { const ids = stageList().filter((m) => m.stage === el.dataset.id).map((m) => m.id), all = ids.every((id) => S.sel.has(id)); ids.forEach((id) => (all ? S.sel.delete(id) : S.sel.add(id))); renderBody(); },
+  clearSel() { S.sel.clear(); renderBody(); },
+  peek(el) { const id = el.dataset.id; closePop(); if (S.peek === id) closePeek(); else openPeek(id); },
+  closePeek() { closePop(); closePeek(); },
+  rowMenu(el) { const fid = el.dataset.fid; togglePop('row:' + fid, `[data-fid="${fid}"]`, rowMenu(M(el.dataset.id)), { align: 'end' }); },
+  stageMenu(el) { const fid = el.dataset.fid; togglePop('stage:' + fid, `[data-fid="${fid}"]`, stageMenu(M(el.dataset.id)), { overlay: true }); },
+  pickStage(el) {
+    if (el.dataset.why) { setWhy(el.dataset.why); return; }   // 막힌 단계: 메뉴를 닫지 않고 이유를 보여 준다
+    const id = el.dataset.id, v = el.dataset.v;
+    closePop(true);
+    changeStage(id, v);
+  },
+  setStage(el) { const id = el.dataset.id, v = el.dataset.v; closePop(true); changeStage(id, v); },
+  pathStage(el) { changeStage(el.dataset.id, el.dataset.v); },
+  askDelete(el) { const id = el.dataset.id; closePop(true); openDelete(id); },
+  memo(el) { editMemo(el, false); },
+  /** 메모가 없는 매칭: 줄 아래에 메모 줄을 열고 바로 쓴다. 아무것도 쓰지 않고 벗어나면 줄은 다시 없어진다. */
+  memoAdd(el) {
+    const id = el.dataset.id;
+    closePop();
+    S.memoFor = id;
+    renderBody();
+    const b = document.querySelector(`#tbl [data-fid="memo:${id}"]`);
+    if (b) editMemo(b, false); else S.memoFor = null;
+  },
+  toggleClosed(el) {
+    const id = el.dataset.id, closed = MATCHES.filter((m) => m.req === id && m.stage === 'closed');
+    S.closedPref.set(id, { auto: closedAuto(closed), open: el.getAttribute('aria-expanded') !== 'true' });
+    renderBody();
+  },
+  pmemo(el) { editMemo(el, true); },
+  goDeal() { toast('거래관리로 이동합니다', { desc: '단계 변경은 거래관리에서 합니다. 시안에서는 이동하지 않습니다.' }); },
+  schedule(el) {
+    const m = M(el.dataset.id), P = draftOf(m.id), input = $('#pv'), v = input.value;
+    if (!v) { input.focus(); return; }
+    if (DT(v) < NOW) {            // 지난 시각으로 저장하면 어디에도 보이지 않는다. 저장하지 않고 알려 준다.
+      toast('지난 시각에는 방문 일정을 잡을 수 없습니다', { tone: 'warn', desc: '시안의 오늘은 2026.11.16(월) 10:00입니다.' });
+      input.focus();
+      return;
+    }
+    expireUndo();
+    m.viewing = v; m.updated = NOW_STR; P.visit = '';
+    if (m.stage === 'viewingConfirmed') applyStage(m, 'viewing', true); else { renderBody(); renderPeek(); }
+    toast('방문 일정을 저장했습니다', { desc: fmtFull(v) });
+  },
+  toggleForm(el) {
+    const k = el.dataset.k, P = draftOf(S.peek);
+    P[k] = !P[k];
+    if (!P[k]) { if (k === 'consult') P.cText = ''; else P.tTitle = ''; }   // 취소를 누르면 쓰던 글을 버린다
+    renderPeek();
+    const f = P[k] && $(k === 'consult' ? '#pc-text' : '#pt-title');
+    if (f) f.focus();
+  },
+  addConsult(el) {
+    const m = M(el.dataset.id), P = draftOf(m.id), text = P.cText.trim();
+    if (!text) { $('#pc-text').focus(); return; }
+    expireUndo();
+    m.consults.unshift({ type: P.cType, at: '2026-11-16', by: ME, text });
+    P.consult = false; P.cText = '';
+    renderPeek(); toast('상담 기록을 등록했습니다');
+  },
+  addTask(el) {
+    const m = M(el.dataset.id), P = draftOf(m.id), t = P.tTitle.trim();
+    if (!t) { $('#pt-title').focus(); return; }
+    expireUndo();
+    m.tasks.push({ title: t, due: P.tDue });
+    P.task = false; P.tTitle = '';
+    renderPeek(); toast('후속 태스크를 생성했습니다');
+  },
+  scrim(el, e) { if (e.target === el) requestClose(); },
+  closeDialog() { requestClose(); },
+  discardDialog() { closeDialog(); },
+  keepDialog() {
+    $('footer', dlg).innerHTML = D.footer; D.asking = false;
+    if (D.kind === 'create') renderCreateLists();
+    const f = $('textarea, .amount input, input', dlg);
+    if (f) f.focus();
+  },
+  pickListing(el) { D.listing = D.listing === el.dataset.id ? null : el.dataset.id; renderCreateLists(); },   // 다시 누르면 선택을 푼다
+  pickReq(el) { D.req = D.req === el.dataset.id ? null : el.dataset.id; renderCreateLists(); },
+  submitCreate() {
+    if (!D.req || !D.listing || isDup(D.req, D.listing)) return;
+    expireUndo();
+    const id = 'n' + (SEQ += 1), req = D.req;
+    MATCHES.push({ id, req, listing: D.listing, extra: !!REQ(req).extra, stage: 'suggested', created: NOW_STR, since: NOW_STR, updated: NOW_STR, memo: $('#d-memo', dlg).value.trim(), consults: [], tasks: [], entered: { suggested: NOW_STR } });
+    S.collapsed.delete(req);
+    lastFocus = null;
+    closeDialog(); renderBody();
+    const row = document.querySelector(`[data-fid="row:${id}"]`);
+    if (row) { row.scrollIntoView({ block: 'nearest' }); row.classList.add('flash'); row.focus({ preventScroll: true }); }
+    toast('매칭이 생성되었습니다', { desc: `${REQ(req).name} · ${title(LISTS[M(id).listing])}`, action: ['열기', () => openPeek(id)] });
+  },
+  submitConvert() {
+    const m = M(D.id), monthly = LISTS[m.listing].trade === 'monthly';
+    const read = (id) => { const el = $('#' + id, dlg), raw = el.value.replace(/[,\s]/g, ''); return { el, n: /^\d+$/.test(raw) ? Number(raw) : NaN }; };
+    const a = read('cv-a'), b = monthly ? read('cv-b') : null;
+    // 보증금은 0도 된다. 매매가 · 전세가 · 월세는 0보다 커야 한다.
+    const bad = Number.isNaN(a.n) || (!monthly && a.n <= 0) ? a : b && (Number.isNaN(b.n) || b.n <= 0) ? b : null;
+    a.el.classList.toggle('bad', bad === a); if (b) b.el.classList.toggle('bad', bad === b);
+    const err = $('#cv-err', dlg);
+    if (bad) { err.hidden = false; err.textContent = '합의 금액은 만원 단위 숫자로 입력해 주세요.'; bad.el.focus(); bad.el.select(); return; }
+    m.deal = { id: 'd' + (SEQ += 1), stage: 'preparing', price: monthly ? null : a.n, deposit: monthly ? a.n : null, rent: monthly ? b.n : null };
+    closeDialog();
+    applyStage(m, 'dealCreated', true);
+    toast('계약 준비 거래가 생성되었습니다', { desc: `합의 금액 ${monthly ? `${money(a.n)} / 월 ${money(b.n)}` : money(a.n)}`, action: ['거래 보기', ACT.goDeal] });
+  },
+  confirmDelete() {
+    const id = D.id;
+    expireUndo();
+    MATCHES.splice(MATCHES.findIndex((m) => m.id === id), 1);
+    drafts.delete(id); S.sel.delete(id);
+    if (S.peek === id) S.peek = null;
+    if (S.memoFor === id) S.memoFor = null;
+    lastFocus = null;
+    closeDialog(); renderBody(); renderPeek();
+    toast('매칭을 삭제했습니다');
+  },
+};
+
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-act]');
+  if (el) {
+    if (el.getAttribute('aria-disabled') === 'true' || el.disabled) return;
+    const fn = ACT[el.dataset.act];
+    if (fn) fn(el, e);
+    return;
+  }
+  // 메모 줄의 빈 곳(이름표 포함)을 눌러도 메모를 고친다
+  const ml = e.target.closest('.mmemo');
+  if (ml) { const b = $('.memobtn', ml); if (b && !b.hidden && e.target.tagName !== 'TEXTAREA') editMemo(b, false); return; }
+  // 행의 빈 곳: 고객 행은 펼치기/접기, 매칭 행은 옆 패널
+  const row = e.target.closest('.row[data-row]');
+  if (!row || e.target.closest('button, input, textarea, select, a')) return;
+  if (String(getSelection())) return;
+  if (row.dataset.row === 'match') { closePop(); if (S.peek === row.dataset.id) closePeek(); else openPeek(row.dataset.id); return; }
+  const tw = $('.tw[data-act="toggle"]', row);
+  if (tw) ACT.toggle(tw);
+});
+document.addEventListener('mousedown', (e) => {
+  if (pop && !pop.el.contains(e.target) && !e.target.closest(pop.anchorSel)) closePop();
+}, true);
+document.addEventListener('mouseover', (e) => {
+  if (!pop) return;
+  const mi = e.target.closest('.mi[data-act="pickStage"]');
+  if (mi && pop.el.contains(mi)) setWhy(mi.dataset.why || '');
+});
+function onEdit(e) {
+  const t = e.target;
+  // 옆 패널에서 쓰던 글은 매칭별로 기억한다 (다시 그려지거나 패널을 닫아도 남도록)
+  if (t.dataset && t.dataset.draft && S.peek) { draftOf(S.peek)[t.dataset.draft] = t.value; return; }
+  if (e.type === 'change') {
+    if (t.id !== 'dfrom' && t.id !== 'dto') return;
+    if (t.id === 'dfrom') S.f.from = t.value; else S.f.to = t.value;
+    const bad = S.f.from && S.f.to && S.f.from > S.f.to, err = pop && $('#derr', pop.el), ft = pop && $('#dft', pop.el);
+    if (err) err.hidden = !bad;
+    if (ft) ft.hidden = !(S.f.from || S.f.to);
+    renderToolbar(); renderBody();
+    return;
+  }
+  if (t.id === 'q') {            // 입력칸은 다시 그리지 않는다 (한글 조합이 깨진다). 표와 초기화 버튼만 맞춘다.
+    S.q = t.value;
+    t.parentElement.classList.toggle('has', !!t.value);
+    renderBody(); syncReset();
+  } else if (t.id === 'pf') { $('#po', pop.el).innerHTML = optsHtml('locations', t.value.trim()); placePop(); }
+  else if (t.id === 'dq-l' || t.id === 'dq-r') renderCreateLists();
+  else if (t.id === 'rmin' || t.id === 'rmax') { t.classList.remove('bad'); const err = pop && $('#rerr', pop.el); if (err) err.hidden = true; }
+  else if (t.id === 'cv-a' || t.id === 'cv-b') {
+    const raw = t.value.replace(/[,\s]/g, ''), okNum = /^\d+$/.test(raw), eq = dlg && $(`[data-eq="${t.id}"]`, dlg), err = dlg && $('#cv-err', dlg);
+    t.classList.remove('bad');
+    if (err) err.hidden = true;
+    if (eq) { eq.textContent = raw === '' ? '' : okNum ? `= ${money(Number(raw))}` : '숫자만 입력해 주세요'; eq.style.color = raw !== '' && !okNum ? 'var(--red-strong)' : ''; }
+  }
+}
+document.addEventListener('input', onEdit);
+document.addEventListener('change', onEdit);
+document.addEventListener('focusout', (e) => {
+  // 검색칸: 비운 채 벗어나면 다시 접는다. 눌린 곳의 클릭이 끝난 뒤에 접어야 그 클릭이 사라지지 않는다.
+  if (e.target.id !== 'q') return;
+  setTimeout(() => renderSoon(() => {
+    if (S.q || !S.searching || (document.activeElement && document.activeElement.id === 'q')) return;
+    S.searching = false; renderToolbar();
+  }), 160);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing) return;
+  const t = e.target, typing = t.matches && t.matches('input, textarea, select');
+  if (e.key === 'Escape') {
+    if (pop) { closePop(true); e.preventDefault(); return; }
+    if (dlg) { requestClose(); return; }
+    if (t.id === 'q') {
+      if (S.q) { S.q = ''; S.focusSearch = true; renderToolbar(); renderBody(); }
+      else { S.searching = false; renderToolbar(); const b = document.querySelector('[data-fid="t-search"]'); if (b) b.focus(); }
+      return;
+    }
+    if (typing) return;
+    if (S.peek) closePeek();
+    return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f' && !dlg) { e.preventDefault(); openSearch(); return; }
+  if (e.key === 'Enter' && (t.id === 'rmin' || t.id === 'rmax')) { const b = $('[data-act="applyRange"]', pop.el); if (b) b.click(); return; }
+  if (typing || dlg || e.metaKey || e.ctrlKey || e.altKey || S.mode !== 'new') return;
+  if (pop) {                       // 메뉴 안에서는 위아래 화살표로 항목을 옮긴다
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = [...pop.el.querySelectorAll('.mi, .opt')];
+    if (!items.length) return;
+    e.preventDefault();
+    const i = items.indexOf(document.activeElement);
+    const next = items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length];
+    next.focus();
+    if (next.dataset.act === 'pickStage') setWhy(next.dataset.why || '');
+    return;
+  }
+  if (e.key === '/') { e.preventDefault(); openSearch(); return; }
+  if (e.key === '1' || e.key === '2') { setView(e.key === '1' ? 'buyer' : 'stage'); return; }
+  const row = t.closest && t.closest('.row[data-row]');
+  if (!row || t !== row) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const rows = [...document.querySelectorAll('#tbl .row[data-row]')], next = rows[rows.indexOf(row) + (e.key === 'ArrowDown' ? 1 : -1)];
+    if (next) { next.focus(); next.scrollIntoView({ block: 'nearest' }); }
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (row.dataset.row === 'match') { if (S.peek === row.dataset.id) closePeek(); else openPeek(row.dataset.id); } else { const tw = $('.tw[data-act="toggle"]', row); if (tw) ACT.toggle(tw); }
+  }
+});
+addEventListener('resize', () => {
+  const tbl = $('#tbl'), sc = $('#sc');
+  if (tbl && sc) tbl.style.setProperty('--view-w', sc.clientWidth + 'px');
+  if (pop) placePop();
+});
+
+/* ── 지금 화면 (비교용) ── */
+function nowHtml() {
+  const groups = reqs().map((r) => ({ r, ms: MATCHES.filter((m) => m.req === r.id).sort((a, b) => a.created.localeCompare(b.created)) })).sort((a, b) => a.r.name.localeCompare(b.r.name, 'ko'));
+  const heads = [['user', '고객'], ['phone', '연락처'], ['tag', '매물 유형'], ['ruler', '희망 평형'], ['won', '예산'], ['mapPin', '희망 지역·단지'], ['branch', '매칭']];
+  const nodeIcon = { done: 'check', cur: 'circleDot', pend: 'circleDashed', fail: 'circleOff' };
+  const chip = (cls, label, icon) => `<span class="nchip ${cls}">${ic(icon || nodeIcon[cls])}${label}</span>`;
+  const track = (m) => {
+    if (m.stage === 'dealCreated' && m.deal) {
+      const ci = DEAL_FLOW.indexOf(m.deal.stage);
+      return chip('done', '매칭 완료') + `<span style="margin:0 2px;color:rgba(15,123,108,.6);display:inline-flex">${ic('chevronsRight')}</span>` + [...DEAL_FLOW, 'x'].map((s, i, all) => { const c = i < ci ? 'done' : i === ci ? 'cur' : 'pend'; return chip(c, s === 'x' ? '정산종료' : DEAL_LABEL[s]) + (i < all.length - 1 ? `<span class="nline ${c}"></span>` : ''); }).join('');
+    }
+    const closed = m.stage === 'closed', list = closed ? STAGES.slice(0, 5) : STAGES;
+    return list.map((s, i) => { const st = nodeState(m, s), c = st === 'completed' ? 'done' : st === 'current' ? 'cur' : st === 'failed' ? 'fail' : 'pend'; return chip(c, STAGE[s].label, m.viewing && s === 'viewing' && !closed ? 'calendar' : null) + (i < list.length - 1 || closed ? `<span class="nline ${c === 'fail' ? '' : c}"></span>` : ''); }).join('') + (closed ? chip('fail', '종료') : '');
+  };
+  const budget = (r) => (r.trade === 'monthly' ? `월세 보증금 ${range(r.depMin, r.depMax)} / 월 ${r.rentMax ? `${money(r.rentMax)} 이하` : '협의'}` : `${TRADE[r.trade]} ${range(r.priceMin, r.priceMax)}`);
+  return `<div class="now">
+    <div class="bar1"><div class="ptabs"><span class="on">전체</span><span>매매</span><span>전세</span><span>월세</span></div>
+      <div class="psearch">${ic('search')}고객, 연락처, 매물, 주소 검색</div>
+      <div class="ptoggle"><span class="on">${ic('branch')}고객별</span><span>${ic('listOrdered')}단계별</span></div><span class="pbtn">${ic('plus')}매칭 생성</span></div>
+    <div class="bar2">${['단계', '지역·단지', '매물 유형', '예산', '희망 평형'].map((l) => `<span class="bchip">${l}${ic('chevronDown')}</span>`).join('')}<span class="bchip">${ic('plus')}필터</span></div>
+    <div class="nscroll"><div class="ntbl">
+      <div class="nhd"><div><span class="ncb"></span></div><div></div>${heads.map(([i, l]) => `<div>${ic(i)}${l}</div>`).join('')}</div>
+      ${groups.map(({ r, ms }) => {
+        const act = ms.filter((m) => m.stage !== 'dealCreated' && m.stage !== 'closed').length, conv = ms.filter((m) => m.stage === 'dealCreated').length, cl = ms.filter((m) => m.stage === 'closed').length;
+        return `<div class="ngroup">
+          <div class="nrow${ms.length || r.memo ? ' line' : ''}"><div><span class="ncb"></span></div><div>${ms.length || r.memo ? ic('chevronDown') : ''}</div>
+            <div class="nm">${esc(r.name)}${r.status === 'hold' ? '<span class="nhold">보류</span>' : ''}</div><div class="num">${esc(r.phone)}</div><div><span class="tr">${esc(typeText(r))}</span></div><div class="num">${areaText(r)}</div>
+            <div class="bud num"><span class="tr">${budget(r)}</span></div><div class="place">${esc(placeText(r))}</div>
+            <div class="ncnt">${ms.length ? '' : `<span class="plain">매칭 없음</span>${ic('plus')}`}${act ? `<b class="a">진행 ${act}</b>` : ''}${conv ? `<b class="c">거래 ${conv}</b>` : ''}${cl ? `<b class="x">종료 ${cl}</b>` : ''}</div></div>
+          ${r.memo ? `<div class="nmemo"><span>고객 메모</span><span>${esc(r.memo)}</span></div>` : ''}
+          ${ms.length ? `<div class="nbranch">${ms.map((m) => { const l = LISTS[m.listing]; return `<div class="lane"><svg class="conn" viewBox="0 0 48 64" preserveAspectRatio="none"><path d="M0 0C0 18 14 32 32 32" vector-effect="non-scaling-stroke"/></svg>
+            <div><div class="lt"><span class="tr">${esc(title(l))}</span>${tradeTag(l.trade)}${m.stage === 'closed' ? '<span class="nbadge" style="border-color:rgba(224,62,62,.25);background:var(--red-soft);color:var(--red-strong)">종료</span>' : m.stage === 'dealCreated' ? '<span class="nbadge" style="border-color:rgba(15,123,108,.25);background:var(--success-soft);color:var(--success)">거래 전환</span>' : ''}</div><div class="ls"><b class="num">${l.trade === 'monthly' ? `${money(l.deposit)} / ${money(l.rent)}` : money(l.price)}</b><span>·</span><span class="tr">서울 강동구 ${esc(l.road)}</span></div></div>
+            <div style="min-width:0"><div class="track">${track(m)}</div><div class="lm"><span>${m.memo ? esc(m.memo) : '<i>메모 추가</i>'}</span><span class="num">${m.viewing && DT(m.viewing) >= NOW ? `방문 ${fmtMDHM(m.viewing)}` : `${fmtMD(m.updated)} 수정`}</span></div></div>
+            <div class="lmore">${ic('moreV')}</div></div>`; }).join('')}</div>` : ''}
+        </div>`;
+      }).join('')}
+    </div></div>
+    <div class="nstatus num">희망 조건 ${groups.length}건 · 매칭 ${matches().length}건</div>
+  </div>`;
+}
+
+/* ── 앱 틀 ── */
+function renderShell() {
+  const nav = (icon, label, on) => `<div class="nav${on ? ' on' : ''}">${ic(icon)}${label}</div>`;
+  $('#side').innerHTML = `<div class="office"><i>고</i>고덕 에스테잇 공인중개사</div>
+    <div class="grp">시작</div>${nav('dashboard', '대시보드')}
+    <div class="grp">매물·공간</div>${nav('building', '매물관리')}${nav('map', '관리단지')}${nav('megaphone', '광고관리')}
+    <div class="grp">고객·상담</div>${nav('users', '고객 원장')}${nav('user', '연락처')}${nav('message', '상담분석')}
+    <div class="grp">거래·계약</div>${nav('userSearch', '희망매물', true)}${nav('swap', '거래관리')}${nav('file', '계약서 관리')}${nav('wallet', '수수료/정산')}
+    <div class="grp">업무·운영</div>${nav('checkSquare', '업무')}${nav('calendar', '캘린더')}`;
+  $('#tabstrip').innerHTML = `<div class="t">${ic('building')}매물관리</div><div class="t on">${ic('userSearch')}희망매물</div>`;
+}
+for (const seg of document.querySelectorAll('.demo-seg')) {
+  seg.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || S[seg.id] === b.dataset.v) return;
+    S[seg.id] = b.dataset.v;
+    for (const x of seg.querySelectorAll('button')) x.setAttribute('aria-pressed', x === b);
+    // 보이는 고객 수만 바꾼다. 시안에서 고친 내용(단계 · 메모 · 새 매칭 · 쓰던 글)은 그대로 남는다.
+    if (seg.id === 'size') { S.sel.clear(); const open = S.peek && M(S.peek); if (open && open.extra && S.size !== 'many') S.peek = null; }
+    render();
+  });
+}
+
+loadData();
+renderShell();
+render();
+})();
+</script>
+</body>
+</html>

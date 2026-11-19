@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>매물관리 · 확인 칸 시안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+<style>
+  /* 색과 치수는 앱(apps/desktop/src/renderer/app.css, 매물관리 표)에서 그대로 가져왔다. */
+  :root {
+    --bg: #ffffff;
+    --fg: #2c2c2b;
+    --muted: #f9f8f7;
+    --muted-fg: #79766f;
+    --muted-fg-strong: #5f5e59;
+    --icon: #8e8b86;
+    --line: #f0efed;
+    --input: #e6e5e3;
+    --secondary: #f1f1ef;
+    --blue: #2383e2;
+    --success: #0f7b6c;
+    --warning: #cb912f;
+    --destructive: #e03e3e;
+    --row-h: 37px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+
+  .page { max-width: 1120px; margin: 0 auto; padding: 28px 16px 64px; }
+
+  /* ── 머리 ── */
+  .head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; padding: 0 4px 16px; }
+  .head h1 { margin: 0; font-size: 14px; font-weight: 600; }
+  .head p { margin: 2px 0 0; font-size: 12px; color: var(--muted-fg); }
+  .head .grow { flex: 1 1 auto; min-width: 0; }
+
+  .seg { display: inline-flex; padding: 2px; border-radius: 999px; background: var(--secondary); }
+  .seg button {
+    height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent;
+    font-size: 14px; color: var(--muted-fg-strong); cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--fg); color: #fff; }
+  .seg button:focus-visible, .tool:focus-visible, .th-btn:focus-visible, .confirm-btn:focus-visible, tbody tr:focus-visible {
+    outline: 2px solid var(--blue); outline-offset: -2px;
+  }
+
+  /* ── 표 ── */
+  .table-wrap { border-top: 1px solid var(--line); overflow-x: auto; }
+  table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; table-layout: fixed; }
+  th, td {
+    height: var(--row-h); padding: 0 10px; text-align: left; white-space: nowrap;
+    border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  th { height: 36px; font-size: 13px; font-weight: 400; color: var(--muted-fg); background: var(--bg); }
+  th:last-child, td:last-child { border-right: 0; }
+  th .lbl { display: inline-flex; align-items: center; gap: 6px; }
+  th svg { width: 16px; height: 16px; color: var(--icon); flex: none; }
+  th .which { margin-left: 2px; padding: 0 6px; border-radius: 4px; background: var(--secondary); font-size: 12px; color: var(--muted-fg-strong); }
+  th.col-new .which { background: #e7f3f8; color: #1f6f96; }
+  .th-btn { all: unset; display: flex; align-items: center; gap: 4px; width: 100%; height: 100%; cursor: pointer; }
+  .th-btn .arrow { margin-left: auto; font-size: 12px; color: var(--muted-fg-strong); }
+
+  tbody tr { --row-bg: var(--bg); background: var(--row-bg); cursor: default; }
+  tbody tr:hover { --row-bg: #fbfbfa; }
+  td.num { font-variant-numeric: tabular-nums; }
+  td.site { font-weight: 500; }
+
+  .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; font-size: 14px; }
+  .tag.sale { background: #ffe2dd; color: #bb3430; }
+  .tag.jeonse { background: #d3e5ef; color: #1f6f96; }
+  .tag.monthly { background: #fdecc8; color: #8a5a13; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px 0 7px; border-radius: 999px; font-size: 14px; }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .75; }
+  .pill.active { background: #dbeddb; color: #2b593f; }
+  .pill.dealing { background: #d3e5ef; color: #1f6f96; }
+  .pill.closed { background: var(--secondary); color: var(--muted-fg-strong); }
+
+  /* ── 확인 칸 ── */
+  td.confirm { position: relative; padding-right: 10px; }
+  .confirm-cell { display: flex; align-items: center; gap: 6px; height: 36px; min-width: 0; }
+  .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: rgba(121,118,111,.4); }
+  .lines { display: flex; flex-direction: column; min-width: 0; line-height: 1; }
+  .date { font-size: 13px; font-weight: 450; line-height: 16px; font-variant-numeric: tabular-nums; color: var(--muted-fg); overflow: hidden; text-overflow: ellipsis; }
+  .rel { font-size: 11px; line-height: 14px; min-height: 14px; color: rgba(121,118,111,.7); overflow: hidden; text-overflow: ellipsis; }
+  .fresh .dot { background: var(--success); }
+  .fresh .date { color: var(--fg); }
+  .fresh .rel { color: var(--muted-fg); }
+  .aging .dot { background: var(--warning); }
+  .aging .date { color: var(--warning); }
+  .aging .rel { color: rgba(203,145,47,.8); }
+  .stale .dot { background: var(--destructive); }
+  .stale .date { color: var(--destructive); }
+  .stale .rel { color: rgba(224,62,62,.8); }
+  /* 마지막 시도가 유효 확인이 아니었을 때의 아랫줄. 경고색이 아니라 "내가 한 일"로 읽히게 먹색으로 둔다. */
+  .confirm-cell .rel.attempt { color: var(--muted-fg-strong); }
+
+  /* 단추는 글자 자리를 차지하지 않고, 줄에 올렸을 때 오른쪽 끝을 덮으며 나타난다(단지 칸의 "열기"와 같은 방식). */
+  .confirm-btn-wrap {
+    position: absolute; top: 0; right: 0; bottom: 0; display: flex; align-items: center;
+    padding: 0 6px 0 18px; opacity: 0; pointer-events: none;
+    background: linear-gradient(to right, transparent, var(--row-bg) 12px);
+  }
+  tr:hover .confirm-btn-wrap, tr:focus-within .confirm-btn-wrap, .confirm-btn-wrap:focus-within, .confirm-btn-wrap.open { opacity: 1; pointer-events: auto; }
+  .confirm-btn[aria-expanded="true"] { background: var(--secondary); color: var(--fg); }
+
+  /* 결과를 고르는 메뉴. 줄 밖에 띄우고(표에 잘리지 않게) 알림보다 위 층에 둔다. */
+  .menu {
+    position: fixed; z-index: 30; display: none; width: 216px; padding: 4px; border-radius: 8px; background: var(--bg);
+    box-shadow: 0 0 0 1px rgba(42,28,0,.07), 0 8px 24px rgba(25,25,25,.12);
+  }
+  .menu.show { display: block; }
+  /* 두 단계(결과 → 종료 사유)의 높이를 같게 잡아, 단계를 오갈 때 메뉴가 밀리지 않게 한다. */
+  .menu .step { display: none; min-height: 160px; }
+  .menu[data-step="main"] .step.main, .menu[data-step="close"] .step.close { display: block; }
+  .menu button .chev { margin-left: auto; color: var(--muted-fg); }
+  .menu .cap { padding: 6px 8px 4px; font-size: 12px; color: var(--muted-fg); }
+  .menu button {
+    display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 8px; border: 0; border-radius: 6px;
+    background: transparent; font-size: 14px; text-align: left; cursor: pointer;
+  }
+  .menu button:hover, .menu button:focus-visible { background: var(--secondary); outline: none; }
+  .menu button .mark { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+  .menu button .hint { margin-left: auto; font-size: 12px; color: var(--muted-fg); }
+  .menu hr { height: 1px; margin: 4px 0; border: 0; background: var(--line); }
+  .confirm-btn {
+    display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px;
+    border: 0; border-radius: 6px; background: transparent; color: var(--muted-fg); cursor: pointer;
+  }
+  .confirm-btn:hover { background: var(--secondary); color: var(--fg); }
+  .confirm-btn svg { width: 14px; height: 14px; }
+
+  /* ── 시연 도구 ── */
+  .demo-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; padding: 10px 12px;
+    border: 1px dashed var(--input); border-radius: 8px; font-size: 12px; color: var(--muted-fg);
+  }
+  .demo-bar b { font-weight: 600; color: var(--muted-fg-strong); }
+  .tool {
+    height: 28px; padding: 0 10px; border: 1px solid var(--input); border-radius: 6px; background: var(--bg);
+    font-size: 14px; cursor: pointer;
+  }
+  .tool:hover:not(:disabled) { background: var(--muted); }
+  .tool:disabled { color: rgba(121,118,111,.6); cursor: default; }
+  .demo-bar .spacer { flex: 1 1 auto; }
+
+  /* ── 읽는 법 ── */
+  .notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 40px; margin-top: 28px; padding: 0 4px; }
+  @media (max-width: 720px) { .notes { grid-template-columns: 1fr; } }
+  .notes h2 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--muted-fg-strong); }
+  .notes ul { margin: 0; padding: 0; list-style: none; }
+  .notes li { display: flex; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--line); }
+  .notes li:last-child { border-bottom: 0; }
+  .notes .k { flex: none; width: 108px; color: var(--muted-fg); font-size: 12px; }
+  .notes .sw { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+
+  /* ── 알림 ── */
+  .toast {
+    position: fixed; z-index: 20; right: 20px; bottom: 20px; display: none; align-items: center; gap: 12px;
+    padding: 10px 12px 10px 14px; border-radius: 8px; background: var(--fg); color: #fff; font-size: 14px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.16);
+  }
+  .toast.show { display: flex; }
+  .toast button { height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: rgba(255,255,255,.14); color: #fff; font-size: 14px; cursor: pointer; }
+  .toast button:hover { background: rgba(255,255,255,.24); }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="head">
+    <div class="grow">
+      <h1>매물관리 · 확인 칸</h1>
+      <p>기준일 2026. 11. 18. · 같은 매물 8건을 지금 방식과 개선안으로 나란히 보여 줍니다.</p>
+    </div>
+    <div class="seg" role="group" aria-label="보기">
+      <button type="button" data-view="both" aria-pressed="true">나란히</button>
+      <button type="button" data-view="old" aria-pressed="false">지금</button>
+      <button type="button" data-view="new" aria-pressed="false">개선안</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <colgroup id="cols"></colgroup>
+      <thead><tr id="head-row"></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div class="demo-bar" aria-label="시연 도구">
+    <b>시연용</b>
+    <span>줄에 올리면 나오는 단추를 눌러 결과를 골라 보세요. 두 칸이 어떻게 달라지는지 바로 보입니다.</span>
+    <span class="spacer"></span>
+    <button type="button" class="tool" data-reset>처음 상태로</button>
+  </div>
+
+  <div class="notes">
+    <section>
+      <h2>개선안에서 읽는 법</h2>
+      <ul>
+        <li><span class="k">윗줄 날짜</span><span>유효하다는 답을 실제로 들은 마지막 날. 색도 이 날짜로 정합니다.</span></li>
+        <li><span class="k">아랫줄</span><span>그 뒤로 부재중·답변대기가 있었으면 그 결과와 시도한 날, 없었으면 지난 날수.</span></li>
+        <li><span class="k">날짜가 "-"</span><span>한 번도 유효 확인이 된 적 없는 매물.</span></li>
+        <li><span class="k">단추</span><span>줄에 올리면 오른쪽 끝에 나타납니다. 누르면 결과를 고릅니다: 유효함, 부재중, 유효하지 않음(사유를 골라 의뢰 종료), 자세히 기록.</span></li>
+      </ul>
+    </section>
+    <section>
+      <h2>색 기준 (지금과 같음)</h2>
+      <ul>
+        <li><span class="k"><span class="sw" style="background:#0f7b6c"></span>7일 이내</span><span>확인된 지 얼마 안 됨.</span></li>
+        <li><span class="k"><span class="sw" style="background:#cb912f"></span>8~30일</span><span>다시 확인할 때가 됨.</span></li>
+        <li><span class="k"><span class="sw" style="background:#e03e3e"></span>30일 초과</span><span>오래 확인하지 않음.</span></li>
+        <li><span class="k"><span class="sw" style="background:rgba(121,118,111,.4)"></span>기록 없음</span><span>확인된 적 없음.</span></li>
+      </ul>
+    </section>
+  </div>
+</div>
+
+<div class="menu" id="menu" role="menu" aria-label="확인 결과" data-step="main">
+  <div class="step main">
+    <div class="cap" id="menu-cap"></div>
+    <button type="button" role="menuitem" data-result="alive"><span class="mark" style="background:#0f7b6c"></span>유효함<span class="hint">오늘 확인됨</span></button>
+    <button type="button" role="menuitem" data-result="no_answer"><span class="mark" style="background:rgba(121,118,111,.5)"></span>부재중<span class="hint">연락 안 됨</span></button>
+    <button type="button" role="menuitem" data-step-to="close"><span class="mark" style="background:#e03e3e"></span>유효하지 않음<span class="chev">›</span></button>
+    <hr />
+    <button type="button" role="menuitem" data-result="detail">자세히 기록…<span class="hint">가격 변경 · 메모</span></button>
+  </div>
+  <div class="step close">
+    <div class="cap">의뢰를 종료합니다. 사유를 골라 주세요.</div>
+    <button type="button" role="menuitem" data-close="external">다른 중개사·직거래로 계약됨</button>
+    <button type="button" role="menuitem" data-close="withdrawn">의뢰 철회</button>
+    <button type="button" role="menuitem" data-close="other">기타</button>
+    <hr />
+    <button type="button" role="menuitem" data-step-to="main">‹ 뒤로</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <span id="toast-text"></span>
+  <button type="button" id="toast-undo">되돌리기</button>
+</div>
+
+<script>
+(() => {
+  const TODAY = new Date(2026, 10, 18);
+  const RESULT_LABEL = { no_answer: '부재중', pending: '답변대기' };
+
+  // verified: 유효하다는 답을 들은 지 며칠(없으면 null). checked: 마지막으로 연락해 본 지 며칠. result: 그때의 결과.
+  const INITIAL = [
+    { id: 'a', type: 'sale',    dong: '102', ho: '3302', status: 'active',  price: '123억 2,333만', verified: 0,    checked: 0,    result: 'alive' },
+    { id: 'b', type: 'sale',    dong: '102', ho: '3401', status: 'dealing', price: '31억 9,000만',  verified: 5,    checked: 5,    result: 'alive' },
+    { id: 'c', type: 'jeonse',  dong: '101', ho: '3404', status: 'dealing', price: '10억 8,000만',  verified: 8,    checked: 8,    result: 'price_changed' },
+    { id: 'd', type: 'monthly', dong: '101', ho: '3403', status: 'active',  price: '5,000만',       verified: 8,    checked: 0,    result: 'no_answer' },
+    { id: 'e', type: 'jeonse',  dong: '101', ho: '3402', status: 'active',  price: '9억 5,000만',   verified: 21,   checked: 1,    result: 'pending' },
+    { id: 'f', type: 'sale',    dong: '101', ho: '3501', status: 'active',  price: '26억 8,000만',  verified: 41,   checked: 3,    result: 'no_answer' },
+    { id: 'g', type: 'sale',    dong: '101', ho: '3503', status: 'active',  price: '24억 2,000만',  verified: null, checked: 0,    result: 'no_answer' },
+    { id: 'h', type: 'sale',    dong: '103', ho: '1204', status: 'active',  price: '19억 8,000만',  verified: null, checked: null, result: null },
+  ];
+  const TYPE = { sale: '매매', jeonse: '전세', monthly: '월세' };
+  const STATUS = { active: '활성', dealing: '거래중', closed: '종료' };
+  const CLOSE_REASON = { external: '다른 중개사 계약', withdrawn: '의뢰 철회', other: '기타' };
+
+  const clone = (rows) => rows.map((row) => ({ ...row }));
+  const state = {
+    rows: clone(INITIAL),
+    view: 'both',
+    menuFor: null,       // 결과 메뉴가 열려 있는 줄
+    sort: null,          // { key: 'old' | 'new', dir: 'asc' | 'desc' }
+    undo: null,          // 직전 변경 하나만 되돌린다.
+  };
+
+  const dateLabel = (days) => {
+    const d = new Date(TODAY); d.setDate(d.getDate() - days);
+    return `${d.getMonth() + 1}. ${d.getDate()}.`;
+  };
+  const agoLabel = (days) => (days === 0 ? '오늘' : `${days}일 전`);
+  const tone = (days) => (days == null ? '' : days <= 7 ? 'fresh' : days <= 30 ? 'aging' : 'stale');
+
+  // 지금: 연락해 본 날(없으면 확인된 날)을 보여 주고 색도 그 날로 정한다.
+  const oldCell = (row) => {
+    const days = row.checked ?? row.verified;
+    return {
+      tone: tone(days),
+      date: days == null ? '-' : dateLabel(days),
+      rel: days == null ? '' : agoLabel(days),
+      attempt: false,
+      title: days == null ? '확인 기록 없음' : `마지막으로 연락해 본 날 ${dateLabel(days)}`,
+    };
+  };
+  // 개선안: 확인된 날을 보여 주고, 그 뒤의 시도가 유효 확인이 아니었으면 아랫줄에 적는다.
+  const newCell = (row) => {
+    const verifiedLabel = row.verified == null ? '-' : dateLabel(row.verified);
+    // 종료한 의뢰는 다시 확인할 대상이 아니다. 색을 빼고, 언제 종료했는지만 적는다.
+    if (row.status === 'closed') {
+      return { tone: '', date: verifiedLabel, rel: `의뢰 종료 · ${agoLabel(row.checked)}`, attempt: true,
+        title: `${CLOSE_REASON[row.closedReason]}(으)로 ${dateLabel(row.checked)} 종료` };
+    }
+    const failed = RESULT_LABEL[row.result] && row.checked != null;
+    const verifiedText = row.verified == null ? '확인된 적 없음' : `확인된 날 ${dateLabel(row.verified)}`;
+    return {
+      tone: tone(row.verified),
+      date: row.verified == null ? '-' : dateLabel(row.verified),
+      rel: failed ? `${RESULT_LABEL[row.result]} · ${agoLabel(row.checked)}` : row.verified == null ? '' : agoLabel(row.verified),
+      attempt: Boolean(failed),
+      title: failed ? `${verifiedText} · 마지막 시도 ${dateLabel(row.checked)} ${RESULT_LABEL[row.result]}` : verifiedText,
+    };
+  };
+
+  const ICON = {
+    tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.6 21 11a2 2 0 0 1 0 2.8l-6.2 6.2a2 2 0 0 1-2.8 0L3.6 11.6A2 2 0 0 1 3 10.2V4a1 1 0 0 1 1-1h6.2a2 2 0 0 1 1.4.6Z"/><circle cx="7.5" cy="7.5" r="1"/></svg>',
+    text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 5h14M12 5v14"/></svg>',
+    list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M9 7h11M9 12h11M9 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg>',
+    won: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 9 2 6 2-5 2 5 2-6M7.5 12h9"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.3-6.4L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.3 6.4L3 16M3 21v-5h5"/></svg>',
+  };
+
+  const COLS = [
+    { key: 'type', width: 74, head: `${ICON.tag}거래` },
+    { key: 'site', width: 200, head: `${ICON.text}단지` },
+    { key: 'dong', width: 58, head: `${ICON.list}동` },
+    { key: 'ho', width: 64, head: `${ICON.list}호` },
+    { key: 'status', width: 176, head: `${ICON.info}매물상태` },
+    { key: 'price', width: 150, head: `${ICON.won}가격/보증금` },
+    { key: 'old', width: 120, confirm: true },
+    { key: 'new', width: 120, confirm: true },
+  ];
+  const visibleCols = () => COLS.filter((col) => !col.confirm || state.view === 'both' || state.view === col.key);
+
+  const sortedRows = () => {
+    if (!state.sort) return state.rows;
+    const value = (row) => (state.sort.key === 'old' ? row.checked ?? row.verified : row.verified);
+    const sign = state.sort.dir === 'asc' ? 1 : -1;
+    // 기록이 없는 줄은 어느 방향이든 맨 아래에 둔다.
+    return [...state.rows].sort((a, b) => {
+      const av = value(a), bv = value(b);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return (bv - av) * sign;   // asc = 오래된 것부터
+    });
+  };
+
+  const confirmCellHtml = (row, key) => {
+    const cell = key === 'old' ? oldCell(row) : newCell(row);
+    // 종료한 의뢰에는 확인 단추를 두지 않는다. 다시 여는 일은 매물상태 칸에서 한다.
+    const closed = row.status === 'closed';
+    return `<td class="confirm" title="${cell.title}">
+      <div class="confirm-cell ${cell.tone}">
+        <span class="dot"></span>
+        <span class="lines"><span class="date">${cell.date}</span><span class="rel${cell.attempt ? ' attempt' : ''}">${cell.rel}</span></span>
+      </div>
+      ${closed ? '' : `<span class="confirm-btn-wrap${state.menuFor === row.id + ':' + key ? ' open' : ''}">
+        <button type="button" class="confirm-btn" data-confirm="${row.id}" data-col="${key}" title="확인 기록" aria-haspopup="menu" aria-expanded="${state.menuFor === row.id + ':' + key}" aria-label="${row.dong}동 ${row.ho}호 확인 기록">${ICON.refresh}</button>
+      </span>`}
+    </td>`;
+  };
+
+  const cellHtml = (row, col) => {
+    switch (col.key) {
+      case 'type': return `<td><span class="tag ${row.type}">${TYPE[row.type]}</span></td>`;
+      case 'site': return '<td class="site">고덕그라시움</td>';
+      case 'dong': return `<td class="num">${row.dong}</td>`;
+      case 'ho': return `<td class="num">${row.ho}</td>`;
+      case 'status': return `<td><span class="pill ${row.status}">${STATUS[row.status]}${row.status === 'closed' ? ` · ${CLOSE_REASON[row.closedReason]}` : ''}</span></td>`;
+      case 'price': return `<td class="num">${row.price}</td>`;
+      default: return confirmCellHtml(row, col.key);
+    }
+  };
+
+  const headHtml = (col) => {
+    if (!col.confirm) return `<th><span class="lbl">${col.head}</span></th>`;
+    const active = state.sort && state.sort.key === col.key;
+    const arrow = active ? (state.sort.dir === 'asc' ? '↑' : '↓') : '';
+    const sortText = active ? (state.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+    const which = state.view === 'both' ? `<span class="which">${col.key === 'old' ? '지금' : '개선안'}</span>` : '';
+    return `<th class="col-${col.key}" aria-sort="${sortText}">
+      <button type="button" class="th-btn" data-sort="${col.key}"><span class="lbl">${ICON.clock}확인</span>${which}<span class="arrow">${arrow}</span></button>
+    </th>`;
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  function render(focus) {
+    const cols = visibleCols();
+    $('cols').innerHTML = cols.map((col) => `<col style="width:${col.width}px" />`).join('') + '<col />';
+    $('head-row').innerHTML = cols.map(headHtml).join('') + '<th></th>';
+    $('rows').innerHTML = sortedRows().map((row) => `<tr data-row="${row.id}">${cols.map((col) => cellHtml(row, col)).join('')}<td></td></tr>`).join('');
+
+    document.querySelectorAll('[data-view]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.view === state.view)));
+    // 다시 그린 뒤에도 키보드 포커스가 같은 자리에 남게 한다.
+    if (focus) document.querySelector(focus)?.focus();
+  }
+
+  let toastTimer = null;
+  function toast(text, canUndo) {
+    $('toast-text').textContent = text;
+    $('toast-undo').style.display = canUndo ? '' : 'none';
+    $('toast').classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { $('toast').classList.remove('show'); state.undo = null; }, 5000);
+  }
+
+  function record(id, result) {
+    const row = state.rows.find((item) => item.id === id);
+    if (!row) return;
+    state.undo = clone(state.rows);
+    row.checked = 0;
+    row.result = result;
+    if (result === 'alive') row.verified = 0;
+    const label = result === 'alive' ? '유효함' : RESULT_LABEL[result];
+    return `${row.dong}동 ${row.ho}호 · 오늘 ${label}으로 기록했습니다`;
+  }
+
+  const MENU_HEIGHT = 168;   // 메뉴가 가장 클 때의 높이. 자리를 이 값으로 잡아야 열리면서 밀리지 않는다.
+  const buttonOf = (token) => {
+    const [id, col] = token.split(':');
+    return document.querySelector(`[data-confirm="${id}"][data-col="${col}"]`);
+  };
+
+  function openMenu(token) {
+    state.menuFor = token;
+    render();
+    const button = buttonOf(token);
+    const row = state.rows.find((item) => item.id === token.split(':')[0]);
+    const rect = button.getBoundingClientRect();
+    const menu = $('menu');
+    $('menu-cap').textContent = `${row.dong}동 ${row.ho}호 · 오늘 연락한 결과`;
+    const below = rect.bottom + 4 + MENU_HEIGHT <= window.innerHeight;
+    menu.style.top = `${below ? rect.bottom + 4 : rect.top - 4 - MENU_HEIGHT}px`;
+    menu.style.left = `${Math.max(8, Math.min(rect.right - 216, window.innerWidth - 224))}px`;
+    menu.dataset.step = 'main';
+    menu.classList.add('show');
+    menu.querySelector('[data-result="alive"]').focus();
+  }
+
+  function closeMenu(returnFocus) {
+    if (!state.menuFor) return;
+    const token = state.menuFor;
+    state.menuFor = null;
+    $('menu').classList.remove('show');
+    render();
+    if (returnFocus) buttonOf(token)?.focus();
+  }
+
+  document.addEventListener('click', (event) => {
+    const target = event.target.closest('button');
+    const inMenu = event.target.closest('#menu');
+    // 메뉴 밖을 누르면 닫는다. 그 클릭이 다른 단추를 향한 것이면 이어서 처리한다.
+    if (state.menuFor && !inMenu && !(target && target.dataset.confirm)) closeMenu(false);
+    if (!target) return;
+
+    if (target.dataset.stepTo) {
+      const menu = $('menu');
+      menu.dataset.step = target.dataset.stepTo;
+      return menu.querySelector(`.step.${target.dataset.stepTo} button`).focus();
+    }
+    if (target.dataset.close) {
+      const token = state.menuFor;
+      if (!token) return;
+      const row = state.rows.find((item) => item.id === token.split(':')[0]);
+      state.undo = clone(state.rows);
+      row.checked = 0; row.result = 'unavailable'; row.status = 'closed'; row.closedReason = target.dataset.close;
+      state.menuFor = null;
+      $('menu').classList.remove('show');
+      render();
+      return toast(`${row.dong}동 ${row.ho}호 · 의뢰를 종료했습니다 (${CLOSE_REASON[row.closedReason]})`, true);
+    }
+    if (target.dataset.result) {
+      const token = state.menuFor;
+      if (!token) return;
+      const id = token.split(':')[0];
+      if (target.dataset.result === 'detail') {
+        closeMenu(true);
+        return toast('앱에 이미 있는 "확인 기록" 창이 열립니다 (연락 방법 · 가격 변경 · 의뢰 종료 · 메모)', false);
+      }
+      const message = record(id, target.dataset.result);
+      closeMenu(true);
+      return toast(message, true);
+    }
+    if (target.dataset.view) {
+      state.view = target.dataset.view;
+      if (state.sort && state.view !== 'both' && state.sort.key !== state.view) state.sort = null;
+      return render(`[data-view="${state.view}"]`);
+    }
+    if (target.dataset.sort) {
+      const key = target.dataset.sort;
+      state.sort = state.sort && state.sort.key === key
+        ? (state.sort.dir === 'asc' ? { key, dir: 'desc' } : null)
+        : { key, dir: 'asc' };
+      return render(`[data-sort="${key}"]`);
+    }
+    if (target.dataset.confirm) {
+      const token = `${target.dataset.confirm}:${target.dataset.col}`;
+      if (state.menuFor === token) return closeMenu(true);
+      if (state.menuFor) closeMenu(false);
+      return openMenu(token);
+    }
+    if ('reset' in target.dataset) {
+      state.rows = clone(INITIAL); state.undo = null; state.sort = null;
+      render('[data-reset]');
+      return toast('처음 상태로 돌렸습니다', false);
+    }
+    if (target.id === 'toast-undo') {
+      if (state.undo) { state.rows = state.undo; state.undo = null; render(); }
+      return $('toast').classList.remove('show');
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (!state.menuFor) return;
+    const items = [...$('menu').querySelectorAll(`.step.${$('menu').dataset.step} button`)];
+    const at = items.indexOf(document.activeElement);
+    if (event.key === 'Escape') { event.preventDefault(); return closeMenu(true); }
+    if (event.key === 'ArrowLeft' && $('menu').dataset.step === 'close') {
+      event.preventDefault();
+      $('menu').dataset.step = 'main';
+      return $('menu').querySelector('[data-step-to="close"]').focus();
+    }
+    if (event.key === 'ArrowRight' && document.activeElement?.dataset.stepTo === 'close') {
+      event.preventDefault();
+      return document.activeElement.click();
+    }
+    if (event.key === 'Tab') { event.preventDefault(); return closeMenu(true); }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      items[(at + step + items.length) % items.length].focus();
+    }
+  });
+  // 메뉴가 열린 채로 화면이 움직이면 단추와 어긋나므로 닫는다.
+  window.addEventListener('scroll', () => closeMenu(false), true);
+  window.addEventListener('resize', () => closeMenu(false));
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>관리단지 사이드바 — Notion 톤 시안</title>
+<style>
+  :root {
+    --fg: #2c2c2b;
+    --fg-sub: #5f5e59;
+    --fg-muted: #79766f;
+    --icon: #8e8b86;
+    --line: #f0efed;
+    --line-strong: #e6e5e3;
+    --side: #f9f8f7;
+    --hover: rgba(33, 27, 23, 0.04);
+    --selected: rgba(33, 27, 23, 0.06);
+    --ring: #2383e2;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Pretendard", "Pretendard Variable", -apple-system, BlinkMacSystemFont,
+      "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: var(--fg);
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    font-size: 14px;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  button:focus-visible, [tabindex]:focus-visible, input:focus-visible { outline: 2px solid rgba(35, 131, 226, 0.5); outline-offset: -2px; }
+  svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ── 시안 조작 띠 (앱 화면이 아님) ── */
+  .demo-bar {
+    display: flex; align-items: center; gap: 18px; flex: none;
+    padding: 8px 16px; background: #2c2c2b; color: #d9d7d2; font-size: 12.5px;
+  }
+  .demo-bar b { color: #fff; font-weight: 600; }
+  .demo-seg { display: inline-flex; gap: 2px; background: rgba(255,255,255,.1); border-radius: 6px; padding: 2px; }
+  .demo-seg button { padding: 3px 10px; border-radius: 4px; color: #d9d7d2; }
+  .demo-seg button[aria-pressed="true"] { background: #fff; color: #2c2c2b; font-weight: 600; }
+  .demo-note { margin-left: auto; color: #a3a09a; }
+
+  .app { flex: 1; min-height: 0; display: flex; }
+
+  /* ── 사이드바 공통 ── */
+  .panel {
+    width: 280px; flex: none; display: flex; flex-direction: column;
+    background: var(--side); border-right: 1px solid var(--line);
+  }
+  .list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 6px 12px; }
+
+  /* ── 시안: 머리줄 ── */
+  .head {
+    height: 51px; flex: none; display: flex; align-items: center; gap: 2px;
+    padding: 0 8px; border-bottom: 1px solid var(--line);
+  }
+  /* 보기 탭 — 문서관리 보기 탭과 같은 모양. 트랙 없이 고른 탭만 옅게 칠한다 */
+  .tab {
+    height: 28px; padding: 0 10px; border-radius: 14px;
+    font-size: 13.5px; font-weight: 500; color: var(--fg-muted); white-space: nowrap;
+    transition: background-color .12s, color .12s;
+  }
+  .tab:hover { background: var(--hover); color: var(--fg-sub); }
+  .tab[aria-pressed="true"] { background: var(--selected); color: var(--fg); }
+  .head .spacer { flex: 1; }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
+    color: var(--icon); transition: background-color .12s, color .12s;
+  }
+  .icon-btn:hover { background: var(--hover); color: var(--fg-sub); }
+  .head-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding-left: 6px; color: var(--icon); }
+  .head-search input {
+    flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 14px; color: var(--fg); outline: none;
+  }
+  .head-search input::placeholder { color: var(--fg-muted); }
+
+  /* ── 시안: 목록 ── */
+  .label {
+    display: flex; align-items: center; gap: 4px; width: 100%;
+    height: 28px; margin-top: 10px; padding: 0 8px; border-radius: 6px;
+    font-size: 12px; font-weight: 500; color: var(--fg-muted); text-align: left;
+  }
+  .label:first-child { margin-top: 0; }
+  button.label:hover { background: var(--hover); color: var(--fg-sub); }
+  .label .n { font-weight: 400; font-variant-numeric: tabular-nums; }
+  .label svg { width: 12px; height: 12px; opacity: 0; transition: transform .15s, opacity .12s; }
+  .label:hover svg, .label[aria-expanded="false"] svg { opacity: 1; }
+  .label[aria-expanded="false"] svg { transform: rotate(-90deg); }
+
+  .row {
+    position: relative; display: flex; align-items: center; gap: 8px;
+    height: 30px; padding: 0 4px 0 8px; border-radius: 6px; cursor: pointer;
+    color: var(--fg-sub); transition: background-color .12s;
+  }
+  .row:hover { background: var(--hover); }
+  .row > svg { color: var(--icon); }
+  .row .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 450; }
+  .row .ward { flex: 0 4 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fg-muted); }
+  .row .fill { flex: 1; }
+  .row .count { padding-right: 6px; font-size: 12px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+  .row .pinmark { width: 10px; height: 10px; color: #b4b1ab; fill: currentColor; }
+  .row.idle .name { color: var(--fg-muted); }
+  .row[aria-selected="true"] { background: var(--selected); color: var(--fg); }
+  .row[aria-selected="true"] .name { font-weight: 500; color: var(--fg); }
+  .row[aria-selected="true"] > svg { color: var(--fg-sub); }
+  .row .acts { display: none; align-items: center; }
+  .row:hover .acts, .row:focus-within .acts { display: flex; }
+  .row:hover .count, .row:focus-within .count { display: none; }
+  .row .acts button { width: 24px; height: 24px; border-radius: 4px; display: grid; place-items: center; color: var(--icon); }
+  .row .acts button:hover { background: rgba(33, 27, 23, 0.08); color: var(--fg); }
+  .row .acts svg { width: 14px; height: 14px; }
+  .row .acts .on svg { fill: currentColor; }
+
+  .add-row { margin-top: 2px; color: var(--fg-muted); }
+  .add-row .name { font-weight: 400; }
+  .add-row:hover { color: var(--fg-sub); }
+
+  .foot { flex: none; padding: 10px 14px 12px; font-size: 12px; color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+  .empty { padding: 28px 12px; text-align: center; font-size: 12.5px; color: var(--fg-muted); }
+
+  /* ── 지금 화면(비교용) ── */
+  .now .search-row { height: 51px; flex: none; display: flex; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--line); }
+  .now .search-pill { display: flex; align-items: center; gap: 6px; width: 100%; height: 30px; padding: 0 10px; border-radius: 15px; background: rgba(60,52,40,.045); color: #a3a09a; }
+  .now .search-pill input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 13px; outline: none; }
+  .now .search-pill input::placeholder { color: #65625c; }
+  .now .seg-row { flex: none; display: flex; align-items: center; padding: 8px 10px 4px; }
+  .now .seg-row.top { height: 51px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+  .now .seg { display: flex; flex: 1; gap: 1px; height: 30px; padding: 2px; border-radius: 15px; background: rgba(55,53,47,.08); }
+  .now .seg button { flex: 1; border-radius: 13px; font-size: 12.5px; color: #6f6c66; }
+  .now .seg button[aria-pressed="true"] { background: #fff; color: var(--fg); font-weight: 500; box-shadow: 0 1px 2px rgba(40,35,25,.12); }
+  .now .list { padding: 4px 8px 12px; }
+  .now .label { font-size: 11.5px; color: #6f6c66; margin-top: 8px; }
+  .now .label svg { opacity: 1; }
+  .now .row { height: 32px; color: var(--fg); }
+  .now .row .name { font-size: 13px; font-weight: 400; }
+  .now .row[aria-selected="true"] { background: rgba(55,53,47,.08); }
+  .now .row[aria-selected="true"] .name { font-weight: 600; }
+  .now .foot { display: flex; align-items: center; padding: 8px 10px; border-top: 1px solid var(--line); font-size: 11.5px; color: #6f6c66; }
+  .now .foot button { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12.5px; }
+  .now .foot button:hover { background: rgba(60,52,40,.06); color: var(--fg); }
+  .now .foot svg { width: 14px; height: 14px; }
+
+  /* ── 본문 (참고용으로 그린 고정 화면) ── */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .bar1 { height: 51px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+  .site-chip { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 4px; border-radius: 15px; background: #fff; box-shadow: inset 0 0 0 1px #d6d5d0; font-size: 13px; font-weight: 600; }
+  .site-chip i { width: 22px; height: 22px; border-radius: 50%; background: #f1f0ec; display: grid; place-items: center; color: var(--fg-muted); }
+  .site-chip svg { width: 13px; height: 13px; }
+  .dong-chip { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 15px; background: #e7f0fb; color: #1b64b1; font-size: 13px; font-weight: 500; }
+  .dong-chip svg { width: 14px; height: 14px; }
+  .bar2 { height: 52px; flex: none; display: flex; align-items: center; gap: 18px; padding: 0 14px; color: var(--fg-muted); font-size: 13px; }
+  .bar2 .scope { display: inline-flex; gap: 2px; padding: 2px; border-radius: 16px; background: rgba(55,53,47,.08); }
+  .bar2 .scope span { padding: 5px 12px; border-radius: 14px; }
+  .bar2 .scope .on { background: #2c2c2b; color: #fff; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { height: 36px; padding: 0 12px; text-align: left; border-bottom: 1px solid var(--line); border-right: 1px solid #f5f4f2; white-space: nowrap; }
+  th { font-weight: 400; font-size: 13px; color: var(--fg-muted); border-top: 1px solid var(--line); }
+  td { font-weight: 450; }
+  .status { margin-top: auto; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--fg-muted); }
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+  <b>관리단지 사이드바</b>
+  <span class="demo-seg" id="mode">
+    <button data-v="new" aria-pressed="true">시안</button>
+    <button data-v="now" aria-pressed="false">지금</button>
+  </span>
+  <span class="demo-seg" id="size">
+    <button data-v="few" aria-pressed="false">단지 3곳</button>
+    <button data-v="many" aria-pressed="true">단지 12곳</button>
+  </span>
+  <span class="demo-note">이 띠는 비교용이며 앱에 들어가지 않습니다 · 단지와 숫자는 가상 데이터</span>
+</div>
+
+<div class="app">
+  <aside class="panel" id="panel" aria-label="관리단지 목록"></aside>
+
+  <section class="main">
+    <div class="bar1">
+      <span class="site-chip"><i><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg></i><span id="siteName"></span></span>
+      <span class="dong-chip"><svg viewBox="0 0 24 24"><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/></svg>101동 ✕</span>
+    </div>
+    <div class="bar2">
+      <span class="scope"><span class="on">관리호수 6</span><span>전체 134</span></span>
+      <span>타입 ⌄</span><span>소유자 ⌄</span><span>등록 매물 ⌄</span><span>+ 필터</span>
+    </div>
+    <table>
+      <thead><tr><th>동</th><th>호</th><th>공급</th><th>전용</th><th>타입</th><th>소유자명</th><th style="width:40%">소유자 연락처</th></tr></thead>
+      <tbody>
+        <tr><td>101</td><td>3401</td><td>46.7평</td><td>34.3평</td><td>154C</td><td>정유진</td><td>010-2000-0001</td></tr>
+        <tr><td>101</td><td>3402</td><td>52.3평</td><td>38.6평</td><td>172</td><td>오은정</td><td>010-2000-0002</td></tr>
+        <tr><td>101</td><td>3403</td><td>47.0평</td><td>34.2평</td><td>155B</td><td>문지훈</td><td>010-2000-0003</td></tr>
+        <tr><td>101</td><td>3404</td><td>46.6평</td><td>34.2평</td><td>153A</td><td>김민준</td><td>010-2000-0004</td></tr>
+        <tr><td>101</td><td>3501</td><td>73.5평</td><td>53.2평</td><td>242B</td><td>김민준</td><td>010-2000-0005</td></tr>
+        <tr><td>101</td><td>3503</td><td>73.7평</td><td>53.0평</td><td>243A</td><td>이서현</td><td>010-2000-0006</td></tr>
+      </tbody>
+    </table>
+    <div class="status">호수 6건 표시</div>
+  </section>
+</div>
+
+<script>
+const ICON = {
+  apartment: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/>',
+  officetel: '<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/>',
+  villa: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  commercial: '<path d="m3 9 1-5h16l1 5"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+};
+const svg = (name, cls = '') => `<svg viewBox="0 0 24 24" class="${cls}" aria-hidden="true">${ICON[name]}</svg>`;
+const TYPE_LABEL = { apartment: '아파트', officetel: '오피스텔', villa: '빌라·주택', commercial: '상가' };
+
+const ALL = [
+  { id: 1, name: '고덕그라시움', ward: '고덕동', type: 'apartment', n: 8, pin: true },
+  { id: 2, name: '고덕아르테온', ward: '상일동', type: 'apartment', n: 23, pin: true },
+  { id: 3, name: '고덕래미안힐스테이트', ward: '고덕동', type: 'apartment', n: 14 },
+  { id: 4, name: '고덕센트럴아이파크', ward: '상일동', type: 'apartment', n: 6 },
+  { id: 5, name: '고덕자이', ward: '상일동', type: 'apartment', n: 11 },
+  { id: 6, name: '강동롯데캐슬퍼스트', ward: '암사동', type: 'apartment', n: 4 },
+  { id: 7, name: '고덕역 효성해링턴타워', ward: '고덕동', type: 'officetel', n: 9 },
+  { id: 8, name: '상일동역 대명벨리온', ward: '상일동', type: 'officetel', n: 2 },
+  { id: 9, name: '고덕동 258-4 다세대', ward: '고덕동', type: 'villa', n: 3 },
+  { id: 10, name: '고덕비즈밸리 상가', ward: '고덕동', type: 'commercial', n: 5 },
+  { id: 11, name: '강일리버파크 3단지', ward: '강일동', type: 'apartment', n: 0 },
+  { id: 12, name: '암사동 선사현대', ward: '암사동', type: 'apartment', n: 0 },
+];
+
+const state = { mode: 'new', size: 'many', group: 'none', selected: 1, query: '', searching: false, collapsed: new Set(), idleOpen: false };
+const panel = document.getElementById('panel');
+const sites = () => (state.size === 'few' ? ALL.slice(0, 3) : ALL);
+
+function sections() {
+  const q = state.query.trim();
+  const sorted = [...sites()].sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0));
+  const list = q ? sorted.filter((s) => (s.name + s.ward).includes(q)) : sorted;
+  if (state.group === 'none') {
+    const pinned = list.filter((s) => s.pin);
+    const rest = list.filter((s) => !s.pin);
+    const idle = q ? [] : rest.filter((s) => s.n === 0);
+    const active = rest.filter((s) => !idle.includes(s));
+    return [
+      { key: 'pinned', label: '고정', items: pinned },
+      { key: 'all', label: pinned.length ? '단지' : null, items: active },
+      { key: 'idle', label: '기록 없는 단지', items: idle, fold: true },
+    ].filter((s) => s.items.length);
+  }
+  const keyOf = (s) => (state.group === 'region' ? s.ward : TYPE_LABEL[s.type]);
+  const map = new Map();
+  list.forEach((s) => map.set(keyOf(s), [...(map.get(keyOf(s)) ?? []), s]));
+  return [...map].map(([label, items]) => ({ key: label, label, items, fold: true }));
+}
+
+function rowHtml(s) {
+  const showWard = state.group !== 'region';
+  return `<div class="row${s.n === 0 ? ' idle' : ''}" role="option" tabindex="0" data-id="${s.id}" aria-selected="${s.id === state.selected}">
+    ${svg(s.type)}
+    <span class="name">${s.name}</span>
+    ${s.pin && state.group !== 'none' ? svg('pin', 'pinmark') : ''}
+    ${showWard ? `<span class="ward">${s.ward}</span>` : ''}
+    <span class="fill"></span>
+    ${s.n ? `<span class="count">${s.n}</span>` : ''}
+    <span class="acts">
+      <button class="${s.pin ? 'on' : ''}" data-pin="${s.id}" title="${s.pin ? '고정 해제' : '위에 고정'}">${svg('pin')}</button>
+      <button title="단지 메뉴 (동 추가 · 호수 추가 · 관리단지에서 제거)">${svg('more')}</button>
+    </span>
+  </div>`;
+}
+
+function listHtml() {
+  const secs = sections();
+  if (!secs.length) return `<div class="empty">조건에 맞는 관리단지가 없습니다</div>`;
+  return secs.map((sec) => {
+    const open = sec.key === 'idle' ? state.idleOpen : !state.collapsed.has(sec.key);
+    const label = !sec.label ? '' : sec.fold
+      ? `<button class="label" data-fold="${sec.key}" aria-expanded="${open}"><span>${sec.label}</span><span class="n">${sec.items.length}</span>${svg('chevron')}</button>`
+      : `<div class="label">${sec.label}</div>`;
+    return label + (!sec.fold || open ? sec.items.map(rowHtml).join('') : '');
+  }).join('');
+}
+
+const TABS = [['none', '목록'], ['region', '지역별'], ['type', '유형별']];
+const tabsHtml = (cls) => TABS.map(([v, l]) => `<button class="${cls}" data-group="${v}" aria-pressed="${state.group === v}">${l}</button>`).join('');
+
+function render() {
+  const all = sites();
+  const total = all.reduce((a, s) => a + s.n, 0);
+  const idle = all.filter((s) => s.n === 0).length;
+  const summary = `관리호수 ${total}${idle ? ` · 기록 없음 ${idle}` : ''}`;
+  const canSearch = all.length > 6;
+  panel.className = 'panel ' + state.mode;
+
+  if (state.mode === 'new') {
+    const head = state.searching
+      ? `<div class="head-search">${svg('search')}<input id="q" placeholder="단지명 · 동네 검색" value="${state.query}" aria-label="관리단지 검색"></div>
+         <button class="icon-btn" data-search="close" title="검색 닫기 (Esc)">${svg('x')}</button>`
+      : `${tabsHtml('tab')}<span class="spacer"></span>
+         ${canSearch ? `<button class="icon-btn" data-search="open" title="단지 검색">${svg('search')}</button>` : ''}`;
+    panel.innerHTML = `
+      <div class="head" role="group" aria-label="단지 묶음 방식">${head}</div>
+      <div class="list" role="listbox">${listHtml()}
+        <div class="row add-row" tabindex="0">${svg('plus')}<span class="name">단지 추가</span></div>
+      </div>
+      <div class="foot">${summary}</div>`;
+  } else {
+    panel.innerHTML = `
+      ${canSearch ? `<div class="search-row"><div class="search-pill">${svg('search')}<input id="q" placeholder="단지명 · 동네 검색" value="${state.query}"></div></div>` : ''}
+      <div class="seg-row${canSearch ? '' : ' top'}"><div class="seg">${tabsHtml('')}</div></div>
+      <div class="list" role="listbox">${listHtml()}</div>
+      <div class="foot"><span>${summary}</span><button>${svg('plus')}단지 추가</button></div>`;
+  }
+  document.getElementById('siteName').textContent = ALL.find((s) => s.id === state.selected).name;
+}
+
+panel.addEventListener('click', (e) => {
+  const t = (sel) => e.target.closest(sel);
+  let el;
+  if ((el = t('[data-group]'))) { state.group = el.dataset.group; state.collapsed.clear(); }
+  else if ((el = t('[data-search]'))) { state.searching = el.dataset.search === 'open'; state.query = ''; }
+  else if ((el = t('[data-pin]'))) { const s = ALL.find((x) => x.id === +el.dataset.pin); s.pin = !s.pin; }
+  else if ((el = t('[data-fold]'))) {
+    const k = el.dataset.fold;
+    if (k === 'idle') state.idleOpen = !state.idleOpen;
+    else state.collapsed.has(k) ? state.collapsed.delete(k) : state.collapsed.add(k);
+  }
+  else if (t('.acts')) return;
+  else if ((el = t('.row[data-id]'))) state.selected = +el.dataset.id;
+  else return;
+  render();
+  if (state.searching) document.getElementById('q')?.focus();
+});
+panel.addEventListener('input', (e) => {
+  if (e.target.id !== 'q') return;
+  // 입력칸은 다시 그리지 않는다 — 한글 조합 중에 입력칸을 갈아 끼우면 글자가 깨진다. 목록만 바꾼다.
+  state.query = e.target.value;
+  const add = state.mode === 'new'
+    ? `<div class="row add-row" tabindex="0">${svg('plus')}<span class="name">단지 추가</span></div>` : '';
+  panel.querySelector('.list').innerHTML = listHtml() + add;
+});
+panel.addEventListener('keydown', (e) => {
+  // 한글 조합을 끝내는 Esc는 검색을 닫지 않는다
+  if (e.key === 'Escape' && state.searching && !e.isComposing) { state.searching = false; state.query = ''; render(); }
+});
+document.querySelectorAll('.demo-seg').forEach((seg) => seg.addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  state[seg.id] = b.dataset.v;
+  if (seg.id === 'size') { state.selected = 1; state.query = ''; state.searching = false; }
+  seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === b));
+  render();
+}));
+render();
+</script>
+</body>
+</html>
