@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estait Flow · 노션 데스크톱 스타일 4종 비교</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f7f6f3;
+    --fg: #37352f;
+    --fg2: #6b6a65;
+    --fg3: #9b9a97;
+    --border: rgba(55, 53, 47, 0.09);
+    --blue: #2383e2;
+    --blue-soft: rgba(35, 131, 226, 0.1);
+    --green: #0f7b6c;
+    --green-soft: rgba(15, 123, 108, 0.1);
+    --orange: #d9730d;
+    --orange-soft: rgba(217, 115, 13, 0.11);
+    --violet: #6940a5;
+    --violet-soft: rgba(105, 64, 165, 0.1);
+    --shadow-card: 0 1px 2px rgba(15, 15, 15, 0.04), 0 0 0 1px rgba(55, 53, 47, 0.08);
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg-soft);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+    font-size: 13.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, a { font: inherit; color: inherit; text-decoration: none; }
+  button { background: none; border: 0; cursor: pointer; }
+
+  .hub-wrap {
+    max-width: 1460px;
+    margin: 0 auto;
+    padding: 24px 28px 36px;
+  }
+  .hub-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .hub-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+  }
+  .hub-sub {
+    margin: 4px 0 0;
+    color: var(--fg2);
+    font-size: 13px;
+  }
+  .hub-pills {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .pill.blue { background: var(--blue-soft); color: var(--blue); }
+  .pill.green { background: var(--green-soft); color: var(--green); }
+  .pill.orange { background: var(--orange-soft); color: var(--orange); }
+  .pill.violet { background: var(--violet-soft); color: var(--violet); }
+  .pill.gray { background: #ecebe7; color: var(--fg2); }
+
+  .cards-4 {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .v-card {
+    background: var(--bg);
+    border-radius: 14px;
+    box-shadow: var(--shadow-card);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    transition: transform 150ms var(--ease-out), box-shadow 150ms ease;
+  }
+  .v-card.active {
+    box-shadow: 0 0 0 2px var(--fg), 0 8px 22px rgba(15, 15, 15, 0.08);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .v-card:hover { transform: translateY(-2px); }
+  }
+  .v-wf {
+    width: 100%;
+    height: 112px;
+    border-radius: 8px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+  }
+  .btn {
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg2);
+  }
+  .btn:hover { background: var(--bg-soft); color: var(--fg); }
+  .btn.primary { background: var(--fg); border-color: var(--fg); color: #fff; }
+
+  .viewer {
+    background: var(--bg);
+    border-radius: 14px;
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+  .viewer-bar {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--bg-soft);
+  }
+  .vtabs {
+    display: flex;
+    gap: 4px;
+  }
+  .vtab {
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--fg2);
+  }
+  .vtab[aria-selected="true"] {
+    background: var(--bg);
+    color: var(--fg);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+  .viewer-stage {
+    background: #ecebe7;
+    padding: 14px;
+    display: flex;
+    justify-content: center;
+  }
+  .frame-shell {
+    width: 100%;
+    height: 820px;
+    background: var(--bg);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
+    transition: width 200ms var(--ease-out);
+  }
+  .frame-shell iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+  }
+
+  @media (max-width: 1120px) { .cards-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 680px) { .cards-4 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="hub-wrap">
+  <header class="hub-head">
+    <div>
+      <h1 class="hub-title">노션 데스크톱 스타일 대시보드 4종 비교</h1>
+      <p class="hub-sub">상단 애니메이션 날씨판(Briefing + DashboardScene)과 36px 네이티브 탭바·호버 사이드바·CTI 오버레이를 유지하면서, 딱딱한 IDE 톤을 덜어낸 4가지 노션 데스크톱 각도입니다.</p>
+    </div>
+    <div class="hub-pills">
+      <span class="pill gray">하단 상태바 제거</span>
+      <span class="pill blue">연결된 네이티브 탭</span>
+      <span class="pill green">관리단지 위젯 제외</span>
+    </div>
+  </header>
+
+  <section class="cards-4" id="cardsGrid"></section>
+
+  <section class="viewer">
+    <div class="viewer-bar">
+      <div class="vtabs" id="viewerTabs" role="tablist"></div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:12px;color:var(--fg3)">미리보기 폭</span>
+        <button type="button" class="btn primary" data-w="full">전체 폭</button>
+        <button type="button" class="btn" data-w="1440">1440px</button>
+        <button type="button" class="btn" data-w="1200">1200px</button>
+        <a id="openDirect" href="./desktop-n1-home.html" target="_blank" rel="noopener" class="btn" style="margin-left:6px">새 탭으로 열기 ↗</a>
+      </div>
+    </div>
+    <div class="viewer-stage">
+      <div class="frame-shell" id="frameShell">
+        <iframe id="previewFrame" title="노션 데스크톱 대시보드 프리뷰" src="./desktop-n1-home.html?embed=1"></iframe>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const VARIANTS = [
+    {
+      id: 'n1',
+      file: './desktop-n1-home.html',
+      short: 'N1 정통 노션 홈',
+      title: 'N1 · 정통 노션 홈 데스크',
+      tag: '균형 · 파스텔 카드',
+      tone: 'blue',
+      desc: '여백 있는 중앙 캔버스에 파스텔 커버 거래 카드 4열, 노션 캘린더 위젯, 접을 수 있는 내 할 일 블록, 하단 수금·공지 콜아웃을 배치.',
+      wf: `
+        <rect x="6" y="6" width="228" height="22" rx="4" fill="#dfecfa"/>
+        <rect x="6" y="33" width="54" height="24" rx="4" fill="#fff" stroke="rgba(55,53,47,.12)"/>
+        <rect x="64" y="33" width="54" height="24" rx="4" fill="#fff" stroke="rgba(55,53,47,.12)"/>
+        <rect x="122" y="33" width="54" height="24" rx="4" fill="#fff" stroke="rgba(55,53,47,.12)"/>
+        <rect x="180" y="33" width="54" height="24" rx="4" fill="#fff" stroke="rgba(55,53,47,.12)"/>
+        <rect x="6" y="62" width="102" height="44" rx="4" fill="#fff" stroke="rgba(55,53,47,.12)"/>
+        <rect x="114" y="62" width="120" height="44" rx="4" fill="#fff" stroke="rgba(55,53,47,.12)"/>
+      `,
+    },
+    {
+      id: 'n2',
+      file: './desktop-n2-journal.html',
+      short: 'N2 데일리 브리핑 페이지',
+      title: 'N2 · 노션 문서 브리핑',
+      tag: '문서형 · @멘션',
+      tone: 'orange',
+      desc: '상단 브리핑 콜아웃 안의 @매물·@고객 멘션 칩으로 탭을 바로 열고, 흰 도화지 위에 타임라인·체크리스트·인라인 거래 DB·토글을 자연스럽게 나열.',
+      wf: `
+        <rect x="6" y="6" width="228" height="22" rx="4" fill="#dfecfa"/>
+        <rect x="6" y="33" width="160" height="16" rx="4" fill="#ecebe7"/>
+        <rect x="6" y="53" width="160" height="53" rx="4" fill="#fff" stroke="rgba(55,53,47,.1)"/>
+        <rect x="172" y="33" width="62" height="73" rx="5" fill="#ecebe7"/>
+      `,
+    },
+    {
+      id: 'n3',
+      file: './desktop-n3-calendar.html',
+      short: 'N3 타임블록 스튜디오',
+      title: 'N3 · 캘린더 타임블록',
+      tag: '시간 관리 · 고정 뷰',
+      tone: 'violet',
+      desc: '바깥 스크롤 없이 창 높이에 맞춰 좌측 09~19시 노션 캘린더 타임블록(빈 시간 클릭 시 할 일 빠른 입력)과 우측 할 일·거래·신호 패널을 배치.',
+      wf: `
+        <rect x="6" y="6" width="228" height="22" rx="4" fill="#dfecfa"/>
+        <rect x="6" y="33" width="108" height="73" rx="5" fill="#fff" stroke="rgba(55,53,47,.12)"/>
+        <rect x="120" y="33" width="114" height="73" rx="5" fill="#fff" stroke="rgba(55,53,47,.12)"/>
+        <rect x="24" y="48" width="80" height="12" rx="3" fill="#faebdd"/>
+        <rect x="24" y="66" width="80" height="12" rx="3" fill="#e7f2fc"/>
+      `,
+    },
+    {
+      id: 'n4',
+      file: './desktop-n4-peek.html',
+      short: 'N4 보드 & Side Peek',
+      title: 'N4 · 딜 보드 & 측면 보기',
+      tag: 'DB 뷰 · Side Peek',
+      tone: 'green',
+      desc: '오늘 포커스·칸반 보드·표 보기 전환과 노션 특유의 우측 Side Peek 패널 제공. 대시보드에 머물며 확인·체크하고 필요할 때만 ⤢ 탭으로 승격.',
+      wf: `
+        <rect x="6" y="6" width="228" height="22" rx="4" fill="#dfecfa"/>
+        <rect x="6" y="33" width="52" height="73" rx="4" fill="#ecebe7"/>
+        <rect x="63" y="33" width="52" height="73" rx="4" fill="#ecebe7"/>
+        <rect x="120" y="33" width="52" height="73" rx="4" fill="#ecebe7"/>
+        <rect x="176" y="33" width="58" height="73" rx="5" fill="#fff" stroke="#2383e2" stroke-opacity=".5"/>
+      `,
+    },
+  ];
+
+  let activeId = 'n1';
+  const cardsGrid = document.getElementById('cardsGrid');
+  const viewerTabs = document.getElementById('viewerTabs');
+  const previewFrame = document.getElementById('previewFrame');
+  const frameShell = document.getElementById('frameShell');
+  const openDirect = document.getElementById('openDirect');
+
+  function render() {
+    cardsGrid.innerHTML = VARIANTS.map(
+      (v) => `
+      <article class="v-card${v.id === activeId ? ' active' : ''}">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span style="font-size:14px;font-weight:700">${v.title}</span>
+          <span class="pill ${v.tone}">${v.tag}</span>
+        </div>
+        <svg class="v-wf" viewBox="0 0 240 112" aria-hidden="true">${v.wf}</svg>
+        <p style="margin:0;font-size:12.5px;color:var(--fg2);flex:1">${v.desc}</p>
+        <div style="display:flex;gap:6px;padding-top:4px">
+          <button type="button" class="btn${v.id === activeId ? ' primary' : ''}" data-sel="${v.id}" style="flex:1">${v.id === activeId ? '아래에서 보는 중' : '아래에서 보기'}</button>
+          <a href="${v.file}" target="_blank" rel="noopener" class="btn">새 탭 ↗</a>
+        </div>
+      </article>`,
+    ).join('');
+
+    viewerTabs.innerHTML = VARIANTS.map(
+      (v) => `<button type="button" class="vtab" role="tab" aria-selected="${v.id === activeId}" data-sel="${v.id}">${v.short}</button>`,
+    ).join('');
+
+    const cur = VARIANTS.find((v) => v.id === activeId) || VARIANTS[0];
+    const src = `${cur.file}?embed=1`;
+    if (previewFrame.getAttribute('src') !== src) previewFrame.setAttribute('src', src);
+    openDirect.setAttribute('href', cur.file);
+
+    document.querySelectorAll('[data-sel]').forEach((b) =>
+      b.addEventListener('click', () => {
+        activeId = b.dataset.sel;
+        render();
+      }),
+    );
+  }
+
+  document.querySelectorAll('[data-w]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const w = b.dataset.w;
+      frameShell.style.width = w === 'full' ? '100%' : `${w}px`;
+      document.querySelectorAll('[data-w]').forEach((x) => x.classList.toggle('primary', x === b));
+    }),
+  );
+
+  render();
+})();
+</script>
+</body>
+</html>

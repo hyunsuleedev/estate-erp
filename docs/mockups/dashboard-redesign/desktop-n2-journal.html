@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estait Flow · N2 데일리 브리핑 페이지</title>
+<link rel="stylesheet" href="./shared-hero.css">
+<link rel="stylesheet" href="./shared-desktop-chrome.css">
+<style>
+  .n2-wrap {
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: 20px 36px 64px;
+  }
+  .n2-hero-gap {
+    margin-bottom: 24px;
+  }
+
+  .n2-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 232px;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .n2-doc {
+    max-width: 760px;
+    min-width: 0;
+  }
+
+  .n2-page-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .n2-doc-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--fg);
+  }
+
+  /* Notion Callout Briefing Box with @mentions */
+  .n2-callout {
+    background: var(--bg-soft);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 28px;
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--fg);
+  }
+  .n2-mention {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0 6px;
+    border-radius: 5px;
+    background: rgba(55, 53, 47, 0.065);
+    color: var(--fg);
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.5;
+    vertical-align: baseline;
+    transition: background-color 120ms ease;
+  }
+  .n2-mention:hover {
+    background: var(--blue-soft);
+    color: var(--blue);
+  }
+
+  .n2-block {
+    margin-bottom: 28px;
+  }
+  .n2-h2 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 15.5px;
+    font-weight: 600;
+    color: var(--fg);
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--border);
+    margin: 0 0 10px;
+  }
+
+  /* Quiet Vertical Timeline on Paper */
+  .n2-timeline {
+    position: relative;
+    padding-left: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .n2-timeline::before {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 8px;
+    bottom: 8px;
+    width: 1px;
+    background: var(--border-strong);
+  }
+  .n2-tl-item {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 5px 8px;
+    border-radius: 7px;
+    transition: background-color 120ms ease;
+  }
+  .n2-tl-item:hover {
+    background: var(--hover);
+  }
+  .n2-tl-dot {
+    position: absolute;
+    left: -14px;
+    top: 11px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--orange);
+    box-shadow: 0 0 0 3px var(--bg);
+  }
+  .n2-tl-dot.meeting { background: var(--blue); }
+  .n2-tl-dot.contract { background: var(--violet); }
+
+  /* Paper To-Do Checklists */
+  .n2-todo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background-color 110ms ease;
+  }
+  .n2-todo:hover {
+    background: var(--hover);
+  }
+  .n2-todo-act {
+    opacity: 0;
+    transition: opacity 110ms ease;
+  }
+  .n2-todo:hover .n2-todo-act {
+    opacity: 1;
+  }
+
+  /* Notion Inline Database List View for Deals */
+  .n2-db-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 86px 128px 132px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 8px;
+    border-radius: 7px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background-color 110ms ease;
+  }
+  .n2-db-row:last-child {
+    border-bottom: 0;
+  }
+  .n2-db-row:hover {
+    background: var(--hover);
+  }
+
+  /* Collapsible Notion Toggle Block */
+  .n2-toggle-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 4px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--fg);
+    border-radius: 6px;
+  }
+  .n2-toggle-btn:hover {
+    background: var(--hover);
+  }
+
+  /* Sticky Right Margin Note */
+  .n2-margin {
+    position: sticky;
+    top: 18px;
+    background: var(--bg-soft);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .n2-toc-link {
+    display: block;
+    width: 100%;
+    padding: 4px 6px;
+    border-radius: 5px;
+    font-size: 12.5px;
+    color: var(--fg2);
+  }
+  .n2-toc-link:hover {
+    background: rgba(55, 53, 47, 0.06);
+    color: var(--fg);
+  }
+
+  @media (max-width: 1040px) {
+    .n2-layout {
+      grid-template-columns: 1fr;
+    }
+    .n2-margin {
+      position: static;
+    }
+  }
+  @media (max-width: 720px) {
+    .n2-wrap {
+      padding: 16px 20px 44px;
+    }
+    .n2-db-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .n2-db-hide {
+      display: none;
+    }
+  }
+</style>
+</head>
+<body>
+<script src="./shared-data.js"></script>
+<script src="./shared-hero.js"></script>
+<script src="./shared-desktop-chrome.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const Data = window.DashMockData;
+  const ui = {
+    openSignals: true,
+    openNotices: true,
+  };
+
+  const chrome = window.mountNotionDesktop({
+    activeVariant: 'n2',
+    wrapClass: 'n2-wrap',
+    onPin: (pin) => {
+      const target = pin === 'schedule' ? '#n2SecSched' : '#n2SecTasks';
+      chrome.contentHost.querySelector(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    onQuickCreate: () => chrome.contentHost.querySelector('#n2AddInput')?.focus(),
+  });
+
+  chrome.contentHost.parentElement.querySelector('#ntHeroHost').classList.add('n2-hero-gap');
+
+  function render() {
+    const d = Data.getScopedData();
+    chrome.hero.setScope(d.scope);
+    chrome.hero.updateCounts(d.heroCounts);
+    chrome.hero.setFlags(d.heroFlags);
+
+    const urgentDeal = d.deals.find((x) => x.health === 'overdue') || d.deals[0];
+    const contractDeal = d.deals.find((x) => x.id === 'd-arteon-1203') || d.deals[0];
+    const pendingCall = d.pendingSuggestions[0];
+    const orderedTasks = [...d.overdueTasks, ...d.todayTasks, ...d.upcomingTasks.slice(0, 2)];
+
+    const pct = d.summary.collectionPct;
+    const r = 22;
+    const circ = +(2 * Math.PI * r).toFixed(1);
+    const dashOff = +(circ * (1 - pct / 100)).toFixed(1);
+
+    chrome.contentHost.innerHTML = `
+      <div class="n2-layout">
+        <article class="n2-doc">
+          <div class="n2-page-head">
+            <h1 class="n2-doc-title">오늘의 브리핑</h1>
+            <span style="font-size:12px;color:var(--fg3)">${d.scope === 'mine' ? '내 담당 기준' : '사무소 전체 기준'}</span>
+          </div>
+
+          <!-- Notion Callout Morning Briefing with Live @mentions -->
+          <div class="n2-callout">
+            <span style="color:var(--orange);margin-top:3px">${chrome.svgIcon('sun', 'ic')}</span>
+            <div>
+              오늘 일정 <b class="num">${d.todayEvents.length}건</b>, 마감 지난 할 일 <b class="num">${d.overdueTasks.length}건</b>, 오늘 할 일 <b class="num">${d.todayTasks.length}건</b>이 있습니다.
+              ${urgentDeal ? `<button type="button" class="n2-mention" data-n2-deal="${urgentDeal.id}">@${chrome.escapeHtml(urgentDeal.siteName)} ${chrome.escapeHtml(urgentDeal.dongHo)}</button>(${chrome.escapeHtml(urgentDeal.healthText)})` : ''}
+              와
+              ${contractDeal ? `<button type="button" class="n2-mention" data-n2-deal="${contractDeal.id}">@${chrome.escapeHtml(contractDeal.siteName)} ${chrome.escapeHtml(contractDeal.dongHo)}</button>` : ''}
+              일정을 확인하시고,
+              ${pendingCall ? `<button type="button" class="n2-mention" data-n2-call="${pendingCall.id}">@${chrome.escapeHtml(pendingCall.contactName)}</button> 부재중 회신부터 챙겨보세요.` : '할 일을 순서대로 정리해 보세요.'}
+            </div>
+          </div>
+
+          <!-- Block 1: Schedule Timeline -->
+          <section class="n2-block" id="n2SecSched">
+            <h2 class="n2-h2">
+              <span>오늘의 일정</span>
+              <div class="nt-text-tabs">
+                ${d.weekDays
+                  .map(
+                    (wd) => `<button type="button" class="nt-ttab${wd.key === d.selectedDayKey ? ' active' : ''}" data-n2-day="${wd.key}">${wd.weekday} ${wd.dayNum}</button>`,
+                  )
+                  .join('')}
+              </div>
+            </h2>
+            <div class="n2-timeline">
+              ${
+                d.selectedDayEvents.length === 0
+                  ? '<div style="padding:8px 6px;color:var(--fg3);font-size:13px">선택한 날 일정이 없습니다.</div>'
+                  : d.selectedDayEvents
+                      .map(
+                        (ev) => `
+                    <button type="button" class="n2-tl-item" data-n2-ev="${ev.id}">
+                      <span class="n2-tl-dot ${ev.type || ''}"></span>
+                      <span class="num" style="width:44px;font-size:12.5px;font-weight:600;color:var(--fg2);flex:none">${Data.formatHour(ev.hour)}</span>
+                      <div style="min-width:0;flex:1">
+                        <div style="font-size:13.5px;font-weight:500">${chrome.escapeHtml(ev.title)}</div>
+                        <div style="font-size:12px;color:var(--fg3)">${[ev.propertyLabel, ev.memo].filter(Boolean).join(' · ')}</div>
+                      </div>
+                    </button>`,
+                      )
+                      .join('')
+              }
+            </div>
+          </section>
+
+          <!-- Block 2: Paper Checklists -->
+          <section class="n2-block" id="n2SecTasks">
+            <h2 class="n2-h2">
+              <span>오늘 챙길 체크리스트</span>
+              <span class="num" style="font-size:12px;font-weight:400;color:var(--fg3)">남은 업무 ${d.openTasks.length}건</span>
+            </h2>
+            <div>
+              ${orderedTasks
+                .map(
+                  (t) => `
+                <div class="n2-todo" data-n2-task="${t.id}">
+                  <button type="button" class="nt-chk" data-n2-done="${t.id}" aria-checked="false" aria-label="${chrome.escapeHtml(t.title)} 완료">
+                    <svg viewBox="0 0 12 12"><path d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+                  </button>
+                  <div style="min-width:0;flex:1;display:flex;align-items:center;gap:8px">
+                    <span style="font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(t.title)}</span>
+                    ${t.propertyLabel ? `<span style="font-size:11.5px;color:var(--fg3);white-space:nowrap">${chrome.escapeHtml(t.propertyLabel)}</span>` : ''}
+                  </div>
+                  <button type="button" class="nt-ghost-btn n2-todo-act" data-n2-snooze="${t.id}">내일로</button>
+                  <span class="num" style="font-size:12px;color:${t.dueOffsetDays < 0 ? 'var(--red)' : 'var(--fg3)'};white-space:nowrap">${Data.dDayLabel(t.dueOffsetDays)}</span>
+                </div>`,
+                )
+                .join('')}
+              <form id="n2AddForm" style="display:flex;align-items:center;gap:10px;padding:7px 8px">
+                <span style="width:16px;text-align:center;color:var(--fg3)">+</span>
+                <input type="text" id="n2AddInput" placeholder="체크리스트 항목 추가..." style="flex:1;border:0;outline:none;background:transparent;font-size:13.5px" aria-label="새 할 일 추가">
+              </form>
+            </div>
+          </section>
+
+          <!-- Block 3: Inline Database List View for Deals -->
+          <section class="n2-block" id="n2SecDeals">
+            <h2 class="n2-h2">
+              <span>진행 중인 거래</span>
+              <span class="num" style="font-size:12px;font-weight:400;color:var(--fg3)">${d.deals.length}건</span>
+            </h2>
+            <div>
+              ${d.deals
+                .map((deal) => {
+                  const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray' };
+                  const dotColor = deal.stage === 'completed' || deal.stage === 'settling' ? 'var(--green)' : deal.stage === 'contracted' ? 'var(--blue)' : 'var(--violet)';
+                  return `
+                  <div class="n2-db-row" data-n2-deal="${deal.id}">
+                    <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                      <span style="color:var(--fg3)">${chrome.svgIcon('file', 'ic ic-sm')}</span>
+                      <span style="font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(deal.siteName)} ${chrome.escapeHtml(deal.dongHo)}</span>
+                      ${deal.isJointBrokerage ? '<span class="nt-pill" data-tone="gray">공동</span>' : ''}
+                    </div>
+                    <div class="n2-db-hide" style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--fg2)">
+                      <span style="width:6px;height:6px;border-radius:50%;background:${dotColor}"></span>
+                      <span>${st.label}</span>
+                    </div>
+                    <div class="n2-db-hide num" style="font-size:12px;color:var(--fg2);text-align:right">${chrome.escapeHtml(deal.amountText)}</div>
+                    <div class="num" style="font-size:12px;font-weight:500;text-align:right;color:${deal.health === 'overdue' ? 'var(--red)' : deal.health === 'urgent' ? 'var(--orange)' : 'var(--fg3)'}">${chrome.escapeHtml(deal.healthText)}</div>
+                  </div>`;
+                })
+                .join('')}
+            </div>
+          </section>
+
+          <!-- Block 4: Collapsible Notion Toggles -->
+          <section class="n2-block" id="n2SecSignals">
+            <button type="button" class="n2-toggle-btn" data-n2-toggle="openSignals">
+              <span style="font-size:11px;width:14px">${ui.openSignals ? '▾' : '▸'}</span>
+              <span>통화 제안 · 매물 신호</span>
+              <span class="num" style="font-size:12px;font-weight:400;color:var(--fg3)">${d.pendingSuggestions.length + d.activeSignals.length}</span>
+            </button>
+            ${
+              ui.openSignals
+                ? `<div style="padding-left:20px;margin-top:4px;display:flex;flex-direction:column;gap:2px">
+                    ${[
+                      ...d.pendingSuggestions.map((c) => ({ isCall: true, id: c.id, title: `${c.contactName} — ${c.suggestionAction}`, sub: c.summary })),
+                      ...d.activeSignals.slice(0, 3).map((s) => ({ isCall: false, id: s.id, title: s.title, sub: s.sub })),
+                    ]
+                      .map(
+                        (s) => `
+                      <div class="n2-todo" data-n2-sigkind="${s.isCall ? 'call' : 'signal'}" data-n2-sigid="${s.id}" data-n2-sigtitle="${chrome.escapeHtml(s.title)}">
+                        <span style="width:6px;height:6px;border-radius:50%;background:${s.isCall ? 'var(--violet)' : 'var(--orange)'};flex:none"></span>
+                        <span style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(s.title)} <span style="color:var(--fg3)">· ${chrome.escapeHtml(s.sub)}</span></span>
+                        <button type="button" class="nt-ghost-btn soft" data-n2-sigact="${s.isCall ? 'call' : 'signal'}" data-n2-sigobj="${s.id}">${s.isCall ? '반영' : '확인'}</button>
+                      </div>`,
+                      )
+                      .join('')}
+                  </div>`
+                : ''
+            }
+
+            <div style="height:10px"></div>
+
+            <button type="button" class="n2-toggle-btn" data-n2-toggle="openNotices">
+              <span style="font-size:11px;width:14px">${ui.openNotices ? '▾' : '▸'}</span>
+              <span>공지사항</span>
+              <span class="num" style="font-size:12px;font-weight:400;color:var(--blue)">안 읽음 ${d.unreadNotices.length}</span>
+            </button>
+            ${
+              ui.openNotices
+                ? `<div style="padding-left:20px;margin-top:4px;display:flex;flex-direction:column;gap:2px">
+                    ${d.notices
+                      .map(
+                        (n) => `
+                      <button type="button" class="n2-todo" data-n2-notice="${n.id}" style="width:100%">
+                        <span style="width:6px;height:6px;border-radius:50%;background:${n.readAt ? 'transparent' : 'var(--blue)'};flex:none"></span>
+                        ${n.isRequired ? '<span class="nt-pill" data-tone="red">필독</span>' : ''}
+                        <span style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:${n.readAt ? 400 : 600}">${chrome.escapeHtml(n.title)}</span>
+                        <span class="num" style="font-size:12px;color:var(--fg3)">${n.publishedAt}</span>
+                      </button>`,
+                      )
+                      .join('')}
+                  </div>`
+                : ''
+            }
+          </section>
+        </article>
+
+        <!-- Sticky Right Margin Summary -->
+        <aside class="n2-margin" aria-label="문서 요약 노트">
+          <div style="display:flex;align-items:center;gap:12px;cursor:pointer" data-n2-cashflow>
+            <svg width="54" height="54" viewBox="0 0 54 54" style="flex:none;transform:rotate(-90deg)">
+              <circle cx="27" cy="27" r="${r}" fill="none" stroke="rgba(55,53,47,0.1)" stroke-width="5"/>
+              <circle cx="27" cy="27" r="${r}" fill="none" stroke="#0f7b6c" stroke-width="5" stroke-linecap="round" stroke-dasharray="${circ}" stroke-dashoffset="${dashOff}"/>
+            </svg>
+            <div>
+              <div style="font-size:11.5px;color:var(--fg3)">이달 수금 <b class="num" style="color:var(--green)">${pct}%</b></div>
+              <div class="num" style="font-size:17px;font-weight:700;letter-spacing:-0.02em">${Data.formatMoneyManwon(d.summary.collectedManwon)}</div>
+              <div class="num" style="font-size:11.5px;color:var(--fg3)">예정 ${Data.formatMoneyManwon(d.summary.expectedManwon)}</div>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--border);padding-top:12px">
+            <div style="font-size:11px;font-weight:600;color:var(--fg3);margin-bottom:6px">보기 범위</div>
+            <div style="display:flex;gap:4px">
+              <button type="button" class="nt-ttab${d.scope === 'mine' ? ' active' : ''}" data-n2-scope="mine" style="flex:1">내 담당</button>
+              <button type="button" class="nt-ttab${d.scope === 'all' ? ' active' : ''}" data-n2-scope="all" style="flex:1">사무소 전체</button>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--border);padding-top:12px">
+            <div style="font-size:11px;font-weight:600;color:var(--fg3);margin-bottom:4px">바로 이동</div>
+            <button type="button" class="n2-toc-link" data-n2-jump="#n2SecSched">오늘의 일정</button>
+            <button type="button" class="n2-toc-link" data-n2-jump="#n2SecTasks">챙길 체크리스트</button>
+            <button type="button" class="n2-toc-link" data-n2-jump="#n2SecDeals">진행 중인 거래</button>
+            <button type="button" class="n2-toc-link" data-n2-jump="#n2SecSignals">통화 신호 · 공지</button>
+          </div>
+        </aside>
+      </div>
+    `;
+
+    const root = chrome.contentHost;
+    root.querySelectorAll('[data-n2-deal]').forEach((el) => {
+      const deal = Data.state.deals.find((x) => x.id === el.dataset.n2Deal);
+      if (!deal) return;
+      el.addEventListener('click', (e) =>
+        chrome.openTab({ key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--green)' }, { background: e.metaKey || e.ctrlKey }),
+      );
+    });
+    root.querySelectorAll('[data-n2-call]').forEach((el) => {
+      const c = Data.state.callSuggestions.find((x) => x.id === el.dataset.n2Call);
+      if (!c) return;
+      el.addEventListener('click', (e) =>
+        chrome.openTab({ key: `call:${c.id}`, title: `${c.contactName} — ${c.suggestionAction}`, kind: 'call', payload: { id: c.id }, dotColor: 'var(--violet)' }, { background: e.metaKey || e.ctrlKey }),
+      );
+    });
+    root.querySelectorAll('[data-n2-day]').forEach((b) =>
+      b.addEventListener('click', () => Data.selectDay(b.dataset.n2Day)),
+    );
+    root.querySelectorAll('[data-n2-ev]').forEach((b) => {
+      const ev = Data.state.events.find((x) => x.id === b.dataset.n2Ev);
+      if (!ev) return;
+      b.addEventListener('click', (e) =>
+        chrome.openTab({ key: `event:${ev.id}`, title: ev.title, kind: 'event', payload: { eventId: ev.id }, dotColor: 'var(--orange)' }, { background: e.metaKey || e.ctrlKey }),
+      );
+    });
+    root.querySelectorAll('[data-n2-done]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        b.setAttribute('aria-checked', 'true');
+        const res = Data.completeTask(b.dataset.n2Done);
+        if (res) {
+          chrome.hero.cheer();
+          chrome.showToast('체크리스트를 완료했습니다', res.task.title, () => Data.restoreTaskStatus(res.task.id, res.previousStatus));
+        }
+      }),
+    );
+    root.querySelectorAll('[data-n2-snooze]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const res = Data.snoozeTask(b.dataset.n2Snooze, 1, '내일');
+        if (res) chrome.showToast('내일로 미뤘습니다', res.task.title, () => Data.snoozeTask(res.task.id, res.prevOffset, '원래 기한'));
+      }),
+    );
+    root.querySelectorAll('[data-n2-task]').forEach((row) => {
+      const t = Data.state.tasks.find((x) => x.id === row.dataset.n2Task);
+      if (!t) return;
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        chrome.openTab({ key: `task:${t.id}`, title: t.title, kind: 'task', payload: { id: t.id }, dotColor: 'var(--blue)' }, { background: e.metaKey || e.ctrlKey });
+      });
+    });
+    root.querySelector('#n2AddForm')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const inp = root.querySelector('#n2AddInput');
+      const created = Data.addTask(inp.value);
+      if (created) {
+        inp.value = '';
+        chrome.showToast('체크리스트에 추가했습니다', created.title);
+      }
+    });
+    root.querySelectorAll('[data-n2-toggle]').forEach((b) =>
+      b.addEventListener('click', () => {
+        ui[b.dataset.n2Toggle] = !ui[b.dataset.n2Toggle];
+        render();
+      }),
+    );
+    root.querySelectorAll('[data-n2-sigact]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (b.dataset.n2Sigact === 'call') Data.resolveCallSuggestion(b.dataset.n2Sigobj, 'accepted');
+        else Data.resolveSignal(b.dataset.n2Sigobj, '확인 완료');
+        chrome.hero.cheer();
+      }),
+    );
+    root.querySelectorAll('[data-n2-sigid]').forEach((row) =>
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        const kind = row.dataset.n2Sigkind;
+        chrome.openTab({ key: `${kind}:${row.dataset.n2Sigid}`, title: row.dataset.n2Sigtitle, kind, payload: { id: row.dataset.n2Sigid }, dotColor: kind === 'call' ? 'var(--violet)' : 'var(--orange)' }, { background: e.metaKey || e.ctrlKey });
+      }),
+    );
+    root.querySelectorAll('[data-n2-notice]').forEach((b) => {
+      const n = Data.state.notices.find((x) => x.id === b.dataset.n2Notice);
+      if (!n) return;
+      b.addEventListener('click', (e) =>
+        chrome.openTab({ key: `notice:${n.id}`, title: n.title, kind: 'notice', payload: { noticeId: n.id }, dotColor: 'var(--blue)' }, { background: e.metaKey || e.ctrlKey }),
+      );
+    });
+    root.querySelector('[data-n2-cashflow]')?.addEventListener('click', () =>
+      chrome.openTab({ key: 'route:/cashflow', title: '수수료/정산', kind: 'route', payload: { route: '/cashflow' }, dotColor: 'var(--green)' }),
+    );
+    root.querySelectorAll('[data-n2-scope]').forEach((b) =>
+      b.addEventListener('click', () => Data.setScope(b.dataset.n2Scope)),
+    );
+    root.querySelectorAll('[data-n2-jump]').forEach((b) =>
+      b.addEventListener('click', () => root.querySelector(b.dataset.n2Jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' })),
+    );
+  }
+
+  Data.subscribe(render);
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>고객 원장 — 업무 hub 시안</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  /*
+   * 고객 원장 시안 — 업무 hub (2026-11-20)
+   *
+   * 모양은 5판(앱의 목록 화면 규격) 그대로. 바뀐 것은 한 줄이 무엇인가다.
+   *  - 사람(연락처)은 끝나지 않는 기록이고, 업무는 그 사람과 하는 한 번의 일이다. 한 줄 = 업무 하나.
+   *  - 업무에 의뢰·상담·메모(나중에 자료)가 모인다.
+   *  - 업무의 상태는 저장하지 않고 담긴 의뢰에서 계산한다. 담긴 의뢰가 모두 끝나면 업무도 끝난다.
+   *  - 끝난 업무에는 덧붙이지 않는다. 같은 손님의 새 일은 새 업무로 연다. 지난 업무는 그 손님의 "다른 업무"에 남는다.
+   *  - 진행 중인 업무가 있는 손님에게 새 의뢰가 오면 그 업무에 넣는 것이 기본이고, 별개의 일이면 새 업무로 연다.
+   * 자료는 모두 가상이고 저장되지 않는다 (새로 고치면 처음으로 돌아간다).
+   */
+
+  :root {
+    --bg: #fff; --fg: #2c2c2b; --ink: #2f2e2a; --fg2: #5f5e5b; --muted: #79766f; --soft: #6f6c66; --faint: #a9a7a1; --icon: #8e8b86;
+    --border: rgba(42, 28, 0, 0.09); --vline: #eeeeec; --div: #f1f0ec; --head-line: #ecebe8; --side: #f9f8f7;
+    --hover: rgba(60, 52, 40, 0.06); --row-hover: #f8f7f6; --row-open: #f3f2f0;
+    --blue: #2383e2; --green: #44745a; --green-soft: #eef3ed; --amber: #8f6b1f; --amber-soft: #fbf3db;
+    --pop: 0 14px 28px rgba(25, 25, 25, 0.08), 0 4px 8px rgba(25, 25, 25, 0.04), 0 0 0 1px rgba(42, 28, 0, 0.08);
+    --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { overflow: hidden; background: var(--bg); color: var(--fg); font: 14px/21px "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; -webkit-font-smoothing: antialiased; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { padding: 0; border: 0; background: none; cursor: pointer; text-align: inherit; }
+  h1, h2, h3, h4, p, ul, ol { margin: 0; padding: 0; }
+  ul, ol { list-style: none; }
+  svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  :focus-visible { outline: 2px solid rgba(35, 131, 226, 0.6); outline-offset: 1px; border-radius: 6px; }
+  body[data-mouse] :focus-visible:not(input):not(textarea) { outline: none; }
+  .num { font-variant-numeric: tabular-nums; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* 앱 틀 (시안용 흉내) */
+  .win { display: grid; grid-template-rows: 36px minmax(0, 1fr); height: 100vh; }
+  .titlebar { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); background: var(--side); }
+  .titlebar b { display: flex; align-items: center; width: 232px; padding-left: 16px; font-weight: 600; letter-spacing: -0.02em; }
+  .titlebar span { display: flex; align-items: center; gap: 8px; width: 180px; padding: 0 12px; background: var(--bg); border: 1px solid var(--border); border-bottom: 0; margin-top: 3px; border-radius: 6px 6px 0 0; font-size: 13px; }
+  .shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 0; }
+  .nav { background: var(--side); border-right: 1px solid var(--border); padding: 8px; overflow: auto; }
+  .nav p { padding: 10px 8px 4px; font-size: 12px; color: var(--muted); }
+  .nav a { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 6px; color: var(--fg2); text-decoration: none; }
+  .nav a svg { color: var(--icon); width: 16px; height: 16px; }
+  .nav a[aria-current] { background: rgba(33, 27, 23, 0.07); color: var(--fg); font-weight: 500; }
+  .main { position: relative; display: flex; min-width: 0; min-height: 0; overflow: hidden; }
+  .list { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+
+  /* 도구 줄 첫 줄: 보기 탭 + 검색 + 추가 */
+  .tb1 { display: flex; flex: none; align-items: center; gap: 8px; height: 51px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+  .tabs { display: flex; flex: none; align-items: center; gap: 2px; height: 30px; padding: 2px; border-radius: 8px; background: #f6f5f3; box-shadow: inset 0 0 0 1px #f0efec; }
+  .tab { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 12px; border-radius: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; transition: color 120ms; }
+  .tab:hover { color: var(--fg); }
+  .tab[aria-selected="true"] { background: #fff; color: var(--fg); font-weight: 500; box-shadow: 0 1px 2px rgba(40, 35, 25, 0.1); }
+  .tab i { font-style: normal; font-weight: 400; font-size: 12px; color: var(--faint); }
+  .search { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 160px; max-width: 360px; height: 30px; padding: 0 14px; border-radius: 15px; background: #f1f0ec; cursor: text; transition: background-color 120ms; }
+  .search:hover { background: #ebeae6; }
+  .search:focus-within { background: #fff; box-shadow: inset 0 0 0 1px rgba(55, 53, 47, 0.3); }
+  .search svg { color: var(--muted); }
+  .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font-size: 13px; }
+  .search input::placeholder { color: var(--muted); }
+  .primary { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; margin-left: auto; padding: 0 12px; border-radius: 8px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 500; white-space: nowrap; transition: background-color 120ms, transform 160ms var(--ease); }
+  .primary:hover { background: #1f1e1b; }
+  .primary:active { transform: scale(0.97); }
+
+  /* 둘째 줄: 거르기 칩 + 정렬 */
+  .tb2 { display: flex; flex: none; align-items: center; gap: 8px; min-height: 44px; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+  .chips { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+  .chip { display: inline-flex; align-items: center; height: 28px; border-radius: 14px; font-size: 13px; color: var(--soft); transition: background-color 120ms, color 120ms; }
+  .chip:hover, .chip.open { background: var(--hover); color: var(--fg); }
+  .chip > button:first-child { display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 10px; border-radius: 14px; }
+  .chip svg { color: #a3a09a; }
+  .chip .caret { width: 12px; height: 12px; }
+  .chip.on { background: rgba(35, 131, 226, 0.1); color: var(--blue); }
+  .chip.on:hover { background: rgba(35, 131, 226, 0.15); color: var(--blue); }
+  .chip.on svg { color: currentColor; }
+  .chip.on > button:first-child { padding-right: 4px; }
+  .chip.on b { font-weight: 600; }
+  .chip .x { display: grid; place-items: center; width: 20px; height: 20px; margin-right: 4px; border-radius: 50%; }
+  .chip .x:hover { background: rgba(35, 131, 226, 0.18); }
+  .chip .x svg { width: 12px; height: 12px; }
+  .ghost { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px; font-size: 13px; color: var(--soft); white-space: nowrap; transition: background-color 120ms, color 120ms; }
+  .ghost:hover { background: var(--hover); color: var(--fg); }
+  .ghost svg { width: 13px; height: 13px; }
+
+  /* 표: 매물관리 표 규격 */
+  .scroll { position: relative; flex: 1; min-height: 0; overflow: auto; }
+  .tbl { display: grid; grid-template-columns: 36px 172px 132px minmax(220px, 1fr) 124px 100px 116px; min-width: 900px; }
+  .tr { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
+  .tr.head { position: sticky; top: 0; z-index: 3; background: var(--bg); }
+  .th, .td { display: flex; align-items: center; min-width: 0; padding: 0 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--vline); white-space: nowrap; overflow: hidden; }
+  .th:last-child, .td:last-child { border-right: 0; }
+  .th { gap: 6px; height: 36px; font-size: 13px; color: var(--muted); }
+  .th svg { width: 16px; height: 16px; color: var(--icon); stroke-width: 1.5; }
+  .td { height: 37px; font-weight: 450; }
+  .row { cursor: pointer; }
+  .row:hover .td, .row:focus-within .td { background: var(--row-hover); }
+  .row.picked .td { background: rgba(47, 46, 42, 0.04); }
+  .row.sel .td { background: var(--row-open); }
+  /* 체크박스 칸: 앱의 표와 같은 14px · 모서리 4px, 고르면 먹색으로 찬다 */
+  .c-pick { justify-content: center; padding: 0; }
+  .cb { position: relative; display: grid; place-items: center; width: 14px; height: 14px; border-radius: 4px; background: var(--bg); box-shadow: inset 0 0 0 1px #cfcdc8, 0 1px 2px rgba(0, 0, 0, 0.05); color: #fff; transition: box-shadow 120ms, background-color 120ms; }
+  .cb::after { content: ""; position: absolute; inset: -10px; } /* 누르는 자리를 넓힌다 */
+  .cb:hover { box-shadow: inset 0 0 0 1px #a3a09a, 0 1px 2px rgba(0, 0, 0, 0.05); }
+  .cb svg { width: 11px; height: 11px; stroke-width: 3; display: none; }
+  .cb[aria-checked="true"], .cb[aria-checked="mixed"] { background: var(--ink); box-shadow: none; }
+  .cb[aria-checked="true"] .ck, .cb[aria-checked="mixed"] .mn { display: block; }
+  /* 선택 줄: 고른 줄이 있을 때만 표 위에 뜬다 */
+  .selbar { display: flex; flex: none; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-bottom: 1px solid var(--border); background: #faf9f8; font-size: 12px; }
+  .selbar[hidden] { display: none; }
+  .selbar b { font-weight: 500; }
+  .selbar .sep { width: 1px; height: 12px; background: rgba(42, 28, 0, 0.14); }
+  .selbar .act { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; color: var(--fg2); transition: background-color 120ms, color 120ms; }
+  .selbar .act:hover { background: var(--hover); color: var(--fg); }
+  .selbar .act svg { width: 12px; height: 12px; }
+  .selbar .clear { margin-left: auto; color: var(--muted); border-radius: 4px; }
+  .selbar .clear:hover { color: var(--fg); }
+  .row.flash .td { animation: flash 1.4s ease-out; }
+  @keyframes flash { from { background: #fdf3dc; } }
+  @media (prefers-reduced-motion: reduce) { .row.flash .td { animation: none; } }
+  .c-who { position: relative; }
+  .who { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; font-weight: 500; }
+  /* 앱의 RowOpenButton 과 같은 모양·자리 */
+  .ro { position: absolute; right: 4px; top: 50%; z-index: 2; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px 0 4px; transform: translateY(-50%); border-radius: 6px; background: var(--bg); box-shadow: 0 8px 12px rgba(25, 25, 25, 0.027), 0 2px 6px rgba(25, 25, 25, 0.027), 0 0 0 1px rgba(42, 28, 0, 0.07); font-size: 12px; font-weight: 500; letter-spacing: 0.5px; color: #7d7a75; white-space: nowrap; opacity: 0; pointer-events: none; }
+  .ro svg { width: 15px; height: 20px; stroke-width: 1.25; color: var(--icon); }
+  .ro:hover { background: #f6f5f4; }
+  .row:hover .ro, .row:focus-within .ro { opacity: 1; pointer-events: auto; }
+  @media (hover: none) { .ro { opacity: 1; pointer-events: auto; } }
+  .tel { color: var(--fg2); }
+  .log { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .log time { flex: none; color: var(--muted); }
+  .log span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .none { color: var(--faint); }
+  .owner { color: var(--fg2); overflow: hidden; text-overflow: ellipsis; }
+  .row.is-closed .who, .row.is-closed .log span, .row.is-closed .tel, .row.is-closed .owner { color: var(--muted); }
+  .empty { grid-column: 1 / -1; padding: 64px 16px; text-align: center; font-size: 13px; color: var(--muted); }
+  .empty button { display: inline-flex; margin-top: 10px; }
+
+  /* 꼬리표와 상태: 모서리 4px, 12px/500, 높이 20px */
+  .tags { display: inline-flex; align-items: center; gap: 4px; }
+  .tag, .st { display: inline-flex; flex: none; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; font-size: 12px; font-weight: 500; line-height: 20px; white-space: nowrap; }
+  .tag { color: var(--fg2); }
+  .tag.buy { box-shadow: inset 0 0 0 1px var(--border); }
+  .tag.sell, .tag.plain { background: #f1f1ef; }
+  .st { gap: 5px; }
+  .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .st.ask { background: #f1f1ef; color: var(--fg2); }
+  .st.ask::before { background: #9b9a97; }
+  .st.go { background: var(--green-soft); color: var(--green); }
+  .st.hold { background: var(--amber-soft); color: var(--amber); }
+  .st.closed { box-shadow: inset 0 0 0 1px var(--border); color: var(--muted); }
+  .st.closed::before { background: none; box-shadow: inset 0 0 0 1.5px #b9b6b0; }
+
+  /* 아래 줄: 건수와 알림 (알림이 줄을 가리지 않게 여기에 띄운다) */
+  .foot { display: flex; flex: none; align-items: center; gap: 12px; height: 32px; padding: 0 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  .foot .msg { display: inline-flex; align-items: center; gap: 8px; color: var(--fg); }
+  .foot .msg button { height: 22px; padding: 0 8px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--border); font-weight: 500; }
+  .foot .msg button:hover { background: var(--hover); }
+  .foot .right { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* 상세 패널: 연락처 패널과 같은 틀 */
+  .peek { position: absolute; top: 0; right: 0; bottom: 0; z-index: 20; display: none; flex-direction: column; width: 584px; max-width: 100%; border-left: 1px solid var(--border); background: var(--bg); box-shadow: -2px 0 8px rgba(0, 0, 0, 0.03); outline: none; }
+  .peek-open .peek { display: flex; }
+  .peek.slide { animation: slide 240ms var(--ease); }
+  @keyframes slide { from { transform: translateX(24px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .peek.slide { animation: none; } }
+  .pk-bar { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 12px; }
+  .ib { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; color: var(--muted); transition: background-color 120ms, color 120ms; }
+  .ib svg { width: 20px; height: 20px; stroke-width: 1.5; }
+  .ib.sm svg { width: 16px; height: 16px; }
+  .ib:hover { background: var(--hover); color: var(--fg); }
+  .pk-head { flex: none; padding: 0 24px 16px; border-bottom: 1px solid var(--head-line); }
+  .pk-head h2 { font-size: 23px; line-height: 1.25; font-weight: 700; letter-spacing: -0.025em; color: var(--ink); overflow-wrap: anywhere; }
+  .pk-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 8px; font-size: 13px; }
+  .pk-meta span { display: inline-flex; align-items: center; gap: 6px; }
+  .pk-meta svg { color: var(--faint); }
+  .pk-meta .dim { color: var(--muted); }
+  .pk-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+  .pk-body { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px 40px; }
+  .sec + .sec { margin-top: 28px; }
+  .sec h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; line-height: 21px; font-weight: 600; color: var(--ink); }
+  .sec h3 i { font-style: normal; font-weight: 500; color: var(--faint); }
+  .sec h3 .acts { display: flex; gap: 12px; margin-left: auto; }
+  .ta { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 400; color: var(--muted); border-radius: 4px; }
+  .ta:hover { color: var(--fg); }
+  .ta svg { width: 12px; height: 12px; }
+  .rows > * { border-top: 1px solid var(--div); }
+  .rows > *:first-child { border-top: 0; }
+  .emptytext { padding: 12px; border-radius: 8px; background: #fbfaf8; font-size: 12px; color: var(--muted); }
+  /* 의뢰 한 건 */
+  .it { padding: 10px 0; }
+  .it-1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .it-1 .tag { min-width: 46px; justify-content: center; } /* 구함·내놓음 너비를 맞춰 뒤 글자의 시작을 가지런히 한다 */
+  .it-1 .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--ink); }
+  .it-1 .t em { margin-right: 6px; font-style: normal; font-weight: 400; color: var(--muted); }
+  .it-2 { margin-top: 3px; font-size: 12px; line-height: 18px; color: var(--muted); }
+  .it.over .t { color: var(--muted); font-weight: 400; }
+  /* 중개 건: 사람이 정한 순서를 왼쪽 번호와 선으로 잇는다 */
+  .case { padding: 10px 0 2px; }
+  .case-h { display: flex; align-items: center; gap: 8px; font-weight: 500; color: var(--ink); }
+  .case-h svg { color: var(--icon); }
+  .case-h small { font-size: 12px; font-weight: 400; color: var(--faint); }
+  .steps { position: relative; margin-top: 4px; }
+  .steps::before { content: ""; position: absolute; left: 8px; top: 22px; bottom: 22px; border-left: 1px solid var(--head-line); }
+  .step { position: relative; padding: 8px 0 8px 28px; }
+  .step::before { content: attr(data-n); position: absolute; left: 0; top: 10px; display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: var(--bg); box-shadow: inset 0 0 0 1px #dcdad6; font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .step.plain .it-1 .t { font-weight: 400; color: var(--fg2); }
+  .sub-h { margin: 10px 0 0; padding-top: 12px; border-top: 1px solid var(--div); font-size: 12px; color: var(--faint); }
+  /* 상담 한 건 */
+  .lg { padding: 10px 0; }
+  .lg-1 { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .lg p { margin-top: 6px; line-height: 22px; color: var(--ink); overflow-wrap: anywhere; white-space: pre-wrap; }
+  .more { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-size: 12px; color: var(--muted); border-radius: 4px; }
+  .more:hover { color: var(--fg); }
+  .memo { font-size: 13px; line-height: 1.6; color: var(--ink); overflow-wrap: anywhere; }
+  /* 아래 막대 */
+  .pk-foot { flex: none; border-top: 1px solid var(--head-line); padding: 12px 24px; }
+  .bar { display: flex; align-items: center; gap: 4px; }
+  .bb { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 16px; font-size: 13px; color: var(--muted); white-space: nowrap; transition: background-color 120ms, color 120ms, transform 160ms var(--ease); }
+  .bb:hover { background: rgba(55, 53, 47, 0.06); color: var(--fg); }
+  .bb:active { transform: scale(0.97); }
+  .bb.dark { padding: 0 16px; background: var(--ink); color: #fff; font-weight: 500; }
+  .bb.dark:hover { background: #1f1e1b; color: #fff; }
+  .bb:disabled { opacity: 0.4; cursor: default; }
+  .bb .dot { width: 6px; height: 6px; border-radius: 50%; background: #dfab01; }
+  .composer textarea { display: block; width: 100%; height: 66px; max-height: 160px; padding: 8px 10px; border: 0; border-radius: 8px; outline: 0; resize: none; background: #fbfaf8; box-shadow: inset 0 0 0 1px var(--border); line-height: 22px; }
+  .composer textarea:focus { background: #fff; box-shadow: inset 0 0 0 1px rgba(55, 53, 47, 0.3); }
+  .composer textarea::placeholder { color: var(--faint); }
+  .c-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .c-foot .hint { margin-left: 4px; font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .c-foot .bb:first-of-type { margin-left: auto; }
+  .seg { flex: none; display: inline-flex; padding: 2px; border-radius: 8px; background: #f6f5f3; box-shadow: inset 0 0 0 1px #f0efec; }
+  .seg button { height: 24px; padding: 0 10px; border-radius: 6px; font-size: 12px; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: #fff; color: var(--fg); font-weight: 500; box-shadow: 0 1px 2px rgba(40, 35, 25, 0.1); }
+
+  /* 떠 있는 판 (거르기) */
+  .pop { position: fixed; z-index: 40; width: 220px; padding: 4px; border-radius: 10px; background: var(--bg); box-shadow: var(--pop); animation: pop 140ms var(--ease); }
+  @keyframes pop { from { opacity: 0; transform: translateY(-3px) scale(0.985); } }
+  @media (prefers-reduced-motion: reduce) { .pop { animation: none; } }
+  .opt { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border-radius: 4px; font-size: 13px; }
+  .opt:hover, .opt:focus-visible { background: var(--hover); outline: none; box-shadow: none; }
+  .opt:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); }
+  .opt span.n { margin-left: auto; font-size: 12px; color: #a3a09a; }
+  .opt[aria-checked="true"] { font-weight: 500; }
+  .opt[aria-checked="true"]::after { content: "✓"; font-size: 12px; color: var(--blue); }
+  .pop p { margin: 4px; padding: 8px 4px 4px; border-top: 1px solid var(--div); font-size: 12px; line-height: 18px; color: var(--muted); }
+
+  /* ───────── 업무 hub 시안에서 더한 것 (위는 5판 그대로) ───────── */
+  /* 한 줄 = 업무 하나. 연락처 칸을 빼고 "업무" 칸을 넣었다 (전화번호는 패널에서 본다) */
+  .tbl { grid-template-columns: 36px 156px minmax(170px, 0.7fr) minmax(210px, 1fr) 118px 96px 96px; min-width: 900px; }
+  .co { flex: none; margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--faint); }
+  .hub-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg2); }
+  .row.is-closed .hub-t { color: var(--muted); }
+
+  /* 패널 머리: 사람 이름 아래에 업무 이름과 기간 */
+  .offlist { margin-left: 8px; font-size: 12px; color: var(--faint); }
+  .hub-line { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 6px; font-size: 14px; color: var(--fg2); }
+  .hub-line svg { color: var(--icon); }
+  .hub-line b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--ink); }
+  .hub-line span { flex: none; font-size: 12px; color: var(--muted); }
+  /* 끝난 업무의 안내 */
+  .ended { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; padding: 12px 14px; border-radius: 8px; background: #fbfaf8; box-shadow: inset 0 0 0 1px var(--div); }
+  .ended p { flex: 1; min-width: 0; font-size: 13px; line-height: 20px; color: var(--fg2); }
+  /* 고객 (여럿일 때) */
+  .pp { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 6px 0; }
+  .pp b { flex: none; font-weight: 500; color: var(--ink); }
+  .pp .role { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+  .pp .tel { flex: none; margin-left: auto; font-size: 13px; color: var(--fg2); }
+  /* 의뢰 상태를 바꾸는 단추 */
+  .stbtn { gap: 5px; padding-right: 4px; cursor: pointer; transition: filter 120ms; }
+  .stbtn:hover { filter: brightness(0.96); }
+  .stbtn .caret { width: 11px; height: 11px; opacity: 0.6; }
+  .ta.inline { display: inline-flex; margin-left: 6px; color: var(--fg2); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: #d5d3ce; }
+  /* 의뢰 추가 줄 */
+  .addrow { display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; padding: 8px; border-radius: 8px; background: #fbfaf8; }
+  .addrow .tag { min-width: 46px; justify-content: center; background: #fff; }
+  .addrow .bb { height: 28px; padding: 0 10px; }
+  .addrow .bb.dark { padding: 0 14px; }
+  .input { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 0; border-radius: 6px; outline: 0; background: #fff; box-shadow: inset 0 0 0 1px var(--border); font-size: 13px; }
+  .input:focus { box-shadow: inset 0 0 0 1px rgba(55, 53, 47, 0.3); }
+  .input::placeholder { color: var(--faint); }
+  .input:disabled { background: #f6f5f3; color: var(--faint); }
+  /* 메모: 눌러서 바로 적는다 */
+  .memo-ta { display: block; width: 100%; height: 44px; padding: 8px 10px; border: 0; border-radius: 8px; outline: 0; resize: none; background: none; font-size: 13px; line-height: 21px; color: var(--ink); overflow-wrap: anywhere; transition: background-color 120ms; }
+  .memo-ta:hover { background: #fbfaf8; }
+  .memo-ta:focus { background: #fff; box-shadow: inset 0 0 0 1px rgba(55, 53, 47, 0.3); }
+  .memo-ta::placeholder { color: var(--faint); }
+  /* 이 손님의 다른 업무 */
+  .oh { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 8px 6px; border-radius: 6px; transition: background-color 120ms; }
+  .oh:hover { background: var(--row-hover); }
+  .oh .st { min-width: 62px; }
+  .oh b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--ink); }
+  .oh span.num { flex: none; font-size: 12px; color: var(--muted); }
+  /* 상담 적는 칸: 누구와의 상담인지 */
+  .who-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+  .who-pick .tag { cursor: pointer; }
+  .tag.on { background: var(--ink); color: #fff; }
+  /* "업무 열기" 창 */
+  .pop.wide { width: 340px; padding: 14px; }
+  .pop.wide h4 { margin-bottom: 12px; font-size: 14px; font-weight: 600; color: var(--ink); }
+  .field { display: grid; gap: 6px; margin-bottom: 12px; }
+  .field > label, .field > .lab { font-size: 12px; color: var(--muted); }
+  .field .input { width: 100%; flex: none; }
+  .field .opt { height: auto; min-height: 32px; padding: 6px 8px; line-height: 18px; text-align: left; }
+  .chosen { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 6px; background: #f6f5f3; font-size: 13px; }
+  .chosen b { font-weight: 500; }
+  .chosen span { color: var(--muted); font-size: 12px; }
+  .chosen .ta { margin-left: auto; }
+  .sug:empty { display: none; }
+  .pop .newhint { margin: 0; padding: 6px 8px 2px; border: 0; font-size: 12px; color: var(--faint); }
+  .pop .err { margin: 0 0 8px; padding: 0; border: 0; font-size: 12px; color: #c4554d; }
+  .pop .err:empty { display: none; }
+  .pop-foot { display: flex; justify-content: flex-end; gap: 4px; }
+
+  /* 아래 줄: 좁은 창에서 줄이 바뀌지 않게 줄인다. 되돌리기 단추가 있는 알림은 잘리지 않는다 */
+  #status { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #status:has(.msg) { flex-shrink: 0; max-width: 100%; }
+  .foot .right { flex: 0 1 auto; min-width: 0; }
+  /* 고르는 줄의 ✓ 는 오른쪽 끝에 */
+  .field .opt[aria-checked="true"]::after { margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="win">
+  <div class="titlebar" aria-hidden="true"><b>Estaitt</b><span><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>고객 원장</span></div>
+  <div class="shell">
+    <nav class="nav" aria-label="메뉴 (시안에서는 눌리지 않습니다)" inert>
+      <p>시작</p><a><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>대시보드</a>
+      <p>매물·공간</p><a><svg viewBox="0 0 24 24"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M10 6h4M10 10h4M10 14h4M10 18h4"/></svg>매물관리</a>
+      <p>고객·상담</p><a aria-current="page"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>고객 원장</a>
+      <a><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="3"/><path d="M7 21v-1a5 5 0 0 1 10 0v1"/></svg>연락처</a>
+      <a><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>상담분석</a>
+      <p>거래·계약</p><a><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>희망매물</a>
+      <a><svg viewBox="0 0 24 24"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3M3 4h8"/></svg>거래관리</a>
+    </nav>
+    <div class="main" id="main">
+      <section class="list" aria-label="고객 원장">
+        <h1 class="sr">고객 원장</h1>
+        <div class="tb1" id="tb1"></div>
+        <div class="tb2" id="tb2"></div>
+        <div class="selbar" id="selbar" role="region" aria-label="고른 업무" hidden></div>
+        <div class="scroll" id="scroll"><div class="tbl" id="tbl"></div></div>
+        <div class="foot"><span id="status" role="status"></span><span class="right" id="count"></span></div>
+      </section>
+      <aside class="peek" id="peek" aria-label="업무 상세 패널" tabindex="-1"></aside>
+    </div>
+  </div>
+</div>
+<div id="pop-root"></div>
+<script>
+(() => {
+  const TODAY = '2026-11-20';
+  const ME = '박지훈';
+  const LOGS_SHOWN = 3;
+  const HEAD = 36; // 붙어 있는 머리글 높이
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const D = (iso) => new Date(iso + 'T00:00:00');
+  /** 올해는 "11.18", 다른 해는 "24.10.30" */
+  const mdShort = (iso) => { const d = D(iso); return d.getFullYear() === D(TODAY).getFullYear() ? `${d.getMonth() + 1}.${d.getDate()}` : `${String(d.getFullYear()).slice(2)}.${d.getMonth() + 1}.${d.getDate()}`; };
+  const ym = (iso) => { const d = D(iso); return `${d.getFullYear()}.${d.getMonth() + 1}`; };
+  const svg = (d, extra = '') => `<svg viewBox="0 0 24 24" aria-hidden="true" ${extra}>${d}</svg>`;
+  const ICON = {
+    caret: svg('<path d="m6 9 6 6 6-6"/>', 'class="caret"'),
+    x: svg('<path d="M18 6 6 18M6 6l12 12"/>'),
+    ck: svg('<path d="M20 6 9 17l-5-5"/>', 'class="ck"'),
+    mn: svg('<path d="M5 12h14"/>', 'class="mn"'),
+    copy: svg('<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>'),
+    sort: svg('<path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/>'),
+    reset: svg('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'),
+    plus: svg('<path d="M12 5v14M5 12h14"/>'),
+    search: svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
+    user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+    phone: svg('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>'),
+    home: svg('<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>'),
+    flag: svg('<path d="M4 22V4M4 4h12l-2 4 2 4H4"/>'),
+    chat: svg('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+    chatplus: svg('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v6M9 10h6"/>'),
+    clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    todo: svg('<path d="m3 7 2 2 4-4M3 17l2 2 4-4M13 6h8M13 12h8M13 18h8"/>'),
+    folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+    order: svg('<path d="M10 6h11M10 12h11M10 18h11M4 6h1v4M4 10h2M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>'),
+    side: '<svg viewBox="0 0 16 20" aria-hidden="true"><rect x="1" y="4.75" width="14" height="10.5" rx="1.5"/><rect x="7.75" y="6.125" width="5.5" height="7.75" rx="0.5" fill="currentColor" stroke="none"/></svg>',
+    close: svg('<path d="m6 17 5-5-5-5M13 17l5-5-5-5"/>'),
+    expand: svg('<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>'),
+  };
+
+  /* ───────── 가상 데이터 ─────────
+   * 사람(people)은 끝나지 않는다. 업무(hubs)는 한 번의 일이고 시작과 끝이 있다.
+   * 한 사람에게 업무가 여러 개일 수 있다: 한지우는 동시에 둘, 류다인은 지난 것 하나와 새 것 하나.
+   */
+  let seq = 0;
+  const P = (id, name, phone) => ({ id, name, phone });
+  /** 의뢰. state: open(진행) | hold(보류) | ended(종료). moving: 소개했거나 거래 중인가 */
+  const I = (id, side, tx, text, state, moving, sub, endReason = '') => ({ id, side, tx, text, state, moving, sub, endReason });
+  const L = (date, kind, by, text, pid) => ({ date, kind, by, text, pid, seq: 0 });
+  let data = {
+    people: [
+      P('p7', '한지우', '010-5550-0142'), P('p7b', '서민호', '010-5550-0143'), P('p7c', '정법무', '02-1234-5678'),
+      P('p1', '윤태오', '010-5550-0177'), P('p3', '서하린', '010-5550-0119'), P('p5', '오하늘', '010-5550-0191'),
+      P('p4', '조하준', '010-5550-0184'), P('p12', '문가은', '010-5550-0108'), P('p13', '상일동 상가 문의 최 사장님', ''),
+      P('p6', '장민규', '010-5550-0163'), P('p9', '노건우', '010-5550-0151'), P('p11', '백승현', '010-5550-0170'),
+      P('p15', '류다인', '010-5550-0156'), P('p16', '남궁서준', '010-5550-0131'), P('p8', '임채원', '010-5550-0135'),
+      P('p10', '안나윤', '010-5550-0148'), P('p2', '권소율', '010-5550-0126'),
+    ],
+    hubs: [
+      { id: 'h7', title: '고덕 → 잠실 갈아타기', primary: 'p7', members: [{ pid: 'p7', role: '구함 · 내놓음' }, { pid: 'p7b', role: '공동 구함 · 공동 내놓음' }, { pid: 'p7c', role: '법무사' }], owner: '박지훈', startedAt: '2026-11-02', endedAt: null,
+        memo: '배우자 서민호와 공동명의. 평일 저녁 통화 선호.\n아이 학교 때문에 2월 말 전에는 이사를 마쳐야 함.',
+        intents: [I('i1', 'sell', '매매', '고덕아르테온 305동 1203호 · 34평 · 16억 5,000', 'open', true, '소개한 손님 2 · 고민 중 1 · 거절 1'), I('i2', 'buy', '매매', '잠실 일대 · 33~34평 · 22억~24억 · 2027.2 입주', 'open', true, '소개한 매물 3 · 가계약 조율 1')],
+        logs: [L('2026-11-19', '전화', '박지훈', '잔금일을 2월 말로 미루고 싶다고 함.', 'p7b'), L('2026-11-18', '전화', '박지훈', '엘스 1502호를 다시 보고 싶다고 함. 토요일 오전 가능. 아르테온은 16억 3,000까지 조정할 수 있다고.', 'p7'), L('2026-11-14', '방문', '박지훈', '잠실 세 곳 동행. 엘스가 가장 마음에 든다고 함.', 'p7'), L('2026-11-07', '전화', '박지훈', '매도와 매수를 함께 진행하기로 함.', 'p7'), L('2026-11-02', '방문', '박지훈', '첫 방문. 아이 학교 때문에 잠실로 옮기고 싶다고 함.', 'p7')] },
+      { id: 'h7b', title: '부모님 전세', primary: 'p7', members: [{ pid: 'p7', role: '구함' }], owner: '이수민', startedAt: '2026-11-10', endedAt: null, memo: '',
+        intents: [I('i1', 'buy', '전세', '고덕동 · 25평 · 전세 6억~7억 · 부모님 거주', 'hold', false, '소개한 매물 1 · 갈아타기가 끝나면 다시 진행')],
+        logs: [L('2026-11-10', '전화', '이수민', '부모님 집도 근처로 알아봐 달라고 함. 급하지는 않다고.', 'p7')] },
+      { id: 'h1', title: '상일동 지식산업센터 임차', primary: 'p1', members: [{ pid: 'p1', role: '구함' }], owner: '최현우', startedAt: '2026-11-08', endedAt: null, memo: '법인 명의로 계약 예정 · 세금계산서 필요',
+        intents: [I('i1', 'buy', '월세', '상일동 지식산업센터 · 60평 안팎 · 보증금 5,000 / 월 350 · 2027.1 입주', 'open', true, '소개한 매물 2 · 고민 중 1')],
+        logs: [L('2026-11-15', '방문', '최현우', '두 곳 동행. SK V1은 주차 4대가 되는지 확인해 달라고 함.', 'p1')] },
+      { id: 'h3', title: '그라시움 121동 803호 전세 놓기', primary: 'p3', members: [{ pid: 'p3', role: '내놓음' }], owner: '이수민', startedAt: '2026-10-21', endedAt: null, memo: '집에 반려견 있음 · 방문 전 전화 필수',
+        intents: [I('i1', 'sell', '전세', '고덕그라시움 121동 803호 · 25평 · 전세 6억 8,000 · 12.20 이후 입주', 'open', true, '소개한 손님 3 · 고민 중 1 · 거절 2')],
+        logs: [L('2026-11-18', '방문', '이수민', '임도윤 손님 방문. 12월 20일 전 입주를 원함.', 'p3'), L('2026-11-11', '전화', '이수민', '전세 7억에서 6억 8,000으로 조정.', 'p3')] },
+      { id: 'h5', title: '고덕동 34평 매수', primary: 'p5', members: [{ pid: 'p5', role: '구함' }], owner: '박지훈', startedAt: '2026-11-17', endedAt: null, memo: '',
+        intents: [I('i1', 'buy', '매매', '고덕동 일대 · 34평 · 예산은 대출 상담 뒤 결정', 'open', true, '소개한 매물 2 · 관심 1')],
+        logs: [L('2026-11-17', '온라인', '박지훈', '고덕동 34평 매매를 알아보는 중. 예산은 아직 못 정했고 대출 상담부터 받겠다고 함. 사진 두 곳 보냄.', 'p5')] },
+      { id: 'h4', title: '아르테온 209동 2301호 매도', primary: 'p4', members: [{ pid: 'p4', role: '내놓음' }], owner: '박지훈', startedAt: '2026-11-12', endedAt: null, memo: '',
+        intents: [I('i1', 'sell', '매매', '고덕아르테온 209동 2301호 · 34평 · 16억 8,000 · 세입자 만기 2027.3', 'open', false, '아직 소개한 손님 없음')],
+        logs: [L('2026-11-12', '전화', '박지훈', '세입자 만기가 3월. 그 전에 팔리면 좋겠다고 함.', 'p4')] },
+      { id: 'h12', title: '천호역 원룸 월세', primary: 'p12', members: [{ pid: 'p12', role: '구함' }], owner: '이수민', startedAt: '2026-11-18', endedAt: null, memo: '',
+        intents: [I('i1', 'buy', '월세', '천호역 근처 · 원룸 · 보증금 1,000 / 월 80 · 1월 말 입주 · 반려묘', 'open', false, '아직 소개한 매물 없음')],
+        logs: [L('2026-11-18', '전화', '이수민', '직장이 천호역 근처. 1월 말 입주, 반려묘 한 마리.', 'p12')] },
+      { id: 'h13', title: '1층 상가 시세 문의', primary: 'p13', members: [{ pid: 'p13', role: '문의' }], owner: '최현우', startedAt: '2026-11-18', endedAt: null, memo: '연락처를 받지 못함',
+        intents: [], logs: [L('2026-11-18', '방문', '최현우', '1층 상가 월세 시세를 묻고 감. 명함만 받아 갔고 다시 들르겠다고 함.', 'p13')] },
+      { id: 'h6', title: '상일동 25평 매수', primary: 'p6', members: [{ pid: 'p6', role: '구함' }], owner: '박지훈', startedAt: '2026-11-05', endedAt: null, memo: '',
+        intents: [I('i1', 'buy', '매매', '상일동 일대 · 25평 · 9억~10억 · 2027.1 입주', 'open', true, '소개한 매물 2 · 가계약 조율 1')],
+        logs: [L('2026-11-16', '방문', '박지훈', '두 곳 동행. 대출 한도가 나오면 9단지로 가계약을 하고 싶다고 함.', 'p6')] },
+      { id: 'h9', title: '매도 뒤 하남 이사', primary: 'p9', members: [{ pid: 'p9', role: '구함 · 내놓음' }], owner: '최현우', startedAt: '2026-10-28', endedAt: null, memo: '',
+        intents: [I('i1', 'sell', '매매', '고덕자이 201동 904호 · 25평 · 13억 2,000', 'open', true, '거래 · 계약 준비 · 본계약 11.28 예정'), I('i2', 'buy', '매매', '하남 미사 · 34평 · 11억~12억', 'hold', false, '매도 계약 뒤 진행')],
+        logs: [L('2026-11-17', '전화', '최현우', '매도 계약이 먼저. 하남은 계약금이 들어온 뒤에 보겠다고 함.', 'p9')] },
+      { id: 'h11', title: '그라시움 103동 3401호 전세', primary: 'p11', members: [{ pid: 'p11', role: '구함' }], owner: '박지훈', startedAt: '2026-10-30', endedAt: null, memo: '',
+        intents: [I('i1', 'buy', '전세', '고덕그라시움 103동 3401호 · 34평 · 전세 7억 2,000', 'open', true, '거래 · 본계약 · 잔금 12.15')],
+        logs: [L('2026-11-14', '방문', '박지훈', '본계약 체결. 잔금은 12월 15일.', 'p11')] },
+      { id: 'h15a', title: '래미안힐스테이트 전세', primary: 'p15', members: [{ pid: 'p15', role: '구함' }], owner: '이수민', startedAt: '2024-09-03', endedAt: '2024-10-30', memo: '전세 만기 2026.10.30 · 만기 석 달 전에 연락하기로 함',
+        intents: [I('i1', 'buy', '전세', '고덕래미안힐스테이트 304동 1102호 · 25평 · 전세 6억 5,000', 'ended', false, '거래 완료 · 잔금 24.10.30', '거래 완료')],
+        logs: [L('2024-10-30', '방문', '이수민', '잔금 치르고 입주. 2년 뒤 만기 때 다시 연락 달라고 함.', 'p15'), L('2024-09-03', '전화', '이수민', '고덕동 25평 전세를 찾는다고 함.', 'p15')] },
+      { id: 'h15b', title: '만기 뒤 매수 검토', primary: 'p15', members: [{ pid: 'p15', role: '구함' }], owner: '이수민', startedAt: '2026-11-12', endedAt: null, memo: '',
+        intents: [I('i1', 'buy', '매매', '고덕동 · 25평 · 예산 미정 · 전세 연장과 저울질', 'open', false, '아직 소개한 매물 없음')],
+        logs: [L('2026-11-12', '전화', '이수민', '전세를 연장할지 이참에 살지 고민 중이라고 함. 시세부터 알려 달라고.', 'p15')] },
+      { id: 'h16', title: '강일리버파크 705동 402호 매도', primary: 'p16', members: [{ pid: 'p16', role: '내놓음' }], owner: '최현우', startedAt: '2026-09-15', endedAt: '2026-11-03', memo: '',
+        intents: [I('i1', 'sell', '매매', '강일리버파크 7단지 705동 402호 · 25평 · 9억 4,000', 'ended', false, '다른 사무소에서 계약', '의뢰 거둠')],
+        logs: [L('2026-11-03', '전화', '최현우', '다른 사무소에서 계약했다고 함. 의뢰를 닫음.', 'p16')] },
+      { id: 'h8', title: '고덕동 34평 매수', primary: 'p8', members: [{ pid: 'p8', role: '구함' }], owner: '이수민', startedAt: '2026-11-09', endedAt: null, memo: '',
+        intents: [I('i1', 'buy', '매매', '고덕동 · 34평 · 15억~16억', 'open', true, '소개한 매물 1 · 반응 대기')],
+        logs: [L('2026-11-16', '온라인', '이수민', '아르테온 705호 사진 보냄. 가격이 조금만 내려오면 보러 오겠다는 답.', 'p8')] },
+      { id: 'h10', title: '강일동 25평 매수', primary: 'p10', members: [{ pid: 'p10', role: '구함' }], owner: '이수민', startedAt: '2026-10-20', endedAt: null, memo: '',
+        intents: [I('i1', 'buy', '매매', '강일동 · 25평 · 8억~9억', 'hold', false, '금리를 보고 움직이겠다고 함')],
+        logs: [L('2026-11-05', '전화', '이수민', '대출 금리가 내려오면 움직이겠다고 함. 12월 초에 다시 연락.', 'p10')] },
+      { id: 'h2', title: '고덕동 1층 상가 임대', primary: 'p2', members: [{ pid: 'p2', role: '내놓음' }], owner: '최현우', startedAt: '2026-10-25', endedAt: null, memo: '',
+        intents: [I('i1', 'sell', '월세', '고덕동 근린상가 1층 · 18평 · 보증금 3,000 / 월 180 · 권리금 협의', 'open', true, '소개한 손님 1 · 반응 대기')],
+        logs: [L('2026-11-10', '전화', '최현우', '월세를 200에서 180으로 내림. 권리금은 임차인과 직접 이야기하라고 함.', 'p2')] },
+    ],
+  };
+  const OWNERS = [...new Set(data.hubs.map((h) => h.owner))];
+
+  /* ───────── 계산 ───────── */
+  const person = (pid) => data.people.find((p) => p.id === pid) ?? { id: pid, name: '이름 없음', phone: '' };
+  const hub = (id) => data.hubs.find((h) => h.id === id) ?? null;
+  const SIDE = { buy: '구함', sell: '내놓음' };
+  const INTENT_STATE = { open: ['진행 중', 'go'], hold: ['보류', 'hold'], ended: ['종료', 'closed'] };
+  /**
+   * 업무의 상태. 저장하지 않고 담긴 의뢰에서 계산한다.
+   *  closed(종료): 담긴 의뢰가 모두 끝났다 (의뢰 없이 문의만 받은 업무는 직접 끝낸다)
+   *  go(진행 중): 소개했거나 거래 중인 의뢰가 있다
+   *  ask(파악 중): 그 밖
+   */
+  const STATUS = { ask: ['파악 중', '의뢰가 없거나, 있어도 아직 소개·거래가 없습니다'], go: ['진행 중', '소개하거나 거래 중인 의뢰가 있습니다'], closed: ['종료', '담긴 의뢰가 모두 끝났습니다'] };
+  const statusOf = (h) => (h.intents.length ? (h.intents.every((i) => i.state === 'ended') ? 'closed' : h.intents.some((i) => i.state === 'open' && i.moving) ? 'go' : 'ask') : h.endedAt ? 'closed' : 'ask');
+  const isClosed = (h) => statusOf(h) === 'closed';
+  const autoTitle = (h) => (h.intents.length ? h.intents.slice(0, 2).map((i) => `${i.text.split(' · ')[0]} ${i.side === 'buy' ? '구함' : '내놓음'}`).join(' · ') : '문의');
+  const titleOf = (h) => h.title?.trim() || autoTitle(h);
+  const namesOf = (h) => { const names = h.members.filter((m) => !/법무사|세무사|대리인/.test(m.role)).map((m) => person(m.pid).name); const list = names.length ? names : [person(h.primary).name]; return list.length <= 2 ? list.join(', ') : `${list.slice(0, 2).join(', ')} 외 ${list.length - 2}명`; };
+  const sidesOf = (h) => ['buy', 'sell'].filter((s) => h.intents.some((i) => i.side === s));
+  const latestKey = (h) => (h.logs[0] ? `${h.logs[0].date}#${String(h.logs[0].seq).padStart(6, '0')}` : `${h.startedAt}#000000`);
+  const periodOf = (h) => `${ym(h.startedAt)} ~ ${h.endedAt ? ym(h.endedAt) : ''}`.trim();
+  /** 그 사람이 참여한 다른 업무 (최근 것부터) */
+  const otherHubs = (h) => data.hubs.filter((x) => x.id !== h.id && x.members.some((m) => m.pid === h.primary)).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  const openHubsOf = (pid) => data.hubs.filter((h) => !isClosed(h) && h.members.some((m) => m.pid === pid));
+
+  const S = {
+    tab: 'open',          // open(진행 중인 업무) | closed(종료) | all
+    q: '', side: '', owner: '', sort: 'recent', openId: null, slide: false, flash: null,
+    picked: new Set(),    // 체크박스로 고른 업무. 목록에서 빠지면 함께 풀린다
+    moreLogs: new Set(),
+    composeId: null,      // 상담 적는 칸을 열어 둔 업무
+    pop: null,            // { type: 'side' | 'owner' | 'intent' | 'new', anchorFid, id? }
+    writeDraft: {},       // 업무별 상담 입력 { kind, text, pid }
+    addDraft: {},         // 업무별 의뢰 추가 입력 { side, text } — 있으면 입력 줄이 열려 있다
+    newDraft: { name: '', pid: null, side: 'buy', text: '', target: 'new' }, // "업무 열기" 창에 적던 것
+    newErr: '',
+    undo: null,           // { snap, openId, tab } 직전 변경 하나만
+    msg: '',
+  };
+  const writeOf = (id) => S.writeDraft[id] ?? { kind: '전화', text: '', pid: hub(id)?.primary };
+  const inTab = (h, tab) => tab === 'all' || (tab === 'closed') === isClosed(h);
+  const matches = (h, skip) => { const q = S.q.trim().toLowerCase();
+    return (skip === 'side' || !S.side || h.intents.some((i) => i.side === S.side)) && (skip === 'owner' || !S.owner || h.owner === S.owner) &&
+      (!q || [titleOf(h), ...h.members.flatMap((m) => [person(m.pid).name, person(m.pid).phone, person(m.pid).phone.replace(/-/g, '')]), ...h.intents.map((i) => i.text)].some((t) => t.toLowerCase().includes(q))); };
+  /** 화면에 보이는 순서. 기본은 최근 상담이 위 (같은 날이면 나중에 적은 것이 위) */
+  const visible = () => data.hubs.filter((h) => inTab(h, S.tab) && matches(h)).sort((a, b) => (S.sort === 'name' ? person(a.primary).name.localeCompare(person(b.primary).name, 'ko') : 0) || latestKey(b).localeCompare(latestKey(a)) || a.id.localeCompare(b.id));
+
+  /* ───────── 그리기 ───────── */
+  const $ = (id) => document.getElementById(id);
+  const tag = (side) => `<span class="tag ${side}">${SIDE[side]}</span>`;
+  const tags = (h) => sidesOf(h).map(tag).join('');
+  const stBadge = (h) => { const k = statusOf(h); return `<span class="st ${k}" title="${STATUS[k][1]}">${STATUS[k][0]}</span>`; };
+
+  function drawToolbar(keepSearch) {
+    const n = (tab) => data.hubs.filter((h) => inTab(h, tab) && matches(h)).length;
+    // 검색어를 적는 동안에는 입력 칸을 다시 만들지 않는다 (한글 조합이 끊기지 않게). 탭의 건수만 고친다.
+    if (keepSearch && $('q')) document.querySelectorAll('#tb1 .tab').forEach((t) => { t.querySelector('i').textContent = n(t.dataset.k); });
+    else $('tb1').innerHTML = `<div class="tabs" role="tablist" aria-label="보기">${[['open', '진행 중인 업무'], ['closed', '종료'], ['all', '전체']].map(([k, l]) => `<button class="tab" role="tab" aria-selected="${S.tab === k}" data-a="tab" data-k="${k}" data-fid="tab:${k}">${l}<i class="num">${n(k)}</i></button>`).join('')}</div>
+      <label class="search">${ICON.search}<span class="sr">이름, 전화번호, 업무, 단지 검색</span><input id="q" type="text" placeholder="이름, 전화번호, 업무, 단지" value="${esc(S.q)}" data-fid="q" autocomplete="off"></label>
+      <button class="primary" data-a="pop" data-k="new" data-fid="new" aria-haspopup="dialog" aria-expanded="${S.pop?.type === 'new'}">${ICON.plus}업무 열기</button>`;
+    const chip = (type, icon, label, value) => `<span class="chip${value ? ' on' : ''}${S.pop?.type === type ? ' open' : ''}"><button data-a="pop" data-k="${type}" data-fid="${type}" aria-haspopup="dialog" aria-expanded="${S.pop?.type === type}" aria-label="${label} 거르기${value ? `: ${esc(value)}` : ''}">${icon}${label}${value ? `<b>${esc(value)}</b>` : ICON.caret}</button>${value ? `<button class="x" data-a="clear" data-k="${type}" data-fid="clear:${type}" aria-label="${label} 조건 지우기">${ICON.x}</button>` : ''}</span>`;
+    $('tb2').innerHTML = `<div class="chips">${chip('side', ICON.home, '의뢰', S.side ? SIDE[S.side] : '')}${chip('owner', ICON.user, '담당', S.owner)}</div>
+      <button class="ghost" data-a="sort" data-fid="sort" aria-label="정렬: ${S.sort === 'name' ? '이름순' : '최근 상담순'}, 눌러서 바꾸기">${ICON.sort}${S.sort === 'name' ? '이름순' : '최근 상담순'}</button>
+      ${S.side || S.owner || S.q || S.tab !== 'open' ? `<button class="ghost" data-a="reset" data-fid="reset">${ICON.reset}초기화</button>` : ''}`;
+  }
+  function drawSelbar() {
+    const bar = $('selbar'); const n = S.picked.size;
+    bar.hidden = n === 0;
+    bar.innerHTML = n ? `<b class="num">${n}건 선택됨</b><span class="sep"></span>
+      <button class="act" data-a="say" data-k="고른 업무 ${n}건의 담당을 바꾸는 창이 열립니다 (시안)" data-fid="bulk-owner">${ICON.user}담당 바꾸기</button>
+      <button class="act" data-a="say" data-k="고른 업무의 대표 고객 중 전화번호가 있는 ${new Set([...S.picked].map((id) => person(hub(id)?.primary).phone).filter(Boolean)).size}명의 번호를 복사했습니다 (시안)" data-fid="bulk-copy">${ICON.copy}전화번호 복사</button>
+      <button class="clear" data-a="unpick" data-fid="unpick">선택 해제</button>` : '';
+  }
+  function drawTable() {
+    const rows = visible();
+    const nPicked = rows.filter((h) => S.picked.has(h.id)).length; const allPicked = rows.length > 0 && nPicked === rows.length; const somePicked = nPicked > 0 && !allPicked;
+    const head = `<div class="tr head" role="row"><span class="th c-pick"><button class="cb" role="checkbox" aria-checked="${allPicked ? 'true' : somePicked ? 'mixed' : 'false'}" data-a="pickall" data-fid="pickall" aria-label="지금 목록의 업무 모두 고르기" ${rows.length ? '' : 'disabled'}>${ICON.ck}${ICON.mn}</button></span><span class="th">${ICON.user}고객</span><span class="th">${ICON.folder}업무</span><span class="th">${ICON.chat}최근 상담</span><span class="th">${ICON.home}의뢰</span><span class="th" title="파악 중: 의뢰가 없거나 아직 소개·거래가 없음 · 진행 중: 소개하거나 거래 중인 의뢰가 있음 · 종료: 담긴 의뢰가 모두 끝남">${ICON.flag}상태</span><span class="th">${ICON.user}담당</span></div>`;
+    const body = rows.map((h) => { const last = h.logs[0]; const isOpen = S.openId === h.id; const picked = S.picked.has(h.id); const p = person(h.primary); const extra = h.members.length - 1;
+      return `<div class="tr row${picked ? ' picked' : ''}${isOpen ? ' sel' : ''}${isClosed(h) ? ' is-closed' : ''}${S.flash === h.id ? ' flash' : ''}" data-row="${h.id}">
+        <span class="td c-pick"><button class="cb" role="checkbox" aria-checked="${picked}" data-a="pick" data-k="${h.id}" data-fid="pick:${h.id}" aria-label="${esc(p.name)} · ${esc(titleOf(h))} 고르기">${ICON.ck}</button></span>
+        <span class="td c-who"><button class="who" data-a="open" data-k="${h.id}" data-fid="row:${h.id}" aria-expanded="${isOpen}" aria-controls="peek" aria-label="${esc(p.name)} · ${esc(titleOf(h))} 업무 ${isOpen ? '닫기' : '열기'}">${esc(p.name)}</button>${extra > 0 ? `<span class="co num">외 ${extra}명</span>` : ''}<button class="ro" tabindex="-1" aria-hidden="true" data-a="open" data-k="${h.id}" title="${isOpen ? '사이드 보기 닫기' : '사이드 보기에서 열기'}">${ICON.side}${isOpen ? '닫기' : '열기'}</button></span>
+        <span class="td"><span class="hub-t" title="${esc(titleOf(h))} · ${periodOf(h)}">${esc(titleOf(h))}</span></span>
+        <span class="td">${last ? `<span class="log" title="${esc(last.text)}"><time class="num">${mdShort(last.date)} ${esc(last.kind)}</time><span>${esc(last.text)}</span></span>` : '<span class="none">상담 기록 없음</span>'}</span>
+        <span class="td">${h.intents.length ? `<span class="tags" title="${esc(h.intents.map((i) => `${SIDE[i.side]} ${i.tx} · ${i.text} (${INTENT_STATE[i.state][0]})`).join('\n'))}">${tags(h)}</span>` : '<span class="none">문의만</span>'}</span>
+        <span class="td">${stBadge(h)}</span>
+        <span class="td"><span class="owner">${esc(h.owner)}</span></span></div>`; }).join('');
+    const emptyText = S.q || S.side || S.owner ? '조건에 맞는 업무가 없습니다.' : S.tab === 'closed' ? '종료된 업무가 없습니다.' : '진행 중인 업무가 없습니다.';
+    $('tbl').innerHTML = head + (rows.length ? body : `<div class="empty">${emptyText}<br><button class="ghost" data-a="reset" data-fid="reset2">${ICON.reset}조건 지우기</button></div>`);
+    const n = (k) => rows.filter((h) => statusOf(h) === k).length;
+    $('count').textContent = [`업무 ${rows.length}건`, ...[['go', '진행 중'], ['ask', '파악 중'], ['closed', '종료']].filter(([k]) => n(k)).map(([k, l]) => `${l} ${n(k)}`), `가상 데이터, 오늘은 ${mdShort(TODAY)}`].join(' · ');
+  }
+  function drawStatus() {
+    $('status').innerHTML = S.msg ? `<span class="msg">${esc(S.msg)}${S.undo ? `<button data-a="undo" data-fid="undo">되돌리기</button>` : ''}</span>` : '<span>한 줄이 업무 하나입니다 · 줄을 누르면 옆에서 자세히 봅니다</span>';
+  }
+  function intentItem(h, i) {
+    const [label, cls] = INTENT_STATE[i.state]; const fid = `intent:${h.id}:${i.id}`;
+    return `<div class="it${i.state === 'ended' ? ' over' : ''}"><div class="it-1">${tag(i.side)}<span class="t" title="${esc(i.text)}">${i.tx ? `<em>${esc(i.tx)}</em>` : ''}${esc(i.text)}</span><button class="st ${cls} stbtn" data-a="pop" data-k="intent" data-id="${h.id}:${i.id}" data-fid="${fid}" aria-haspopup="dialog" aria-expanded="${S.pop?.anchorFid === fid}" aria-label="${esc(i.text)} — ${label}, 바꾸기">${label}${ICON.caret}</button></div><p class="it-2">${esc(i.sub)}${i.state === 'ended' && i.endReason ? ` · ${esc(i.endReason)}` : ''}</p></div>`;
+  }
+  function drawPeek() {
+    const h = S.openId ? hub(S.openId) : null; const peek = $('peek');
+    $('main').classList.toggle('peek-open', !!h);
+    peek.classList.toggle('slide', !!h && S.slide); S.slide = false;
+    if (!h) { peek.innerHTML = ''; peek.dataset.id = ''; return; }
+    const keep = peek.dataset.id === h.id ? peek.querySelector('.pk-body')?.scrollTop ?? 0 : 0; // 같은 업무면 굴린 자리를 지킨다
+    const p = person(h.primary); const closed = isClosed(h);
+    const w = writeOf(h.id); const composing = S.composeId === h.id; const add = S.addDraft[h.id];
+    const all = S.moreLogs.has(h.id); const logs = all ? h.logs : h.logs.slice(0, LOGS_SHOWN); const hidden = h.logs.length - logs.length;
+    const others = otherHubs(h); const shared = h.members.length > 1;
+    const listed = visible().some((x) => x.id === h.id);
+    peek.dataset.id = h.id;
+    peek.innerHTML = `<div class="pk-bar"><button class="ib" data-a="close" data-fid="pk-close" aria-label="상세 패널 닫기" title="닫기 (Esc)">${ICON.close}</button><button class="ib sm" data-a="say" data-k="이 업무가 새 탭으로 열립니다 (시안)" data-fid="pk-expand" aria-label="새 탭으로 열기" title="새 탭으로 열기">${ICON.expand}</button>${listed ? '' : '<span class="offlist">지금 보기의 목록에는 없는 업무</span>'}</div>
+      <div class="pk-head">
+        <h2>${esc(namesOf(h))}</h2>
+        <p class="hub-line">${ICON.folder}<b>${esc(titleOf(h))}</b><span class="num">${periodOf(h)}</span></p>
+        <div class="pk-meta">${p.phone ? `<span class="num">${ICON.phone}${esc(p.phone)}</span>` : `<span class="dim">${ICON.phone}전화번호 없음</span>`}<span>${ICON.user}담당 ${esc(h.owner)}</span></div>
+        <div class="pk-chips">${stBadge(h)}${tags(h)}${h.intents.length ? '' : '<span class="tag plain">문의만</span>'}</div>
+      </div>
+      <div class="pk-body">
+        ${closed ? `<div class="ended"><p>${h.endedAt ? `${ym(h.endedAt)}에 ` : ''}끝난 업무입니다. 기록은 그대로 남고, 이 손님과의 새 일은 새 업무로 엽니다.</p><button class="bb dark" data-a="newfor" data-fid="newfor">${ICON.plus}새 업무 열기</button></div>` : ''}
+        ${shared ? `<section class="sec" aria-label="고객" data-people><h3>고객<i class="num">${h.members.length}</i></h3><div class="rows">${h.members.map((m) => { const mp = person(m.pid); return `<div class="pp"><b>${esc(mp.name)}</b><span class="role">${esc(m.role)}</span>${m.pid === h.primary ? '<span class="tag plain">대표 연락</span>' : ''}<span class="tel num">${esc(mp.phone) || '전화번호 없음'}</span></div>`; }).join('')}</div></section>` : ''}
+        <section class="sec" aria-label="의뢰"><h3>의뢰${h.intents.length ? `<i class="num">${h.intents.length}</i>` : ''}${closed ? '' : `<span class="acts">${h.intents.length > 1 ? `<button class="ta" data-a="say" data-k="담긴 의뢰의 순서를 정하는 진행 계획 창이 열립니다 (시안)" data-fid="d-order">${ICON.order}순서 정하기</button>` : ''}<button class="ta" data-a="addopen" data-k="buy" data-fid="d-addbuy">${ICON.plus}구함</button><button class="ta" data-a="addopen" data-k="sell" data-fid="d-addsell">${ICON.plus}내놓음</button></span>`}</h3>
+          ${add ? `<div class="addrow">${tag(add.side)}<label class="sr" for="addtext">${SIDE[add.side]} 의뢰 내용</label><input class="input" id="addtext" data-in="addtext" data-fid="addtext" value="${esc(add.text)}" placeholder="${add.side === 'buy' ? '예: 고덕동 · 34평 · 15억~16억' : '예: 고덕자이 201동 904호 · 13억'}" autocomplete="off"><button class="bb" data-a="addclose" data-fid="addclose">취소</button><button class="bb dark" data-a="addsave" data-fid="addsave">추가</button></div>` : ''}
+          ${h.intents.length ? `<div class="rows">${h.intents.map((i) => intentItem(h, i)).join('')}</div>` : add ? '' : `<p class="emptytext">아직 의뢰가 없습니다. 문의만 받은 업무입니다.${closed ? '' : ' <button class="ta inline" data-a="endhub" data-fid="endhub">문의 종료</button>'}</p>`}
+        </section>
+        <section class="sec" aria-label="상담" data-logs><h3>상담${h.logs.length ? `<i class="num">${h.logs.length}</i>` : ''}</h3>
+          ${logs.length ? `<div class="rows">${logs.map((l) => `<div class="lg"><div class="lg-1"><span class="tag plain">${esc(l.kind)}</span><span class="num">${mdShort(l.date)}${shared && l.pid ? ` · <b>${esc(person(l.pid).name)}</b>` : ''} · ${esc(l.by)}</span></div><p>${esc(l.text)}</p></div>`).join('')}</div>` : '<p class="emptytext">상담 기록이 없습니다.</p>'}
+          ${hidden > 0 ? `<button class="more" data-a="morelogs" data-fid="morelogs">이전 ${hidden}건 더 보기</button>` : all && h.logs.length > LOGS_SHOWN ? `<button class="more" data-a="morelogs" data-fid="morelogs">최근 ${LOGS_SHOWN}건만 보기</button>` : ''}
+        </section>
+        <section class="sec" aria-label="메모"><h3>메모</h3>
+          <label class="sr" for="memo">이 업무의 메모</label><textarea class="memo-ta" id="memo" data-in="memo" data-fid="memo" placeholder="이 업무에 대해 적어 둘 것 (자동 저장)">${esc(h.memo)}</textarea>
+        </section>
+        <section class="sec" aria-label="자료"><h3>자료</h3><p class="emptytext">사진·서류·녹음을 이 업무에 모아 두는 자리입니다. 올리기 기능은 다음 단계에 붙입니다.</p></section>
+        <section class="sec" aria-label="이 손님의 다른 업무" data-others><h3>${esc(p.name)} 님의 다른 업무${others.length ? `<i class="num">${others.length}</i>` : ''}</h3>
+          ${others.length ? `<div class="rows">${others.map((o) => `<button class="oh" data-a="jump" data-k="${o.id}" data-fid="jump:${o.id}">${stBadge(o)}<b>${esc(titleOf(o))}</b><span class="num">${periodOf(o)}</span></button>`).join('')}</div>` : '<p class="emptytext">이 업무가 처음입니다.</p>'}
+        </section>
+      </div>
+      <div class="pk-foot">${composing ? `<div class="composer">${shared ? `<div class="who-pick" role="radiogroup" aria-label="누구와의 상담인지"><span>누구와</span>${h.members.map((m) => `<button class="tag ${w.pid === m.pid ? 'on' : 'buy'}" role="radio" aria-checked="${w.pid === m.pid}" data-a="wpid" data-k="${m.pid}" data-fid="wpid:${m.pid}">${esc(person(m.pid).name)}</button>`).join('')}</div>` : ''}<label class="sr" for="write">상담 내용</label><textarea id="write" data-in="write" data-fid="write" placeholder="통화나 방문 내용을 적어 두세요">${esc(w.text)}</textarea>
+          <div class="c-foot"><span class="seg" role="group" aria-label="상담 방법">${['전화', '방문', '온라인'].map((k) => `<button aria-pressed="${w.kind === k}" data-a="wkind" data-k="${k}" data-fid="wkind:${k}">${k}</button>`).join('')}</span><span class="hint">Enter 로 기록 · Shift+Enter 줄바꿈</span><button class="bb" data-a="compose" data-fid="wclose">닫기</button><button class="bb dark" data-a="wsave" data-fid="wsave" ${w.text.trim() ? '' : 'disabled'}>기록</button></div></div>`
+        : `<div class="bar"><button class="bb" data-a="say" data-k="${p.phone ? `${esc(p.phone)} 로 전화를 겁니다 (시안)` : ''}" data-fid="b-call" ${p.phone ? '' : 'disabled'}>${ICON.phone}${p.phone ? '전화' : '전화번호 없음'}</button><button class="bb" data-a="say" data-k="이 업무의 후속 업무를 만드는 창이 열립니다 (시안)" data-fid="b-task">${ICON.todo}후속 업무</button>
+          <button class="bb dark" style="margin-left:auto" data-a="compose" data-fid="b-write" aria-expanded="false">${w.text.trim() ? '<span class="dot" title="적던 글이 있습니다"></span>' : ICON.chatplus}${w.text.trim() ? '상담 이어 적기' : '상담 기록'}</button></div>`}</div>`;
+    peek.querySelector('.pk-body').scrollTop = keep;
+    grow();
+  }
+  /** 글 입력 칸은 적는 만큼 자란다 */
+  function grow() {
+    const t = $('write'); if (t) { t.style.height = '66px'; t.style.height = `${Math.min(160, Math.max(66, t.scrollHeight))}px`; }
+    const m = $('memo'); if (m) { m.style.height = '44px'; m.style.height = `${Math.min(220, Math.max(44, m.scrollHeight))}px`; }
+  }
+  function newPopHtml() {
+    const d = S.newDraft; const chosen = d.pid ? person(d.pid) : null; const open = chosen ? openHubsOf(chosen.id) : [];
+    const target = open.some((h) => h.id === d.target) || d.target === 'new' ? d.target : open[0]?.id ?? 'new';
+    d.target = open.length ? target : 'new';
+    return `<div class="pop wide" role="dialog" aria-label="업무 열기"><h4>업무 열기</h4>
+      <div class="field"><label for="nname">고객</label>${chosen
+        ? `<div class="chosen"><b>${esc(chosen.name)}</b><span class="num">${esc(chosen.phone) || '전화번호 없음'}</span><button class="ta" data-a="nunpick" data-fid="nunpick">바꾸기</button></div>`
+        : `<input class="input" id="nname" data-in="nname" data-fid="nname" value="${esc(d.name)}" placeholder="이름을 적거나 아래에서 고르기" autocomplete="off"><div id="nsug" class="sug">${suggestHtml()}</div>`}</div>
+      ${open.length ? `<div class="field"><span class="lab">${esc(chosen.name)} 님에게 진행 중인 업무가 있습니다</span><div role="radiogroup" aria-label="어디에 넣을지">${open.map((h) => `<button class="opt" role="radio" aria-checked="${d.target === h.id}" data-a="ntarget" data-k="${h.id}" data-fid="ntarget:${h.id}">「${esc(titleOf(h))}」에 넣기</button>`).join('')}<button class="opt" role="radio" aria-checked="${d.target === 'new'}" data-a="ntarget" data-k="new" data-fid="ntarget:new">별개의 일 — 새 업무로 열기</button></div></div>` : ''}
+      <div class="field"><span class="lab">무슨 일인가요</span><span class="seg" role="group" aria-label="구분" style="justify-self:start">${[['buy', '구함'], ['sell', '내놓음'], ['ask', '문의만']].map(([k, l]) => `<button aria-pressed="${d.side === k}" data-a="nside" data-k="${k}" data-fid="nside:${k}">${l}</button>`).join('')}</span></div>
+      <div class="field"><label for="ntext">한 줄 내용</label><input class="input" id="ntext" data-in="ntext" data-fid="ntext" value="${esc(d.text)}" placeholder="${d.side === 'sell' ? '예: 고덕자이 201동 904호 · 13억' : d.side === 'ask' ? '문의만 받은 경우 비워 둡니다' : '예: 고덕동 · 34평 · 15억~16억'}" autocomplete="off" ${d.side === 'ask' ? 'disabled' : ''}></div>
+      <p class="err" id="nerr" role="alert">${esc(S.newErr)}</p>
+      <div class="pop-foot"><button class="bb" data-a="popclose" data-fid="nclose">닫기</button><button class="bb dark" data-a="nsave" data-fid="nsave">${d.target !== 'new' ? '이 업무에 넣기' : '새 업무 열기'}</button></div></div>`;
+  }
+  /** 이름을 적는 동안의 후보. 이 부분만 다시 그린다 (입력 칸은 건드리지 않아 한글 조합이 끊기지 않는다) */
+  function suggestHtml() {
+    const q = S.newDraft.name.trim().toLowerCase(); if (!q) return '';
+    const hit = data.people.filter((p) => p.name.toLowerCase().includes(q) || p.phone.replace(/-/g, '').includes(q.replace(/-/g, ''))).slice(0, 4);
+    return hit.map((p) => { const n = openHubsOf(p.id).length; return `<button class="opt" data-a="npick" data-k="${p.id}" data-fid="npick:${p.id}">${esc(p.name)}<span class="n num">${n ? `진행 중 ${n}건` : '진행 중인 업무 없음'}</span></button>`; }).join('') + (hit.some((p) => p.name === S.newDraft.name.trim()) ? '' : `<p class="newhint">「${esc(S.newDraft.name.trim())}」 — 목록에 없으면 새 고객으로 만듭니다</p>`);
+  }
+  function drawPop() {
+    const root = $('pop-root'); const p = S.pop;
+    if (!p) { root.innerHTML = ''; return; }
+    const base = data.hubs.filter((h) => inTab(h, S.tab));
+    if (p.type === 'owner') root.innerHTML = `<div class="pop" role="dialog" aria-label="담당으로 거르기">${[['', '모두'], ...OWNERS.map((o) => [o, o])].map(([v, l]) => `<button class="opt" role="menuitemradio" aria-checked="${S.owner === v}" data-a="setowner" data-k="${esc(v)}" data-fid="own:${esc(v)}">${esc(l)}<span class="n num">${base.filter((h) => matches(h, 'owner') && (!v || h.owner === v)).length}</span></button>`).join('')}</div>`;
+    else if (p.type === 'side') root.innerHTML = `<div class="pop" role="dialog" aria-label="의뢰로 거르기">${[['', '모두'], ['buy', '구함'], ['sell', '내놓음']].map(([v, l]) => `<button class="opt" role="menuitemradio" aria-checked="${S.side === v}" data-a="setside" data-k="${v}" data-fid="side:${v}">${l}<span class="n num">${base.filter((h) => matches(h, 'side') && (!v || h.intents.some((i) => i.side === v))).length}</span></button>`).join('')}</div>`;
+    else if (p.type === 'intent') { const [hid, iid] = p.id.split(':'); const i = hub(hid)?.intents.find((x) => x.id === iid); if (!i) { S.pop = null; root.innerHTML = ''; return; }
+      const opts = i.state === 'open' ? [['hold', '보류'], ['done', '끝내기 — 거래 완료'], ['drop', '끝내기 — 의뢰 거둠']] : i.state === 'hold' ? [['open', '다시 진행'], ['drop', '끝내기 — 의뢰 거둠']] : [['open', '되살리기 (다시 진행)']];
+      root.innerHTML = `<div class="pop" role="dialog" aria-label="의뢰 상태 바꾸기">${opts.map(([v, l]) => `<button class="opt" data-a="setintent" data-k="${v}" data-fid="ist:${v}">${l}</button>`).join('')}<p>담긴 의뢰가 모두 끝나면 이 업무도 종료됩니다.</p></div>`; }
+    else root.innerHTML = newPopHtml();
+    place();
+  }
+  /** 판을 누른 단추 아래에 둔다. 아래가 모자라면 위로, 오른쪽이 모자라면 왼쪽으로 붙인다. */
+  function place() {
+    const pop = document.querySelector('.pop'), anchor = S.pop && document.querySelector(`[data-fid="${CSS.escape(S.pop.anchorFid)}"]`);
+    if (!pop || !anchor) return;
+    const a = anchor.getBoundingClientRect();
+    pop.style.left = `${Math.max(8, Math.min(a.left, innerWidth - pop.offsetWidth - 8))}px`;
+    pop.style.top = `${a.bottom + 6 + pop.offsetHeight > innerHeight - 8 ? Math.max(8, a.top - pop.offsetHeight - 6) : a.bottom + 6}px`;
+  }
+  /** 다시 그린다. 포커스와 커서는 data-fid 로 되찾는다. */
+  function render(focusFid, keepSearch) {
+    const active = document.activeElement, fid = focusFid ?? active?.dataset?.fid;
+    const sel = !focusFid && fid && active?.selectionStart != null ? [active.selectionStart, active.selectionEnd] : null;
+    const scrollTop = $('scroll').scrollTop;
+    if (S.openId && !hub(S.openId)) S.openId = null;                        // 되돌리기로 없어진 업무
+    if (S.composeId && S.composeId !== S.openId) S.composeId = null;        // 적는 칸은 그 업무의 패널이 열려 있을 때만 열려 있다
+    if (S.pop?.type === 'intent' && S.pop.id.split(':')[0] !== S.openId) S.pop = null;
+    if (S.picked.size) { const shown = new Set(visible().map((h) => h.id)); for (const id of [...S.picked]) if (!shown.has(id)) S.picked.delete(id); } // 목록에서 빠진 업무는 고른 것에서도 뺀다
+    drawToolbar(keepSearch); drawSelbar(); drawTable(); drawStatus(); drawPeek(); drawPop();
+    $('scroll').scrollTop = scrollTop;
+    if (fid) { const el = document.querySelector(`[data-fid="${CSS.escape(fid)}"]`); if (el && !el.disabled) { el.focus({ preventScroll: !focusFid }); if (sel && el.setSelectionRange) try { el.setSelectionRange(sel[0], sel[1]); } catch {} else if (focusFid && el.setSelectionRange && /^(write|addtext|ntext|nname)$/.test(focusFid)) el.setSelectionRange(el.value.length, el.value.length); } }
+    S.flash = null;
+  }
+  /** 그 업무의 줄이 표 안에 보이게 한다 (붙어 있는 머리글 아래로) */
+  function reveal(id) {
+    const sc = $('scroll'), row = document.querySelector(`[data-row="${id}"]`);
+    if (!row) return;
+    const top = row.offsetTop - HEAD, bottom = row.offsetTop + row.offsetHeight;
+    if (top < sc.scrollTop) sc.scrollTop = top;
+    else if (bottom > sc.scrollTop + sc.clientHeight) sc.scrollTop = bottom - sc.clientHeight;
+  }
+
+  /* ───────── 바꾸기 ───────── */
+  /** 직전 변경 하나만 되돌릴 수 있다. 바꾸기 전의 자료를 통째로 남긴다. */
+  function change(text, fn) { S.undo = { snap: JSON.stringify(data), openId: S.openId, tab: S.tab }; fn(); S.msg = text; }
+  const newId = (prefix, list) => { let n = list.length + 1; while (list.some((x) => x.id === `${prefix}${n}`)) n += 1; return `${prefix}${n}`; };
+  const newIntent = (h, side, text) => ({ id: newId('i', h.intents), side, tx: '', text: text.trim() || '조건 미정', state: 'open', moving: false, sub: side === 'buy' ? '아직 소개한 매물 없음' : '아직 소개한 손님 없음', endReason: '' });
+  /** 그 업무가 지금 보기에 없으면 보이는 보기로 옮긴다 (열어 놓고 줄을 못 찾는 일이 없게) */
+  const showHub = (id) => { S.openId = id; if (!visible().some((h) => h.id === id)) { S.tab = isClosed(hub(id)) ? 'closed' : 'open'; if (!visible().some((h) => h.id === id)) { S.q = ''; S.side = ''; S.owner = ''; } } S.flash = id; };
+  const ACT = {
+    tab: (k) => { S.tab = k; },
+    pick: (k) => { S.picked.has(k) ? S.picked.delete(k) : S.picked.add(k); },
+    pickall: () => { const rows = visible(); const all = rows.every((h) => S.picked.has(h.id)); rows.forEach((h) => (all ? S.picked.delete(h.id) : S.picked.add(h.id))); },
+    unpick: () => { S.picked.clear(); return 'pickall'; },
+    sort: () => { S.sort = S.sort === 'name' ? 'recent' : 'name'; return 'sort'; },
+    reset: () => { S.tab = 'open'; S.q = ''; S.side = ''; S.owner = ''; S.pop = null; return 'q'; },
+    clear: (k) => { S[k] = ''; S.pop = null; return k; },
+    say: (k) => { S.msg = k; S.undo = null; },
+    pop: (k, el) => { const fid = el.dataset.fid; S.newErr = ''; const same = S.pop?.anchorFid === fid; S.pop = same ? null : { type: k, anchorFid: fid, id: el.dataset.id };
+      return same ? fid : k === 'owner' ? `own:${S.owner}` : k === 'side' ? `side:${S.side}` : k === 'new' ? (S.newDraft.pid ? 'ntext' : 'nname') : undefined; },
+    popclose: () => { const fid = S.pop?.anchorFid; S.pop = null; return fid; },
+    setowner: (k) => { S.owner = k; S.pop = null; return 'owner'; },
+    setside: (k) => { S.side = k; S.pop = null; return 'side'; },
+    open: (k) => { S.slide = !S.openId; S.openId = S.openId === k ? null : k; return `reveal:${k}`; },
+    close: () => { const id = S.openId; S.openId = null; return `reveal:${id}`; },
+    jump: (k) => { showHub(k); return `reveal:${k}`; },
+    morelogs: () => { const id = S.openId; S.moreLogs.has(id) ? S.moreLogs.delete(id) : S.moreLogs.add(id); return 'morelogs'; },
+    /* 의뢰 */
+    addopen: (k) => { const id = S.openId; S.addDraft[id] = { side: k, text: S.addDraft[id]?.text ?? '' }; return 'addtext'; },
+    addclose: () => { const id = S.openId; const side = S.addDraft[id]?.side; delete S.addDraft[id]; return side === 'sell' ? 'd-addsell' : 'd-addbuy'; },
+    addsave: () => { const id = S.openId; const d = S.addDraft[id]; if (!d) return;
+      if (!d.text.trim()) return 'addtext';
+      change(`${SIDE[d.side]} 의뢰를 이 업무에 넣었습니다`, () => { const h = hub(id); h.intents.push(newIntent(h, d.side, d.text)); });
+      delete S.addDraft[id]; S.flash = id; return d.side === 'sell' ? 'd-addsell' : 'd-addbuy'; },
+    setintent: (k) => { const [hid, iid] = S.pop.id.split(':'); const fid = S.pop.anchorFid; const before = statusOf(hub(hid)); let msg = '';
+      change('', () => { const h = hub(hid); const i = h.intents.find((x) => x.id === iid);
+        if (k === 'open') { i.state = 'open'; i.endReason = ''; msg = '의뢰를 다시 진행합니다'; }
+        else if (k === 'hold') { i.state = 'hold'; msg = '의뢰를 보류했습니다'; }
+        else { i.state = 'ended'; i.endReason = k === 'done' ? '거래 완료' : '의뢰 거둠'; msg = `의뢰를 끝냈습니다 (${i.endReason})`; }
+        const after = statusOf(h);
+        if (after === 'closed' && before !== 'closed') { h.endedAt = TODAY; msg = `담긴 의뢰가 모두 끝나 「${titleOf(h)}」 업무가 종료됐습니다`; }
+        if (after !== 'closed' && before === 'closed') { h.endedAt = null; msg = `「${titleOf(h)}」 업무를 다시 열었습니다`; } });
+      S.msg = msg; S.pop = null; S.flash = hid; return fid; },
+    endhub: () => { const id = S.openId; change(`문의를 끝내 「${titleOf(hub(id))}」 업무가 종료됐습니다`, () => { hub(id).endedAt = TODAY; }); S.flash = id; return 'newfor'; },
+    /* 끝난 업무의 손님과 새 일: 지난 업무에 덧붙이지 않고 새 업무를 연다 */
+    newfor: () => { const old = hub(S.openId); let id;
+      change(`${person(old.primary).name} 님의 새 업무를 열었습니다 · 지난 업무는 종료에 그대로 있습니다`, () => { id = newId('n', data.hubs); data.hubs.push({ id, title: '', primary: old.primary, members: old.members.filter((m) => !/법무사|세무사|대리인/.test(m.role)).map((m) => ({ pid: m.pid, role: m.pid === old.primary ? '대표' : '함께' })), owner: ME, startedAt: TODAY, endedAt: null, memo: '', intents: [], logs: [] }); });
+      showHub(id); S.addDraft[id] = { side: 'buy', text: '' }; return 'addtext'; },
+    /* 상담 */
+    compose: () => { const opening = S.composeId !== S.openId; S.composeId = opening ? S.openId : null; return opening ? 'write' : 'b-write'; },
+    wkind: (k) => { const id = S.openId; S.writeDraft[id] = { ...writeOf(id), kind: k }; },
+    wpid: (k) => { const id = S.openId; S.writeDraft[id] = { ...writeOf(id), pid: k }; return 'write'; },
+    wsave: () => { const id = S.openId; const w = writeOf(id); if (!w.text.trim()) return;
+      change(`${person(w.pid).name} 님 상담을 이 업무에 적었습니다`, () => { hub(id).logs.unshift({ date: TODAY, kind: w.kind, by: ME, text: w.text.trim(), pid: w.pid, seq: ++seq }); });
+      delete S.writeDraft[id]; S.composeId = null; S.flash = id; return `wrote:${id}`; },
+    /* 업무 열기 */
+    npick: (k) => { S.newErr = ''; S.newDraft.pid = k; S.newDraft.name = person(k).name; S.newDraft.target = openHubsOf(k)[0]?.id ?? 'new'; return 'ntext'; },
+    nunpick: () => { S.newErr = ''; S.newDraft.pid = null; S.newDraft.target = 'new'; return 'nname'; },
+    ntarget: (k) => { S.newErr = ''; S.newDraft.target = k; return `ntarget:${k}`; },
+    nside: (k) => { S.newErr = ''; S.newDraft.side = k; return `nside:${k}`; },
+    nsave: () => { const d = S.newDraft; const name = d.name.trim();
+      S.newErr = '';
+      if (!d.pid && !name) { S.newErr = '고객 이름을 적어 주세요.'; return 'nname'; }
+      // 이름만 적고 고르지 않았는데 같은 이름의 고객이 한 명 있으면 그 사람으로 본다. 진행 중인 업무가 있으면 어디에 넣을지 한 번 더 묻는다.
+      if (!d.pid) { const same = data.people.filter((p) => p.name === name); if (same.length === 1) { ACT.npick(same[0].id); if (openHubsOf(same[0].id).length) { S.newErr = '이미 있는 고객입니다. 어디에 넣을지 확인해 주세요.'; return `ntarget:${d.target}`; } } }
+      if (d.target !== 'new' && d.side === 'ask') { S.newErr = '진행 중인 업무에 넣으려면 구함이나 내놓음을 골라 주세요.'; return 'nside:buy'; }
+      let id = d.target;
+      if (d.target !== 'new') change(`${SIDE[d.side]} 의뢰를 「${titleOf(hub(d.target))}」 업무에 넣었습니다`, () => { const h = hub(d.target); h.intents.push(newIntent(h, d.side, d.text)); });
+      else change(`${d.pid ? person(d.pid).name : name} 님의 새 업무를 열었습니다`, () => {
+        let pid = d.pid; if (!pid) { pid = newId('q', data.people); data.people.push({ id: pid, name, phone: '' }); }
+        id = newId('n', data.hubs); const h = { id, title: '', primary: pid, members: [{ pid, role: d.side === 'sell' ? '내놓음' : d.side === 'buy' ? '구함' : '문의' }], owner: ME, startedAt: TODAY, endedAt: null, memo: '', intents: [], logs: [] };
+        if (d.side !== 'ask') h.intents.push(newIntent(h, d.side, d.text)); data.hubs.push(h); });
+      S.newDraft = { name: '', pid: null, side: 'buy', text: '', target: 'new' }; S.pop = null; S.slide = !S.openId; showHub(id); return `reveal:${id}`; },
+    undo: () => { const u = S.undo; if (!u) return; data = JSON.parse(u.snap); S.msg = '되돌렸습니다'; S.undo = null; S.tab = u.tab; S.openId = u.openId && hub(u.openId) ? u.openId : null; for (const k of Object.keys(S.addDraft)) if (!hub(k)) delete S.addDraft[k]; return S.openId ? `reveal:${S.openId}` : 'new'; },
+  };
+  /** 누른 뒤 포커스 처리. reveal: 은 그 줄로, wrote: 는 패널의 "상담 기록" 단추에 머물고 방금 적은 상담을 보여 준다. */
+  function finish(focus) {
+    const m = typeof focus === 'string' && focus.match(/^(reveal|wrote):(.+)$/);
+    render(m ? undefined : focus);
+    if (!m) return;
+    const el = (m[1] === 'wrote' && document.querySelector('[data-fid="b-write"]')) || document.querySelector(`[data-fid="row:${m[2]}"]`) || document.querySelector('[data-fid="pk-close"]');
+    el?.focus({ preventScroll: true }); reveal(m[2]);
+    if (m[1] === 'wrote') { const body = document.querySelector('.pk-body'), sec = document.querySelector('[data-logs]'); if (body && sec) body.scrollTop = Math.max(0, sec.offsetTop - body.offsetTop - 12); }
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-a]');
+    if (b && !b.disabled && ACT[b.dataset.a]) { finish(ACT[b.dataset.a](b.dataset.k, b)); return; }
+    if (S.pop && !e.target.closest('.pop')) { S.pop = null; render(); return; } // 판 밖을 누르면 닫는다. 적던 것은 남아 있다.
+    const row = e.target.closest('[data-row]');
+    if (row && !e.target.closest('button, a, input, textarea')) finish(ACT.open(row.dataset.row));
+  });
+  document.addEventListener('input', (e) => {
+    const v = e.target.value; const key = e.target.dataset?.in;
+    if (e.target.id === 'q') { S.q = v; render(undefined, true); return; }
+    // 아래는 다시 그리지 않는다 (한글 조합이 끊기지 않게). 값만 받아 둔다.
+    if (key === 'write') { const id = S.openId; S.writeDraft[id] = { ...writeOf(id), text: v }; document.querySelector('[data-a="wsave"]').disabled = !v.trim(); grow(); }
+    else if (key === 'memo') { hub(S.openId).memo = v; grow(); }
+    else if (key === 'addtext') { const id = S.openId; if (S.addDraft[id]) S.addDraft[id].text = v; }
+    else if (key === 'ntext') { S.newDraft.text = v; S.newErr = ''; $('nerr').textContent = ''; }
+    else if (key === 'nname') { S.newDraft.name = v; S.newErr = ''; $('nsug').innerHTML = suggestHtml(); $('nerr').textContent = ''; place(); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
+    if (e.key === 'Escape') { // 안쪽부터 닫는다: 떠 있는 판 → 상담 적는 칸 → 의뢰 추가 줄 → 패널
+      if (S.pop) { e.preventDefault(); const fid = S.pop.anchorFid; S.pop = null; render(fid); return; }
+      if (e.target.id === 'q' && S.q) { e.preventDefault(); S.q = ''; render('q'); return; }
+      if (S.composeId) { e.preventDefault(); S.composeId = null; render('b-write'); return; }
+      if (S.openId && S.addDraft[S.openId]) { e.preventDefault(); finish(ACT.addclose()); return; }
+      if (S.openId) { e.preventDefault(); const id = S.openId; S.openId = null; render(`row:${id}`); }
+      return;
+    }
+    const key = e.target.dataset?.in;
+    if (e.key === 'Enter' && !e.shiftKey && key === 'write') { e.preventDefault(); document.querySelector('[data-a="wsave"]').click(); return; } // Shift+Enter 는 줄바꿈
+    if (e.key === 'Enter' && key === 'addtext') { e.preventDefault(); document.querySelector('[data-a="addsave"]').click(); return; }
+    if (e.key === 'Enter' && (key === 'ntext' || key === 'nname')) { e.preventDefault(); if (key === 'nname' && !S.newDraft.pid) { const first = document.querySelector('#nsug [data-a="npick"]'); if (first && first.textContent.startsWith(S.newDraft.name.trim()) && data.people.some((p) => p.name === S.newDraft.name.trim())) { first.click(); return; } } document.querySelector('[data-a="nsave"]').click(); return; }
+    // 판 안에서는 Tab 이 판을 벗어나지 않는다. 고르는 목록만 있는 판에서는 ↑↓ 로도 움직인다.
+    if (S.pop && (e.key === 'Tab' || ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)))) { const items = [...document.querySelectorAll('.pop button:not(:disabled), .pop input:not(:disabled)')]; if (!items.length) return; const at = items.indexOf(document.activeElement); const back = e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey);
+      e.preventDefault(); items[(at + (back ? -1 : 1) + items.length) % items.length].focus(); return; }
+    // 줄 사이를 ↑↓ 로 옮긴다. 패널이 열려 있으면 내용도 따라간다.
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !S.pop && e.target.closest?.('[data-row]') && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
+      const order = visible(); const at = order.findIndex((h) => h.id === e.target.closest('[data-row]').dataset.row); const next = order[at + (e.key === 'ArrowDown' ? 1 : -1)];
+      if (next) { e.preventDefault(); const onPick = e.target.dataset.a === 'pick'; if (S.openId) S.openId = next.id; finish(`reveal:${next.id}`); if (onPick) document.querySelector(`[data-fid="pick:${next.id}"]`)?.focus({ preventScroll: true }); }
+    }
+  });
+  addEventListener('pointerdown', () => { document.body.dataset.mouse = '1'; }, true);
+  addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) delete document.body.dataset.mouse; }, true);
+  addEventListener('resize', place);
+  render();
+  window.__S = S; window.__data = () => data; window.__statusOf = statusOf;
+})();
+</script>
+</body>
+</html>

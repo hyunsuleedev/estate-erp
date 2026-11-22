@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>고객 원장 데이터 구조 — 프로젝트 중심</title>
+<link rel="icon" href="data:,">
+<style>
+  /*
+   * 고객 원장 데이터 구조 — 프로젝트 중심 (2026-11-20). customer-ledger-schema.html(사람 줄 기준)을 대신한다.
+   * 이름은 "업무 hub" → "건"을 거쳐 "프로젝트"로 정했다(표는 projects, 2026-11-21에 brokerage_cases에서 이름을 바꿨다). 상담·할 일은 사람에 그대로 둔다.
+   *  1. 한눈에: 사람 → 프로젝트 → 그 안에 담기는 것
+   *  2. 한 손님의 시간: 프로젝트는 닫히고 새로 열리지만 사람은 하나
+   *  3. 표와 칸: 무엇이 지금 있고 무엇을 새로 넣는가
+   * 색은 앱 토큰. 파랑은 "새로 넣는 것"에만, 초록·회색은 원장의 상태 배지와 같은 뜻으로만 쓴다.
+   */
+  :root {
+    --bg: #fff; --fg: #2c2c2b; --fg2: #5f5e5b; --muted: #79766f; --faint: #a9a7a1;
+    --line: #e6e5e3; --stroke: #cfcdc8; --edge: #a3a09a; --soft: #f7f6f5;
+    --new: #2383e2; --new-soft: #eaf3fc;
+    --go: #44745a; --go-soft: #eef3ed; --idle: #5f5e5b; --idle-soft: #f1f1ef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191919; --fg: #e9e9e7; --fg2: #c4c3bf; --muted: #9b9a97; --faint: #6f6e6b;
+      --line: #2f2f2e; --stroke: #4a4947; --edge: #7d7c79; --soft: #222221;
+      --new: #5aa7f0; --new-soft: #17293b;
+      --go: #7fc09a; --go-soft: #1d2a22; --idle: #c4c3bf; --idle-soft: #2a2a29;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px 20px 56px; background: var(--bg); color: var(--fg); font: 14px/1.6 "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1160px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.3; letter-spacing: -0.02em; }
+  h2 { margin: 48px 0 4px; font-size: 16px; letter-spacing: -0.01em; }
+  h3 { margin: 16px 0 4px; font-size: 13px; }
+  p { margin: 0; }
+  .lede { max-width: 74ch; color: var(--fg2); }
+  .sub { max-width: 80ch; color: var(--muted); font-size: 13px; }
+  .three { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 28px; margin: 18px 0 0; padding: 0; list-style: none; }
+  .three li { margin: 0; padding-top: 10px; border-top: 2px solid var(--fg); font-size: 13px; color: var(--fg2); }
+  .three b { display: block; margin-bottom: 2px; font-size: 14px; color: var(--fg); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 18px 0 0; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 14px; height: 12px; border-radius: 3px; border: 1.5px solid var(--stroke); }
+  .sw.new { border-color: var(--new); background: var(--new-soft); }
+  .sw.later { border-style: dashed; }
+  .sw.arrow { width: 18px; height: 0; border: 0; border-top: 1.5px solid var(--edge); border-radius: 0; }
+  figure { margin: 14px 0 0; }
+  .scroll { overflow-x: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 10px 0; }
+  svg { display: block; width: 100%; min-width: 900px; height: auto; color: var(--fg); }
+  figcaption { margin-top: 8px; max-width: 88ch; font-size: 13px; color: var(--muted); }
+  svg text { font-family: inherit; fill: currentColor; }
+  .tt { font-size: 15px; font-weight: 700; }
+  .t { font-size: 13px; font-weight: 600; }
+  .b { font-size: 12px; font-weight: 600; fill: var(--fg2); }
+  .s { font-size: 11.5px; fill: var(--muted); }
+  .r { font-size: 12px; }
+  .dk { fill: var(--fg2); }
+  .dkb { fill: var(--fg); font-weight: 600; }
+  .mono { font: 10.5px ui-monospace, "SF Mono", Menlo, monospace; fill: var(--faint); }
+  .newt { fill: var(--new); font-weight: 600; }
+  .mono.newt { font-weight: 400; }
+  .faintt { fill: var(--faint); }
+  .n { fill: var(--bg); stroke: var(--stroke); stroke-width: 1.2; }
+  .n.new { fill: var(--new-soft); stroke: var(--new); stroke-width: 1.6; }
+  .n.hub { stroke: var(--fg); stroke-width: 1.7; }
+  .n.later { stroke-dasharray: 5 4; }
+  .chip { fill: var(--idle-soft); }
+  .note { fill: var(--soft); }
+  .rownew { fill: var(--new-soft); }
+  .sep { stroke: var(--line); stroke-width: 1; }
+  .sep.later { stroke-dasharray: 5 4; }
+  .e { fill: none; stroke: var(--edge); stroke-width: 1.3; }
+  .e.new { stroke: var(--new); stroke-width: 1.8; }
+  .e.dash { stroke-dasharray: 4 4; }
+  .e.faint { stroke: var(--stroke); }
+  .ah { fill: var(--edge); }
+  .ah.new { fill: var(--new); }
+  .zone { font-size: 11px; font-weight: 600; fill: var(--muted); }
+  .halo { paint-order: stroke; stroke: var(--bg); stroke-width: 6px; stroke-linejoin: round; }
+  .lbl { font-size: 11.5px; fill: var(--muted); }
+  .row-l { font-size: 12px; font-weight: 600; fill: var(--fg2); }
+  .tick { font-size: 11px; fill: var(--faint); }
+  .grid { stroke: var(--line); stroke-width: 1; fill: none; }
+  .grid.strong { stroke: var(--stroke); }
+  .today { stroke: var(--fg); stroke-width: 1.2; stroke-dasharray: 3 3; fill: none; }
+  .person { fill: var(--soft); stroke: var(--fg); stroke-width: 1.5; }
+  .work { fill: var(--bg); stroke: var(--stroke); stroke-width: 1.3; }
+  .work.open { fill: var(--go-soft); stroke: var(--go); }
+  .work.idle { fill: var(--soft); stroke: var(--edge); }
+  .bar { fill: var(--bg); stroke: var(--line); stroke-width: 1; }
+  .dot { fill: var(--fg2); }
+  .dot.free { fill: var(--bg); stroke: var(--fg2); stroke-width: 1.5; }
+  .st-idle { fill: var(--idle-soft); }
+  .st-go { fill: var(--bg); }
+  .st-end { fill: var(--bg); stroke: var(--stroke); stroke-width: 1.2; }
+  .st-t { font-size: 11px; font-weight: 500; fill: var(--fg2); }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 8px 44px; margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { font-weight: 500; color: var(--muted); white-space: nowrap; }
+  thead th { font-size: 12px; }
+  ul { margin: 4px 0 0; padding-left: 18px; }
+  li { margin: 3px 0; }
+  code { font: 12px ui-monospace, "SF Mono", Menlo, monospace; color: var(--fg2); }
+  .tag { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--new-soft); color: var(--new); font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; }
+  .tag.same { background: var(--idle-soft); color: var(--fg2); }
+  .tag.open { background: none; box-shadow: inset 0 0 0 1px var(--stroke); color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>고객 원장 데이터 구조 — 프로젝트 중심</h1>
+  <p class="lede">손님과 하는 한 번의 일을 "프로젝트"에 담습니다. 새 표를 만들지 않고, 선택 사항으로 이미 있던 "중개 건"의 이름을 프로젝트(<code>projects</code>)로 바꿔 씁니다. 상담은 사람과 나눈 대화라 사람에만 달리고, 프로젝트에는 코멘트를 적고 파일을 올립니다.</p>
+  <ul class="three">
+    <li><b>사람은 끝나지 않는다</b>연락처는 한 사람에 하나입니다. 상담은 사람에 쌓입니다.</li>
+    <li><b>프로젝트는 시작과 끝이 있다</b>의뢰와 코멘트, 할 일, 파일, 담당이 프로젝트에 모입니다. 담긴 의뢰가 모두 끝나면 프로젝트도 끝납니다.</li>
+    <li><b>프로젝트는 필요할 때 연다</b>모든 손님에게 만들지 않습니다. 계속 주고받을 일이 있는 손님에게 직원이 엽니다. 지난 프로젝트는 그 손님 아래에 그대로 남습니다.</li>
+  </ul>
+  <div class="legend">
+    <span><i class="sw new"></i>새로 넣는 것</span>
+    <span><i class="sw"></i>지금 있는 것 (그대로)</span>
+    <span><i class="sw later"></i>나중에</span>
+    <span><i class="sw arrow"></i>화살표: 이 칸이 저 표를 가리킨다</span>
+  </div>
+
+  <h2>왜 프로젝트인가</h2>
+  <p class="sub">"의뢰"라는 표는 없습니다. 모양이 다른 표 둘이고, 하나는 집에, 하나는 사람들에 달려 있습니다.</p>
+  <figure>
+    <div class="scroll"><svg viewBox="0 0 1160 310" role="img" aria-label="의뢰는 표가 둘이고 달린 곳이 다르다. 매물 의뢰는 집에 달려 있고 사람 칸이 없다. 구매 의뢰는 참여자 표로 사람들에 달려 있고 집 칸이 없다. 한 손님의 일은 두 표에 걸치므로, 둘을 한 손님의 일로 묶고 코멘트와 파일을 담는 자리가 프로젝트다. 두 의뢰는 지금도 프로젝트를 가리키는 칸이 있고, 프로젝트는 새로 사람을 가리킨다.">
+<defs>
+  <marker id="f0-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah"/></marker>
+  <marker id="f0-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah new"/></marker>
+</defs>
+<text x="40" y="30" class="zone" >집에 달린 기록</text><text x="40" y="196" class="zone" >사람들에 달린 기록</text><text x="760" y="100" class="zone" >둘을 한 손님의 일로 묶는 자리</text>
+<path d="M210 76H248" class="e" marker-end="url(#f0-a)"/><path d="M420 76H458" class="e" marker-end="url(#f0-a)"/>
+<path d="M210 242H248" class="e" marker-end="url(#f0-a)"/><path d="M420 242H458" class="e" marker-end="url(#f0-a)"/>
+<path d="M335 108V150H758" class="e" marker-end="url(#f0-a)"/>
+<path d="M335 210V178H758" class="e" marker-end="url(#f0-a)"/>
+<path d="M1000 110V78" class="e new" marker-end="url(#f0-b)"/>
+<rect x="40" y="44" width="170" height="64" rx="8" class="n "/><text x="52" y="67" class="t" >집</text><text x="52" y="83" class="mono" >Property</text><text x="52" y="99" class="s" >소유자는 집에 적힘</text><rect x="250" y="44" width="170" height="64" rx="8" class="n "/><text x="262" y="67" class="t" >매물 의뢰</text><text x="262" y="83" class="mono" >ListingIntake</text><text x="262" y="99" class="s" >사람 칸 없음</text><rect x="460" y="44" width="170" height="64" rx="8" class="n "/><text x="472" y="67" class="t" >거래 조건</text><text x="472" y="83" class="mono" >Listing</text><text x="472" y="99" class="s" >매매 · 전세 · 월세</text>
+<rect x="40" y="210" width="170" height="64" rx="8" class="n "/><text x="52" y="233" class="t" >의뢰 참여자</text><text x="52" y="249" class="mono" >BuyerIntakeContact</text><text x="52" y="265" class="s" >구하는 사람들</text><rect x="250" y="210" width="170" height="64" rx="8" class="n "/><text x="262" y="233" class="t" >구매 의뢰</text><text x="262" y="249" class="mono" >BuyerIntake</text><text x="262" y="265" class="s" >집 칸 없음</text><rect x="460" y="210" width="170" height="64" rx="8" class="n "/><text x="472" y="233" class="t" >희망조건</text><text x="472" y="249" class="mono" >BuyerRequirement</text><text x="472" y="265" class="s" >찾는 조건</text>
+<text x="590" y="142" class="lbl halo" text-anchor="middle">어느 프로젝트 (지금 있는 칸)</text>
+<rect x="880" y="14" width="240" height="62" rx="10" class="n hub"/><text x="1000" y="40" class="t" text-anchor="middle">사람</text><text x="1000" y="60" class="s" text-anchor="middle">한지우</text>
+<text x="1008" y="98" class="lbl newt halo" >누구의 일인가 (새 칸)</text>
+<rect x="760" y="112" width="360" height="180" rx="12" class="n hub"/><text x="780" y="142" class="tt" >프로젝트</text><text x="852" y="142" class="s" >한지우의 갈아타기</text>
+<text x="780" y="170" class="s" >정형 데이터는 의뢰가 가진다</text>
+<rect x="780" y="180" width="100" height="26" rx="4" class="chip"/><text x="830" y="197" class="s dk" text-anchor="middle">매물 의뢰</text><rect x="890" y="180" width="100" height="26" rx="4" class="chip"/><text x="940" y="197" class="s dk" text-anchor="middle">구매 의뢰</text>
+<text x="780" y="232" class="s" >비정형 데이터는 여기에 모인다</text>
+<rect x="780" y="242" width="80" height="26" rx="4" class="rownew"/><text x="820" y="259" class="s newt" text-anchor="middle">코멘트</text><rect x="870" y="242" width="64" height="26" rx="4" class="rownew"/><text x="902" y="259" class="s newt" text-anchor="middle">파일</text><rect x="944" y="242" width="64" height="26" rx="4" class="chip"/><text x="976" y="259" class="s dk" text-anchor="middle">메모</text>
+</svg></div>
+    <figcaption>매물 의뢰는 "이 집이 지금 나와 있다"는 기록이고 사람이 적혀 있지 않습니다. 구매 의뢰는 "이 사람들이 집을 구한다"는 기록입니다. 한 손님의 일(갈아타기)은 두 표에 걸치고, 어느 쪽도 전체를 담지 못합니다. 그래서 둘을 한 손님의 일로 묶고 코멘트와 파일 같은 비정형 데이터를 담는 자리가 따로 필요하고, 그것이 프로젝트입니다.</figcaption>
+  </figure>
+  <table style="margin-top:14px">
+    <thead><tr><th></th><th>매물 의뢰 <code>ListingIntake</code></th><th>구매 의뢰 <code>BuyerIntake</code></th></tr></thead>
+    <tr><th>달려 있는 곳</th><td>집 하나 (반드시)</td><td>없음</td></tr>
+    <tr><th>사람</th><td>없음. 그 집의 소유자를 따로 읽음</td><td>참여자 표로 여러 명</td></tr>
+    <tr><th>가진 칸</th><td>진행 상태, 종결 사유, 확인 시각 · 결과, 입주 상태, 임장 · 권리 · 현장 메모, 공동중개</td><td>진행 상태, 접수일, 메모</td></tr>
+    <tr><th>아래에 달린 것</th><td>거래 조건</td><td>희망조건</td></tr>
+    <tr><th>제약</th><td>한 집에 열린 의뢰는 하나뿐</td><td>없음</td></tr>
+  </table>
+  <p class="sub" style="margin-top:8px">프로젝트는 의뢰에 딸린 것이 아니라 사람에 달린 독립된 줄입니다. 의뢰가 없어도(문의만 받은 손님) 있을 수 있고, 의뢰가 여럿이어도 하나입니다.</p>
+
+  <h2>1. 한눈에</h2>
+  <p class="sub">사람 아래에 프로젝트가 달립니다. 상담은 사람 쪽에 남습니다.</p>
+  <figure>
+    <div class="scroll"><svg viewBox="0 0 1160 380" role="img" aria-label="사람(연락처) 한 명에게 프로젝트가 여러 개 달린다. 상담은 사람과 나눈 대화라 사람에만 달리고, 프로젝트 화면은 그것을 읽어 와 보여 줄 뿐이다. 프로젝트 안에는 대표 고객과 담당, 이름과 메모와 진행 계획, 의뢰, 코멘트와 할 일, 파일이 담기고, 골라 담는 자료는 그다음에 붙인다. 의뢰에서 매칭, 거래, 계약으로 이어지는 흐름은 그대로다.">
+<defs>
+  <marker id="f1-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah"/></marker>
+  <marker id="f1-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah new"/></marker>
+</defs>
+<rect x="20" y="50" width="220" height="130" rx="10" class="n hub"/>
+<text x="130" y="82" class="tt" text-anchor="middle">사람</text><text x="130" y="104" class="s" text-anchor="middle">연락처</text>
+<text x="130" y="136" class="b" text-anchor="middle">끝나지 않는 기록</text><text x="130" y="156" class="s" text-anchor="middle">이름 · 전화 · 특징 · 태그</text>
+<path d="M130 180V218" class="e"/>
+<rect x="20" y="220" width="220" height="110" rx="8" class="n"/><text x="130" y="250" class="t" text-anchor="middle">상담</text><text x="130" y="272" class="s" text-anchor="middle">통화 · 방문 · 온라인</text><text x="130" y="289" class="s" text-anchor="middle">사람과 나눈 대화</text><text x="130" y="316" class="s faintt" text-anchor="middle">사람만 가리킨다 · 그대로</text>
+<path d="M240 115H348" class="e new" marker-end="url(#f1-b)"/>
+<text x="294" y="91" class="lbl" text-anchor="middle">한 사람에게</text><text x="294" y="106" class="lbl" text-anchor="middle">프로젝트 여러 개</text>
+<path d="M240 275H348" class="e dash" marker-end="url(#f1-a)"/>
+<text x="294" y="251" class="lbl" text-anchor="middle">화면이 읽어 와</text><text x="294" y="266" class="lbl" text-anchor="middle">보여 줄 뿐</text>
+<rect x="350" y="30" width="510" height="320" rx="12" class="n hub"/>
+<text x="370" y="62" class="tt" >프로젝트</text><text x="442" y="62" class="s" >한 번의 일 · 시작과 끝이 있다</text>
+<rect x="370" y="82" width="147" height="112" rx="8" class="n new"/><text x="443.5" y="110" class="t" text-anchor="middle">대표 고객 · 담당</text><text x="443.5" y="132" class="s" text-anchor="middle">누구의 일이고</text><text x="443.5" y="149" class="s" text-anchor="middle">누가 맡았나</text><text x="443.5" y="180" class="s newt" text-anchor="middle">+ 새 칸</text>
+<rect x="531" y="82" width="147" height="112" rx="8" class="n "/><text x="604.5" y="110" class="t" text-anchor="middle">이름 · 메모 · 계획</text><text x="604.5" y="132" class="s" text-anchor="middle">요약 글과 순서</text><text x="604.5" y="180" class="s faintt" text-anchor="middle">지금도 있음</text>
+<rect x="692" y="82" width="148" height="112" rx="8" class="n"/><text x="766" y="110" class="t" text-anchor="middle">의뢰</text>
+<rect x="703" y="124" width="58" height="22" rx="4" class="chip"/><text x="732" y="139" class="s dk" text-anchor="middle">구함</text><rect x="771" y="124" width="58" height="22" rx="4" class="chip"/><text x="800" y="139" class="s dk" text-anchor="middle">내놓음</text>
+<text x="766" y="180" class="s faintt" text-anchor="middle">지금도 담겨 있음</text>
+<rect x="370" y="210" width="147" height="112" rx="8" class="n new"/><text x="443.5" y="238" class="t" text-anchor="middle">코멘트 · 할 일</text><text x="443.5" y="260" class="s" text-anchor="middle">직원이 일에 적는 글</text><text x="443.5" y="308" class="s newt" text-anchor="middle">+ 새 표 · 새 칸</text>
+<rect x="531" y="210" width="147" height="112" rx="8" class="n new"/><text x="604.5" y="238" class="t" text-anchor="middle">파일</text><text x="604.5" y="260" class="s" text-anchor="middle">사진 · 서류 · 녹음</text><text x="604.5" y="308" class="s newt" text-anchor="middle">+ 새 표 · 저장소 필요</text>
+<rect x="692" y="210" width="148" height="112" rx="8" class="n later"/><text x="766" y="238" class="t" text-anchor="middle">골라 담는 자료</text><text x="766" y="260" class="s" text-anchor="middle">매물 · 조건 · 일정을</text><text x="766" y="277" class="s" text-anchor="middle">골라 담아 보냄</text><text x="766" y="308" class="s faintt" text-anchor="middle">그다음에</text>
+<text x="950" y="96" class="zone" >의뢰에서 이어지는 흐름 (그대로)</text>
+<path d="M840 138H948" class="e" marker-end="url(#f1-a)"/>
+<rect x="950" y="110" width="190" height="56" rx="8" class="n"/><text x="1045" y="134" class="t" text-anchor="middle">매칭</text><text x="1045" y="152" class="s" text-anchor="middle">손님 ↔ 매물</text>
+<path d="M1045 166V194" class="e" marker-end="url(#f1-a)"/>
+<rect x="950" y="196" width="190" height="56" rx="8" class="n"/><text x="1045" y="220" class="t" text-anchor="middle">거래</text><text x="1045" y="238" class="s" text-anchor="middle">가계약 → 잔금</text>
+<path d="M1045 252V280" class="e" marker-end="url(#f1-a)"/>
+<rect x="950" y="282" width="190" height="56" rx="8" class="n"/><text x="1045" y="306" class="t" text-anchor="middle">계약</text><text x="1045" y="324" class="s" text-anchor="middle">계약서 · 문서</text>
+</svg></div>
+    <figcaption>프로젝트 안에서 새로 생기는 것은 "대표 고객 · 담당", "코멘트 · 할 일", "파일"입니다. 의뢰, 이름과 메모, 진행 계획은 지금도 프로젝트에 달려 있습니다. 파일은 저장소가 붙어야 넣을 수 있고, 골라 담는 자료는 그다음입니다. 상담은 사람에만 달리고, 프로젝트 화면이 읽어 와 보여 줍니다(점선).</figcaption>
+  </figure>
+
+  <h2>2. 한 손님의 시간</h2>
+  <p class="sub">한지우라는 손님 한 명을 예로, 프로젝트가 닫히고 다시 열리는 모습입니다.</p>
+  <figure>
+    <div class="scroll"><svg viewBox="0 0 1160 372" role="img" aria-label="연락처 한지우는 처음부터 끝까지 하나이고, 상담은 모두 이 사람 줄에 쌓인다. 2024년 9월에 열린 전세 프로젝트는 10월에 거래가 끝나면서 종료됐다. 그 뒤 프로젝트 없이 안부 전화만 사람에 남았다. 2026년 11월에 갈아타기 프로젝트가 새로 열렸고, 같은 달에 부모님 전세 프로젝트가 따로 열렸다. 오늘 원장에는 열려 있는 두 프로젝트가 두 줄로 보인다.">
+<path d="M190 36V322" class="grid"/><path d="M380 36V322" class="grid"/><path d="M680 36V322" class="grid"/><path d="M840 36V322" class="grid"/><path d="M1000 36V322" class="grid"/>
+<path d="M150 322H1140" class="grid strong"/>
+<text x="190" y="340" class="tick" text-anchor="middle">2024.9</text><text x="380" y="340" class="tick" text-anchor="middle">2024.10</text><text x="680" y="340" class="tick" text-anchor="middle">2026.11.2</text><text x="840" y="340" class="tick" text-anchor="middle">11.10</text><text x="1000" y="340" class="tick" text-anchor="middle">11.20</text><text x="530" y="340" class="tick" text-anchor="middle">… 2년 …</text>
+<text x="20" y="71" class="row-l" >사람</text><text x="20" y="152" class="row-l" >프로젝트</text>
+<rect x="150" y="46" width="990" height="40" rx="8" class="person"/><text x="166" y="71" class="t" >한지우</text><text x="212" y="71" class="s" >연락처는 하나 · 상담(●)은 모두 여기에 쌓인다</text>
+<circle cx="210" cy="86" r="4.5" class="dot"/><circle cx="300" cy="86" r="4.5" class="dot"/><circle cx="370" cy="86" r="4.5" class="dot"/><circle cx="700" cy="86" r="4.5" class="dot"/><circle cx="760" cy="86" r="4.5" class="dot"/><circle cx="850" cy="86" r="4.5" class="dot"/><circle cx="905" cy="86" r="4.5" class="dot"/><circle cx="960" cy="86" r="4.5" class="dot"/><circle cx="985" cy="86" r="4.5" class="dot"/>
+<circle cx="530" cy="86" r="5" class="dot free"/><text x="530" y="108" class="lbl" text-anchor="middle">안부 전화 — 프로젝트가 없어도 사람에 남는다</text>
+<rect x="170" y="124" width="230" height="86" rx="8" class="work"/><text x="184" y="147" class="t" >래미안 전세</text><rect x="354" y="133" width="36" height="18" rx="4" class="st-end"/><text x="372" y="146" class="st-t" text-anchor="middle">종료</text>
+<rect x="184" y="158" width="202" height="22" rx="4" class="bar"/><text x="192" y="173" class="s dk" >구매 의뢰 · 전세 → 거래 완료</text>
+<text x="184" y="198" class="s" >담당 이수민 · 코멘트</text>
+<rect x="660" y="124" width="480" height="112" rx="8" class="work open"/><text x="674" y="147" class="t" >고덕 → 잠실 갈아타기</text><rect x="1072" y="133" width="58" height="18" rx="4" class="st-go"/><text x="1101" y="146" class="st-t" text-anchor="middle">진행 중</text>
+<rect x="674" y="158" width="452" height="22" rx="4" class="bar"/><text x="682" y="173" class="s dk" >매물 의뢰 · 고덕아르테온 매매</text>
+<rect x="720" y="184" width="406" height="22" rx="4" class="bar"/><text x="728" y="199" class="s dk" >구매 의뢰 · 잠실 매매</text>
+<text x="674" y="225" class="s" >담당 박지훈 · 코멘트 · 진행 계획</text>
+<rect x="820" y="248" width="320" height="62" rx="8" class="work idle"/><text x="834" y="271" class="t" >부모님 전세</text><rect x="1072" y="257" width="58" height="18" rx="4" class="st-idle"/><text x="1101" y="270" class="st-t" text-anchor="middle">파악 중</text>
+<text x="834" y="296" class="s" >구매 의뢰 · 전세 (보류)</text>
+<path d="M1000 30V322" class="today"/><text x="1000" y="24" class="lbl dk" text-anchor="middle">오늘</text>
+<text x="285" y="362" class="lbl" text-anchor="middle">끝난 프로젝트 → 원장의 "종료"와 한지우의 "다른 프로젝트"에 남는다</text>
+<text x="900" y="362" class="lbl dk" text-anchor="middle">오늘 열려 있는 프로젝트 2개</text>
+</svg></div>
+    <figcaption>상담(●)은 모두 사람 줄에 쌓입니다. 프로젝트 화면은 자기 의뢰에 닿는 상담과 자기 기간의 상담을 읽어 와 보여 주므로, 2024년 전세 프로젝트와 2026년 갈아타기 프로젝트의 상담은 따로 보입니다. 같은 때에 별개의 일(부모님 전세)이 있으면 프로젝트가 둘이 되고 원장에는 두 줄로 나옵니다.</figcaption>
+  </figure>
+
+  <h2>3. 표와 칸</h2>
+  <p class="sub">실제 표로 옮기면 이렇습니다. 파란 줄이 새로 넣는 칸입니다.</p>
+  <figure>
+    <div class="scroll"><svg viewBox="0 0 1160 598" role="img" aria-label="프로젝트 표(projects)가 가운데에 있다. 구매 의뢰와 매물 의뢰는 지금도 프로젝트를 가리키는 칸이 있다. 프로젝트에 대표 고객과 담당 직원 두 칸을 새로 넣고, 대표 고객 칸은 연락처를 가리킨다. 상담은 연락처만 가리키고 프로젝트를 가리키는 칸은 넣지 않는다. 할 일에는 어느 프로젝트의 일인지 적는 칸을 새로 넣는다. 코멘트 표를 새로 만들어 프로젝트를 가리키게 한다. 구매 의뢰에는 상태가 바뀐 때를 적는 칸을 새로 넣는다. 파일 표도 새로 만들어 프로젝트를 가리키게 하되, 파일 저장소가 붙은 뒤에 넣는다.">
+<defs>
+  <marker id="f3-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah"/></marker>
+  <marker id="f3-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah new"/></marker>
+</defs>
+<path d="M44 361H22V249" class="e"/>
+<path d="M44 249H22V63H42" class="e" marker-end="url(#f3-a)"/>
+<path d="M400 177H330V63H292" class="e new" marker-end="url(#f3-b)"/>
+<path d="M290 413H368V281H398" class="e new" marker-end="url(#f3-b)"/>
+<path d="M840 99H800V56" class="e"/>
+<path d="M840 237H800V56H732" class="e" marker-end="url(#f3-a)"/>
+<path d="M840 375H778V72H732" class="e new" marker-end="url(#f3-b)"/>
+<path d="M840 513H756V99H732" class="e dash faint"/>
+<rect x="44" y="40" width="246" height="124" rx="8" class="n hub"/><path d="M44 86H290" class="sep"/><text x="56" y="61" class="t" >연락처</text><text x="56" y="77" class="mono" >contacts</text><text x="56" y="103" class="r" >이름 · 전화 · 특징 · 태그</text><text x="56" y="129" class="r" >메모</text><text x="278" y="129" class="mono" text-anchor="end">memo</text><text x="56" y="155" class="r faintt" >그 밖의 칸은 그대로</text><rect x="44" y="190" width="246" height="98" rx="8" class="n "/><path d="M44 236H290" class="sep"/><text x="56" y="211" class="t" >상담</text><text x="56" y="227" class="mono" >consultations</text><text x="56" y="253" class="r" >누구와 → 연락처</text><text x="278" y="253" class="mono" text-anchor="end">contact_id</text><text x="56" y="279" class="r faintt" >그 밖의 칸은 그대로</text><rect x="44" y="302" width="246" height="124" rx="8" class="n "/><path d="M44 348H290" class="sep"/><text x="56" y="323" class="t" >할 일</text><text x="56" y="339" class="mono" >tasks</text><text x="56" y="365" class="r" >누구 일 → 연락처</text><text x="278" y="365" class="mono" text-anchor="end">contact_id</text><text x="56" y="391" class="r faintt" >그 밖의 칸은 그대로</text><rect x="45" y="401" width="244" height="24" rx="6" class="rownew"/><text x="56" y="417" class="r newt" >어느 프로젝트의 일</text><text x="278" y="417" class="mono newt" text-anchor="end">project_id</text><rect x="400" y="40" width="330" height="254" rx="8" class="n hub"/><path d="M400 86H730" class="sep"/><text x="412" y="61" class="t" >프로젝트</text><text x="412" y="77" class="mono" >projects (옛 이름 brokerage_cases)</text><text x="412" y="103" class="r" >이름</text><text x="718" y="103" class="mono" text-anchor="end">title</text><text x="412" y="129" class="r" >메모 (요약 글)</text><text x="718" y="129" class="mono" text-anchor="end">memo</text><text x="412" y="155" class="r" >시작일</text><text x="718" y="155" class="mono" text-anchor="end">created_at</text><rect x="401" y="165" width="328" height="24" rx="0" class="rownew"/><text x="412" y="181" class="r newt" >대표 고객 → 연락처</text><text x="718" y="181" class="mono newt" text-anchor="end">primary_contact_id</text><rect x="401" y="191" width="328" height="24" rx="0" class="rownew"/><text x="412" y="207" class="r newt" >담당 직원</text><text x="718" y="207" class="mono newt" text-anchor="end">assigned_to_id</text><text x="412" y="233" class="r" >직접 끝낸 날 (지금의 보관 칸)</text><text x="718" y="233" class="mono" text-anchor="end">archived_at</text><text x="412" y="259" class="r faintt" >끝난 때 — 저장 안 함, 의뢰에서 계산</text><text x="412" y="285" class="r faintt" >진행 계획 · 순서는 그대로</text><text x="718" y="285" class="mono" text-anchor="end">project_steps</text><rect x="840" y="40" width="300" height="124" rx="8" class="n "/><path d="M840 86H1140" class="sep"/><text x="852" y="61" class="t" >구매 의뢰</text><text x="852" y="77" class="mono" >buyer_intakes</text><text x="852" y="103" class="r" >어느 프로젝트 (선택)</text><text x="1128" y="103" class="mono" text-anchor="end">project_id</text><text x="852" y="129" class="r" >진행 · 보류 · 종료</text><text x="1128" y="129" class="mono" text-anchor="end">lifecycle_status</text><rect x="841" y="139" width="298" height="24" rx="6" class="rownew"/><text x="852" y="155" class="r newt" >상태가 바뀐 때</text><text x="1128" y="155" class="mono newt" text-anchor="end">lifecycle_changed_at</text><rect x="840" y="178" width="300" height="124" rx="8" class="n "/><path d="M840 224H1140" class="sep"/><text x="852" y="199" class="t" >매물 의뢰</text><text x="852" y="215" class="mono" >listing_intakes</text><text x="852" y="241" class="r" >어느 프로젝트 (선택)</text><text x="1128" y="241" class="mono" text-anchor="end">project_id</text><text x="852" y="267" class="r" >진행 · 보류 · 종료</text><text x="1128" y="267" class="mono" text-anchor="end">lifecycle_status</text><text x="852" y="293" class="r" >상태가 바뀐 때</text><text x="1128" y="293" class="mono" text-anchor="end">lifecycle_changed_at</text><rect x="840" y="316" width="300" height="124" rx="8" class="n new"/><path d="M840 362H1140" class="sep"/><text x="852" y="337" class="t newt" >코멘트 (새 표)</text><text x="852" y="353" class="mono newt" >comments</text><text x="852" y="379" class="r" >어디에 단 글인가 — 하나만</text><text x="1128" y="379" class="mono" text-anchor="end">project_id …</text><text x="852" y="405" class="r" >누가 적었나 → 직원</text><text x="1128" y="405" class="mono" text-anchor="end">author_id</text><text x="852" y="431" class="r" >내용 · 적은 때</text><text x="1128" y="431" class="mono" text-anchor="end">body, created_at</text><rect x="840" y="454" width="300" height="124" rx="8" class="n later"/><path d="M840 500H1140" class="sep later"/><text x="852" y="475" class="t" >파일 (새 표 · 저장소가 붙은 뒤)</text><text x="852" y="491" class="mono" >files</text><text x="852" y="517" class="r" >어디에 올린 것인가 — 하나만</text><text x="1128" y="517" class="mono" text-anchor="end">project_id …</text><text x="852" y="543" class="r" >분류 · 한 줄 설명</text><text x="1128" y="543" class="mono" text-anchor="end">kind, caption</text><text x="852" y="569" class="r" >올린 사람 · 위치</text><text x="1128" y="569" class="mono" text-anchor="end">uploader_id, storage_key</text>
+<text x="338" y="124" class="lbl newt halo" >누구의</text><text x="338" y="139" class="lbl newt halo" >일인가</text>
+<text x="806" y="41" class="lbl halo" >지금</text><text x="806" y="55" class="lbl halo" >있음</text>
+<rect x="400" y="316" width="330" height="84" rx="8" class="note"/><text x="412" y="337" class="r dkb" >상담은 사람의 것, 코멘트는 일의 것</text><text x="412" y="356" class="s" >상담: 사람과 나눈 대화 → 사람만 가리킨다</text><text x="412" y="374" class="s" >코멘트: 직원이 일에 적는 글 → 그 일만 가리킨다</text><text x="412" y="392" class="s" >프로젝트 화면은 그 사람들의 상담을 읽어 와 보여 준다</text><rect x="400" y="414" width="330" height="84" rx="8" class="note"/><text x="412" y="435" class="r dkb" >상태는 칸이 아니다</text><text x="412" y="454" class="s" >파악 중 · 진행 중 · 종료는 담긴 의뢰의</text><text x="412" y="472" class="s" >진행 · 보류 · 종료에서 계산한다</text><text x="412" y="490" class="s" >끝난 때 = 마지막 의뢰가 종료로 바뀐 때</text><rect x="44" y="448" width="246" height="66" rx="8" class="note"/><text x="56" y="469" class="r dkb" >참여자는 의뢰에서 읽는다 (그대로)</text><text x="56" y="488" class="s" >구매 의뢰 → 참여자 표 → 연락처</text><text x="56" y="506" class="s" >매물 의뢰 → 호실 → 소유자</text>
+</svg></div>
+    <figcaption>새 표는 둘(코멘트, 파일)이고 새 칸은 넷입니다. 프로젝트에 대표 고객과 담당 직원, 할 일에 "어느 프로젝트의 일", 구매 의뢰에 "상태가 바뀐 때"입니다. 상담에는 칸을 더하지 않습니다. 파일 표는 파일 저장소가 붙은 뒤에 넣습니다(점선).</figcaption>
+  </figure>
+
+  <h2>4. 상담 · 코멘트 · 파일</h2>
+  <p class="sub">셋은 다른 것입니다. 상담은 사람과 나눈 대화, 코멘트는 직원이 일에 적어 두는 글, 파일은 일에 올려 두는 원자료입니다. 각각 가리키는 곳이 하나뿐입니다.</p>
+  <figure>
+    <div class="scroll"><svg viewBox="0 0 1160 550" role="img" aria-label="상담, 코멘트, 파일의 차이. 상담은 한지우와 나눈 통화이고 사람(한지우)만 가리킨다. 연락처 화면에 보이고, 프로젝트 화면은 이 프로젝트 사람들과의 상담으로 읽어 와 보여 준다. 코멘트는 직원 박지훈이 프로젝트에 적은 글이고 프로젝트(고덕에서 잠실로 갈아타기)만 가리킨다. 프로젝트 화면의 코멘트로 보인다. 파일은 직원이 올린 원자료이고 역시 프로젝트 하나만 가리킨다. 분류와 한 줄 설명이 붙어 프로젝트 화면의 파일로 보인다.">
+<defs>
+  <marker id="f4-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah"/></marker>
+  <marker id="f4-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah new"/></marker>
+</defs>
+<text x="20" y="22" class="zone" >적은 것</text><text x="420" y="22" class="zone" >가리키는 곳 (하나뿐)</text><text x="850" y="22" class="zone" >보이는 곳</text>
+<rect x="20" y="46" width="300" height="96" rx="10" class="n hub"/><text x="36" y="72" class="s" >상담 — 11.18 전화 · 한지우와</text><text x="36" y="98" class="r" >"엘스 1502호를 다시 보고 싶다고 함.</text><text x="36" y="118" class="r" >토요일 오전 가능."</text>
+<path d="M320 94H418" class="e" marker-end="url(#f4-a)"/>
+<rect x="420" y="56" width="300" height="76" rx="8" class="n "/><text x="434" y="76" class="zone" >사람 — 반드시</text><text x="434" y="99" class="t" >한지우</text><text x="434" y="118" class="s" >누구와 나눈 대화인가</text>
+<path d="M720 94H785V74H848" class="e faint" marker-end="url(#f4-a)"/>
+<path d="M785 94V160H848" class="e dash" marker-end="url(#f4-a)"/>
+<rect x="850" y="36" width="290" height="76" rx="8" class="n "/><text x="864" y="56" class="zone" >연락처 화면</text><text x="864" y="79" class="t" >한지우의 상담</text><text x="864" y="98" class="s" >이 사람과의 모든 대화</text>
+<rect x="850" y="122" width="290" height="76" rx="8" class="n "/><text x="864" y="142" class="zone" >프로젝트 화면 — 읽어 온 것</text><text x="864" y="165" class="t" >이 프로젝트 사람들과의 상담</text><text x="864" y="184" class="s" >저장된 연결이 아니다</text>
+<rect x="20" y="240" width="300" height="96" rx="10" class="n hub"/><text x="36" y="266" class="s" >코멘트 — 11.19 · 박지훈이 적음</text><text x="36" y="292" class="r" >"대출 한도 나오면 잔금일 다시 잡기.</text><text x="36" y="312" class="r" >법무사 일정도 확인."</text>
+<path d="M320 288H418" class="e new" marker-end="url(#f4-b)"/>
+<rect x="420" y="250" width="300" height="76" rx="8" class="n new"/><text x="434" y="270" class="zone newt" >프로젝트 — 하나만</text><text x="434" y="293" class="t" >고덕 → 잠실 갈아타기</text><text x="434" y="312" class="s" >무엇에 단 글인가</text>
+<path d="M720 288H848" class="e faint" marker-end="url(#f4-a)"/>
+<rect x="850" y="250" width="290" height="76" rx="8" class="n "/><text x="864" y="270" class="zone" >프로젝트 화면</text><text x="864" y="293" class="t" >갈아타기의 코멘트</text><text x="864" y="312" class="s" >누가 언제 적었는지 남는다</text>
+<rect x="20" y="434" width="300" height="96" rx="10" class="n hub"/><text x="36" y="460" class="s" >파일 — 11.20 · 박지훈이 올림</text><text x="36" y="486" class="r" >계약서 스캔.pdf</text><text x="36" y="506" class="r" >분류: 계약 관련 · "매수인 서명본"</text>
+<path d="M320 482H418" class="e new" marker-end="url(#f4-b)"/>
+<rect x="420" y="444" width="300" height="76" rx="8" class="n new"/><text x="434" y="464" class="zone newt" >프로젝트 — 하나만</text><text x="434" y="487" class="t" >고덕 → 잠실 갈아타기</text><text x="434" y="506" class="s" >어디에 올린 원자료인가</text>
+<path d="M720 482H848" class="e faint" marker-end="url(#f4-a)"/>
+<rect x="850" y="444" width="290" height="76" rx="8" class="n "/><text x="864" y="464" class="zone" >프로젝트 화면</text><text x="864" y="487" class="t" >갈아타기의 파일</text><text x="864" y="506" class="s" >분류와 설명으로 다시 찾는다</text>
+</svg></div>
+    <figcaption>상담에는 "어느 프로젝트"를 적지 않습니다. 프로젝트 화면이 그 프로젝트 사람들과의 상담을 읽어 와 보여 줍니다. 프로젝트에 남기는 글은 코멘트로, 사진 · 서류 · 녹음 같은 원자료는 파일로 올립니다.</figcaption>
+  </figure>
+  <table style="margin-top:14px">
+    <thead><tr><th></th><th>상담</th><th>코멘트</th><th>파일</th></tr></thead>
+    <tr><th>무엇인가</th><td>사람과 나눈 대화 (전화 · 방문 · 온라인)</td><td>직원이 일에 적어 두는 짧은 글</td><td>이미 있는 원자료 (사진 · 계약서 스캔 · 등기부 · 녹음 · 캡처)</td></tr>
+    <tr><th>가리키는 곳</th><td>사람 하나 (반드시)</td><td>일 하나 (반드시). 처음에는 프로젝트</td><td>일 하나 (반드시). 처음에는 프로젝트</td></tr>
+    <tr><th>표</th><td>지금의 <code>consultations</code>, 칸 추가 없음</td><td>새 표 <code>comments</code></td><td>새 표 <code>files</code>, 파일 저장소가 붙은 뒤</td></tr>
+  </table>
+  <h3>코멘트 표와 파일 표</h3>
+  <p class="sub">둘 다 달 수 있는 곳마다 진짜 참조 칸을 두고, 그 가운데 정확히 하나만 채우게 DB 제약을 겁니다. "종류 + id"를 글자로 적는 방식은 쓰지 않습니다(참조가 보장되지 않기 때문). 진행 계획 단계에 이미 쓰는 방식입니다. 처음에는 프로젝트 칸 하나로 시작하고, 의뢰나 매칭에도 달게 될 때 칸을 하나씩 늘립니다.</p>
+  <div class="cols">
+    <div>
+      <table>
+        <thead><tr><th>코멘트의 칸</th><th>뜻</th></tr></thead>
+        <tr><th><code>office_id</code></th><td>사무소 (격리 대상에 올림)</td></tr>
+        <tr><th><code>project_id</code></th><td>단 곳: 프로젝트</td></tr>
+        <tr><th><code>author_id</code></th><td>적은 직원</td></tr>
+        <tr><th><code>body</code></th><td>내용</td></tr>
+        <tr><th><code>created_at</code>, <code>updated_at</code></th><td>적은 때 · 고친 때</td></tr>
+      </table>
+    </div>
+    <div>
+      <table>
+        <thead><tr><th>파일의 칸</th><th>뜻</th></tr></thead>
+        <tr><th><code>office_id</code></th><td>사무소 (격리 대상에 올림)</td></tr>
+        <tr><th><code>project_id</code></th><td>올린 곳: 프로젝트</td></tr>
+        <tr><th><code>uploader_id</code></th><td>올린 직원</td></tr>
+        <tr><th><code>kind</code>, <code>caption</code></th><td>분류(현장 사진 · 계약 관련 · 서류 · 녹음)와 한 줄 설명. 없으면 나중에 못 찾습니다</td></tr>
+        <tr><th><code>storage_key</code>, 이름 · 크기 · 형식</th><td>저장소 안의 위치와 파일 정보</td></tr>
+      </table>
+    </div>
+  </div>
+  <h3>글과 자료를 어디에 두나</h3>
+  <table style="margin-top:8px">
+    <thead><tr><th>적거나 올릴 것</th><th>자리</th><th></th></tr></thead>
+    <tr><th>가격 · 조건 · 일정 같은 사실</th><td>칸 (의뢰 · 희망조건 · 매칭 · 거래)</td><td><span class="tag same">지금 있음</span></td></tr>
+    <tr><th>사람과 나눈 대화</th><td>상담</td><td><span class="tag same">지금 있음</span></td></tr>
+    <tr><th>짧은 진행 기록</th><td>코멘트</td><td><span class="tag">새 표</span></td></tr>
+    <tr><th>원자료</th><td>파일. 원자료는 칸을 대신하지 않고 근거로 붙습니다. 사용자의 Claude가 파일을 읽고 칸에 넣을 값을 제안하면 사람이 확인하는 길도 여기서 생깁니다</td><td><span class="tag">새 표</span></td></tr>
+    <tr><th>손님에게 보낼 자료</th><td>골라 담는 자료. 프로젝트의 매물 · 조건 · 일정을 골라 담고 항목마다 설명 한 줄을 붙입니다. 값은 칸에서 읽어 옵니다</td><td><span class="tag open">그다음</span></td></tr>
+    <tr><th>빈 자유 문서</th><td>넣지 않습니다. 빈 문서가 편하면 가격과 조건을 글로 적게 되어 칸이 비기 때문입니다</td><td><span class="tag open">안 함</span></td></tr>
+  </table>
+  <h3>프로젝트 화면이 보여 주는 상담</h3>
+  <p class="sub">저장된 묶음이 아니라 볼 때마다 읽어 오는 조회입니다. 규칙이 틀려도 자료는 상하지 않고, 규칙만 고치면 됩니다.</p>
+  <table style="margin-top:8px">
+    <thead><tr><th></th><th>이 프로젝트 당사자와의 상담 가운데</th><th>표시</th></tr></thead>
+    <tr><th>가</th><td>이 프로젝트에 담긴 의뢰에 닿는 상담 (지금 상담에 있는 의뢰 · 매칭 · 집 칸으로 닿는 것)</td><td>이 프로젝트의 상담</td></tr>
+    <tr><th>나</th><td>어느 의뢰에도 닿지 않고, 적은 때가 프로젝트의 시작과 끝 사이인 상담</td><td>"같은 기간의 상담"으로 구분해서. 프로젝트가 동시에 둘이면 양쪽에 보입니다</td></tr>
+    <tr><th>빼는 것</th><td>다른 프로젝트에 담긴 의뢰에 닿는 상담</td><td>보이지 않음</td></tr>
+  </table>
+  <p class="sub" style="margin-top:8px">당사자는 대표 고객과 담긴 의뢰의 참여자입니다. 법무사처럼 돕는 사람과의 상담은 끌어오지 않습니다.</p>
+  <p class="sub" style="margin-top:8px">지금 상담에는 집 · 매물 의뢰 · 거래 조건 · 매칭 · 구매 의뢰 · 희망조건을 가리키는 칸이 여섯 개 있습니다. 대화가 아닌 기록(현장 메모, 확인 기록)까지 상담으로 들어가면서 생긴 칸들입니다. 매물 화면과 매칭 화면이 쓰고 있어 이번에는 건드리지 않습니다. 코멘트가 의뢰와 매칭에도 달리게 되면 그런 기록은 코멘트로 옮길 수 있습니다.</p>
+
+  <h2>프로젝트의 시작과 끝</h2>
+  <p class="sub">"종료" 표시와 프로젝트 화면이 읽어 올 상담의 기간이 여기에 달려 있어, 무엇을 읽는지 정해 둡니다. 어느 것도 프로젝트에 따로 저장하지 않습니다.</p>
+  <table style="margin-top:8px">
+    <thead><tr><th></th><th>정의</th><th>읽는 칸</th></tr></thead>
+    <tr><th>시작</th><td>프로젝트를 만든 때. 기존 의뢰를 프로젝트로 옮길 때는 그 의뢰의 접수일을 넣습니다</td><td><code>projects.created_at</code></td></tr>
+    <tr><th>끝 · 의뢰가 있는 프로젝트</th><td>담긴 의뢰가 모두 종료일 때, 그 의뢰들이 종료로 바뀐 때 가운데 가장 늦은 때. 하나라도 진행이나 보류이면 끝이 없습니다(열려 있음)</td><td><code>lifecycle_status</code>, <code>lifecycle_changed_at</code></td></tr>
+    <tr><th>끝 · 의뢰가 없는 프로젝트</th><td>사용자가 직접 끝낸 때. 비어 있으면 열려 있습니다</td><td><code>projects.archived_at</code></td></tr>
+    <tr><th>다시 열림</th><td>끝난 의뢰를 되살리거나 새 의뢰를 넣으면 끝이 없어지고 프로젝트가 다시 열립니다. 계산이라 따로 고칠 칸이 없습니다</td><td></td></tr>
+    <tr><th>프로젝트에 보이는 상담</th><td>위 4번의 "프로젝트 화면이 보여 주는 상담" 규칙대로 볼 때 계산합니다. 이미 있는 상담은 옮기거나 고치지 않습니다</td><td></td></tr>
+  </table>
+  <p class="sub" style="margin-top:8px">프로젝트가 끝난 뒤의 인사 전화는 기간 밖이라 프로젝트에는 보이지 않고 사람에만 남습니다. 이미 종료된 구매 의뢰는 "상태가 바뀐 때"가 없어서 마지막 수정 시각으로 채우는데, 실제 종료일과 다를 수 있습니다.</p>
+
+  <h2>프로젝트는 선택 사항</h2>
+  <p class="sub">프로젝트는 직원이 열 때만 생깁니다. 의뢰는 지금처럼 프로젝트 없이도 존재합니다.</p>
+  <table style="margin-top:8px">
+    <thead><tr><th></th><th>프로젝트가 없는 손님</th><th>프로젝트를 연 손님</th></tr></thead>
+    <tr><th>어떤 손님</th><td>한두 번 연락한 손님, 조건만 받아 둔 손님, 내놓기만 한 집주인</td><td>여러 번 주고받으며 진행하는 손님. 주로 매수 · 임차 의뢰</td></tr>
+    <tr><th>정형 데이터</th><td colspan="2">의뢰 · 희망조건 · 매칭 · 거래에 그대로</td></tr>
+    <tr><th>상담</th><td colspan="2">사람에 그대로. 프로젝트를 나중에 열어도 그 사람의 지난 상담을 읽어 와 보여 주므로 잃는 것이 없습니다</td></tr>
+    <tr><th>고정 메모</th><td colspan="2">지금 있는 메모 칸에 그대로 (연락처 메모, 의뢰 메모). 덮어쓰는 한 칸이고 누가 언제 적었는지는 남지 않습니다</td></tr>
+    <tr><th>코멘트 · 파일</th><td>없음. 날짜가 남는 기록을 적거나 파일을 올리려 하면 그 자리에서 프로젝트가 열립니다</td><td>프로젝트에</td></tr>
+    <tr><th>원장의 줄</th><td>지금처럼 사람과 열린 의뢰로 읽음</td><td>같은 줄에 프로젝트 이름이 붙고, 열면 코멘트 · 파일이 보임</td></tr>
+  </table>
+  <h3>여는 방법</h3>
+  <ul>
+    <li>손님 화면이나 구매 의뢰에서 "프로젝트 열기" 한 번. 이름은 묻지 않고 의뢰에서 지어 보여 줍니다.</li>
+    <li>프로젝트가 없는 손님에게 코멘트를 적거나 파일을 올리려 하면, 그 자리에서 프로젝트가 열립니다. 여는 것을 따로 배울 필요가 없게 하려는 것입니다.</li>
+    <li>그 손님의 열린 의뢰는 열 때 함께 담습니다. 뺄 수 있습니다.</li>
+  </ul>
+
+  <h2>무엇이 바뀌나</h2>
+  <div class="cols">
+    <div>
+      <h3><span class="tag">새 표</span> 둘 · <span class="tag">새 칸</span> 넷</h3>
+      <table>
+        <tr><th>프로젝트 · 대표 고객</th><td>의뢰가 아직 없는 프로젝트(문의만 받음)도 누구의 일인지 알아야 해서 둡니다</td></tr>
+        <tr><th>프로젝트 · 담당 직원</th><td>지금은 희망조건에만 담당이 있어, 내놓기만 한 손님은 담당이 비어 있습니다</td></tr>
+        <tr><th>코멘트 (새 표)</th><td>직원이 프로젝트에 적는 글. 누가 언제 적었는지 남습니다</td></tr>
+        <tr><th>파일 (새 표)</th><td>프로젝트에 올리는 원자료. 분류와 한 줄 설명이 붙습니다. 파일 저장소가 먼저 있어야 합니다</td></tr>
+        <tr><th>할 일 · 어느 프로젝트의 일</th><td>할 일은 대화가 아니라 일에 붙는 것이라 프로젝트를 가리킵니다. 비워 둘 수 있습니다</td></tr>
+        <tr><th>구매 의뢰 · 상태가 바뀐 때</th><td>프로젝트가 끝난 때를 계산하는 데 씁니다. 매물 의뢰에는 이미 있는 칸입니다</td></tr>
+      </table>
+      <h3>규칙으로 바뀌는 것</h3>
+      <ul>
+        <li>프로젝트는 지금처럼 사용자가 열 때만 생깁니다. 달라지는 것은 여는 목적입니다. 지금은 여러 의뢰를 묶을 때 열고, 바꾼 뒤에는 한 손님과 계속 주고받을 때 엽니다. 의뢰가 하나여도 엽니다.</li>
+        <li>진행 중인 프로젝트가 있는 손님에게 새 의뢰가 오면 그 프로젝트에 넣을지 묻습니다. 고르는 것은 사람입니다.</li>
+        <li>"보관"의 뜻이 바뀝니다. 지금은 묶음을 푸는 것이고, 바꾼 뒤에는 프로젝트를 직접 끝내는 것입니다.</li>
+        <li>기존 의뢰는 옮기지 않습니다.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>그대로인 것</h3>
+      <ul>
+        <li>상담은 지금처럼 사람에 쌓입니다. 칸을 더하지 않습니다.</li>
+        <li>프로젝트의 메모 칸은 요약 글로 그대로 둡니다. 날짜가 남는 기록은 코멘트로 적습니다.</li>
+        <li>빈 자유 문서는 넣지 않습니다.</li>
+        <li>연락처, 의뢰, 희망조건, 매칭, 거래, 계약의 표와 칸</li>
+        <li>참여자는 의뢰에서 읽습니다. 프로젝트에 따로 적지 않습니다.</li>
+        <li>서버가 알아서 묶거나 순서·자금을 계산하지 않습니다.</li>
+        <li>상태를 저장하는 칸은 만들지 않습니다.</li>
+      </ul>
+      <h3><span class="tag open">순서</span> 넣는 차례</h3>
+      <ul>
+        <li>① 프로젝트의 대표 고객 · 담당 칸과 "프로젝트 열기" ② 코멘트 ③ 파일(저장소가 붙으면) ④ 골라 담는 자료</li>
+      </ul>
+      <h3><span class="tag open">미정</span> 아직 정하지 않은 것</h3>
+      <ul>
+        <li>거래에 붙은 코멘트 · 파일을 진행 계획 단계로만 걸린 프로젝트에도 보여 줄지.</li>
+        <li>매물 의뢰의 참여자 표: 지금은 호실의 현재 소유자에서 읽어서, 집이 팔리면 지난 의뢰의 "내놓은 사람"이 바뀝니다.</li>
+      </ul>
+      <h3>걸리는 점</h3>
+      <ul>
+        <li>한 손님에게 프로젝트가 동시에 둘 열려 있으면, 아무것도 가리키지 않는 상담은 두 프로젝트 화면에 모두 "같은 기간의 다른 상담"으로 보입니다. 저장된 연결이 아니어서 틀려도 자료는 그대로입니다.</li>
+        <li>프로젝트 화면의 상담 목록을 읽는 조회가 길어집니다(가 · 나 두 갈래와 빼는 것). 느리면 색인이나 조회 방식으로 풀 일이고, 값을 미리 적어 두는 것은 마지막 수단입니다.</li>
+        <li>프로젝트를 연 손님과 안 연 손님이 섞입니다. 원장에서 "프로젝트 있는 손님"만 걸러 볼 수 있게 하면 오히려 관리하는 손님을 추리는 데 쓸 수 있습니다.</li>
+        <li>직원마다 여는 기준이 다를 수 있습니다.</li>
+        <li>파일은 저장소가 먼저 있어야 합니다. 앱에 올리기용 저장소가 아직 연결돼 있지 않은 것으로 압니다(서버 코드에서 직접 확인하지는 않았습니다).</li>
+        <li>코멘트나 설명 한 줄에 가격을 글로 적는 것까지는 막지 못합니다. 글을 적는 자리 옆에서 칸을 바로 고칠 수 있게 하는 것이 줄이는 방법입니다.</li>
+        <li>공용 DB 마이그레이션과 3001 서버 재빌드가 필요합니다.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

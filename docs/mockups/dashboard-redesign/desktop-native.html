@@ -1,0 +1,3187 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estait Flow · 데스크톱 앱 대시보드 시안</title>
+<link rel="stylesheet" href="./shared-hero.css">
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-sub: #faf9f7;
+    --sidebar-bg: #f9f8f7;
+    --muted: #f0efed;
+    --hover: rgba(44, 44, 43, 0.045);
+    --row-sel: #f2f6fc;
+    --fg: #2c2c2b;
+    --fg2: #5f5e59;
+    --fg3: #79766f;
+    --icon: #8e8b86;
+    --border: #e6e5e3;
+    --border-strong: #d5d3cf;
+    --primary: #2c2c2b;
+    --primary-fg: #ffffff;
+
+    --info: #2383e2;
+    --info-soft: #e7f2fc;
+    --info-strong: #1b6dc0;
+    --success: #0f7b6c;
+    --success-soft: #dff2ec;
+    --success-strong: #0c6256;
+    --warning: #b37300;
+    --warning-soft: #f9efd9;
+    --orange: #d9730d;
+    --orange-soft: #faebdd;
+    --destructive: #bb3430;
+    --destructive-soft: #fdebe9;
+    --destructive-strong: #9f2926;
+    --violet: #6940a5;
+    --violet-soft: #f0eaf8;
+
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --sidebar-w: 220px;
+    --titlebar-h: 36px;
+    --statusbar-h: 26px;
+    --shadow-float: 0 10px 28px rgba(24, 24, 23, 0.12), 0 0 0 1px rgba(44, 44, 43, 0.08);
+    --font: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    text-align: inherit;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--info);
+    outline-offset: -2px;
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ic {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .app-root {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* =========================================================
+     1. Electron 36px Native Titlebar + TabBar
+     ========================================================= */
+  .titlebar {
+    height: var(--titlebar-h);
+    flex: none;
+    display: flex;
+    align-items: stretch;
+    background: var(--sidebar-bg);
+    border-bottom: 1px solid var(--border);
+    padding-right: 8px;
+    position: relative;
+    z-index: 40;
+  }
+
+  .brand-zone {
+    width: var(--sidebar-w);
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px 0 12px;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+    position: relative;
+    z-index: 2;
+    transition: width 180ms var(--ease-out);
+  }
+  .app-root.sidebar-collapsed .brand-zone {
+    width: 158px;
+    border-right-color: transparent;
+  }
+
+  .traffic-lights {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 4px;
+    flex: none;
+  }
+  .tl {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.14);
+  }
+  .tl.red { background: #ff5f57; }
+  .tl.yel { background: #febc2e; }
+  .tl.grn { background: #28c840; }
+
+  .brand-name {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+    white-space: nowrap;
+  }
+  .brand-spacer {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .icon-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg2);
+    flex: none;
+    transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
+  }
+  .icon-btn:active {
+    transform: scale(0.95);
+  }
+  .icon-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .icon-btn:not(:disabled):hover {
+      background: var(--hover);
+      color: var(--fg);
+    }
+  }
+
+  .nav-arrows {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 6px;
+    flex: none;
+  }
+
+  /* Connected Notion-style native tab strip */
+  .tab-strip {
+    display: flex;
+    align-items: flex-end;
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    gap: 0;
+    padding-top: 4px;
+  }
+  .tab-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ntab {
+    height: 32px;
+    min-width: 96px;
+    max-width: 204px;
+    flex: 0 1 168px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px 0 10px;
+    border-right: 1px solid var(--border);
+    border-top: 1px solid transparent;
+    border-left: 1px solid transparent;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    color: var(--fg3);
+    font-size: 12px;
+    font-weight: 500;
+    position: relative;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+  .ntab.pinned {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding-right: 11px;
+  }
+  .ntab:first-child {
+    border-left: 1px solid var(--border);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ntab:not(.active):hover {
+      background: rgba(44, 44, 43, 0.04);
+      color: var(--fg);
+    }
+  }
+  .ntab.active {
+    background: var(--bg);
+    color: var(--fg);
+    font-weight: 600;
+    height: 33px;
+    margin-bottom: -1px;
+    border-top-color: var(--border);
+    border-left-color: var(--border);
+    border-right-color: var(--border);
+    z-index: 2;
+  }
+  .ntab-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ntab-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .ntab-close {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg3);
+    opacity: 0;
+    flex: none;
+    transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+  }
+  .ntab.active .ntab-close,
+  .ntab:hover .ntab-close {
+    opacity: 1;
+  }
+  .ntab-close:hover {
+    background: rgba(44, 44, 43, 0.1);
+    color: var(--fg);
+  }
+
+  .tab-add-btn {
+    width: 28px;
+    height: 28px;
+    margin: 2px 4px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg3);
+    flex: none;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+  .tab-add-btn:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+
+  .title-utils {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-left: 8px;
+    margin-left: 6px;
+    border-left: 1px solid var(--border);
+    flex: none;
+  }
+  .util-btn {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg2);
+    font-size: 11.5px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
+  }
+  .util-btn:active {
+    transform: scale(0.97);
+  }
+  .util-btn.is-on {
+    background: var(--info-soft);
+    border-color: rgba(35, 131, 226, 0.35);
+    color: var(--info-strong);
+  }
+  .util-btn.is-ringing {
+    background: var(--success-soft);
+    border-color: rgba(15, 123, 108, 0.35);
+    color: var(--success-strong);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .util-btn:not(.is-on):not(.is-ringing):hover {
+      background: var(--muted);
+      color: var(--fg);
+    }
+  }
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    min-width: 17px;
+    height: 16px;
+    border-radius: 3px;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--fg3);
+    line-height: 1;
+  }
+
+  /* =========================================================
+     2. Desktop Shell Body (Sidebar + Viewport-Locked Main)
+     ========================================================= */
+  .app-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .app-sidebar {
+    width: var(--sidebar-w);
+    flex: none;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 180ms var(--ease-out), border-color 180ms var(--ease-out);
+  }
+  .app-root.sidebar-collapsed .app-sidebar {
+    width: 0;
+    border-right: 0;
+  }
+
+  .sb-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px 8px;
+  }
+  .sb-group {
+    margin-bottom: 12px;
+  }
+  .sb-group-lbl {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--fg3);
+    padding: 2px 8px 4px;
+    letter-spacing: 0.01em;
+  }
+  .sb-item {
+    width: 100%;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--fg2);
+    white-space: nowrap;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .sb-item.active {
+    background: var(--muted);
+    color: var(--fg);
+    font-weight: 600;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .sb-item:not(.active):hover {
+      background: var(--hover);
+      color: var(--fg);
+    }
+  }
+  .sb-footer {
+    border-top: 1px solid var(--border);
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+  }
+  .sb-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: var(--primary);
+    color: var(--primary-fg);
+    font-size: 11px;
+    font-weight: 600;
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+
+  /* Collapsed Sidebar Hover Edge Sensor & Floating Preview */
+  .sidebar-edge-sensor {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    z-index: 30;
+    display: none;
+  }
+  .app-root.sidebar-collapsed .sidebar-edge-sensor {
+    display: block;
+  }
+  .sidebar-preview {
+    position: absolute;
+    left: 8px;
+    top: 8px;
+    bottom: 8px;
+    width: var(--sidebar-w);
+    background: var(--sidebar-bg);
+    border-radius: 10px;
+    box-shadow: var(--shadow-float);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 45;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-10px);
+    transition: opacity 160ms var(--ease-out), transform 180ms var(--ease-out);
+  }
+  .sidebar-preview.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+  .sb-preview-head {
+    height: 34px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--fg2);
+  }
+
+  /* Main Tab Viewport */
+  .workspace {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+    position: relative;
+  }
+
+  .tab-view {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .tab-view[hidden] {
+    display: none !important;
+  }
+
+  /* =========================================================
+     3. Preserved Animated Hero Frame (Strict 100vh budget)
+     ========================================================= */
+  .hero-frame {
+    flex: none;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  /* Narrow detached pane toggle (only visible <=1020px) */
+  .compact-pane-bar {
+    display: none;
+    flex: none;
+    height: 32px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-sub);
+    align-items: center;
+    gap: 6px;
+  }
+  .compact-pane-btn {
+    height: 22px;
+    padding: 0 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg2);
+  }
+  .compact-pane-btn.active {
+    background: var(--bg);
+    color: var(--fg);
+    font-weight: 600;
+    box-shadow: 0 0 0 1px var(--border);
+  }
+
+  /* =========================================================
+     4. Resizable Hairline 2-Pane Split (Zero Outer Scroll)
+     ========================================================= */
+  .split-root {
+    --split-left: 56%;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(360px, var(--split-left)) 1px minmax(340px, 1fr);
+    overflow: hidden;
+  }
+
+  .split-divider {
+    background: var(--border);
+    position: relative;
+    z-index: 5;
+  }
+  .split-divider::after {
+    content: "";
+    position: absolute;
+    inset: 0 -4px;
+    cursor: col-resize;
+  }
+  .split-divider:hover,
+  .split-divider.dragging {
+    background: var(--info);
+  }
+
+  .pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* Left Pane: Schedule Strip + Queue Filter + Scrollable Queue + Quick Add */
+  .sched-strip {
+    flex: none;
+    background: var(--bg-sub);
+    border-bottom: 1px solid var(--border);
+    padding: 7px 14px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .sched-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .week-pills {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .day-pill {
+    height: 23px;
+    padding: 0 7px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    color: var(--fg2);
+    border: 1px solid transparent;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+  .day-pill:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .day-pill.is-today:not(.selected) {
+    color: var(--info-strong);
+    font-weight: 600;
+  }
+  .day-pill.selected {
+    background: var(--bg);
+    border-color: var(--border-strong);
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .day-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--orange);
+  }
+  .day-dot.none {
+    background: transparent;
+  }
+
+  .ev-chips {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .ev-chip {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 5px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--fg);
+    max-width: 280px;
+    transition: border-color 130ms ease, background-color 130ms ease, transform 120ms var(--ease-out);
+  }
+  .ev-chip:active {
+    transform: scale(0.98);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .ev-chip:hover {
+      border-color: var(--border-strong);
+      background: #fffdf9;
+    }
+  }
+  .ev-chip span.ev-lbl {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ev-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--orange);
+    flex: none;
+  }
+
+  .pane-toolbar {
+    height: 34px;
+    flex: none;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: var(--bg);
+  }
+
+  .seg-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .seg-btn {
+    height: 23px;
+    padding: 0 8px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg2);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .seg-btn:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .seg-btn.active {
+    background: var(--muted);
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .seg-btn .cnt {
+    font-size: 11px;
+    color: var(--fg3);
+  }
+  .seg-btn.active .cnt {
+    color: var(--fg2);
+  }
+
+  .pane-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* Dense Keyboard-Navigable Action Queue Rows */
+  .q-row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    border-left: 2px solid transparent;
+    cursor: pointer;
+    transition: background-color 100ms ease, border-left-color 100ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .q-row:hover {
+      background: var(--hover);
+    }
+  }
+  .q-row.is-selected {
+    background: var(--row-sel);
+    border-left-color: var(--info);
+  }
+
+  .chk {
+    width: 15px;
+    height: 15px;
+    border-radius: 4px;
+    border: 1.4px solid var(--border-strong);
+    background: var(--bg);
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    transition: background-color 130ms ease, border-color 130ms ease, transform 120ms var(--ease-out);
+  }
+  .chk:hover {
+    border-color: var(--info);
+  }
+  .chk:active {
+    transform: scale(0.9);
+  }
+  .chk[aria-checked="true"] {
+    background: var(--info);
+    border-color: var(--info);
+  }
+  .chk svg {
+    width: 10px;
+    height: 10px;
+    stroke: #fff;
+    stroke-width: 2.2;
+    fill: none;
+    opacity: 0;
+  }
+  .chk[aria-checked="true"] svg {
+    opacity: 1;
+  }
+
+  .sig-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin: 0 auto;
+  }
+
+  .q-main {
+    min-width: 0;
+  }
+  .q-title-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .q-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .q-sub {
+    font-size: 11.5px;
+    color: var(--fg3);
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .q-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+  }
+  .row-actions {
+    display: none;
+    align-items: center;
+    gap: 4px;
+  }
+  .q-row:hover .row-actions,
+  .q-row.is-selected .row-actions {
+    display: inline-flex;
+  }
+
+  .micro-btn {
+    height: 22px;
+    padding: 0 7px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--fg2);
+    white-space: nowrap;
+    transition: background-color 120ms ease, color 120ms ease, transform 100ms var(--ease-out);
+  }
+  .micro-btn:hover {
+    background: var(--muted);
+    color: var(--fg);
+  }
+  .micro-btn:active {
+    transform: scale(0.96);
+  }
+  .micro-btn.primary {
+    border-color: rgba(35, 131, 226, 0.35);
+    color: var(--info-strong);
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge[data-tone="gray"] { background: var(--muted); color: var(--fg2); }
+  .badge[data-tone="info"] { background: var(--info-soft); color: var(--info-strong); }
+  .badge[data-tone="success"] { background: var(--success-soft); color: var(--success-strong); }
+  .badge[data-tone="warning"] { background: var(--warning-soft); color: var(--warning); }
+  .badge[data-tone="orange"] { background: var(--orange-soft); color: var(--orange); }
+  .badge[data-tone="destructive"] { background: var(--destructive-soft); color: var(--destructive-strong); }
+  .badge[data-tone="violet"] { background: var(--violet-soft); color: var(--violet); }
+
+  .quick-add-bar {
+    height: 38px;
+    flex: none;
+    border-top: 1px solid var(--border);
+    background: var(--bg-sub);
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .quick-add-input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    outline: none;
+    font-size: 12.5px;
+    color: var(--fg);
+  }
+  .quick-add-input::placeholder {
+    color: var(--fg3);
+  }
+
+  /* Right Pane: KPI Strip + Scrollable Deal Ledger + Bottom Notice Box (CTI safe zone) */
+  .kpi-strip {
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    background: var(--bg-sub);
+    border-bottom: 1px solid var(--border);
+  }
+  .kpi-cell {
+    padding: 9px 12px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+    transition: background-color 120ms ease;
+  }
+  .kpi-cell:last-child {
+    border-right: 0;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .kpi-cell:hover {
+      background: var(--hover);
+    }
+  }
+  .kpi-lbl {
+    font-size: 11px;
+    color: var(--fg3);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .kpi-val {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--fg);
+    letter-spacing: -0.02em;
+  }
+  .kpi-sub {
+    font-size: 11px;
+    color: var(--fg3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .deal-section {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .deal-row {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    cursor: pointer;
+    transition: background-color 100ms ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .deal-row:hover {
+      background: var(--hover);
+    }
+  }
+  .deal-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .deal-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .deal-sub {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11.5px;
+    color: var(--fg2);
+  }
+  .deal-steps {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 3px;
+  }
+  .deal-steps span {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--muted);
+  }
+  .deal-steps span.done {
+    background: var(--success);
+  }
+  .deal-steps span.curr {
+    background: var(--info);
+  }
+
+  .notice-dock {
+    flex: none;
+    max-height: 148px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-sub);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .notice-head {
+    height: 30px;
+    flex: none;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--fg2);
+  }
+  .notice-list {
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .notice-item {
+    width: 100%;
+    height: 30px;
+    padding: 0 14px;
+    border-bottom: 1px solid rgba(230, 229, 227, 0.7);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    text-align: left;
+    transition: background-color 110ms ease;
+  }
+  .notice-item:last-child {
+    border-bottom: 0;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .notice-item:hover {
+      background: var(--hover);
+    }
+  }
+
+  /* =========================================================
+     5. Dynamic Detail Tab View (Full-height Desktop Subpage)
+     ========================================================= */
+  .detail-shell {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 22px 28px 36px;
+    background: var(--bg);
+  }
+  .detail-inner {
+    max-width: 920px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .detail-crumb {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.85fr);
+    gap: 18px;
+  }
+  .detail-box {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    background: var(--bg);
+  }
+  .pay-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-sub);
+  }
+
+  /* =========================================================
+     6. Bottom Native Statusbar (26px)
+     ========================================================= */
+  .statusbar {
+    height: var(--statusbar-h);
+    flex: none;
+    background: var(--sidebar-bg);
+    border-top: 1px solid var(--border);
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--fg3);
+  }
+  .sb-left,
+  .sb-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--success);
+  }
+  .scope-seg {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .scope-opt {
+    height: 18px;
+    padding: 0 7px;
+    font-size: 10.5px;
+    color: var(--fg3);
+  }
+  .scope-opt.active {
+    background: var(--primary);
+    color: var(--primary-fg);
+    font-weight: 600;
+  }
+
+  /* =========================================================
+     7. Desktop Native Overlays: CTI Call, Cmd+K, Context Menu, Popover, Toast
+     ========================================================= */
+  .cti-overlay {
+    position: fixed;
+    right: 14px;
+    bottom: 36px;
+    width: 380px;
+    max-width: calc(100vw - 28px);
+    background: var(--bg);
+    border-radius: 12px;
+    box-shadow: var(--shadow-float);
+    z-index: 60;
+    overflow: hidden;
+    display: none;
+  }
+  .cti-overlay.open {
+    display: block;
+    animation: popUp 180ms var(--ease-out);
+  }
+  @keyframes popUp {
+    from { opacity: 0; transform: translateY(10px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .cti-head {
+    padding: 10px 14px;
+    background: #f5fbf9;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .cti-pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 3px rgba(15, 123, 108, 0.18);
+  }
+
+  .ctx-menu {
+    position: fixed;
+    min-width: 196px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(12px);
+    border-radius: 8px;
+    box-shadow: var(--shadow-float);
+    padding: 4px;
+    z-index: 90;
+    display: none;
+  }
+  .ctx-menu.open {
+    display: block;
+  }
+  .ctx-item {
+    width: 100%;
+    height: 28px;
+    padding: 0 9px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--fg);
+  }
+  .ctx-item:hover {
+    background: var(--info);
+    color: #fff;
+  }
+  .ctx-item:hover .ctx-hint {
+    color: rgba(255, 255, 255, 0.85);
+  }
+  .ctx-hint {
+    font-size: 10.5px;
+    color: var(--fg3);
+  }
+  .ctx-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 2px;
+  }
+
+  .palette-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 20, 19, 0.28);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 12vh;
+    z-index: 95;
+  }
+  .palette-backdrop.open {
+    display: flex;
+  }
+  .palette-box {
+    width: min(560px, calc(100vw - 24px));
+    background: var(--bg);
+    border-radius: 10px;
+    box-shadow: var(--shadow-float);
+    overflow: hidden;
+  }
+  .palette-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .palette-input {
+    flex: 1;
+    border: 0;
+    outline: none;
+    background: transparent;
+    font-size: 13.5px;
+  }
+  .palette-list {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 6px;
+  }
+  .pal-item {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    text-align: left;
+  }
+  .pal-item.active,
+  .pal-item:hover {
+    background: var(--row-sel);
+  }
+
+  .weather-popover {
+    position: fixed;
+    top: 42px;
+    right: 12px;
+    width: 280px;
+    background: var(--bg);
+    border-radius: 10px;
+    box-shadow: var(--shadow-float);
+    padding: 12px 14px;
+    z-index: 80;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .weather-popover.open {
+    display: flex;
+  }
+  .wp-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .wp-chip {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    font-size: 11.5px;
+    color: var(--fg2);
+  }
+  .wp-chip.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: var(--primary-fg);
+  }
+
+  /* Bottom-left undo toast so bottom-right CTI overlay stays clear */
+  .toast-wrap {
+    position: fixed;
+    left: 14px;
+    bottom: 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 70;
+    pointer-events: none;
+  }
+  .toast {
+    pointer-events: auto;
+    min-width: 260px;
+    max-width: 360px;
+    background: var(--primary);
+    color: var(--primary-fg);
+    border-radius: 8px;
+    padding: 9px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+    font-size: 12px;
+  }
+
+  /* =========================================================
+     8. Compact / Detached Window Responsive Mode (<=1020px)
+     ========================================================= */
+  @media (max-width: 1020px) {
+    .brand-zone {
+      width: 158px !important;
+      border-right-color: transparent !important;
+    }
+    .app-sidebar {
+      width: 0 !important;
+      border-right: 0 !important;
+    }
+    .sidebar-edge-sensor {
+      display: block !important;
+    }
+    .compact-pane-bar {
+      display: flex;
+    }
+    .split-root {
+      grid-template-columns: 1fr;
+    }
+    .split-divider {
+      display: none;
+    }
+    .split-root[data-compact-pane="left"] #rightPane {
+      display: none;
+    }
+    .split-root[data-compact-pane="right"] #leftPane {
+      display: none;
+    }
+    .statusbar .sb-shortcuts {
+      display: none;
+    }
+    .detail-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="app-root" id="appRoot">
+  <!-- 36px Native Electron Titlebar + TabBar -->
+  <header class="titlebar">
+    <div class="brand-zone">
+      <div class="traffic-lights" aria-hidden="true">
+        <span class="tl red"></span>
+        <span class="tl yel"></span>
+        <span class="tl grn"></span>
+      </div>
+      <span class="brand-name">Estaitt</span>
+      <span class="brand-spacer"></span>
+      <button
+        type="button"
+        class="icon-btn"
+        id="sidebarToggleBtn"
+        aria-label="사이드바 토글"
+        title="사이드바 토글 (⌘\\)"
+      >
+        <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+      </button>
+    </div>
+
+    <div class="nav-arrows">
+      <button type="button" class="icon-btn" id="navBackBtn" aria-label="이전 탭" title="이전 탭" disabled>
+        <svg class="ic" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <button type="button" class="icon-btn" id="navFwdBtn" aria-label="다음 탭" title="다음 탭" disabled>
+        <svg class="ic" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    </div>
+
+    <div class="tab-strip" id="tabStrip" role="tablist" aria-label="열린 탭"></div>
+    <button type="button" class="tab-add-btn" id="tabAddBtn" aria-label="새 탭 / 빠른 열기" title="빠른 열기 (⌘K)">
+      <svg class="ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+
+    <div class="title-utils">
+      <button type="button" class="util-btn" id="cmdOpenBtn" title="커맨드 팔레트 (⌘K)">
+        <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <span>검색</span>
+        <span class="kbd">⌘K</span>
+      </button>
+      <button type="button" class="util-btn" id="ctiToggleBtn" title="수신 전화 오버레이 테스트">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.9.7 2.8a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.9.6 2.8.7a2 2 0 0 1 1.7 2Z"/></svg>
+        <span>수신 전화</span>
+      </button>
+      <button type="button" class="util-btn" id="weatherBtn" title="날씨·시각 미리보기">
+        <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <span>날씨·시각</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Shell Body -->
+  <div class="app-body">
+    <!-- Persistent Sidebar -->
+    <aside class="app-sidebar" id="appSidebar" aria-label="주 메뉴"></aside>
+
+    <!-- Edge Hover Sensor + Floating Preview Sidebar when Collapsed -->
+    <div class="sidebar-edge-sensor" id="sidebarEdgeSensor" aria-hidden="true"></div>
+    <aside class="sidebar-preview" id="sidebarPreview" aria-label="사이드바 미리보기"></aside>
+
+    <!-- Viewport-Locked Tab Surface -->
+    <main class="workspace">
+      <!-- Tab 1 (Pinned): Dashboard Home -->
+      <section class="tab-view" id="homeTabView" aria-label="대시보드 홈">
+        <div class="hero-frame">
+          <div id="heroHost"></div>
+        </div>
+
+        <div class="compact-pane-bar" id="compactPaneBar">
+          <button type="button" class="compact-pane-btn active" data-compact-target="left">오늘 실행</button>
+          <button type="button" class="compact-pane-btn" data-compact-target="right">진행 거래 · 공지</button>
+          <span style="margin-left:auto;font-size:11px;color:var(--fg3)">좁은 창 모드</span>
+        </div>
+
+        <div class="split-root" id="splitRoot" data-compact-pane="left">
+          <!-- Left Pane: Schedule Strip + Unified Keyboard Action Queue + Quick Add -->
+          <section class="pane" id="leftPane" aria-label="오늘의 실행">
+            <div class="sched-strip" id="schedStrip"></div>
+            <div class="pane-toolbar" id="queueToolbar"></div>
+            <div class="pane-scroll" id="queueScroll" tabindex="0" aria-label="실행 큐 목록"></div>
+            <form class="quick-add-bar" id="quickAddForm">
+              <span style="color:var(--fg3);font-weight:600">+</span>
+              <input
+                type="text"
+                class="quick-add-input"
+                id="quickAddInput"
+                placeholder="새 할 일을 적고 Enter... (예: 고덕아르테온 특약 검토)"
+                aria-label="새 할 일 추가"
+              >
+              <span class="kbd">N</span>
+            </form>
+          </section>
+
+          <div class="split-divider" id="paneResizer" role="separator" aria-orientation="vertical" aria-label="좌우 패널 폭 조절"></div>
+
+          <!-- Right Pane: 3-Cell KPI + Deal Ledger + Bottom-Right CTI-Safe Notice Dock -->
+          <section class="pane" id="rightPane" aria-label="거래 현황 및 공지">
+            <div class="kpi-strip" id="kpiStrip"></div>
+            <div class="deal-section">
+              <div class="pane-toolbar" id="dealToolbar"></div>
+              <div class="pane-scroll" id="dealScroll"></div>
+            </div>
+            <div class="notice-dock" id="noticeDock"></div>
+          </section>
+        </div>
+      </section>
+
+      <!-- Dynamic Active Tab Surface -->
+      <section class="tab-view" id="detailTabView" hidden aria-label="열린 상세 탭"></section>
+    </main>
+  </div>
+
+  <!-- 26px Bottom Native Status Bar -->
+  <footer class="statusbar">
+    <div class="sb-left">
+      <span style="display:inline-flex;align-items:center;gap:5px">
+        <span class="live-dot"></span>
+        <span>실시간 연결 · 고덕퍼스트공인</span>
+      </span>
+      <span style="color:var(--border-strong)">|</span>
+      <div class="scope-seg" role="group" aria-label="조회 범위">
+        <button type="button" class="scope-opt active" data-sb-scope="mine">내 담당</button>
+        <button type="button" class="scope-opt" data-sb-scope="all">사무소 전체</button>
+      </div>
+      <span class="num" id="sbSummaryText">이달 수금 1,580만 / 2,640만 (60%)</span>
+    </div>
+    <div class="sb-right sb-shortcuts">
+      <span class="num"><span class="kbd">↑↓</span> 이동</span>
+      <span class="num"><span class="kbd">Space</span> 완료</span>
+      <span class="num"><span class="kbd">↵</span> 새 탭</span>
+      <span class="num"><span class="kbd">T</span> 내일로</span>
+      <span class="num"><span class="kbd">⌘K</span> 검색</span>
+      <span class="num"><span class="kbd">⌘\</span> 사이드바</span>
+    </div>
+  </footer>
+</div>
+
+<!-- CTI Call Overlay (bottom-right safe zone above notice dock) -->
+<aside class="cti-overlay" id="ctiOverlay" role="dialog" aria-label="전화 수신 오버레이"></aside>
+
+<!-- Native Right-Click Context Menu -->
+<div class="ctx-menu" id="ctxMenu" role="menu"></div>
+
+<!-- Cmd+K Command Palette -->
+<div class="palette-backdrop" id="cmdPalette" aria-hidden="true">
+  <div class="palette-box" role="dialog" aria-label="빠른 검색 및 실행">
+    <div class="palette-input-row">
+      <svg class="ic" viewBox="0 0 24 24" style="color:var(--fg3)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" class="palette-input" id="cmdInput" placeholder="거래, 할 일, 신호, 공지 검색 또는 명령 실행...">
+      <span class="kbd">ESC</span>
+    </div>
+    <div class="palette-list" id="cmdList"></div>
+  </div>
+</div>
+
+<!-- Weather / Time Popover -->
+<div class="weather-popover" id="weatherPopover" role="dialog" aria-label="날씨 및 시각 미리보기"></div>
+
+<!-- Bottom-Left Undo Toast Stack -->
+<div class="toast-wrap" id="toastWrap" aria-live="polite"></div>
+
+<script src="./shared-data.js"></script>
+<script src="./shared-hero.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const Data = window.DashMockData;
+
+  const NAV_GROUPS = [
+    {
+      label: '시작',
+      items: [{ key: '/dashboard', label: '대시보드', icon: 'dashboard' }],
+    },
+    {
+      label: '매물·공간',
+      items: [
+        { key: '/properties', label: '매물관리', icon: 'building' },
+        { key: '/sites', label: '관리단지', icon: 'map' },
+        { key: '/properties/naver-my-ads', label: '광고관리', icon: 'megaphone' },
+      ],
+    },
+    {
+      label: '고객·상담',
+      items: [
+        { key: '/projects', label: '프로젝트', icon: 'kanban' },
+        { key: '/contacts', label: '연락처', icon: 'book' },
+        { key: '/consultations', label: '상담분석', icon: 'message' },
+      ],
+    },
+    {
+      label: '거래·계약',
+      items: [
+        { key: '/wanted-properties', label: '희망매물', icon: 'search' },
+        { key: '/deals', label: '거래관리', icon: 'handshake' },
+        { key: '/contracts', label: '계약서 관리', icon: 'file' },
+        { key: '/cashflow', label: '수수료/정산', icon: 'wallet' },
+      ],
+    },
+    {
+      label: '업무·운영',
+      items: [
+        { key: '/tasks', label: '업무', icon: 'todo' },
+        { key: '/calendar', label: '캘린더', icon: 'calendar' },
+        { key: '/employees', label: '직원관리', icon: 'users' },
+        { key: '/settings', label: '설정', icon: 'settings' },
+      ],
+    },
+  ];
+
+  const ICONS = {
+    dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+    building: '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M10 6h4M10 10h4M10 14h4M2 22h20"/>',
+    map: '<polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>',
+    megaphone: '<path d="m3 11 18-5v12L3 14v-3Z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+    kanban: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7v7M12 7v4M16 7v9"/>',
+    book: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+    message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+    handshake: '<path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 4h3v10H3Z"/>',
+    file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/>',
+    wallet: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+    todo: '<rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/>',
+    calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+  };
+
+  function svgIcon(name, cls = 'ic') {
+    return `<svg class="${cls}" viewBox="0 0 24 24">${ICONS[name] || ICONS.file}</svg>`;
+  }
+
+  function esc(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  const appState = {
+    sidebarOpen: true,
+    sidebarPreviewOpen: false,
+    queueFilter: 'all', // 'all' | 'overdue' | 'today' | 'signal'
+    dealFilter: 'all', // 'all' | 'preContract' | 'contracted' | 'settling'
+    compactPane: 'left',
+    activeQueueIdx: 0,
+    tabs: [
+      { id: 'tab-dashboard', key: 'dashboard', title: '대시보드', kind: 'dashboard', pinned: true, dotColor: '' },
+    ],
+    activeTabId: 'tab-dashboard',
+    history: ['tab-dashboard'],
+    historyIdx: 0,
+    cti: {
+      open: false,
+      phase: 'ringing', // 'ringing' | 'connected' | 'ended'
+      callerName: '김도윤',
+      callerRole: '고덕아르테온 305동 1203호 매수인',
+      phone: '010-2847-1903',
+      memo: '오늘 17:30 본계약 특약 문구 최종 확인 요청',
+      elapsedSec: 18,
+    },
+    cmdOpen: false,
+    cmdQuery: '',
+    cmdIdx: 0,
+    weatherOpen: false,
+  };
+
+  let ctiTimer = 0;
+
+  const $ = (sel) => document.querySelector(sel);
+  const appRoot = $('#appRoot');
+  const tabStrip = $('#tabStrip');
+  const appSidebar = $('#appSidebar');
+  const sidebarPreview = $('#sidebarPreview');
+  const homeTabView = $('#homeTabView');
+  const detailTabView = $('#detailTabView');
+  const splitRoot = $('#splitRoot');
+  const schedStrip = $('#schedStrip');
+  const queueToolbar = $('#queueToolbar');
+  const queueScroll = $('#queueScroll');
+  const kpiStrip = $('#kpiStrip');
+  const dealToolbar = $('#dealToolbar');
+  const dealScroll = $('#dealScroll');
+  const noticeDock = $('#noticeDock');
+  const ctiOverlay = $('#ctiOverlay');
+  const ctxMenu = $('#ctxMenu');
+  const cmdPalette = $('#cmdPalette');
+  const cmdInput = $('#cmdInput');
+  const cmdList = $('#cmdList');
+  const weatherPopover = $('#weatherPopover');
+  const toastWrap = $('#toastWrap');
+
+  const initial = Data.getScopedData();
+  const hero = window.mountDashHero($('#heroHost'), {
+    officeName: Data.state.officeName,
+    userName: Data.state.userName,
+    scope: initial.scope,
+    counts: initial.heroCounts,
+    flags: initial.heroFlags,
+    onScopeChange: (nextScope) => Data.setScope(nextScope),
+    onPin: (pin) => {
+      if (activeTab()?.id !== 'tab-dashboard') activateTab('tab-dashboard');
+      if (window.innerWidth <= 1020) {
+        appState.compactPane = 'left';
+        splitRoot.dataset.compactPane = 'left';
+      }
+      if (pin === 'schedule') {
+        Data.selectDay(Data.getScopedData().todayKey);
+        schedStrip.animate?.(
+          [{ backgroundColor: '#fff5e6' }, { backgroundColor: '#faf9f7' }],
+          { duration: 600, easing: 'ease-out' },
+        );
+      } else if (pin === 'overdue') {
+        appState.queueFilter = 'overdue';
+        appState.activeQueueIdx = 0;
+        renderHome();
+      } else {
+        appState.queueFilter = 'today';
+        appState.activeQueueIdx = 0;
+        renderHome();
+      }
+    },
+    onQuickCreate: () => {
+      if (activeTab()?.id !== 'tab-dashboard') activateTab('tab-dashboard');
+      $('#quickAddInput').focus();
+    },
+  });
+
+  function showToast(title, sub, onUndo) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.innerHTML = `
+      <div style="min-width:0">
+        <div style="font-weight:600">${esc(title)}</div>
+        ${sub ? `<div style="font-size:11px;opacity:0.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(sub)}</div>` : ''}
+      </div>
+      ${onUndo ? '<button type="button" data-undo style="font-weight:600;color:#8cc4ff;padding:2px 6px;border-radius:4px">되돌리기</button>' : ''}
+    `;
+    toastWrap.appendChild(el);
+    let closed = false;
+    const dismiss = () => {
+      if (closed) return;
+      closed = true;
+      el.remove();
+    };
+    const timer = window.setTimeout(dismiss, 4200);
+    el.querySelector('[data-undo]')?.addEventListener('click', () => {
+      window.clearTimeout(timer);
+      onUndo();
+      dismiss();
+    });
+  }
+
+  function activeTab() {
+    return appState.tabs.find((t) => t.id === appState.activeTabId) || appState.tabs[0];
+  }
+
+  function pushHistory(tabId) {
+    if (appState.history[appState.historyIdx] === tabId) return;
+    appState.history = appState.history.slice(0, appState.historyIdx + 1);
+    appState.history.push(tabId);
+    appState.historyIdx = appState.history.length - 1;
+  }
+
+  function activateTab(tabId, { recordHistory = true } = {}) {
+    const exists = appState.tabs.find((t) => t.id === tabId);
+    if (!exists) return;
+    appState.activeTabId = tabId;
+    if (recordHistory) pushHistory(tabId);
+    renderChrome();
+    renderWorkspaceSurface();
+  }
+
+  function openTab(spec, { background = false } = {}) {
+    let tab = appState.tabs.find((t) => t.key === spec.key);
+    if (!tab) {
+      tab = {
+        id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        key: spec.key,
+        title: spec.title,
+        kind: spec.kind,
+        payload: spec.payload || {},
+        dotColor: spec.dotColor || 'var(--info)',
+        pinned: false,
+      };
+      appState.tabs.push(tab);
+    }
+    if (spec.kind === 'notice' && spec.payload?.noticeId) {
+      Data.markNoticeRead(spec.payload.noticeId);
+    }
+    if (background) {
+      renderChrome();
+      showToast('백그라운드 탭으로 열었습니다', tab.title);
+    } else {
+      activateTab(tab.id);
+    }
+  }
+
+  function closeTab(tabId) {
+    const idx = appState.tabs.findIndex((t) => t.id === tabId);
+    if (idx === -1) return;
+    const tab = appState.tabs[idx];
+    if (tab.pinned) return;
+    appState.tabs.splice(idx, 1);
+    appState.history = appState.history.filter((id) => id !== tabId);
+    if (appState.history.length === 0) appState.history = ['tab-dashboard'];
+    appState.historyIdx = Math.min(appState.historyIdx, appState.history.length - 1);
+    if (appState.activeTabId === tabId) {
+      const next = appState.tabs[Math.max(0, idx - 1)] || appState.tabs[0];
+      appState.activeTabId = next.id;
+    }
+    renderChrome();
+    renderWorkspaceSurface();
+  }
+
+  function buildQueueItems(d) {
+    const overdue = d.overdueTasks.map((t) => ({
+      kind: 'task',
+      bucket: 'overdue',
+      id: t.id,
+      key: `task:${t.id}`,
+      title: t.title,
+      sub: [t.propertyLabel, t.contactName, Data.dDayLabel(t.dueOffsetDays)].filter(Boolean).join(' · '),
+      badge: Data.dDayLabel(t.dueOffsetDays),
+      tone: 'destructive',
+      dotColor: 'var(--destructive)',
+      task: t,
+    }));
+
+    const calls = d.pendingSuggestions.map((c) => ({
+      kind: 'call',
+      bucket: 'signal',
+      id: c.id,
+      key: `call:${c.id}`,
+      title: `${c.contactName} — ${c.suggestionAction}`,
+      sub: c.summary,
+      badge: c.badge,
+      tone: c.tone,
+      dotColor: 'var(--violet)',
+      call: c,
+    }));
+
+    const today = d.todayTasks.map((t) => ({
+      kind: 'task',
+      bucket: 'today',
+      id: t.id,
+      key: `task:${t.id}`,
+      title: t.title,
+      sub: [t.dueTime, t.propertyLabel, t.contactName, d.scope === 'all' ? t.assignee : null].filter(Boolean).join(' · '),
+      badge: t.categoryLabel || '오늘',
+      tone: 'info',
+      dotColor: 'var(--info)',
+      task: t,
+    }));
+
+    const sigs = d.activeSignals.map((s) => ({
+      kind: 'signal',
+      bucket: 'signal',
+      id: s.id,
+      key: `signal:${s.id}`,
+      title: s.title,
+      sub: s.sub,
+      badge: s.badge,
+      tone: s.tone,
+      dotColor: s.tone === 'destructive' ? 'var(--destructive)' : 'var(--orange)',
+      signal: s,
+    }));
+
+    const upcoming = d.upcomingTasks.map((t) => ({
+      kind: 'task',
+      bucket: 'upcoming',
+      id: t.id,
+      key: `task:${t.id}`,
+      title: t.title,
+      sub: [Data.relativeDateLabel(t.dueOffsetDays), t.dueTime, t.propertyLabel, t.contactName].filter(Boolean).join(' · '),
+      badge: Data.dDayLabel(t.dueOffsetDays),
+      tone: 'gray',
+      dotColor: 'var(--fg3)',
+      task: t,
+    }));
+
+    if (appState.queueFilter === 'overdue') return overdue;
+    if (appState.queueFilter === 'today') return today;
+    if (appState.queueFilter === 'signal') return [...calls, ...sigs];
+    return [...overdue, ...calls, ...today, ...sigs, ...upcoming];
+  }
+
+  function completeOrResolveQueueItem(item) {
+    if (!item) return;
+    if (item.kind === 'task') {
+      const res = Data.completeTask(item.id);
+      if (!res) return;
+      hero.cheer();
+      showToast('할 일을 완료했습니다', res.task.title, () => Data.restoreTaskStatus(res.task.id, res.previousStatus));
+    } else if (item.kind === 'call') {
+      Data.resolveCallSuggestion(item.id, 'accepted');
+      hero.cheer();
+      showToast('통화 제안을 반영했습니다', item.call.suggestionAction);
+    } else if (item.kind === 'signal') {
+      Data.resolveSignal(item.id, '확인 완료');
+      hero.cheer();
+      showToast('신호를 처리했습니다', item.signal.title, () => Data.reopenSignal(item.id));
+    }
+  }
+
+  function renderSidebarMarkup(isPreview) {
+    const cur = activeTab();
+    const activeRoute = cur.kind === 'route' ? cur.payload?.route : cur.kind === 'dashboard' ? '/dashboard' : '';
+    return `
+      ${
+        isPreview
+          ? `<div class="sb-preview-head">
+              <span>메뉴</span>
+              <button type="button" class="icon-btn" id="pinSidebarBtn" aria-label="사이드바 고정" title="사이드바 고정">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1Z"/></svg>
+              </button>
+            </div>`
+          : ''
+      }
+      <div class="sb-scroll">
+        ${NAV_GROUPS.map(
+          (g) => `
+          <div class="sb-group">
+            <div class="sb-group-lbl">${g.label}</div>
+            ${g.items
+              .map(
+                (it) => `
+              <button type="button" class="sb-item${activeRoute === it.key ? ' active' : ''}" data-sb-route="${it.key}" data-sb-label="${it.label}">
+                ${svgIcon(it.icon)}
+                <span>${it.label}</span>
+              </button>`,
+              )
+              .join('')}
+          </div>`,
+        ).join('')}
+      </div>
+      <div class="sb-footer">
+        <div class="sb-avatar">현</div>
+        <div style="min-width:0">
+          <div style="font-size:12px;font-weight:600;color:var(--fg)">현수</div>
+          <div style="font-size:10.5px;color:var(--fg3)">대표공인중개사</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderChrome() {
+    appRoot.classList.toggle('sidebar-collapsed', !appState.sidebarOpen);
+    sidebarPreview.classList.toggle('open', !appState.sidebarOpen && appState.sidebarPreviewOpen);
+
+    appSidebar.innerHTML = renderSidebarMarkup(false);
+    sidebarPreview.innerHTML = renderSidebarMarkup(true);
+
+    const bindSidebarEl = (container) => {
+      container.querySelectorAll('[data-sb-route]').forEach((btn) =>
+        btn.addEventListener('click', (e) => {
+          const route = btn.dataset.sbRoute;
+          const label = btn.dataset.sbLabel;
+          appState.sidebarPreviewOpen = false;
+          if (route === '/dashboard') {
+            activateTab('tab-dashboard');
+          } else {
+            openTab(
+              { key: `route:${route}`, title: label, kind: 'route', payload: { route, label }, dotColor: 'var(--fg3)' },
+              { background: e.metaKey || e.ctrlKey },
+            );
+          }
+        }),
+      );
+      container.querySelector('#pinSidebarBtn')?.addEventListener('click', () => {
+        appState.sidebarOpen = true;
+        appState.sidebarPreviewOpen = false;
+        renderChrome();
+      });
+    };
+    bindSidebarEl(appSidebar);
+    bindSidebarEl(sidebarPreview);
+
+    $('#navBackBtn').disabled = appState.historyIdx <= 0;
+    $('#navFwdBtn').disabled = appState.historyIdx >= appState.history.length - 1;
+
+    tabStrip.innerHTML = appState.tabs
+      .map((t) => {
+        const isActive = t.id === appState.activeTabId;
+        return `
+        <div
+          class="ntab${t.pinned ? ' pinned' : ''}${isActive ? ' active' : ''}"
+          role="tab"
+          aria-selected="${isActive}"
+          data-tab-id="${t.id}"
+          tabindex="0"
+        >
+          ${t.pinned ? svgIcon('dashboard') : `<span class="ntab-dot" style="background:${t.dotColor || 'var(--info)'}"></span>`}
+          <span class="ntab-title">${esc(t.title)}</span>
+          ${
+            t.pinned
+              ? ''
+              : `<button type="button" class="ntab-close" data-close-tab="${t.id}" aria-label="${esc(t.title)} 닫기" title="닫기 (⌘W)">
+                  <svg viewBox="0 0 12 12" style="width:10px;height:10px;stroke:currentColor;stroke-width:1.8;fill:none"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+                </button>`
+          }
+        </div>`;
+      })
+      .join('');
+
+    tabStrip.querySelectorAll('[data-tab-id]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        const closeBtn = e.target.closest('[data-close-tab]');
+        if (closeBtn) {
+          e.stopPropagation();
+          closeTab(closeBtn.dataset.closeTab);
+          return;
+        }
+        activateTab(el.dataset.tabId);
+      });
+      el.addEventListener('auxclick', (e) => {
+        if (e.button === 1 && el.dataset.tabId !== 'tab-dashboard') {
+          e.preventDefault();
+          closeTab(el.dataset.tabId);
+        }
+      });
+    });
+
+    const d = Data.getScopedData();
+    document.querySelectorAll('[data-sb-scope]').forEach((btn) =>
+      btn.classList.toggle('active', btn.dataset.sbScope === d.scope),
+    );
+    $('#sbSummaryText').textContent = `이달 수금 ${Data.formatMoneyManwon(d.summary.collectedManwon)} / ${Data.formatMoneyManwon(d.summary.expectedManwon)} (${d.summary.collectionPct}%)`;
+
+    const ctiBtn = $('#ctiToggleBtn');
+    ctiBtn.classList.toggle('is-ringing', appState.cti.open);
+    $('#weatherBtn').classList.toggle('is-on', appState.weatherOpen);
+  }
+
+  function renderHome() {
+    const d = Data.getScopedData();
+    hero.setScope(d.scope);
+    hero.updateCounts(d.heroCounts);
+    hero.setFlags(d.heroFlags);
+
+    // 1. Left Top: Weekly schedule strip
+    const nowTimeStr = Data.formatHour(d.now.getHours() + d.now.getMinutes() / 60);
+    schedStrip.innerHTML = `
+      <div class="sched-top">
+        <div class="week-pills">
+          ${d.weekDays
+            .map(
+              (wd) => `
+            <button type="button" class="day-pill${wd.isToday ? ' is-today' : ''}${wd.key === d.selectedDayKey ? ' selected' : ''}" data-day-key="${wd.key}">
+              <span>${wd.weekday}</span>
+              <span class="num">${wd.dayNum}</span>
+              <span class="day-dot${(d.eventCountByDay[wd.key] || 0) > 0 ? '' : ' none'}"></span>
+            </button>`,
+            )
+            .join('')}
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="badge num" data-tone="info">현재 ${nowTimeStr}</span>
+          ${d.selectedDayKey !== d.todayKey ? '<button type="button" class="micro-btn" data-reset-today>오늘</button>' : ''}
+        </div>
+      </div>
+      <div class="ev-chips">
+        ${
+          d.selectedDayEvents.length === 0
+            ? '<span style="font-size:12px;color:var(--fg3)">선택한 날 일정이 없습니다.</span>'
+            : d.selectedDayEvents
+                .map(
+                  (ev) => `
+              <button type="button" class="ev-chip" data-ev-id="${ev.id}" title="클릭: 새 탭 · ⌘클릭: 백그라운드 탭">
+                <span class="ev-dot"></span>
+                <b class="num">${Data.formatHour(ev.hour)}</b>
+                <span class="ev-lbl">${esc(ev.title)}</span>
+              </button>`,
+                )
+                .join('')
+        }
+      </div>
+    `;
+
+    // 2. Left Queue Toolbar
+    const allCount = d.openTasks.length + d.pendingSuggestions.length + d.activeSignals.length;
+    const sigCount = d.pendingSuggestions.length + d.activeSignals.length;
+    const filters = [
+      { id: 'all', label: '전체 실행', count: allCount },
+      { id: 'overdue', label: '기한 지남', count: d.overdueTasks.length },
+      { id: 'today', label: '오늘 할 일', count: d.todayTasks.length },
+      { id: 'signal', label: '통화·신호', count: sigCount },
+    ];
+    queueToolbar.innerHTML = `
+      <div class="seg-group" role="tablist">
+        ${filters
+          .map(
+            (f) => `
+          <button type="button" class="seg-btn${appState.queueFilter === f.id ? ' active' : ''}" data-qfilter="${f.id}">
+            <span>${f.label}</span>
+            <span class="cnt num">${f.count}</span>
+          </button>`,
+          )
+          .join('')}
+      </div>
+      <span style="font-size:11px;color:var(--fg3)">클릭 선택 · 더블클릭/↵ 새 탭</span>
+    `;
+
+    // 3. Left Queue List
+    const items = buildQueueItems(d);
+    if (appState.activeQueueIdx >= items.length) {
+      appState.activeQueueIdx = Math.max(0, items.length - 1);
+    }
+
+    queueScroll.innerHTML =
+      items.length === 0
+        ? `<div style="padding:36px 16px;text-align:center;color:var(--fg3);font-size:12.5px">해당 조건의 실행 항목이 없습니다.</div>`
+        : items
+            .map((it, idx) => {
+              const sel = idx === appState.activeQueueIdx;
+              const leading =
+                it.kind === 'task'
+                  ? `<button type="button" class="chk" data-qcomplete="${idx}" aria-checked="false" aria-label="${esc(it.title)} 완료">
+                      <svg viewBox="0 0 12 12"><path d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+                    </button>`
+                  : `<span class="sig-dot" style="background:${it.dotColor}"></span>`;
+              const quickAction =
+                it.kind === 'task'
+                  ? `<button type="button" class="micro-btn" data-qsnooze="${idx}" title="내일로 미루기 (T)">내일로</button>`
+                  : `<button type="button" class="micro-btn primary" data-qresolve="${idx}">${it.kind === 'call' ? '반영' : '확인'}</button>`;
+              return `
+              <div class="q-row${sel ? ' is-selected' : ''}" data-qidx="${idx}" data-key="${esc(it.key)}">
+                ${leading}
+                <div class="q-main">
+                  <div class="q-title-line">
+                    <span class="badge" data-tone="${it.tone}">${esc(it.badge)}</span>
+                    <span class="q-title">${esc(it.title)}</span>
+                  </div>
+                  <div class="q-sub num">${esc(it.sub)}</div>
+                </div>
+                <div class="q-right">
+                  <div class="row-actions">
+                    ${quickAction}
+                    <button type="button" class="micro-btn" data-qopen="${idx}" title="새 탭으로 열기 (↵)">새 탭 ↗</button>
+                  </div>
+                </div>
+              </div>`;
+            })
+            .join('');
+
+    // 4. Right Top: 3-Cell Hairline KPI Strip
+    const urgentDeals = d.deals.filter((x) => x.health !== 'healthy').length;
+    const adSignalCount = d.activeSignals.filter((s) => s.kind === 'ad_alert').length;
+    kpiStrip.innerHTML = `
+      <button type="button" class="kpi-cell" data-kpi-route="/cashflow" data-kpi-label="수수료/정산">
+        <div class="kpi-lbl"><span>이달 수금</span><span class="badge" data-tone="success">${d.summary.collectionPct}%</span></div>
+        <div class="kpi-val num">${Data.formatMoneyManwon(d.summary.collectedManwon)}</div>
+        <div class="kpi-sub num">예정 ${Data.formatMoneyManwon(d.summary.expectedManwon)} · 계약 ${d.summary.contractCount}건</div>
+      </button>
+      <button type="button" class="kpi-cell" data-kpi-deal>
+        <div class="kpi-lbl"><span>진행 거래</span><span class="badge" data-tone="orange">임박·지연 ${urgentDeals}</span></div>
+        <div class="kpi-val num">${d.summary.activeDeals}건</div>
+        <div class="kpi-sub">전체 원장 ${d.deals.length}건 관리</div>
+      </button>
+      <button type="button" class="kpi-cell" data-kpi-signal>
+        <div class="kpi-lbl"><span>매물·광고 경보</span><span class="badge" data-tone="destructive">확인 ${d.summary.unverifiedListings}</span></div>
+        <div class="kpi-val num">신호 ${sigCount}건</div>
+        <div class="kpi-sub num">광고 경보 ${adSignalCount} · 매칭 ${d.summary.activeMatches}건</div>
+      </button>
+    `;
+
+    // 5. Right Middle: Deal Ledger
+    const dealFilters = [
+      { id: 'all', label: '전체' },
+      { id: 'preContract', label: '가계약' },
+      { id: 'contracted', label: '본계약' },
+      { id: 'settling', label: '잔금·정산' },
+    ];
+    const visibleDeals = d.deals.filter((deal) => {
+      if (appState.dealFilter === 'all') return true;
+      if (appState.dealFilter === 'preContract') return deal.stage === 'preparing' || deal.stage === 'preContract';
+      if (appState.dealFilter === 'contracted') return deal.stage === 'contracted';
+      return deal.stage === 'settling' || deal.stage === 'completed';
+    });
+
+    dealToolbar.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:12.5px;font-weight:600">진행 거래 원장</span>
+        <span class="num" style="font-size:11.5px;color:var(--fg3)">${visibleDeals.length}건</span>
+      </div>
+      <div class="seg-group">
+        ${dealFilters
+          .map(
+            (df) => `
+          <button type="button" class="seg-btn${appState.dealFilter === df.id ? ' active' : ''}" data-dfilter="${df.id}">${df.label}</button>`,
+          )
+          .join('')}
+      </div>
+    `;
+
+    dealScroll.innerHTML = visibleDeals
+      .map((deal) => {
+        const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray', step: 1 };
+        const healthTone =
+          deal.health === 'overdue'
+            ? 'var(--destructive-strong)'
+            : deal.health === 'urgent'
+              ? 'var(--orange)'
+              : 'var(--fg3)';
+        return `
+        <div class="deal-row" data-deal-id="${deal.id}" title="클릭: 거래 탭 열기 · 우클릭: 메뉴">
+          <div class="deal-top">
+            <div class="deal-name">
+              <span class="badge" data-tone="${st.tone}">${st.label}</span>
+              <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${deal.siteName} ${deal.dongHo}</span>
+              ${deal.isJointBrokerage ? '<span class="badge" data-tone="gray">공동</span>' : ''}
+            </div>
+            <span class="num" style="font-size:11.5px;font-weight:600;color:${healthTone};white-space:nowrap">${deal.healthText}</span>
+          </div>
+          <div class="deal-sub">
+            <span class="num">${deal.amountText} · ${deal.sellerName} ↔ ${deal.buyerName}</span>
+            <span>담당 ${deal.assignee}</span>
+          </div>
+          <div class="deal-steps">
+            ${[1, 2, 3, 4, 5].map((i) => `<span class="${i < st.step ? 'done' : i === st.step ? 'curr' : ''}"></span>`).join('')}
+          </div>
+        </div>`;
+      })
+      .join('');
+
+    // 6. Right Bottom (CTI safe zone): Compact Notices ONLY (no 관리단지)
+    noticeDock.innerHTML = `
+      <div class="notice-head">
+        <span>공지사항</span>
+        <span class="num" style="color:${d.unreadNotices.length > 0 ? 'var(--info-strong)' : 'var(--fg3)'}">안 읽음 ${d.unreadNotices.length}</span>
+      </div>
+      <div class="notice-list">
+        ${d.notices
+          .map(
+            (n) => `
+          <button type="button" class="notice-item" data-notice-id="${n.id}">
+            <span style="width:6px;height:6px;border-radius:50%;flex:none;background:${n.readAt ? 'transparent' : 'var(--info)'}"></span>
+            ${n.isRequired ? '<span class="badge" data-tone="destructive">필독</span>' : ''}
+            <span style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:${n.readAt ? 400 : 600};color:${n.readAt ? 'var(--fg2)' : 'var(--fg)'}">${esc(n.title)}</span>
+            <span class="num" style="font-size:11px;color:var(--fg3)">${n.publishedAt}</span>
+          </button>`,
+          )
+          .join('')}
+      </div>
+    `;
+
+    // Bind interactive events
+    schedStrip.querySelectorAll('[data-day-key]').forEach((btn) =>
+      btn.addEventListener('click', () => Data.selectDay(btn.dataset.dayKey)),
+    );
+    schedStrip.querySelector('[data-reset-today]')?.addEventListener('click', () => Data.selectDay(d.todayKey));
+    schedStrip.querySelectorAll('[data-ev-id]').forEach((btn) => {
+      const ev = Data.state.events.find((x) => x.id === btn.dataset.evId);
+      if (!ev) return;
+      btn.addEventListener('click', (e) => {
+        openTab(
+          { key: `event:${ev.id}`, title: ev.title, kind: 'event', payload: { eventId: ev.id }, dotColor: 'var(--orange)' },
+          { background: e.metaKey || e.ctrlKey },
+        );
+      });
+      btn.addEventListener('auxclick', (e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          openTab(
+            { key: `event:${ev.id}`, title: ev.title, kind: 'event', payload: { eventId: ev.id }, dotColor: 'var(--orange)' },
+            { background: true },
+          );
+        }
+      });
+    });
+
+    queueToolbar.querySelectorAll('[data-qfilter]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        appState.queueFilter = btn.dataset.qfilter;
+        appState.activeQueueIdx = 0;
+        renderHome();
+      }),
+    );
+
+    const openQueueItem = (it, background) => {
+      openTab(
+        { key: it.key, title: it.title, kind: it.kind, payload: { id: it.id }, dotColor: it.dotColor },
+        { background },
+      );
+    };
+
+    queueScroll.querySelectorAll('[data-qidx]').forEach((row) => {
+      const idx = Number(row.dataset.qidx);
+      const it = items[idx];
+      if (!it) return;
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        appState.activeQueueIdx = idx;
+        queueScroll.querySelectorAll('.q-row').forEach((r) => r.classList.toggle('is-selected', Number(r.dataset.qidx) === idx));
+        if (e.metaKey || e.ctrlKey) openQueueItem(it, true);
+      });
+      row.addEventListener('dblclick', (e) => {
+        if (e.target.closest('button')) return;
+        openQueueItem(it, false);
+      });
+      row.addEventListener('auxclick', (e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          openQueueItem(it, true);
+        }
+      });
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        appState.activeQueueIdx = idx;
+        queueScroll.querySelectorAll('.q-row').forEach((r) => r.classList.toggle('is-selected', Number(r.dataset.qidx) === idx));
+        openContextMenu(e.clientX, e.clientY, { type: 'queue', item: it });
+      });
+    });
+
+    queueScroll.querySelectorAll('[data-qcomplete]').forEach((btn) =>
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        completeOrResolveQueueItem(items[Number(btn.dataset.qcomplete)]);
+      }),
+    );
+    queueScroll.querySelectorAll('[data-qresolve]').forEach((btn) =>
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        completeOrResolveQueueItem(items[Number(btn.dataset.qresolve)]);
+      }),
+    );
+    queueScroll.querySelectorAll('[data-qsnooze]').forEach((btn) =>
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const it = items[Number(btn.dataset.qsnooze)];
+        if (!it || it.kind !== 'task') return;
+        const res = Data.snoozeTask(it.id, 1, '내일');
+        if (res) showToast('내일로 미뤘습니다', res.task.title, () => Data.snoozeTask(it.id, res.prevOffset, '원래 기한'));
+      }),
+    );
+    queueScroll.querySelectorAll('[data-qopen]').forEach((btn) =>
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openQueueItem(items[Number(btn.dataset.qopen)], e.metaKey || e.ctrlKey);
+      }),
+    );
+
+    kpiStrip.querySelector('[data-kpi-route]')?.addEventListener('click', (e) => {
+      openTab(
+        { key: 'route:/cashflow', title: '수수료/정산', kind: 'route', payload: { route: '/cashflow', label: '수수료/정산' }, dotColor: 'var(--success)' },
+        { background: e.metaKey || e.ctrlKey },
+      );
+    });
+    kpiStrip.querySelector('[data-kpi-deal]')?.addEventListener('click', () => {
+      appState.dealFilter = 'all';
+      renderHome();
+    });
+    kpiStrip.querySelector('[data-kpi-signal]')?.addEventListener('click', () => {
+      appState.queueFilter = 'signal';
+      appState.activeQueueIdx = 0;
+      renderHome();
+    });
+
+    dealToolbar.querySelectorAll('[data-dfilter]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        appState.dealFilter = btn.dataset.dfilter;
+        renderHome();
+      }),
+    );
+
+    dealScroll.querySelectorAll('[data-deal-id]').forEach((row) => {
+      const deal = Data.state.deals.find((x) => x.id === row.dataset.dealId);
+      if (!deal) return;
+      row.addEventListener('click', (e) => {
+        openTab(
+          { key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--success)' },
+          { background: e.metaKey || e.ctrlKey },
+        );
+      });
+      row.addEventListener('auxclick', (e) => {
+        if (e.button === 1) {
+          e.preventDefault();
+          openTab(
+            { key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--success)' },
+            { background: true },
+          );
+        }
+      });
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        openContextMenu(e.clientX, e.clientY, { type: 'deal', deal });
+      });
+    });
+
+    noticeDock.querySelectorAll('[data-notice-id]').forEach((btn) => {
+      const notice = Data.state.notices.find((n) => n.id === btn.dataset.noticeId);
+      if (!notice) return;
+      btn.addEventListener('click', (e) => {
+        openTab(
+          { key: `notice:${notice.id}`, title: notice.title, kind: 'notice', payload: { noticeId: notice.id }, dotColor: 'var(--info)' },
+          { background: e.metaKey || e.ctrlKey },
+        );
+      });
+    });
+  }
+
+  function renderDetailTab(tab) {
+    const d = Data.getScopedData();
+
+    if (tab.kind === 'deal') {
+      const deal = Data.state.deals.find((x) => x.id === tab.payload.dealId);
+      if (!deal) {
+        detailTabView.innerHTML = `<div class="detail-shell"><div class="detail-inner"><p>거래 정보를 찾을 수 없습니다.</p></div></div>`;
+        return;
+      }
+      const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray', step: 1 };
+      detailTabView.innerHTML = `
+        <div class="detail-shell">
+          <div class="detail-inner">
+            <div class="detail-crumb">
+              <div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="badge" data-tone="${st.tone}">${st.label}</span>
+                  <h1 style="margin:0;font-size:18px;font-weight:600">${esc(deal.siteName)} ${esc(deal.dongHo)}</h1>
+                  ${deal.isJointBrokerage ? `<span class="badge" data-tone="gray">공동중개 · ${esc(deal.partnerName)}</span>` : ''}
+                </div>
+                <div style="font-size:12px;color:var(--fg3);margin-top:4px">담당 ${esc(deal.assignee)} · ${esc(deal.amountText)} · 예상 중개보수 ${deal.commissionExpectedManwon.toLocaleString('ko-KR')}만</div>
+              </div>
+              <div style="display:flex;gap:6px">
+                <button type="button" class="util-btn" data-detail-call="${esc(deal.buyerName)}" data-detail-role="${esc(deal.siteName)} ${esc(deal.dongHo)} 매수인" data-detail-phone="${esc(deal.buyerPhone)}">전화 걸기 (CTI)</button>
+                <button type="button" class="util-btn" data-back-home>대시보드로</button>
+              </div>
+            </div>
+
+            <div class="detail-grid">
+              <div class="detail-box">
+                <div style="font-size:13px;font-weight:600;margin-bottom:10px">대금 일정 체크리스트</div>
+                <div style="display:flex;flex-direction:column;gap:7px">
+                  ${deal.payments
+                    .map(
+                      (p, idx) => `
+                    <div class="pay-row">
+                      <button type="button" class="chk" data-detail-pay="${idx}" aria-checked="${p.paid}">
+                        <svg viewBox="0 0 12 12"><path d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+                      </button>
+                      <span style="flex:1;font-size:13px;font-weight:500">${esc(p.kind)} <b class="num">${esc(p.amount)}</b></span>
+                      <span class="badge num" data-tone="${p.paid ? 'success' : 'warning'}">${p.paid ? '입금 완료' : Data.dDayLabel(p.dateOffset)}</span>
+                    </div>`,
+                    )
+                    .join('')}
+                </div>
+              </div>
+
+              <div class="detail-box" style="display:flex;flex-direction:column;gap:12px">
+                <div>
+                  <div style="font-size:11.5px;color:var(--fg3)">당사자 연락처</div>
+                  <div style="font-size:12.5px;margin-top:4px">매도·임대인 <b>${esc(deal.sellerName)}</b> · <span class="num">${esc(deal.sellerPhone)}</span></div>
+                  <div style="font-size:12.5px;margin-top:3px">매수·임차인 <b>${esc(deal.buyerName)}</b> · <span class="num">${esc(deal.buyerPhone)}</span></div>
+                </div>
+                <div style="border-top:1px solid var(--border);padding-top:10px">
+                  <div style="font-size:11.5px;color:var(--fg3);margin-bottom:4px">핵심 특약</div>
+                  <div style="font-size:12.5px;line-height:1.55;background:var(--bg-sub);padding:9px 10px;border-radius:6px;border:1px solid var(--border)">${esc(deal.specialTerms)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      detailTabView.querySelectorAll('[data-detail-pay]').forEach((btn) =>
+        btn.addEventListener('click', () => Data.toggleDealPaymentPaid(deal.id, Number(btn.dataset.detailPay))),
+      );
+    } else if (tab.kind === 'task') {
+      const t = Data.state.tasks.find((x) => x.id === tab.payload.id);
+      if (!t) {
+        detailTabView.innerHTML = `<div class="detail-shell"><div class="detail-inner"><p>업무 정보를 찾을 수 없습니다.</p></div></div>`;
+        return;
+      }
+      const done = t.status === 'completed';
+      detailTabView.innerHTML = `
+        <div class="detail-shell">
+          <div class="detail-inner">
+            <div class="detail-crumb">
+              <div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="badge" data-tone="${done ? 'success' : t.dueOffsetDays < 0 ? 'destructive' : 'info'}">${done ? '완료됨' : Data.dDayLabel(t.dueOffsetDays)}</span>
+                  <h1 style="margin:0;font-size:18px;font-weight:600">${esc(t.title)}</h1>
+                </div>
+                <div style="font-size:12px;color:var(--fg3);margin-top:4px">${[t.categoryLabel, t.propertyLabel, t.contactName, `담당 ${t.assignee}`].filter(Boolean).join(' · ')}</div>
+              </div>
+              <div style="display:flex;gap:6px">
+                <button type="button" class="util-btn is-on" data-detail-task-done>${done ? '다시 미완료로' : '업무 완료 처리'}</button>
+                <button type="button" class="util-btn" data-detail-task-snooze>내일로 미루기</button>
+                <button type="button" class="util-btn" data-back-home>대시보드로</button>
+              </div>
+            </div>
+            <div class="detail-box">
+              <div style="font-size:12px;color:var(--fg3);margin-bottom:6px">업무 메모</div>
+              <div style="font-size:13px;line-height:1.6">${esc(t.memo || '등록된 메모가 없습니다.')}</div>
+            </div>
+          </div>
+        </div>
+      `;
+      detailTabView.querySelector('[data-detail-task-done]')?.addEventListener('click', () => {
+        const res = Data.completeTask(t.id);
+        if (res && res.task.status === 'completed') hero.cheer();
+      });
+      detailTabView.querySelector('[data-detail-task-snooze]')?.addEventListener('click', () => {
+        Data.snoozeTask(t.id, 1, '내일');
+        showToast('내일로 미뤘습니다', t.title);
+      });
+    } else if (tab.kind === 'call' || tab.kind === 'signal') {
+      const isCall = tab.kind === 'call';
+      const obj = isCall
+        ? Data.state.callSuggestions.find((x) => x.id === tab.payload.id)
+        : Data.state.signals.find((x) => x.id === tab.payload.id);
+      if (!obj) {
+        detailTabView.innerHTML = `<div class="detail-shell"><div class="detail-inner"><p>항목을 찾을 수 없습니다.</p></div></div>`;
+        return;
+      }
+      const done = isCall ? obj.status !== 'pending' : obj.resolved;
+      detailTabView.innerHTML = `
+        <div class="detail-shell">
+          <div class="detail-inner">
+            <div class="detail-crumb">
+              <div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="badge" data-tone="${done ? 'success' : obj.tone}">${done ? '처리됨' : obj.badge}</span>
+                  <h1 style="margin:0;font-size:18px;font-weight:600">${esc(isCall ? `${obj.contactName} — ${obj.suggestionAction}` : obj.title)}</h1>
+                </div>
+                <div style="font-size:12px;color:var(--fg3);margin-top:4px">${esc(isCall ? obj.summary : obj.sub)}</div>
+              </div>
+              <div style="display:flex;gap:6px">
+                ${!done ? `<button type="button" class="util-btn is-on" data-detail-sig-act>${isCall ? '제안 반영하기' : '확인 완료'}</button>` : ''}
+                <button type="button" class="util-btn" data-back-home>대시보드로</button>
+              </div>
+            </div>
+            <div class="detail-box">
+              <div style="font-size:12.5px;line-height:1.65;color:var(--fg2)">
+                ${esc(isCall ? obj.quote || obj.summary : obj.detail || obj.sub)}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      detailTabView.querySelector('[data-detail-sig-act]')?.addEventListener('click', () => {
+        if (isCall) Data.resolveCallSuggestion(obj.id, 'accepted');
+        else Data.resolveSignal(obj.id, '확인 완료');
+        hero.cheer();
+      });
+    } else if (tab.kind === 'notice') {
+      const n = Data.state.notices.find((x) => x.id === tab.payload.noticeId);
+      detailTabView.innerHTML = `
+        <div class="detail-shell">
+          <div class="detail-inner">
+            <div class="detail-crumb">
+              <div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  ${n?.isRequired ? '<span class="badge" data-tone="destructive">필독</span>' : '<span class="badge" data-tone="info">공지</span>'}
+                  <h1 style="margin:0;font-size:18px;font-weight:600">${esc(n?.title || tab.title)}</h1>
+                </div>
+                <div style="font-size:12px;color:var(--fg3);margin-top:4px">${esc(n?.publishedAt || '')}</div>
+              </div>
+              <button type="button" class="util-btn" data-back-home>대시보드로</button>
+            </div>
+            <div class="detail-box" style="font-size:13.5px;line-height:1.7">${esc(n?.body || '')}</div>
+          </div>
+        </div>
+      `;
+    } else if (tab.kind === 'event') {
+      const ev = Data.state.events.find((x) => x.id === tab.payload.eventId);
+      detailTabView.innerHTML = `
+        <div class="detail-shell">
+          <div class="detail-inner">
+            <div class="detail-crumb">
+              <div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="badge num" data-tone="orange">${ev ? Data.formatHour(ev.hour) : ''}</span>
+                  <h1 style="margin:0;font-size:18px;font-weight:600">${esc(ev?.title || tab.title)}</h1>
+                </div>
+                <div style="font-size:12px;color:var(--fg3);margin-top:4px">${[ev?.propertyLabel, ev?.contactName, ev?.assignee ? `담당 ${ev.assignee}` : ''].filter(Boolean).join(' · ')}</div>
+              </div>
+              <button type="button" class="util-btn" data-back-home>대시보드로</button>
+            </div>
+            <div class="detail-box" style="font-size:13px;line-height:1.6">${esc(ev?.memo || '일정 상세 메모')}</div>
+          </div>
+        </div>
+      `;
+    } else {
+      detailTabView.innerHTML = `
+        <div class="detail-shell">
+          <div class="detail-inner">
+            <div class="detail-crumb">
+              <div>
+                <h1 style="margin:0;font-size:18px;font-weight:600">${esc(tab.title)}</h1>
+                <div style="font-size:12px;color:var(--fg3);margin-top:4px">Estait Flow 네이티브 탭 경로 · ${esc(tab.payload?.route || '')} (활성 거래 ${d.deals.length}건 연동 중)</div>
+              </div>
+              <button type="button" class="util-btn" data-back-home>대시보드로</button>
+            </div>
+            <div class="detail-box" style="font-size:13px;color:var(--fg2)">
+              사이드바나 빠른 검색(<span class="kbd">⌘K</span>)으로 연 데스크톱 작업 탭입니다. 상단 탭 바에서 <b>대시보드</b>로 돌아가도 히어로와 스크롤 상태가 유지됩니다.
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    detailTabView.querySelector('[data-back-home]')?.addEventListener('click', () => activateTab('tab-dashboard'));
+    detailTabView.querySelectorAll('[data-detail-call]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        triggerCtiOverlay({
+          callerName: btn.dataset.detailCall,
+          callerRole: btn.dataset.detailRole,
+          phone: btn.dataset.detailPhone,
+          memo: '거래 탭에서 바로 발신',
+        });
+      }),
+    );
+  }
+
+  function renderWorkspaceSurface() {
+    const cur = activeTab();
+    if (cur.kind === 'dashboard') {
+      homeTabView.hidden = false;
+      detailTabView.hidden = true;
+      renderHome();
+    } else {
+      homeTabView.hidden = true;
+      detailTabView.hidden = false;
+      renderDetailTab(cur);
+    }
+  }
+
+  function triggerCtiOverlay(override) {
+    if (override) {
+      appState.cti = { ...appState.cti, ...override, phase: 'connected', elapsedSec: 12, open: true };
+    } else {
+      appState.cti.open = !appState.cti.open;
+      if (appState.cti.open) appState.cti.phase = 'ringing';
+    }
+    window.clearInterval(ctiTimer);
+    if (appState.cti.open) {
+      ctiTimer = window.setInterval(() => {
+        if (!appState.cti.open) return;
+        appState.cti.elapsedSec += 1;
+        const tEl = ctiOverlay.querySelector('[data-cti-sec]');
+        if (tEl) tEl.textContent = `${String(Math.floor(appState.cti.elapsedSec / 60)).padStart(2, '0')}:${String(appState.cti.elapsedSec % 60).padStart(2, '0')}`;
+      }, 1000);
+    }
+    renderCtiOverlay();
+    renderChrome();
+  }
+
+  function renderCtiOverlay() {
+    if (!appState.cti.open) {
+      ctiOverlay.classList.remove('open');
+      return;
+    }
+    ctiOverlay.classList.add('open');
+    const c = appState.cti;
+    const mm = String(Math.floor(c.elapsedSec / 60)).padStart(2, '0');
+    const ss = String(c.elapsedSec % 60).padStart(2, '0');
+    ctiOverlay.innerHTML = `
+      <div class="cti-head">
+        <div style="display:flex;align-items:center;gap:7px">
+          <span class="cti-pulse"></span>
+          <span style="font-size:12px;font-weight:600;color:var(--success-strong)">${c.phase === 'ringing' ? '전화 수신 중 (CTI 브리지)' : '통화 연결됨'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="num" data-cti-sec style="font-size:11.5px;color:var(--fg3)">${mm}:${ss}</span>
+          <button type="button" class="icon-btn" id="ctiCloseBtn" aria-label="전화 팝업 닫기">
+            <svg viewBox="0 0 12 12" style="width:11px;height:11px;stroke:currentColor;stroke-width:1.8;fill:none"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+          </button>
+        </div>
+      </div>
+      <div style="padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+        <div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:15px;font-weight:600">${esc(c.callerName)}</span>
+            <span class="badge" data-tone="info">기존 고객</span>
+          </div>
+          <div style="font-size:12px;color:var(--fg2);margin-top:2px">${esc(c.callerRole)}</div>
+          <div class="num" style="font-size:12px;color:var(--fg3);margin-top:1px">${esc(c.phone)}</div>
+        </div>
+        <div style="background:var(--bg-sub);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px;color:var(--fg2)">
+          ${esc(c.memo)}
+        </div>
+        <div style="display:flex;gap:6px">
+          <button type="button" class="micro-btn primary" id="ctiOpenDealTab" style="flex:1;height:28px">연결 거래 탭으로 열기</button>
+          <button type="button" class="micro-btn" id="ctiEndBtn" style="height:28px;color:var(--destructive-strong)">통화 종료</button>
+        </div>
+      </div>
+    `;
+    $('#ctiCloseBtn')?.addEventListener('click', () => triggerCtiOverlay(null));
+    $('#ctiEndBtn')?.addEventListener('click', () => {
+      appState.cti.open = false;
+      window.clearInterval(ctiTimer);
+      renderCtiOverlay();
+      renderChrome();
+      showToast('통화 기록이 저장되었습니다', `${c.callerName} (${mm}:${ss})`);
+    });
+    $('#ctiOpenDealTab')?.addEventListener('click', () => {
+      const firstDeal = Data.state.deals[0];
+      if (firstDeal) {
+        openTab({
+          key: `deal:${firstDeal.id}`,
+          title: `${firstDeal.siteName} ${firstDeal.dongHo}`,
+          kind: 'deal',
+          payload: { dealId: firstDeal.id },
+          dotColor: 'var(--success)',
+        });
+      }
+    });
+  }
+
+  function openContextMenu(x, y, target) {
+    const entries = [];
+    if (target.type === 'queue') {
+      const it = target.item;
+      entries.push({ label: '새 탭으로 열기', hint: '↵', action: () => openTab({ key: it.key, title: it.title, kind: it.kind, payload: { id: it.id }, dotColor: it.dotColor }) });
+      entries.push({ label: '백그라운드 탭으로 열기', hint: '⌘↵', action: () => openTab({ key: it.key, title: it.title, kind: it.kind, payload: { id: it.id }, dotColor: it.dotColor }, { background: true }) });
+      entries.push({ sep: true });
+      entries.push({ label: it.kind === 'task' ? '완료 처리' : '확인·반영 처리', hint: 'Space', action: () => completeOrResolveQueueItem(it) });
+      if (it.kind === 'task') {
+        entries.push({ label: '내일로 미루기', hint: 'T', action: () => Data.snoozeTask(it.id, 1, '내일') });
+      }
+      entries.push({ sep: true });
+      entries.push({ label: '전화 걸기 (CTI)', hint: '', action: () => triggerCtiOverlay({ callerName: it.task?.contactName || it.call?.contactName || '고객', callerRole: it.sub, phone: it.task?.contactPhone || '010-2847-1903', memo: it.title }) });
+    } else if (target.type === 'deal') {
+      const deal = target.deal;
+      entries.push({ label: '거래 상세 탭 열기', hint: '↵', action: () => openTab({ key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--success)' }) });
+      entries.push({ label: '백그라운드 탭으로 열기', hint: '⌘클릭', action: () => openTab({ key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--success)' }, { background: true }) });
+      entries.push({ sep: true });
+      entries.push({ label: '매수·임차인에게 전화 (CTI)', hint: '', action: () => triggerCtiOverlay({ callerName: deal.buyerName, callerRole: `${deal.siteName} ${deal.dongHo} 매수·임차인`, phone: deal.buyerPhone, memo: deal.specialTerms }) });
+    }
+
+    ctxMenu.innerHTML = entries
+      .map((en, idx) =>
+        en.sep
+          ? '<div class="ctx-sep"></div>'
+          : `<button type="button" class="ctx-item" data-ctx-idx="${idx}"><span>${esc(en.label)}</span><span class="ctx-hint num">${esc(en.hint || '')}</span></button>`,
+      )
+      .join('');
+    ctxMenu.classList.add('open');
+
+    const mw = ctxMenu.offsetWidth || 200;
+    const mh = ctxMenu.offsetHeight || 160;
+    ctxMenu.style.left = `${Math.min(x, window.innerWidth - mw - 8)}px`;
+    ctxMenu.style.top = `${Math.min(y, window.innerHeight - mh - 8)}px`;
+
+    ctxMenu.querySelectorAll('[data-ctx-idx]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.ctxIdx);
+        ctxMenu.classList.remove('open');
+        entries[idx]?.action?.();
+      }),
+    );
+  }
+
+  function renderCmdPalette() {
+    if (!appState.cmdOpen) {
+      cmdPalette.classList.remove('open');
+      cmdPalette.setAttribute('aria-hidden', 'true');
+      return;
+    }
+    cmdPalette.classList.add('open');
+    cmdPalette.setAttribute('aria-hidden', 'false');
+
+    const d = Data.getScopedData();
+    const q = appState.cmdQuery.trim().toLowerCase();
+    const entries = [
+      ...d.deals.map((deal) => ({
+        tag: '거래',
+        label: `${deal.siteName} ${deal.dongHo}`,
+        sub: `${deal.amountText} · ${deal.healthText}`,
+        run: () => openTab({ key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--success)' }),
+      })),
+      ...d.openTasks.map((t) => ({
+        tag: '할 일',
+        label: t.title,
+        sub: [t.propertyLabel, t.contactName].filter(Boolean).join(' · '),
+        run: () => openTab({ key: `task:${t.id}`, title: t.title, kind: 'task', payload: { id: t.id }, dotColor: 'var(--info)' }),
+      })),
+      ...d.notices.map((n) => ({
+        tag: '공지',
+        label: n.title,
+        sub: n.publishedAt,
+        run: () => openTab({ key: `notice:${n.id}`, title: n.title, kind: 'notice', payload: { noticeId: n.id }, dotColor: 'var(--info)' }),
+      })),
+      {
+        tag: '명령',
+        label: `조회 범위 전환 (${d.scope === 'mine' ? '내 담당 → 사무소 전체' : '사무소 전체 → 내 담당'})`,
+        sub: '상태바 범위 토글',
+        run: () => Data.setScope(d.scope === 'mine' ? 'all' : 'mine'),
+      },
+      {
+        tag: '명령',
+        label: '사이드바 열기/접기',
+        sub: '⌘\\',
+        run: () => {
+          appState.sidebarOpen = !appState.sidebarOpen;
+          renderChrome();
+        },
+      },
+      {
+        tag: '명령',
+        label: '수신 전화 오버레이 열기/닫기',
+        sub: 'CTI 테스트',
+        run: () => triggerCtiOverlay(null),
+      },
+    ].filter((e) => !q || `${e.tag} ${e.label} ${e.sub}`.toLowerCase().includes(q));
+
+    if (appState.cmdIdx >= entries.length) appState.cmdIdx = Math.max(0, entries.length - 1);
+    cmdList.innerHTML =
+      entries.length === 0
+        ? '<div style="padding:20px;text-align:center;color:var(--fg3)">일치하는 항목이 없습니다.</div>'
+        : entries
+            .slice(0, 12)
+            .map(
+              (e, idx) => `
+            <button type="button" class="pal-item${idx === appState.cmdIdx ? ' active' : ''}" data-pal-idx="${idx}">
+              <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                <span class="badge" data-tone="gray">${esc(e.tag)}</span>
+                <span style="font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.label)}</span>
+              </div>
+              <span style="font-size:11px;color:var(--fg3);white-space:nowrap">${esc(e.sub)}</span>
+            </button>`,
+            )
+            .join('');
+
+    cmdList.querySelectorAll('[data-pal-idx]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const chosen = entries[Number(btn.dataset.palIdx)];
+        appState.cmdOpen = false;
+        renderCmdPalette();
+        chosen?.run();
+      }),
+    );
+    appState._cmdEntries = entries;
+  }
+
+  function renderWeatherPopover() {
+    if (!appState.weatherOpen) {
+      weatherPopover.classList.remove('open');
+      return;
+    }
+    weatherPopover.classList.add('open');
+    const st = hero.getState();
+    const presets = window.DASH_HERO_PRESETS || [
+      { id: 'clear', label: '맑음' },
+      { id: 'rain', label: '비' },
+      { id: 'snow', label: '눈' },
+    ];
+    const hours = [
+      { h: 8, label: '08시 아침' },
+      { h: 13, label: '13시 낮' },
+      { h: 18, label: '18시 노을' },
+      { h: 22, label: '22시 밤' },
+    ];
+    weatherPopover.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:12.5px;font-weight:600">히어로 날씨·시각 테스트</span>
+        <span class="num" style="font-size:11.5px;color:var(--fg3)">${esc(st.clockLabel)}</span>
+      </div>
+      <div class="wp-grid">
+        ${presets.map((p) => `<button type="button" class="wp-chip${st.preset === p.id ? ' active' : ''}" data-wp-w="${p.id}">${esc(p.label)}</button>`).join('')}
+      </div>
+      <div class="wp-grid">
+        ${hours.map((it) => `<button type="button" class="wp-chip${Math.abs(st.hour - it.h) < 1.5 ? ' active' : ''}" data-wp-h="${it.h}">${esc(it.label)}</button>`).join('')}
+      </div>
+      <div style="display:flex;gap:6px">
+        <button type="button" class="micro-btn primary" id="wpSweepBtn" style="flex:1;height:26px">${st.sweeping ? '하루 흐름 정지' : '하루 흐름 재생'}</button>
+        <button type="button" class="micro-btn" id="wpReplayBtn" style="height:26px">일출 재생</button>
+      </div>
+    `;
+    weatherPopover.querySelectorAll('[data-wp-w]').forEach((b) =>
+      b.addEventListener('click', () => {
+        hero.setWeather(b.dataset.wpW);
+        renderWeatherPopover();
+      }),
+    );
+    weatherPopover.querySelectorAll('[data-wp-h]').forEach((b) =>
+      b.addEventListener('click', () => {
+        hero.setHour(Number(b.dataset.wpH), false);
+        renderWeatherPopover();
+      }),
+    );
+    $('#wpSweepBtn')?.addEventListener('click', () => {
+      hero.toggleDaySweep();
+      renderWeatherPopover();
+    });
+    $('#wpReplayBtn')?.addEventListener('click', () => hero.replay());
+  }
+
+  // Titlebar / Statusbar / Compact controls
+  $('#sidebarToggleBtn').addEventListener('click', () => {
+    appState.sidebarOpen = !appState.sidebarOpen;
+    appState.sidebarPreviewOpen = false;
+    renderChrome();
+  });
+
+  // Edge hover preview when sidebar collapsed
+  let previewTimer = 0;
+  const openPreview = () => {
+    if (appState.sidebarOpen) return;
+    appState.sidebarPreviewOpen = true;
+    sidebarPreview.classList.add('open');
+  };
+  const closePreviewSoon = () => {
+    window.clearTimeout(previewTimer);
+    previewTimer = window.setTimeout(() => {
+      if (!sidebarPreview.matches(':hover') && !$('#sidebarEdgeSensor').matches(':hover') && !$('#sidebarToggleBtn').matches(':hover')) {
+        appState.sidebarPreviewOpen = false;
+        sidebarPreview.classList.remove('open');
+      }
+    }, 180);
+  };
+  $('#sidebarEdgeSensor').addEventListener('pointerenter', openPreview);
+  $('#sidebarToggleBtn').addEventListener('pointerenter', () => {
+    if (!appState.sidebarOpen) {
+      window.clearTimeout(previewTimer);
+      previewTimer = window.setTimeout(openPreview, 240);
+    }
+  });
+  $('#sidebarToggleBtn').addEventListener('pointerleave', closePreviewSoon);
+  sidebarPreview.addEventListener('pointerenter', () => window.clearTimeout(previewTimer));
+  sidebarPreview.addEventListener('pointerleave', closePreviewSoon);
+
+  $('#navBackBtn').addEventListener('click', () => {
+    if (appState.historyIdx > 0) {
+      appState.historyIdx -= 1;
+      activateTab(appState.history[appState.historyIdx], { recordHistory: false });
+    }
+  });
+  $('#navFwdBtn').addEventListener('click', () => {
+    if (appState.historyIdx < appState.history.length - 1) {
+      appState.historyIdx += 1;
+      activateTab(appState.history[appState.historyIdx], { recordHistory: false });
+    }
+  });
+
+  const openCmd = () => {
+    appState.cmdOpen = true;
+    appState.cmdQuery = '';
+    appState.cmdIdx = 0;
+    cmdInput.value = '';
+    renderCmdPalette();
+    window.setTimeout(() => cmdInput.focus(), 10);
+  };
+  $('#cmdOpenBtn').addEventListener('click', openCmd);
+  $('#tabAddBtn').addEventListener('click', openCmd);
+
+  cmdInput.addEventListener('input', () => {
+    appState.cmdQuery = cmdInput.value;
+    appState.cmdIdx = 0;
+    renderCmdPalette();
+  });
+  cmdPalette.addEventListener('click', (e) => {
+    if (e.target === cmdPalette) {
+      appState.cmdOpen = false;
+      renderCmdPalette();
+    }
+  });
+
+  $('#ctiToggleBtn').addEventListener('click', () => triggerCtiOverlay(null));
+  $('#weatherBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    appState.weatherOpen = !appState.weatherOpen;
+    renderWeatherPopover();
+    renderChrome();
+  });
+
+  document.querySelectorAll('[data-sb-scope]').forEach((btn) =>
+    btn.addEventListener('click', () => Data.setScope(btn.dataset.sbScope)),
+  );
+
+  $('#compactPaneBar').querySelectorAll('[data-compact-target]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      appState.compactPane = btn.dataset.compactTarget;
+      splitRoot.dataset.compactPane = appState.compactPane;
+      $('#compactPaneBar').querySelectorAll('[data-compact-target]').forEach((b) =>
+        b.classList.toggle('active', b === btn),
+      );
+    }),
+  );
+
+  $('#quickAddForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const inp = $('#quickAddInput');
+    const created = Data.addTask(inp.value);
+    if (!created) return;
+    inp.value = '';
+    appState.activeQueueIdx = 0;
+    showToast('새 할 일을 추가했습니다', created.title);
+  });
+
+  // Resizable 2-Pane Hairline Splitter
+  const resizer = $('#paneResizer');
+  resizer.addEventListener('dblclick', () => splitRoot.style.setProperty('--split-left', '56%'));
+  resizer.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    resizer.classList.add('dragging');
+    const rect = splitRoot.getBoundingClientRect();
+    const onMove = (mv) => {
+      const pct = ((mv.clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.min(66, Math.max(38, pct));
+      splitRoot.style.setProperty('--split-left', `${clamped.toFixed(1)}%`);
+    };
+    const onUp = () => {
+      resizer.classList.remove('dragging');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  });
+
+  // Dismiss menus on outside pointerdown
+  document.addEventListener('pointerdown', (e) => {
+    if (ctxMenu.classList.contains('open') && !e.target.closest('#ctxMenu')) {
+      ctxMenu.classList.remove('open');
+    }
+    if (appState.weatherOpen && !e.target.closest('#weatherPopover') && !e.target.closest('#weatherBtn')) {
+      appState.weatherOpen = false;
+      renderWeatherPopover();
+      renderChrome();
+    }
+  });
+
+  // Desktop-native Keyboard Navigation
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      if (appState.cmdOpen) {
+        appState.cmdOpen = false;
+        renderCmdPalette();
+      } else {
+        openCmd();
+      }
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+      e.preventDefault();
+      appState.sidebarOpen = !appState.sidebarOpen;
+      appState.sidebarPreviewOpen = false;
+      renderChrome();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w') {
+      if (appState.activeTabId !== 'tab-dashboard') {
+        e.preventDefault();
+        closeTab(appState.activeTabId);
+      }
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      if (appState.cmdOpen) {
+        appState.cmdOpen = false;
+        renderCmdPalette();
+        return;
+      }
+      if (ctxMenu.classList.contains('open')) {
+        ctxMenu.classList.remove('open');
+        return;
+      }
+      if (appState.weatherOpen) {
+        appState.weatherOpen = false;
+        renderWeatherPopover();
+        renderChrome();
+        return;
+      }
+      if (appState.cti.open) {
+        appState.cti.open = false;
+        window.clearInterval(ctiTimer);
+        renderCtiOverlay();
+        renderChrome();
+      }
+      return;
+    }
+
+    if (appState.cmdOpen) {
+      const len = (appState._cmdEntries || []).length;
+      if (e.key === 'ArrowDown' && len > 0) {
+        e.preventDefault();
+        appState.cmdIdx = Math.min(len - 1, appState.cmdIdx + 1);
+        renderCmdPalette();
+      } else if (e.key === 'ArrowUp' && len > 0) {
+        e.preventDefault();
+        appState.cmdIdx = Math.max(0, appState.cmdIdx - 1);
+        renderCmdPalette();
+      } else if (e.key === 'Enter' && len > 0) {
+        e.preventDefault();
+        const chosen = appState._cmdEntries[appState.cmdIdx];
+        appState.cmdOpen = false;
+        renderCmdPalette();
+        chosen?.run();
+      }
+      return;
+    }
+
+    const tag = document.activeElement?.tagName;
+    const isEditable = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable;
+    if (isEditable || activeTab().id !== 'tab-dashboard') return;
+
+    const d = Data.getScopedData();
+    const items = buildQueueItems(d);
+    if (items.length === 0) return;
+
+    if (e.key === 'ArrowDown' || e.key === 'j' || e.key === 'J') {
+      e.preventDefault();
+      appState.activeQueueIdx = Math.min(items.length - 1, appState.activeQueueIdx + 1);
+      queueScroll.querySelectorAll('.q-row').forEach((r) => {
+        const isSel = Number(r.dataset.qidx) === appState.activeQueueIdx;
+        r.classList.toggle('is-selected', isSel);
+        if (isSel) r.scrollIntoView({ block: 'nearest' });
+      });
+    } else if (e.key === 'ArrowUp' || e.key === 'k' || e.key === 'K') {
+      e.preventDefault();
+      appState.activeQueueIdx = Math.max(0, appState.activeQueueIdx - 1);
+      queueScroll.querySelectorAll('.q-row').forEach((r) => {
+        const isSel = Number(r.dataset.qidx) === appState.activeQueueIdx;
+        r.classList.toggle('is-selected', isSel);
+        if (isSel) r.scrollIntoView({ block: 'nearest' });
+      });
+    } else if (e.key === ' ') {
+      if (e.target.closest('button, a')) return;
+      e.preventDefault();
+      completeOrResolveQueueItem(items[appState.activeQueueIdx]);
+    } else if (e.key === 'Enter') {
+      if (e.target.closest('button, a')) return;
+      e.preventDefault();
+      const it = items[appState.activeQueueIdx];
+      if (it) openTab({ key: it.key, title: it.title, kind: it.kind, payload: { id: it.id }, dotColor: it.dotColor }, { background: e.metaKey || e.ctrlKey });
+    } else if (e.key === 't' || e.key === 'T') {
+      const it = items[appState.activeQueueIdx];
+      if (it && it.kind === 'task') {
+        const res = Data.snoozeTask(it.id, 1, '내일');
+        if (res) showToast('내일로 미뤘습니다', res.task.title, () => Data.snoozeTask(it.id, res.prevOffset, '원래 기한'));
+      }
+    } else if (e.key === 'n' || e.key === 'N') {
+      e.preventDefault();
+      $('#quickAddInput').focus();
+    }
+  });
+
+  Data.subscribe(() => {
+    renderChrome();
+    renderWorkspaceSurface();
+  });
+
+  renderChrome();
+  renderWorkspaceSurface();
+})();
+</script>
+</body>
+</html>

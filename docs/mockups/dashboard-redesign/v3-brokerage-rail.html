@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>V3 · 에디토리얼 타임라인 & 브리핑 — Estait Flow 대시보드</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./shared-shell.css">
+<link rel="stylesheet" href="./shared-hero.css">
+<style>
+  .time-ribbon {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 14px 12px;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .ribbon-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .ribbon-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .ribbon-track {
+    border-radius: 8px;
+    background: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 9px 12px 7px;
+  }
+  .ribbon-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+  .ribbon-ruler {
+    position: relative;
+    height: 18px;
+    border-top: 1px solid rgba(42, 28, 0, 0.08);
+    padding-top: 4px;
+  }
+  .ribbon-hours {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 2px;
+    pointer-events: none;
+  }
+  .ribbon-hours span {
+    font-size: 10px;
+    line-height: 1;
+    color: var(--fg3);
+    opacity: 0.78;
+  }
+  .ribbon-now {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1.5px;
+    background: var(--destructive);
+    z-index: 2;
+    pointer-events: none;
+  }
+  .ribbon-now::before {
+    content: attr(data-label);
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: var(--muted);
+    font-size: 10px;
+    line-height: 1.1;
+    font-weight: 700;
+    color: var(--destructive-strong);
+    white-space: nowrap;
+  }
+  .ribbon-now.is-right::before {
+    left: auto;
+    right: 5px;
+  }
+  .r-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 6px;
+    background: var(--bg);
+    box-shadow: 0 0 0 1px rgba(42, 28, 0, 0.08), 0 1px 2px rgba(42, 28, 0, 0.04);
+    font-size: 12px;
+    white-space: nowrap;
+    transition: transform 140ms var(--ease-out), box-shadow 140ms ease;
+  }
+  .r-chip:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-1px);
+  }
+  .r-chip:active {
+    transform: scale(0.97);
+  }
+  .r-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--orange);
+  }
+  .r-chip.is-deal .r-dot {
+    background: var(--violet);
+  }
+  .r-chip.is-task .r-dot {
+    background: var(--info);
+  }
+
+  .ed-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.85fr);
+    gap: 24px;
+    flex: 1;
+    min-height: 0;
+    padding-bottom: 14px;
+  }
+
+  .ed-main {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+    padding-right: 4px;
+  }
+
+  .ed-sec-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--fg);
+  }
+  .ed-sec-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 14.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .ed-group-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg2);
+    margin: 10px 0 4px;
+  }
+  .ed-group-label.urgent {
+    color: var(--destructive-strong);
+  }
+
+  .ed-task-row {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 6px;
+    border-bottom: 1px solid var(--border);
+    transition: background-color 120ms ease;
+  }
+  .ed-task-row:hover {
+    background: var(--hover);
+  }
+  .ed-task-row.highlighted {
+    background: var(--warning-soft);
+  }
+  .ed-task-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ed-snooze {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .ed-task-row:hover .ed-snooze {
+    opacity: 1;
+  }
+
+  /* 거래 미니 테이블 */
+  .ed-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .ed-table th {
+    text-align: left;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--fg3);
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ed-table td {
+    padding: 9px 8px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  .ed-table tr.deal-tr {
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+  .ed-table tr.deal-tr:hover td {
+    background: var(--hover);
+  }
+  .ed-table tr.deal-tr.highlighted td {
+    background: var(--warning-soft);
+  }
+  .avatar-init {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--secondary);
+    color: var(--fg2);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  /* 우측 따뜻한 브리핑 레일 */
+  .ed-rail {
+    background: #faf9f7;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-width: 0;
+    align-self: start;
+  }
+  .rail-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--fg2);
+  }
+  .rail-nums {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .rail-num-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: 9px 10px;
+  }
+  .rail-num-box .lbl {
+    font-size: 11px;
+    color: var(--fg3);
+  }
+  .rail-num-box .val {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--fg);
+    margin-top: 2px;
+  }
+
+  .sig-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+  }
+
+  @media (max-width: 1100px) {
+    .ed-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+<script src="./shared-data.js"></script>
+<script src="./shared-hero.js"></script>
+<script src="./shared-shell.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const Data = window.DashMockData;
+  const shell = window.mountDashShell({ activeId: 'v3' });
+
+  const initial = Data.getScopedData();
+  const hero = window.mountDashHero(shell.heroHostEl, {
+    officeName: Data.state.officeName,
+    userName: Data.state.userName,
+    scope: initial.scope,
+    counts: initial.heroCounts,
+    flags: initial.heroFlags,
+    onScopeChange: (nextScope) => Data.setScope(nextScope),
+    onPin: (pin) => {
+      if (pin === 'schedule') {
+        shell.contentHostEl.querySelector('#v3Ribbon')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        shell.contentHostEl.querySelector('#v3Tasks')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    },
+    onQuickCreate: (btn) => shell.openQuickCreate(btn),
+  });
+  shell.bindHero(hero);
+
+  const uiState = {
+    upcomingOpen: false,
+    dealSort: 'urgent', // 'urgent' | 'amount'
+    highlightId: null,
+    taskDraft: '',
+  };
+
+  function openDealDrawer(dealId) {
+    const deal = Data.state.deals.find((d) => d.id === dealId);
+    if (!deal) return;
+    const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray', step: 1 };
+    const renderBody = (bodyEl) => {
+      const d = Data.state.deals.find((x) => x.id === dealId);
+      bodyEl.innerHTML = `
+        <div style="background:var(--muted);padding:12px;border-radius:9px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><div style="font-size:11px;color:var(--fg3)">금액</div><div style="font-weight:600;margin-top:2px" class="num">${d.amountText}</div></div>
+          <div><div style="font-size:11px;color:var(--fg3)">예상 수수료</div><div style="font-weight:600;margin-top:2px" class="num">${d.commissionExpectedManwon}만</div></div>
+          <div><div style="font-size:11px;color:var(--fg3)">매도측</div><div style="font-size:13px">${d.sellerName} (${d.sellerPhone})</div></div>
+          <div><div style="font-size:11px;color:var(--fg3)">매수측</div><div style="font-size:13px">${d.buyerName} (${d.buyerPhone})</div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${d.payments
+            .map(
+              (p, idx) => `
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px">
+              <button type="button" class="chk" data-pay-idx="${idx}" aria-checked="${p.paid}">
+                <svg viewBox="0 0 12 12"><path pathLength="1" d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+              </button>
+              <span style="flex:1;font-size:13px">${p.kind} <b class="num">${p.amount}</b></span>
+              <span class="badge sm" data-tone="${p.paid ? 'success' : 'warning'}">${p.paid ? '완료' : Data.dDayLabel(p.dateOffset)}</span>
+            </div>`,
+            )
+            .join('')}
+        </div>
+        <div style="font-size:12.5px;line-height:19px;color:var(--fg2);padding:10px;border-radius:8px;background:var(--muted)">${shell.escapeHtml(d.specialTerms)}</div>
+      `;
+      bodyEl.querySelectorAll('[data-pay-idx]').forEach((chk) =>
+        chk.addEventListener('click', () => {
+          Data.toggleDealPaymentPaid(dealId, Number(chk.dataset.payIdx));
+          renderBody(bodyEl);
+        }),
+      );
+    };
+
+    shell.openPeekDrawer({
+      title: `${deal.siteName} ${deal.dongHo}`,
+      subtitle: `담당 ${deal.assignee}${deal.isJointBrokerage ? ` · 공동중개 (${deal.partnerName})` : ''}`,
+      badgeHtml: `<span class="badge" data-tone="${st.tone}">${st.label}</span>`,
+      onMount: renderBody,
+    });
+  }
+
+  function render() {
+    const d = Data.getScopedData();
+    hero.setScope(d.scope);
+    hero.updateCounts(d.heroCounts);
+    hero.setFlags(d.heroFlags);
+
+    const nowHr = d.now.getHours() + d.now.getMinutes() / 60;
+    const nowPct = Math.min(Math.max(((nowHr - 9) / 10) * 100, 4), 94);
+
+    // Combine today events + today payment deal + urgent today tasks in ribbon
+    const ribbonItems = [
+      ...d.todayEvents.map((e) => ({
+        kind: 'event',
+        id: e.id,
+        time: Data.formatHour(e.hour),
+        label: e.title,
+      })),
+      ...d.deals
+        .filter((deal) => deal.nextPaymentOffsetDays === 0)
+        .map((deal) => ({
+          kind: 'deal',
+          id: deal.id,
+          time: '오늘 마감',
+          label: `${deal.siteName} ${deal.nextPaymentLabel}`,
+        })),
+      ...d.todayTasks.slice(0, 1).map((t) => ({
+        kind: 'task',
+        id: t.id,
+        time: t.dueTime,
+        label: t.title,
+      })),
+    ];
+
+    const sortedDeals = d.deals.slice().sort((a, b) => {
+      if (uiState.dealSort === 'amount') {
+        return (b.priceManwon || b.depositManwon || 0) - (a.priceManwon || a.depositManwon || 0);
+      }
+      return a.nextPaymentOffsetDays - b.nextPaymentOffsetDays;
+    });
+
+    const topSignals = [
+      ...d.pendingSuggestions.map((c) => ({
+        isCall: true,
+        id: c.id,
+        badge: c.badge,
+        tone: c.tone,
+        title: c.contactName,
+        sub: c.suggestionAction,
+      })),
+      ...d.activeSignals.slice(0, 4).map((s) => ({
+        isCall: false,
+        id: s.id,
+        badge: s.badge,
+        tone: s.tone,
+        title: s.title,
+        sub: s.sub,
+      })),
+    ];
+
+    const renderTaskRow = (t) => `
+      <div class="ed-task-row${uiState.highlightId === t.id ? ' highlighted' : ''}" data-task-row="${t.id}">
+        <button type="button" class="chk" data-v3-done="${t.id}" aria-checked="false" aria-label="${shell.escapeHtml(t.title)} 완료">
+          <svg viewBox="0 0 12 12"><path pathLength="1" d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+        </button>
+        <div style="min-width:0">
+          <div style="font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${shell.escapeHtml(t.title)}</div>
+          <div style="font-size:11.5px;color:var(--fg3)">${[t.propertyLabel, t.contactName, d.scope === 'all' ? t.assignee : null].filter(Boolean).join(' · ')}</div>
+        </div>
+        <div class="ed-task-right">
+          <button type="button" class="btn btn-outline btn-xs ed-snooze" data-v3-snooze="${t.id}">내일로</button>
+          <span class="badge sm" data-tone="${t.dueOffsetDays < 0 ? 'destructive' : t.dueOffsetDays === 0 ? 'info' : 'gray'}">${Data.dDayLabel(t.dueOffsetDays)}</span>
+        </div>
+      </div>`;
+
+    shell.contentHostEl.innerHTML = `
+      <section class="time-ribbon" id="v3Ribbon" aria-label="오늘 시간축 리본">
+        <div class="ribbon-top">
+          <div class="ribbon-title">
+            <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>오늘의 시간축</span>
+            <span class="num" style="font-size:12px;font-weight:400;color:var(--fg3)">일정 ${d.todayEvents.length}건 · 오늘 할 일 ${d.todayTasks.length}건</span>
+          </div>
+          <div style="display:flex;gap:4px">
+            ${d.weekDays
+              .map(
+                (wd) => `
+              <button type="button" class="btn btn-xs ${wd.key === d.selectedDayKey ? 'btn-primary' : 'btn-ghost'}" data-v3-day="${wd.key}">${wd.weekday} <span class="num">${wd.dayNum}</span></button>`,
+              )
+              .join('')}
+          </div>
+        </div>
+        <div class="ribbon-track">
+          <div class="ribbon-chips">
+            ${ribbonItems
+              .map(
+                (item) => `
+              <button type="button" class="r-chip is-${item.kind}" data-ribbon-kind="${item.kind}" data-ribbon-id="${item.id}">
+                <i class="r-dot"></i>
+                <b class="num">${item.time}</b>
+                <span>${shell.escapeHtml(item.label)}</span>
+              </button>`,
+              )
+              .join('')}
+          </div>
+          <div class="ribbon-ruler">
+            <div class="ribbon-now${nowPct > 80 ? ' is-right' : ''}" style="left:${nowPct.toFixed(1)}%" data-label="${Data.formatHour(nowHr)} 현재"></div>
+            <div class="ribbon-hours">
+              ${['09', '11', '13', '15', '17', '19'].map((h) => `<span class="num">${h}:00</span>`).join('')}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="ed-grid">
+        <div class="ed-main">
+          <section id="v3Tasks">
+            <div class="ed-sec-head">
+              <div class="ed-sec-title">
+                <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></svg>
+                <span>오늘의 실행</span>
+                <span class="num" style="font-size:12.5px;color:var(--fg3);font-weight:500">${d.openTasks.length}</span>
+              </div>
+              <span style="font-size:12px;color:var(--fg3)">완료 체크 시 상단 해가 반응합니다</span>
+            </div>
+
+            ${
+              d.overdueTasks.length > 0
+                ? `<div class="ed-group-label urgent">기한 지남 <span class="num">${d.overdueTasks.length}</span></div>
+                   <div>${d.overdueTasks.map(renderTaskRow).join('')}</div>`
+                : ''
+            }
+
+            <div class="ed-group-label">오늘 할 일 <span class="num">${d.todayTasks.length}</span></div>
+            <div>
+              ${
+                d.todayTasks.length === 0
+                  ? '<div style="padding:8px 6px;font-size:12.5px;color:var(--fg3)">오늘 할 일을 모두 끝냈습니다.</div>'
+                  : d.todayTasks.map(renderTaskRow).join('')
+              }
+            </div>
+
+            <form data-role="v3AddForm" style="display:flex;align-items:center;gap:8px;padding:7px 6px;border-bottom:1px dashed var(--input)">
+              <span style="color:var(--fg3);font-weight:600">+</span>
+              <input type="text" data-role="v3TaskInput" value="${shell.escapeHtml(uiState.taskDraft)}" placeholder="새 할 일을 바로 적고 Enter..." style="flex:1;border:0;background:transparent;outline:none;font-size:13.5px" aria-label="새 할 일 추가">
+            </form>
+
+            <div style="margin-top:8px">
+              <button type="button" class="btn btn-ghost btn-xs" data-role="toggleUpcoming">
+                ${uiState.upcomingOpen ? '▾' : '▸'} 다가오는 할 일 <span class="num">${d.upcomingTasks.length}</span>
+              </button>
+              ${uiState.upcomingOpen ? `<div>${d.upcomingTasks.map(renderTaskRow).join('')}</div>` : ''}
+            </div>
+          </section>
+
+          <section id="v3Deals">
+            <div class="ed-sec-head">
+              <div class="ed-sec-title">
+                <svg class="ic" viewBox="0 0 24 24"><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="M3 4h8"/><path d="M14 14l2.5 2.5a1 1 0 1 0 3-3"/></svg>
+                <span>진행 거래 원장</span>
+                <span class="num" style="font-size:12.5px;color:var(--fg3);font-weight:500">${d.deals.length}</span>
+              </div>
+              <div style="display:flex;gap:4px">
+                <button type="button" class="btn btn-xs ${uiState.dealSort === 'urgent' ? 'btn-primary' : 'btn-ghost'}" data-v3-sort="urgent">일정 임박순</button>
+                <button type="button" class="btn btn-xs ${uiState.dealSort === 'amount' ? 'btn-primary' : 'btn-ghost'}" data-v3-sort="amount">금액순</button>
+              </div>
+            </div>
+            <table class="ed-table">
+              <thead>
+                <tr>
+                  <th>물건 · 조건</th>
+                  <th>단계</th>
+                  <th>다음 대금</th>
+                  <th style="text-align:right">담당</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${sortedDeals
+                  .map((deal) => {
+                    const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray', step: 1 };
+                    const isHi = uiState.highlightId === deal.id;
+                    return `
+                  <tr class="deal-tr${isHi ? ' highlighted' : ''}" data-v3-deal="${deal.id}">
+                    <td>
+                      <div style="font-weight:600">${deal.siteName} ${deal.dongHo}</div>
+                      <div style="font-size:11.5px;color:var(--fg3)" class="num">${deal.amountText} · ${deal.sellerName}↔${deal.buyerName}</div>
+                    </td>
+                    <td>
+                      <div style="display:flex;flex-direction:column;gap:4px">
+                        <span class="badge sm" data-tone="${st.tone}">${st.label}</span>
+                        <span class="step-dots">${[1, 2, 3, 4, 5].map((i) => `<span class="${i < st.step ? 'done' : i === st.step ? 'curr' : ''}"></span>`).join('')}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <span class="num" style="font-weight:600;color:${deal.health === 'overdue' ? 'var(--destructive-strong)' : deal.health === 'urgent' ? 'var(--orange)' : 'var(--fg2)'}">${deal.healthText}</span>
+                      <div style="font-size:11px;color:var(--fg3)" class="num">${deal.nextPaymentLabel}</div>
+                    </td>
+                    <td style="text-align:right"><span class="avatar-init" title="${deal.assignee}">${deal.assignee.slice(0, 1)}</span></td>
+                  </tr>`;
+                  })
+                  .join('')}
+              </tbody>
+            </table>
+          </section>
+        </div>
+
+        <aside class="ed-rail" aria-label="사무소 브리핑 레일">
+          <div class="rail-block">
+            <div class="rail-head">
+              <span>이달의 흐름 (${d.scope === 'mine' ? '내 담당' : '사무소 전체'})</span>
+              <span class="badge sm" data-tone="success">달성 ${d.summary.collectionPct}%</span>
+            </div>
+            <div class="rail-nums">
+              <div class="rail-num-box">
+                <div class="lbl">수금 완료</div>
+                <div class="val num">${Data.formatMoneyManwon(d.summary.collectedManwon)}</div>
+              </div>
+              <div class="rail-num-box">
+                <div class="lbl">수금 예정</div>
+                <div class="val num">${Data.formatMoneyManwon(d.summary.expectedManwon)}</div>
+              </div>
+              <div class="rail-num-box">
+                <div class="lbl">이달 계약</div>
+                <div class="val num">${d.summary.contractCount}건</div>
+              </div>
+            </div>
+            <div style="height:5px;border-radius:999px;background:var(--border);overflow:hidden">
+              <div style="height:100%;width:${d.summary.collectionPct}%;background:var(--success)"></div>
+            </div>
+          </div>
+
+          <div class="rail-block">
+            <div class="rail-head">
+              <span>확인할 신호</span>
+              <span class="num" style="color:var(--fg3)">${topSignals.length}건</span>
+            </div>
+            ${
+              topSignals.length === 0
+                ? '<div style="font-size:12px;color:var(--fg3);padding:6px">모든 신호를 확인했습니다.</div>'
+                : topSignals
+                    .map(
+                      (item) => `
+                <div class="sig-row">
+                  <div style="min-width:0;flex:1">
+                    <span class="badge sm" data-tone="${item.tone}" style="margin-bottom:4px">${item.badge}</span>
+                    <div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${shell.escapeHtml(item.title)}</div>
+                    <div style="font-size:11px;color:var(--fg3);line-height:15px">${shell.escapeHtml(item.sub)}</div>
+                  </div>
+                  <button type="button" class="btn btn-outline btn-xs" ${item.isCall ? `data-v3-call="${item.id}"` : `data-v3-sig="${item.id}"`}>
+                    ${item.isCall ? '반영' : '확인'}
+                  </button>
+                </div>`,
+                    )
+                    .join('')
+            }
+          </div>
+
+          <div class="rail-block">
+            <div class="rail-head">
+              <span>공지사항</span>
+              <span class="num" style="color:var(--info-strong)">안 읽음 ${d.unreadNotices.length}</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px">
+              ${d.notices
+                .slice(0, 4)
+                .map(
+                  (n) => `
+                <button type="button" data-v3-notice="${n.id}" style="display:flex;align-items:center;gap:6px;padding:5px 4px;border-radius:5px;text-align:left;width:100%" class="ed-notice-btn">
+                  <span style="width:6px;height:6px;border-radius:50%;flex:none;background:${n.readAt ? 'transparent' : 'var(--info)'}"></span>
+                  ${n.isRequired ? '<span class="badge sm" data-tone="destructive">필독</span>' : ''}
+                  <span style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:${n.readAt ? 400 : 600}">${shell.escapeHtml(n.title)}</span>
+                  <span class="num" style="font-size:11px;color:var(--fg3)">${n.publishedAt}</span>
+                </button>`,
+                )
+                .join('')}
+            </div>
+          </div>
+        </aside>
+      </div>
+    `;
+
+    const root = shell.contentHostEl;
+
+    root.querySelectorAll('[data-v3-day]').forEach((btn) =>
+      btn.addEventListener('click', () => Data.selectDay(btn.dataset.v3Day)),
+    );
+
+    root.querySelectorAll('[data-ribbon-id]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const kind = btn.dataset.ribbonKind;
+        const id = btn.dataset.ribbonId;
+        if (kind === 'deal') {
+          uiState.highlightId = id;
+          render();
+          openDealDrawer(id);
+        } else if (kind === 'task') {
+          uiState.highlightId = id;
+          render();
+          root.querySelector(`[data-task-row="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+          const ev = Data.state.events.find((e) => e.id === id);
+          if (ev) {
+            shell.openPeekDrawer({
+              title: ev.title,
+              subtitle: `${Data.formatHour(ev.hour)} · ${ev.propertyLabel}`,
+              badgeHtml: `<span class="badge" data-tone="orange">오늘 일정</span>`,
+              bodyHtml: `<div style="background:var(--muted);padding:12px;border-radius:9px;font-size:13px;line-height:20px">${shell.escapeHtml(ev.memo)}</div>`,
+            });
+          }
+        }
+      }),
+    );
+
+    root.querySelectorAll('[data-v3-done]').forEach((chk) =>
+      chk.addEventListener('click', () => {
+        chk.setAttribute('aria-checked', 'true');
+        const res = Data.completeTask(chk.dataset.v3Done);
+        if (res) {
+          hero.cheer();
+          shell.showToast('업무를 완료했습니다', res.task.title, () => Data.restoreTaskStatus(res.task.id, res.previousStatus));
+        }
+      }),
+    );
+
+    root.querySelectorAll('[data-v3-snooze]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const res = Data.snoozeTask(btn.dataset.v3Snooze, 1, '내일');
+        if (res) shell.showToast('내일로 미뤘습니다', res.task.title);
+      }),
+    );
+
+    const inputEl = root.querySelector('[data-role="v3TaskInput"]');
+    inputEl?.addEventListener('input', (e) => {
+      uiState.taskDraft = e.target.value;
+    });
+    root.querySelector('[data-role="v3AddForm"]')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const val = uiState.taskDraft.trim();
+      if (!val) return;
+      uiState.taskDraft = '';
+      Data.addTask(val);
+      shell.showToast('오늘 할 일에 추가했습니다', val);
+    });
+
+    root.querySelector('[data-role="toggleUpcoming"]')?.addEventListener('click', () => {
+      uiState.upcomingOpen = !uiState.upcomingOpen;
+      render();
+    });
+
+    root.querySelectorAll('[data-v3-sort]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        uiState.dealSort = btn.dataset.v3Sort;
+        render();
+      }),
+    );
+
+    root.querySelectorAll('[data-v3-deal]').forEach((tr) =>
+      tr.addEventListener('click', () => openDealDrawer(tr.dataset.v3Deal)),
+    );
+
+    root.querySelectorAll('[data-v3-sig]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const sig = Data.resolveSignal(btn.dataset.v3Sig, '확인 완료');
+        if (sig) {
+          if (sig.kind === 'verify_overdue') hero.cheer();
+          shell.showToast('신호를 처리했습니다', sig.title, () => Data.reopenSignal(sig.id));
+        }
+      }),
+    );
+
+    root.querySelectorAll('[data-v3-call]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const item = Data.resolveCallSuggestion(btn.dataset.v3Call, 'accepted');
+        if (item) {
+          hero.cheer();
+          shell.showToast('통화 제안을 반영했습니다', item.suggestionAction);
+        }
+      }),
+    );
+
+    root.querySelectorAll('[data-v3-notice]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const n = Data.state.notices.find((x) => x.id === btn.dataset.v3Notice);
+        if (n) shell.openNoticeModal(n);
+      }),
+    );
+  }
+
+  Data.subscribe(render);
+  render();
+})();
+</script>
+</body>
+</html>

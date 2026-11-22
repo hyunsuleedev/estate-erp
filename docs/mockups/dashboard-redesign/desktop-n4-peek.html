@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estait Flow · N4 딜 보드 & Side Peek 워크스페이스</title>
+<link rel="stylesheet" href="./shared-hero.css">
+<link rel="stylesheet" href="./shared-desktop-chrome.css">
+<style>
+  .n4-wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 18px 32px 56px;
+  }
+  .n4-hero-gap {
+    margin-bottom: 18px;
+  }
+
+  /* Quiet Inline Property Strip */
+  .n4-prop-strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--bg-soft);
+    margin-bottom: 18px;
+    font-size: 13px;
+    color: var(--fg2);
+  }
+  .n4-prop-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 6px;
+    padding: 2px 6px;
+    transition: background-color 120ms ease;
+  }
+  .n4-prop-chip:hover {
+    background: rgba(55, 53, 47, 0.06);
+  }
+
+  /* Database View Switcher */
+  .n4-view-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    margin-bottom: 18px;
+  }
+  .n4-view-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .n4-vtab {
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg3);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .n4-vtab:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+  .n4-vtab.active {
+    background: var(--active-soft);
+    color: var(--fg);
+    font-weight: 600;
+  }
+
+  /* Focus View */
+  .n4-sched-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .n4-sched-card {
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    padding: 10px 12px 10px 15px;
+    position: relative;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .n4-sched-card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-strong);
+  }
+  .n4-sched-card::before {
+    content: "";
+    position: absolute;
+    left: 6px;
+    top: 10px;
+    bottom: 10px;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--orange);
+  }
+  .n4-sched-card.meeting::before { background: var(--blue); }
+  .n4-sched-card.contract::before { background: var(--violet); }
+
+  .n4-focus-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 20px;
+    align-items: start;
+  }
+  .n4-card {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    padding: 12px;
+  }
+  .n4-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background-color 110ms ease;
+  }
+  .n4-row:hover {
+    background: var(--hover);
+  }
+
+  /* Kanban Board View */
+  .n4-kanban {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    align-items: start;
+  }
+  .n4-kcol {
+    background: var(--bg-soft);
+    border-radius: 12px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .n4-kcard {
+    background: var(--bg);
+    border-radius: 10px;
+    box-shadow: var(--shadow-card);
+    padding: 11px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    cursor: pointer;
+    transition: transform 140ms var(--ease-out), box-shadow 140ms ease;
+  }
+  .n4-kcard:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  /* Notion Table View */
+  .n4-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .n4-table th {
+    text-align: left;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg3);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .n4-table td {
+    padding: 10px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .n4-table tr.n4-tr {
+    cursor: pointer;
+    transition: background-color 100ms ease;
+  }
+  .n4-table tr.n4-tr:hover td {
+    background: var(--hover);
+  }
+
+  /* Notion Side Peek Drawer */
+  .n4-side-peek {
+    position: fixed;
+    top: 44px;
+    right: 12px;
+    bottom: 12px;
+    width: 440px;
+    max-width: calc(100vw - 24px);
+    background: var(--bg);
+    border-radius: 14px;
+    box-shadow: var(--shadow-float);
+    z-index: 55;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(24px);
+    transition: opacity 180ms var(--ease-out), transform 200ms var(--ease-out);
+  }
+  .n4-side-peek.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+  .n4-peek-head {
+    height: 44px;
+    flex: none;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .n4-peek-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 18px 20px 28px;
+  }
+
+  @media (max-width: 960px) {
+    .n4-wrap {
+      padding: 16px 20px 44px;
+    }
+    .n4-sched-row,
+    .n4-focus-cols,
+    .n4-kanban {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+<script src="./shared-data.js"></script>
+<script src="./shared-hero.js"></script>
+<script src="./shared-desktop-chrome.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const Data = window.DashMockData;
+  const ui = {
+    view: 'focus', // 'focus' | 'board' | 'table'
+    peek: null, // { kind, id } | null
+  };
+
+  const chrome = window.mountNotionDesktop({
+    activeVariant: 'n4',
+    wrapClass: 'n4-wrap',
+    onPin: (pin) => {
+      ui.view = 'focus';
+      render();
+      if (pin === 'schedule') chrome.contentHost.querySelector('#n4SchedRow')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      else chrome.contentHost.querySelector('#n4TaskBox')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    },
+    onQuickCreate: () => {
+      ui.view = 'focus';
+      render();
+      chrome.contentHost.querySelector('#n4AddInput')?.focus();
+    },
+  });
+
+  chrome.contentHost.parentElement.querySelector('#ntHeroHost').classList.add('n4-hero-gap');
+
+  // Create Notion Side Peek container
+  const peekEl = document.createElement('aside');
+  peekEl.id = 'sidePeek';
+  peekEl.className = 'n4-side-peek';
+  peekEl.setAttribute('aria-label', '노션 측면 보기');
+  document.body.appendChild(peekEl);
+
+  function openPeek(kind, id) {
+    ui.peek = { kind, id };
+    if (kind === 'notice') Data.markNoticeRead(id);
+    renderPeek();
+  }
+
+  function closePeek() {
+    ui.peek = null;
+    peekEl.classList.remove('open');
+  }
+
+  function promotePeekToTab() {
+    if (!ui.peek) return;
+    const { kind, id } = ui.peek;
+    closePeek();
+    if (kind === 'deal') {
+      const deal = Data.state.deals.find((x) => x.id === id);
+      if (deal) chrome.openTab({ key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--green)' });
+    } else if (kind === 'task') {
+      const t = Data.state.tasks.find((x) => x.id === id);
+      if (t) chrome.openTab({ key: `task:${t.id}`, title: t.title, kind: 'task', payload: { id: t.id }, dotColor: 'var(--blue)' });
+    } else if (kind === 'call') {
+      const c = Data.state.callSuggestions.find((x) => x.id === id);
+      if (c) chrome.openTab({ key: `call:${c.id}`, title: `${c.contactName} — ${c.suggestionAction}`, kind: 'call', payload: { id: c.id }, dotColor: 'var(--violet)' });
+    } else if (kind === 'signal') {
+      const s = Data.state.signals.find((x) => x.id === id);
+      if (s) chrome.openTab({ key: `signal:${s.id}`, title: s.title, kind: 'signal', payload: { id: s.id }, dotColor: 'var(--orange)' });
+    } else if (kind === 'event') {
+      const ev = Data.state.events.find((x) => x.id === id);
+      if (ev) chrome.openTab({ key: `event:${ev.id}`, title: ev.title, kind: 'event', payload: { eventId: ev.id }, dotColor: 'var(--orange)' });
+    } else if (kind === 'notice') {
+      const n = Data.state.notices.find((x) => x.id === id);
+      if (n) chrome.openTab({ key: `notice:${n.id}`, title: n.title, kind: 'notice', payload: { noticeId: n.id }, dotColor: 'var(--blue)' });
+    }
+  }
+
+  function renderPeek() {
+    if (!ui.peek) {
+      peekEl.classList.remove('open');
+      return;
+    }
+    const { kind, id } = ui.peek;
+    let bodyHtml = '';
+
+    if (kind === 'deal') {
+      const deal = Data.state.deals.find((x) => x.id === id);
+      if (deal) {
+        const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray' };
+        bodyHtml = `
+          <h2 style="margin:0 0 12px;font-size:20px;font-weight:700">${chrome.escapeHtml(deal.siteName)} ${chrome.escapeHtml(deal.dongHo)}</h2>
+          <div class="nt-prop-table" style="margin:12px 0 16px">
+            <div class="nt-prop-row"><div class="nt-prop-key">단계</div><div class="nt-prop-val"><span class="nt-pill" data-tone="${st.tone === 'destructive' ? 'red' : st.tone === 'success' ? 'green' : st.tone === 'violet' ? 'violet' : 'blue'}">${st.label}</span></div></div>
+            <div class="nt-prop-row"><div class="nt-prop-key">금액</div><div class="nt-prop-val num">${chrome.escapeHtml(deal.amountText)}</div></div>
+            <div class="nt-prop-row"><div class="nt-prop-key">당사자</div><div class="nt-prop-val">${chrome.escapeHtml(deal.sellerName)} ↔ ${chrome.escapeHtml(deal.buyerName)}</div></div>
+            <div class="nt-prop-row"><div class="nt-prop-key">예상 보수</div><div class="nt-prop-val num">${deal.commissionExpectedManwon.toLocaleString('ko-KR')}만</div></div>
+          </div>
+          <div style="font-size:12.5px;font-weight:600;margin-bottom:6px">대금 체크</div>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
+            ${deal.payments
+              .map(
+                (p, idx) => `
+              <div class="nt-pay-row">
+                <button type="button" class="nt-chk" data-peek-pay="${idx}" aria-checked="${p.paid}">
+                  <svg viewBox="0 0 12 12"><path d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+                </button>
+                <span style="flex:1;font-size:13px">${chrome.escapeHtml(p.kind)} <b class="num">${chrome.escapeHtml(p.amount)}</b></span>
+                <span class="nt-pill num" data-tone="${p.paid ? 'green' : 'orange'}">${p.paid ? '완료' : Data.dDayLabel(p.dateOffset)}</span>
+              </div>`,
+              )
+              .join('')}
+          </div>
+          <div style="background:var(--bg-soft);border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.6">${chrome.escapeHtml(deal.specialTerms)}</div>
+        `;
+      }
+    } else if (kind === 'task') {
+      const t = Data.state.tasks.find((x) => x.id === id);
+      if (t) {
+        const done = t.status === 'completed';
+        bodyHtml = `
+          <h2 style="margin:0 0 12px;font-size:20px;font-weight:700">${chrome.escapeHtml(t.title)}</h2>
+          <div class="nt-prop-table" style="margin:12px 0 16px">
+            <div class="nt-prop-row"><div class="nt-prop-key">기한</div><div class="nt-prop-val num">${Data.dDayLabel(t.dueOffsetDays)} · ${chrome.escapeHtml(t.dueTime)}</div></div>
+            ${t.propertyLabel ? `<div class="nt-prop-row"><div class="nt-prop-key">물건</div><div class="nt-prop-val">${chrome.escapeHtml(t.propertyLabel)}</div></div>` : ''}
+            ${t.contactName ? `<div class="nt-prop-row"><div class="nt-prop-key">고객</div><div class="nt-prop-val">${chrome.escapeHtml(t.contactName)}</div></div>` : ''}
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button type="button" class="nt-ghost-btn primary" data-peek-task-done style="height:30px;padding:0 12px">${done ? '다시 미완료로' : '완료 처리'}</button>
+            <button type="button" class="nt-ghost-btn soft" data-peek-task-snooze style="height:30px;padding:0 12px">내일로 미루기</button>
+          </div>
+          <div style="background:var(--bg-soft);border-radius:9px;padding:10px 12px;font-size:13px;line-height:1.6">${chrome.escapeHtml(t.memo || '메모 없음')}</div>
+        `;
+      }
+    } else if (kind === 'call' || kind === 'signal') {
+      const isCall = kind === 'call';
+      const obj = isCall ? Data.state.callSuggestions.find((x) => x.id === id) : Data.state.signals.find((x) => x.id === id);
+      if (obj) {
+        bodyHtml = `
+          <h2 style="margin:0 0 12px;font-size:19px;font-weight:700">${chrome.escapeHtml(isCall ? `${obj.contactName} — ${obj.suggestionAction}` : obj.title)}</h2>
+          <div style="background:var(--bg-soft);border-radius:9px;padding:12px;font-size:13px;line-height:1.65;margin-bottom:14px">${chrome.escapeHtml(isCall ? obj.quote || obj.summary : obj.detail || obj.sub)}</div>
+          <button type="button" class="nt-ghost-btn primary" data-peek-sig-act style="height:30px;padding:0 12px">${isCall ? '제안 반영하기' : '확인 완료'}</button>
+        `;
+      }
+    } else if (kind === 'event') {
+      const ev = Data.state.events.find((x) => x.id === id);
+      if (ev) {
+        bodyHtml = `
+          <h2 style="margin:0 0 12px;font-size:20px;font-weight:700">${chrome.escapeHtml(ev.title)}</h2>
+          <div class="nt-prop-table" style="margin:12px 0 16px">
+            <div class="nt-prop-row"><div class="nt-prop-key">시간</div><div class="nt-prop-val num">${Data.formatHour(ev.hour)}</div></div>
+            ${ev.propertyLabel ? `<div class="nt-prop-row"><div class="nt-prop-key">장소</div><div class="nt-prop-val">${chrome.escapeHtml(ev.propertyLabel)}</div></div>` : ''}
+            ${ev.contactName ? `<div class="nt-prop-row"><div class="nt-prop-key">고객</div><div class="nt-prop-val">${chrome.escapeHtml(ev.contactName)}</div></div>` : ''}
+          </div>
+          <div style="background:var(--bg-soft);border-radius:9px;padding:12px;font-size:13px;line-height:1.65">${chrome.escapeHtml(ev.memo || '')}</div>
+        `;
+      }
+    } else if (kind === 'notice') {
+      const n = Data.state.notices.find((x) => x.id === id);
+      if (n) {
+        bodyHtml = `
+          <div style="margin-bottom:8px">${n.isRequired ? '<span class="nt-pill" data-tone="red">필독</span>' : '<span class="nt-pill" data-tone="blue">공지</span>'} <span class="num" style="font-size:12px;color:var(--fg3);margin-left:6px">${n.publishedAt}</span></div>
+          <h2 style="margin:0 0 14px;font-size:19px;font-weight:700">${chrome.escapeHtml(n.title)}</h2>
+          <div style="background:var(--bg-soft);border-radius:9px;padding:14px;font-size:13.5px;line-height:1.7">${chrome.escapeHtml(n.body)}</div>
+        `;
+      }
+    }
+
+    peekEl.innerHTML = `
+      <div class="n4-peek-head">
+        <button type="button" class="nt-ghost-btn soft" id="n4PromoteBtn" title="상단 네이티브 탭으로 승격">⤢ 탭으로 열기</button>
+        <button type="button" class="nt-icon-btn" id="n4ClosePeek" aria-label="측면 보기 닫기">
+          <svg viewBox="0 0 12 12" style="width:12px;height:12px;stroke:currentColor;stroke-width:1.8;fill:none"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+        </button>
+      </div>
+      <div class="n4-peek-body">${bodyHtml}</div>
+    `;
+    peekEl.classList.add('open');
+
+    peekEl.querySelector('#n4PromoteBtn')?.addEventListener('click', promotePeekToTab);
+    peekEl.querySelector('#n4ClosePeek')?.addEventListener('click', closePeek);
+    peekEl.querySelectorAll('[data-peek-pay]').forEach((b) =>
+      b.addEventListener('click', () => Data.toggleDealPaymentPaid(id, Number(b.dataset.peekPay))),
+    );
+    peekEl.querySelector('[data-peek-task-done]')?.addEventListener('click', () => {
+      const res = Data.completeTask(id);
+      if (res?.task.status === 'completed') chrome.hero.cheer();
+    });
+    peekEl.querySelector('[data-peek-task-snooze]')?.addEventListener('click', () => {
+      Data.snoozeTask(id, 1, '내일');
+      chrome.showToast('내일로 미뤘습니다');
+    });
+    peekEl.querySelector('[data-peek-sig-act]')?.addEventListener('click', () => {
+      if (kind === 'call') Data.resolveCallSuggestion(id, 'accepted');
+      else Data.resolveSignal(id, '확인 완료');
+      chrome.hero.cheer();
+      closePeek();
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && ui.peek) closePeek();
+  });
+
+  function render() {
+    const d = Data.getScopedData();
+    chrome.hero.setScope(d.scope);
+    chrome.hero.updateCounts(d.heroCounts);
+    chrome.hero.setFlags(d.heroFlags);
+
+    const col1 = d.deals.filter((x) => x.stage === 'preparing' || x.stage === 'preContract');
+    const col2 = d.deals.filter((x) => x.stage === 'contracted');
+    const col3 = d.deals.filter((x) => x.stage === 'settling' || x.stage === 'completed');
+    const urgentCnt = d.deals.filter((x) => x.health !== 'healthy').length;
+    const focusQueue = [...d.overdueTasks, ...d.pendingSuggestions.map((c) => ({ isCall: true, ...c })), ...d.todayTasks];
+
+    chrome.contentHost.innerHTML = `
+      <div class="n4-prop-strip" aria-label="요약 지표">
+        <button type="button" class="n4-prop-chip" data-n4-cashflow>
+          <span style="color:var(--fg3)">이달 수금</span>
+          <b class="num" style="color:var(--fg)">${Data.formatMoneyManwon(d.summary.collectedManwon)}</b>
+          <span class="nt-pill num" data-tone="green">${d.summary.collectionPct}%</span>
+        </button>
+        <span style="color:var(--border-strong)">·</span>
+        <button type="button" class="n4-prop-chip" data-n4-v="board">
+          <span style="color:var(--fg3)">진행 거래</span>
+          <b class="num" style="color:var(--fg)">${d.summary.activeDeals}건</b>
+          <span class="num" style="color:var(--orange)">(임박 ${urgentCnt})</span>
+        </button>
+        <span style="color:var(--border-strong)">·</span>
+        <span class="n4-prop-chip">
+          <span style="color:var(--fg3)">매물·통화 신호</span>
+          <b class="num" style="color:var(--fg)">${d.pendingSuggestions.length + d.activeSignals.length}건</b>
+        </span>
+        <span style="color:var(--border-strong)">·</span>
+        <span class="n4-prop-chip">
+          <span style="color:var(--fg3)">안 읽은 공지</span>
+          <b class="num" style="color:var(--blue)">${d.unreadNotices.length}건</b>
+        </span>
+      </div>
+
+      <div class="n4-view-bar">
+        <div class="n4-view-tabs" role="tablist">
+          <button type="button" class="n4-vtab${ui.view === 'focus' ? ' active' : ''}" data-n4-v="focus">오늘 포커스</button>
+          <button type="button" class="n4-vtab${ui.view === 'board' ? ' active' : ''}" data-n4-v="board">거래 보드</button>
+          <button type="button" class="n4-vtab${ui.view === 'table' ? ' active' : ''}" data-n4-v="table">거래 표</button>
+        </div>
+        <span style="font-size:12px;color:var(--fg3)">항목 클릭 시 우측 측면 보기(Side Peek)로 열립니다</span>
+      </div>
+
+      ${
+        ui.view === 'focus'
+          ? `
+          <div class="n4-sched-row" id="n4SchedRow">
+            ${d.todayEvents
+              .map(
+                (ev) => `
+              <div class="n4-sched-card ${ev.type || ''}" data-n4-peek-kind="event" data-n4-peek-id="${ev.id}">
+                <div class="num" style="font-size:11.5px;font-weight:600;color:var(--fg3)">${Data.formatHour(ev.hour)}</div>
+                <div style="font-size:13.5px;font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(ev.title)}</div>
+                <div style="font-size:12px;color:var(--fg2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(ev.propertyLabel || '')}</div>
+              </div>`,
+              )
+              .join('')}
+          </div>
+
+          <div class="n4-focus-cols">
+            <div class="n4-card" id="n4TaskBox">
+              <div style="font-size:12.5px;font-weight:600;color:var(--fg2);padding:2px 6px 8px">할 일 · 통화 제안</div>
+              <div>
+                ${focusQueue
+                  .map((item) =>
+                    item.isCall
+                      ? `
+                    <div class="n4-row" data-n4-peek-kind="call" data-n4-peek-id="${item.id}">
+                      <span style="width:7px;height:7px;border-radius:50%;background:var(--violet);margin:0 4px;flex:none"></span>
+                      <div style="min-width:0;flex:1">
+                        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(item.contactName)} — ${chrome.escapeHtml(item.suggestionAction)}</div>
+                        <div style="font-size:11.5px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(item.summary)}</div>
+                      </div>
+                      <span class="nt-pill" data-tone="violet">통화</span>
+                    </div>`
+                      : `
+                    <div class="n4-row" data-n4-peek-kind="task" data-n4-peek-id="${item.id}">
+                      <button type="button" class="nt-chk" data-n4-done="${item.id}" aria-checked="false" aria-label="${chrome.escapeHtml(item.title)} 완료">
+                        <svg viewBox="0 0 12 12"><path d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+                      </button>
+                      <div style="min-width:0;flex:1">
+                        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(item.title)}</div>
+                        <div style="font-size:11.5px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${[item.propertyLabel, item.contactName].filter(Boolean).join(' · ')}</div>
+                      </div>
+                      <span class="num" style="font-size:11.5px;color:${item.dueOffsetDays < 0 ? 'var(--red)' : 'var(--fg3)'}">${Data.dDayLabel(item.dueOffsetDays)}</span>
+                    </div>`,
+                  )
+                  .join('')}
+              </div>
+              <form id="n4AddForm" style="display:flex;align-items:center;gap:8px;padding:8px 8px 2px;margin-top:6px;border-top:1px solid var(--border)">
+                <span style="color:var(--fg3)">+</span>
+                <input type="text" id="n4AddInput" placeholder="새 할 일 추가..." style="flex:1;border:0;outline:none;background:transparent;font-size:13px" aria-label="새 할 일 추가">
+              </form>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div class="n4-card">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 6px 8px">
+                  <span style="font-size:12.5px;font-weight:600;color:var(--fg2)">주요 진행 거래</span>
+                  <button type="button" class="nt-ghost-btn" data-n4-v="board">보드로 →</button>
+                </div>
+                ${d.deals
+                  .slice(0, 4)
+                  .map((deal) => {
+                    const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray' };
+                    return `
+                    <div class="n4-row" data-n4-peek-kind="deal" data-n4-peek-id="${deal.id}">
+                      <span class="nt-pill" data-tone="${st.tone === 'destructive' ? 'red' : st.tone === 'success' ? 'green' : st.tone === 'violet' ? 'violet' : 'blue'}">${st.label}</span>
+                      <div style="min-width:0;flex:1">
+                        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(deal.siteName)} ${chrome.escapeHtml(deal.dongHo)}</div>
+                        <div class="num" style="font-size:11.5px;color:var(--fg3)">${chrome.escapeHtml(deal.amountText)} · ${chrome.escapeHtml(deal.sellerName)}↔${chrome.escapeHtml(deal.buyerName)}</div>
+                      </div>
+                      <span class="num" style="font-size:11.5px;color:${deal.health === 'overdue' ? 'var(--red)' : deal.health === 'urgent' ? 'var(--orange)' : 'var(--fg3)'}">${chrome.escapeHtml(deal.healthText)}</span>
+                    </div>`;
+                  })
+                  .join('')}
+              </div>
+
+              <div class="n4-card" style="background:var(--bg-soft);border-color:transparent">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 6px 6px">
+                  <span style="font-size:12.5px;font-weight:600;color:var(--fg2)">공지사항</span>
+                  <span class="num" style="font-size:11.5px;color:var(--blue)">안 읽음 ${d.unreadNotices.length}</span>
+                </div>
+                ${d.notices
+                  .slice(0, 3)
+                  .map(
+                    (n) => `
+                  <button type="button" class="n4-row" style="width:100%" data-n4-peek-kind="notice" data-n4-peek-id="${n.id}">
+                    <span style="width:6px;height:6px;border-radius:50%;flex:none;background:${n.readAt ? 'transparent' : 'var(--blue)'}"></span>
+                    ${n.isRequired ? '<span class="nt-pill" data-tone="red">필독</span>' : ''}
+                    <span style="flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:${n.readAt ? 400 : 600}">${chrome.escapeHtml(n.title)}</span>
+                    <span class="num" style="font-size:11px;color:var(--fg3)">${n.publishedAt}</span>
+                  </button>`,
+                  )
+                  .join('')}
+              </div>
+            </div>
+          </div>
+          `
+          : ui.view === 'board'
+            ? `
+          <div class="n4-kanban">
+            ${[
+              { title: '준비 · 가계약', list: col1, tone: 'violet' },
+              { title: '본계약', list: col2, tone: 'blue' },
+              { title: '잔금 · 정산', list: col3, tone: 'green' },
+            ]
+              .map(
+                (col) => `
+              <div class="n4-kcol">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 4px;font-size:12.5px;font-weight:600;color:var(--fg2)">
+                  <span>${col.title}</span>
+                  <span class="num" style="color:var(--fg3)">${col.list.length}</span>
+                </div>
+                ${col.list
+                  .map((deal) => {
+                    const st = Data.STAGE_META[deal.stage] || { label: deal.stage };
+                    return `
+                    <div class="n4-kcard" data-n4-peek-kind="deal" data-n4-peek-id="${deal.id}">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+                        <span class="nt-pill" data-tone="${col.tone}">${st.label}</span>
+                        <span class="num" style="font-size:11px;font-weight:500;color:${deal.health === 'overdue' ? 'var(--red)' : deal.health === 'urgent' ? 'var(--orange)' : 'var(--fg3)'}">${chrome.escapeHtml(deal.healthText)}</span>
+                      </div>
+                      <div style="font-size:13.5px;font-weight:600">${chrome.escapeHtml(deal.siteName)} ${chrome.escapeHtml(deal.dongHo)}</div>
+                      <div class="num" style="font-size:12px;color:var(--fg2)">${chrome.escapeHtml(deal.amountText)}</div>
+                      <div style="font-size:11.5px;color:var(--fg3);display:flex;justify-content:space-between">
+                        <span>${chrome.escapeHtml(deal.sellerName)} ↔ ${chrome.escapeHtml(deal.buyerName)}</span>
+                        <span>${chrome.escapeHtml(deal.assignee)}</span>
+                      </div>
+                    </div>`;
+                  })
+                  .join('')}
+              </div>`,
+              )
+              .join('')}
+          </div>
+          `
+            : `
+          <div class="n4-card" style="padding:4px 12px">
+            <table class="n4-table">
+              <thead>
+                <tr>
+                  <th>물건</th>
+                  <th>단계</th>
+                  <th>거래 금액</th>
+                  <th>당사자</th>
+                  <th>다음 일정</th>
+                  <th>담당</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${d.deals
+                  .map((deal) => {
+                    const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray' };
+                    return `
+                    <tr class="n4-tr" data-n4-peek-kind="deal" data-n4-peek-id="${deal.id}">
+                      <td style="font-weight:600">${chrome.escapeHtml(deal.siteName)} ${chrome.escapeHtml(deal.dongHo)}</td>
+                      <td><span class="nt-pill" data-tone="${st.tone === 'destructive' ? 'red' : st.tone === 'success' ? 'green' : st.tone === 'violet' ? 'violet' : 'blue'}">${st.label}</span></td>
+                      <td class="num">${chrome.escapeHtml(deal.amountText)}</td>
+                      <td style="color:var(--fg2)">${chrome.escapeHtml(deal.sellerName)} ↔ ${chrome.escapeHtml(deal.buyerName)}</td>
+                      <td class="num" style="color:${deal.health === 'overdue' ? 'var(--red)' : deal.health === 'urgent' ? 'var(--orange)' : 'var(--fg3)'}">${chrome.escapeHtml(deal.healthText)}</td>
+                      <td style="color:var(--fg2)">${chrome.escapeHtml(deal.assignee)}</td>
+                    </tr>`;
+                  })
+                  .join('')}
+              </tbody>
+            </table>
+          </div>
+          `
+      }
+    `;
+
+    const root = chrome.contentHost;
+    root.querySelectorAll('[data-n4-v]').forEach((b) =>
+      b.addEventListener('click', () => {
+        ui.view = b.dataset.n4V;
+        render();
+      }),
+    );
+    root.querySelector('[data-n4-cashflow]')?.addEventListener('click', () =>
+      chrome.openTab({ key: 'route:/cashflow', title: '수수료/정산', kind: 'route', payload: { route: '/cashflow' }, dotColor: 'var(--green)' }),
+    );
+    root.querySelectorAll('[data-n4-done]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        b.setAttribute('aria-checked', 'true');
+        const res = Data.completeTask(b.dataset.n4Done);
+        if (res) {
+          chrome.hero.cheer();
+          chrome.showToast('할 일을 완료했습니다', res.task.title, () => Data.restoreTaskStatus(res.task.id, res.previousStatus));
+        }
+      }),
+    );
+    root.querySelectorAll('[data-n4-peek-id]').forEach((el) =>
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('button[data-n4-done]')) return;
+        const kind = el.dataset.n4PeekKind;
+        const id = el.dataset.n4PeekId;
+        if (e.metaKey || e.ctrlKey) {
+          ui.peek = { kind, id };
+          promotePeekToTab();
+        } else {
+          openPeek(kind, id);
+        }
+      }),
+    );
+    root.querySelector('#n4AddForm')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const inp = root.querySelector('#n4AddInput');
+      const created = Data.addTask(inp.value);
+      if (created) {
+        inp.value = '';
+        chrome.showToast('할 일을 추가했습니다', created.title);
+      }
+    });
+
+    if (ui.peek) renderPeek();
+  }
+
+  Data.subscribe(render);
+  render();
+})();
+</script>
+</body>
+</html>

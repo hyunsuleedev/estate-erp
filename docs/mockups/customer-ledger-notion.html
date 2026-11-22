@@ -15,7 +15,7 @@
   - 담당은 의뢰가 없는 동안 고객 줄에서(접수한 사람), 의뢰가 생기면 의뢰마다 정한다.
 
   구성
-  - 접힌 줄: 고객 · 의뢰 · 담당 · 다음 연락. 의뢰가 없으면 의뢰 칸에 '의뢰 없음'과 최근 상담 한 줄. 제목·지표 타일은 두지 않는다.
+  - 접힌 줄: 고객 · 최근 상담 · 의뢰 건수 · 담당 · 다음 연락. 의뢰별 조건과 소개 기록은 펼친 하위 표에서 본다. 제목·지표 타일은 두지 않는다.
   - 펼친 자리(왼쪽 고객 칸 아래는 고객 메모, 오른쪽은 아래 순서):
       최근 상담 한 줄 → 다음 연락 한 줄 → (의뢰 없이) 소개한 매물 → 중개 건(사용자가 직접 묶은 것)과 의뢰 → 의뢰 등록
       구함 의뢰 아래에는 소개한 매물(소개일 · 당시 가격 → 지금 가격 · 반응 · 메모), 내놓음 의뢰 아래에는 소개한 손님.
@@ -47,7 +47,7 @@
     --red: #e03e3e; --red-strong: #bb3430;
     --warning-strong: #8a5a13;
     --pop: 0 20px 24px rgba(25, 25, 25, 0.05), 0 5px 8px rgba(25, 25, 25, 0.027), 0 0 0 1px rgba(42, 28, 0, 0.07);
-    --w-tog: 32px; --w-name: 256px; --w-asg: 124px; --w-next: 168px; --w-act: 44px;
+    --w-tog: 32px; --w-name: 218px; --w-asg: 102px; --w-next: 140px; --w-act: 44px;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
@@ -129,8 +129,8 @@
 
   /* 표 */
   .scroller { flex: 1; min-height: 0; overflow: auto; scroll-padding: 40px 0 8px; }
-  .sheet { min-width: 1080px; padding: 0 16px; }
-  .row { display: grid; grid-template-columns: var(--w-tog) var(--w-name) minmax(0, 1fr) var(--w-asg) var(--w-next) var(--w-act); align-items: center; }
+  .sheet { min-width: 880px; padding: 0 16px; }
+  .row { display: grid; grid-template-columns: var(--w-tog) var(--w-name) minmax(0, 1fr) 60px var(--w-asg) var(--w-next) var(--w-act); align-items: center; }
   .head { position: sticky; top: 0; z-index: 5; height: 34px; background: #fff; border-bottom: 1px solid var(--line-strong); font-size: 12px; color: var(--muted); }
   .head .hc { display: flex; align-items: center; gap: 6px; height: 100%; padding: 0 8px; min-width: 0; white-space: nowrap; }
   .head .hc svg { color: var(--faint); }
@@ -149,13 +149,15 @@
   .tog[aria-expanded="true"] svg { transform: rotate(90deg); }
   .c-name .nm { font-weight: 600; white-space: nowrap; flex: 0 1 auto; }
   .c-name .ph { font-size: 12px; color: var(--muted); white-space: nowrap; flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  .c-req .segs { display: flex; align-items: center; gap: 0; min-width: 0; flex: 0 1 auto; overflow: hidden; }
-  .c-req .seg { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); flex: 0 1 auto; }
-  .c-req .seg + .seg { margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--line-strong); }
-  .c-req .seg.off { color: var(--muted); }
-  .c-req .meta { display: inline-flex; align-items: center; gap: 8px; flex: none; font-size: 12px; color: var(--muted); white-space: nowrap; }
-  .c-req .meta svg { color: var(--faint); }
-  .c-req .casetag { display: inline-flex; align-items: center; gap: 4px; max-width: 168px; }
+  .intake-panel { grid-column:2 / -1; margin:8px 8px 0; min-width:0; }
+  .intake-heading { display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line-strong); padding:5px 0; }
+  .intake-heading strong { font-size:14px; }
+  .intake-heading button { margin-left:auto; }
+  .intake-columns, .irow { display:grid; grid-template-columns: minmax(0,1fr) 84px 102px; align-items:center; }
+  .intake-columns { color:var(--muted); font-size:12px; padding:6px 0; }
+  .intake-columns span { padding-left:8px; }
+  .intake-columns span:first-child { padding-left:36px; }
+  .crow .summary { display:block; color:var(--fg-sub); }
   .kind { font-size: 12px; font-weight: 500; margin-right: 6px; }
   .kind.demand { color: var(--info-strong); }
   .kind.listing { color: var(--success); }
@@ -256,14 +258,14 @@
   .chk input { margin: 0; accent-color: var(--fg); }
 
   /* 중개 건과 의뢰 */
-  .tree { margin-top: 8px; }
+  .tree { margin-top: 4px; }
   .case-head { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; }
   .case-head svg { color: var(--icon); margin: 0 2px; }
   .case-head b { font-weight: 500; }
   .case-body { position: relative; }
   .case-body::before { content: ""; position: absolute; left: 17.5px; top: 6px; bottom: 6px; width: 1px; background: var(--line-strong); }
   .loose-label { padding: 8px 8px 2px 36px; }
-  .irow { display: grid; grid-template-columns: minmax(0, 1fr) var(--w-asg) var(--w-next) var(--w-act); align-items: center; min-height: 32px; transition: opacity .12s; }
+  .irow { min-height: 32px; transition: opacity .12s; }
   .irow.dim, .irow.dim + .intros { opacity: 0.4; }
   .i-main { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 8px; }
   .step { position: relative; z-index: 1; width: 20px; height: 20px; flex: none; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1px var(--line-strong); display: grid; place-items: center; font-size: 12px; color: var(--fg-sub); }
@@ -335,6 +337,20 @@
   .toast { display: flex; align-items: center; gap: 12px; padding: 9px 10px 9px 14px; border-radius: 8px; background: #fff; box-shadow: var(--pop); animation: reveal .16s ease-out; max-width: 420px; }
   .toast button { height: 24px; padding: 0 8px; border-radius: 4px; color: var(--info); font-weight: 500; flex: none; }
   .toast button:hover { background: rgba(35, 131, 226, 0.1); }
+  #property-picker { width:min(458px, calc(100vw - 32px)); max-height:90vh; padding:20px; border:1px solid var(--line-strong); border-radius:12px; color:var(--fg); box-shadow:0 12px 46px #0002; }
+  #property-picker::backdrop { background:#25252133; }
+  #property-picker h2 { margin:0; font-size:16px; }
+  #property-context { margin:4px 0 14px; color:var(--muted); }
+  #property-picker .field { width:100%; height:32px; }
+  #property-results { max-height:220px; overflow:auto; margin:8px 0 12px; border-block:1px solid var(--line); }
+  #property-results label { display:flex; align-items:center; gap:9px; padding:8px 3px; cursor:pointer; }
+  #property-results label:has(:checked) { background:var(--hover); }
+  #property-results small { display:block; color:var(--muted); }
+  #property-results h3 { font-size:12px; color:var(--muted); margin:10px 3px 2px; }
+  .intro-fields { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  .intro-fields label { flex:1; min-width:100px; font-size:12px; }
+  .intro-fields label[hidden] { display:none; }
+  #property-picker footer { display:flex; justify-content:flex-end; gap:8px; }
 </style>
 </head>
 <body>
@@ -410,6 +426,22 @@
   </main>
 </div>
 
+<dialog id="property-picker" aria-labelledby="property-title">
+  <form id="property-form">
+    <h2 id="property-title">매물 소개 기록</h2><p id="property-context"></p>
+    <input id="property-search" class="field" type="search" placeholder="단지·동·호 검색" aria-label="단지·동·호 검색" autofocus>
+    <div id="property-results" role="group" aria-label="소개할 매물"></div>
+    <div class="intro-fields">
+      <label>소개일<input class="field" type="date" name="day" required></label>
+      <label>전달 방법<select class="field" name="via"><option>문자</option><option>전화</option><option>방문</option><option>카카오톡</option></select></label>
+    </div>
+    <div class="intro-fields">
+      <label hidden><span id="property-price-label">소개 당시 가격</span> (만원)<input class="field" type="number" name="price" min="0" step="1" required disabled></label>
+      <label hidden>당시 월세 (만원)<input class="field" type="number" name="rent" min="0" step="1" required disabled></label>
+    </div>
+    <footer><button type="button" class="btn-text" id="property-cancel">취소</button><button class="btn-primary sm" id="property-save" disabled>소개 기록 저장</button></footer>
+  </form>
+</dialog>
 <div id="pop"></div>
 <div id="toast" aria-live="polite"></div>
 
@@ -590,8 +622,8 @@ const state = {
   filtersOpen: true,
   f: { assignee: new Set(), next: new Set(), status: new Set() },
   sort: null,                       // { key: 'name' | 'next', dir: 'asc' | 'desc' }
-  open: new Set(['q1']),
-  introsClosed: new Set(['i1a', 'i1c']),
+  open: new Set(['c1']),
+  introsClosed: new Set(INITIAL.flatMap(c => c.intakes.map(it => it.id))),
   history: new Set(),               // 상담을 모두 펼친 고객
   composer: {},                     // 고객별 쓰던 상담
   adding: null,                     // 쓰던 새 고객
@@ -667,7 +699,6 @@ const shownName = (m) => (m.cid && findCustomer(m.cid)?.name) || m.name;
 const refKey = (m) => (m.cid ? '#' + m.cid : m.name);
 const activeIntakes = (c) => c.intakes.filter((i) => i.status !== 'closed');
 const intakeLabel = (it) => `${KIND[it.kind]} ${TX[it.tx]}`;
-const introCount = (c) => c.intros.length + c.intakes.reduce((s, i) => s + i.intros.length, 0);
 // 고객 줄의 담당: 의뢰가 없으면 접수한 사람, 있으면 진행 중인 의뢰의 담당
 function custAssignees(c) {
   if (!c.intakes.length) return c.assignee ? [c.assignee] : [];
@@ -684,11 +715,10 @@ function nextBucket(c) {
 }
 // 소개 기록에 고를 후보. 같은 목록(그 의뢰, 또는 의뢰 없이 소개한 목록)에 이미 있는 것만 뺀다.
 // 같은 손님을 이 고객의 다른 매물 의뢰에, 같은 매물을 다른 구함 의뢰에 다시 소개하는 것은 따로 남길 기록이다.
-function candidates(c, it) {
+function buyerCandidates(c, it) {
   const used = new Set((it ? it.intros : c.intros).map(refKey));
   const seen = new Set();
-  const listing = it?.kind === 'listing';
-  return [...(it ? it.pool : c.pool), ...(listing ? BUYER_POOL : PROPERTY_POOL)].filter((p) => {
+  return [...it.pool, ...BUYER_POOL].filter((p) => {
     if (p.cid ? p.cid === c.id || !findCustomer(p.cid) : p.name === c.name) return false;   // 자기 자신, 원장에서 사라진 고객
     const key = refKey(p);
     if (used.has(key) || seen.has(key)) return false;
@@ -696,6 +726,91 @@ function candidates(c, it) {
     return true;
   });
 }
+
+// 사무소 매물장 예시. 구함 의뢰에 준비한 후보를 먼저 제시하고 다른 의뢰의 매물도 검색할 수 있다.
+const officeProperties = [
+  ...INITIAL.flatMap(customer => [
+    ...customer.pool.map(p => ({ ...p, tx: Array.isArray(p.now) ? 'monthly' : 'sale' })),
+    ...customer.intakes.filter(it => it.kind === 'demand').flatMap(it =>
+      it.pool.map(p => ({ ...p, tx: it.tx }))),
+  ]),
+  ...PROPERTY_POOL.map(p => ({ ...p, tx: 'sale' })),
+];
+const picker = $('#property-picker');
+const propertyForm = $('#property-form');
+let picking = null;
+function openPropertyPicker(oid, owner) {
+  const preferred = new Set(owner.it?.pool.map(refKey) || []);
+  const seen = new Set(owner.list.map(refKey));
+  const rows = officeProperties.filter(p => {
+    const key = refKey(p);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  picking = { oid, rows, preferred, selected: null };
+  propertyForm.reset();
+  propertyForm.elements.day.max = TODAY;
+  propertyForm.elements.day.value = TODAY;
+  $('#property-context').textContent = [owner.c.name, owner.it?.short || '의뢰 없이 소개'].join(' · ');
+  showPickedProperty(null);
+  renderPropertyResults();
+  picker.showModal();
+  $('#property-search').focus();
+}
+function renderPropertyResults() {
+  const query = $('#property-search').value.trim().toLowerCase().split(/\s+/);
+  const { rows, preferred } = picking;
+  const parts = [];
+  for (const group of [true, false]) {
+    const choices = [];
+    rows.forEach((p, index) => {
+      if (preferred.has(refKey(p)) !== group) return;
+      const words = (p.name + ' ' + p.spec + ' ' + TX[p.tx]).toLowerCase();
+      if (!query.every(word => words.includes(word))) return;
+      choices.push(`<label><input type="radio" name="property" value="${index}" ${p === picking.selected ? 'checked' : ''}><span>${esc(p.name)}<small>${TX[p.tx]} · ${esc(p.spec)} · ${won(p.now)}</small></span></label>`);
+    });
+    if (choices.length) parts.push(`<h3>${group ? '이 의뢰의 후보' : '사무소 매물'}</h3>` + choices.join(''));
+  }
+  $('#property-results').innerHTML = parts.join('') || '<p class="empty">검색 조건에 맞는 매물이 없습니다.</p>';
+}
+function showPickedProperty(p) {
+  picking.selected = p;
+  const monthly = Array.isArray(p?.now);
+  $('#property-price-label').textContent = monthly ? '당시 보증금' : '소개 당시 가격';
+  for (const [key, visible, value] of [['price', !!p, monthly ? p.now[0] : p?.now], ['rent', monthly, monthly ? p.now[1] : null]]) {
+    const field = propertyForm.elements[key];
+    field.disabled = !visible;
+    field.parentElement.hidden = !visible;
+    field.value = value ?? '';
+  }
+  $('#property-save').disabled = !p;
+}
+$('#property-search').addEventListener('input', () => {
+  showPickedProperty(null);
+  renderPropertyResults();
+});
+propertyForm.addEventListener('change', e => {
+  if (e.target.name === 'property') showPickedProperty(picking.rows[Number(e.target.value)]);
+});
+picker.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); picker.close(); }
+});
+$('#property-cancel').onclick = () => picker.close();
+propertyForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const { selected: p, oid } = picking;
+  if (!p) return;
+  const { day, via, price, rent } = propertyForm.elements;
+  const then = Array.isArray(p.now) ? [price.valueAsNumber, rent.valueAsNumber] : price.valueAsNumber;
+  picker.close();
+  state.focusAfter = 'addintro:' + oid;
+  state.introsClosed.delete(oid);
+  commit('매물 소개 기록을 추가했습니다', () => {
+    introOwner(oid).list.unshift({ id: newId('m'), name: p.name, spec: p.spec, now: clone(p.now), then,
+      d: day.value, via: via.value, rx: 'wait', memo: '' });
+  });
+});
 
 /* ───────── 필터와 검색 ───────── */
 const chipCount = () => ['assignee', 'next', 'status'].filter((k) => state.f[k].size).length;
@@ -782,7 +897,7 @@ function renderBar() {
     const say = on ? (state.sort.dir === 'asc' ? '오름차순' : '내림차순') : '정렬 안 함';
     return `<button class="hc" data-act="sort" data-key="${key}" data-fid="sort:${key}" aria-label="${label} 정렬, 지금 ${say}">${ico(icon, 'sm')}${label}${on ? ico('sort', 'xs dir ' + state.sort.dir) : ''}</button>`;
   };
-  $('#head').innerHTML = `<span></span>${sortBtn('name', '고객', 'user')}<span class="hc">${ico('doc', 'sm')}의뢰</span><span class="hc">${ico('badge', 'sm')}담당</span>${sortBtn('next', '다음 연락', 'cal')}<span></span>`;
+  $('#head').innerHTML = `<span></span>${sortBtn('name', '고객', 'user')}<span class="hc">${ico('note', 'sm')}최근 상담</span><span class="hc">의뢰</span><span class="hc">${ico('badge', 'sm')}담당</span>${sortBtn('next', '다음 연락', 'cal')}<span></span>`;
 }
 
 /* ───────── 그리기: 줄 ───────── */
@@ -808,27 +923,7 @@ function custHTML(c) {
   const open = state.open.has(c.id);
   const inquiry = !c.intakes.length;
   const names = custAssignees(c);
-  const order = { open: 0, hold: 1, closed: 2 };
-  const sorted = [...c.intakes].sort((a, b) => order[a.status] - order[b.status]);
-  const introN = introCount(c);
-
-  let req;
-  if (open) {
-    req = `<span class="f12">${inquiry ? '의뢰 없음' : `의뢰 ${c.intakes.length}건`}${c.cases.length ? ` · 중개 건 ${c.cases.length}` : ''}</span>`;
-  } else {
-    const last = c.consultations[0];
-    const segs = inquiry
-      ? `<span class="seg inq" title="${esc(last ? last.text : '')}"><span class="kind none">의뢰 없음</span>${last ? esc(last.text) : '상담 기록 없음'}</span>`
-      : sorted.slice(0, 2).map((i) =>
-        `<span class="seg${i.status === 'open' ? '' : ' off'}" title="${esc(intakeLabel(i) + ' · ' + i.desc)}"><span class="kind ${i.kind}">${KIND[i.kind]}</span>${TX[i.tx]} · ${esc(i.short)}${i.status === 'open' ? '' : ` · ${STATUS[i.status]}`}</span>`).join('');
-    const meta = [
-      sorted.length > 2 ? `<span>외 ${sorted.length - 2}건</span>` : '',
-      c.cases.length ? `<span title="${esc('중개 건: ' + c.cases.map((k) => k.title).join(', '))}" class="casetag">${ico('link', 'sm')}<span class="tr">${esc(c.cases[0].title)}</span></span>` : '',
-      introN ? `<span class="num">소개 ${introN}</span>` : '',
-    ].join('');
-    req = `<span class="segs">${segs}</span><span class="meta">${meta}</span>`;
-  }
-
+  const latest = c.consultations[0]?.text;
   // 의뢰가 없는 동안에는 접수한 사람을 고객 줄에서 바로 바꾼다. 의뢰가 생기면 담당은 의뢰마다 정한다.
   const asgOn = state.menu?.kind === 'choice' && state.menu.anchor === `casg:${c.id}`;
   const asg = inquiry
@@ -839,7 +934,8 @@ function custHTML(c) {
     <div class="row crow" data-cid="${c.id}">
       <button class="tog" data-act="toggle" data-id="${c.id}" data-fid="tog:${c.id}" aria-expanded="${open}" aria-label="${esc(c.name)} ${open ? '접기' : '펼치기'}">${ico('chev', 'sm')}</button>
       <div class="cell c-name"><span class="nm tr" title="${esc(c.name)}">${esc(c.name)}</span>${c.phone ? `<span class="ph num">${esc(c.phone)}</span>` : ''}</div>
-      <div class="cell c-req">${req}</div>
+      <div class="cell"><span class="summary tr" title="${esc(latest || '')}">${latest ? esc(latest) : '<span class="dash">—</span>'}</span></div>
+      <div class="cell num">${inquiry ? '<span class="dash">—</span>' : c.intakes.length + '건'}</div>
       <div class="cell c-asg tr">${asg}</div>
       <div class="cell c-next">${nextButton(`next:c:${c.id}`, c)}</div>
       <div class="cell c-act"><button class="tool" data-act="compose" data-cid="${c.id}" data-fid="cq:${c.id}" title="상담 추가" aria-label="${esc(c.name)} 상담 추가">${ico('note')}</button></div>
@@ -966,7 +1062,7 @@ function introHTML(it, m) {
 const tallyOf = (list) => ['like', 'think', 'no', 'wait'].map((k) => [k, list.filter((m) => m.rx === k).length]).filter(([, v]) => v).map(([k, v]) => `${RX[k]} ${v}`).join(' · ');
 function addIntroButton(oid, label) {
   const on = state.menu?.kind === 'choice' && state.menu.anchor === `addintro:${oid}`;
-  return `<button class="btn-text f12" data-act="addintro" data-oid="${oid}" data-fid="addintro:${oid}" aria-haspopup="menu" aria-expanded="${on}">${ico('plus', 'xs')}${label}</button>`;
+  return `<button class="btn-text f12" data-act="addintro" data-oid="${oid}" data-fid="addintro:${oid}" aria-haspopup="${label === '매물 소개 기록' ? 'dialog' : 'menu'}" ${label === '매물 소개 기록' ? '' : 'aria-expanded="' + on + '"'}>${ico('plus', 'xs')}${label}</button>`;
 }
 
 // 의뢰 없이 고객에게 소개한 매물. 의뢰가 없는 고객에게는 늘 보이고, 의뢰가 생긴 뒤에는 기록이 남아 있을 때만 보인다.
@@ -990,10 +1086,10 @@ function intakeHTML(c, it, stepNo) {
       <span class="step num${stepNo ? '' : ' none'}" ${stepNo ? `title="진행 계획 ${stepNo}번째"` : 'aria-hidden="true"'}>${stepNo || ''}</span>
       <span class="kind ${it.kind}">${KIND[it.kind]}</span><span class="tx">${TX[it.tx]}</span>
       <span class="desc tr" title="${esc(it.desc)}">${esc(it.desc)}${it.kind === 'listing' ? ` · <span class="num">${won(it.price)}</span>` : ''}</span>
-      <button class="pill ${it.status}" data-act="status" data-id="${it.id}" data-fid="status:${it.id}" aria-haspopup="menu" aria-expanded="${menuOn('status')}" aria-label="${esc(who)} 상태 ${STATUS[it.status]}. 바꾸기"><span class="dot"></span>${STATUS[it.status]}</button>
+    </div>
+    <div class="cell"><button class="pill ${it.status}" data-act="status" data-id="${it.id}" data-fid="status:${it.id}" aria-haspopup="menu" aria-expanded="${menuOn('status')}" aria-label="${esc(who)} 상태 ${STATUS[it.status]}. 바꾸기"><span class="dot"></span>${STATUS[it.status]}</button>
     </div>
     <div class="cell"><button class="cellbtn" data-act="asg" data-id="${it.id}" data-fid="asg:${it.id}" aria-haspopup="menu" aria-expanded="${menuOn('asg')}" aria-label="${esc(who)} 담당 ${esc(it.assignee)}. 바꾸기">${esc(it.assignee)}</button></div>
-    <div></div><div></div>
   </div>${intakeIntrosHTML(it)}`;
 }
 
@@ -1003,7 +1099,7 @@ function intakeIntrosHTML(it) {
   const add = it.status === 'closed' ? '' : addIntroButton(it.id, it.kind === 'demand' ? '매물 소개 기록' : '손님 소개 기록');
   if (!n) return `<div class="intros"><div class="intros-h"><span class="f12" style="padding-left:2px">${label} 없음</span>${add}</div></div>`;
   const open = !state.introsClosed.has(it.id);
-  const head = `<div class="intros-h"><button class="intros-tog" data-act="intros" data-id="${it.id}" data-fid="intros:${it.id}" aria-expanded="${open}">${ico('chev', 'xs')}${label} <b class="num">${n}</b></button>${open ? '' : `<span class="f12">${tallyOf(it.intros)}</span>`}</div>`;
+  const head = `<div class="intros-h"><button class="intros-tog" data-act="intros" data-id="${it.id}" data-fid="intros:${it.id}" aria-expanded="${open}">${ico('chev', 'xs')}${label} <b class="num">${n}</b></button>${open ? '' : `<span class="f12">${tallyOf(it.intros)}</span>${add}`}</div>`;
   if (!open) return `<div class="intros">${head}</div>`;
   return `<div class="intros">${head}<div class="intro-list">${it.intros.map((m) => introHTML(it, m)).join('')}</div><div class="intros-add">${add}</div></div>`;
 }
@@ -1054,7 +1150,7 @@ function expHTML(c) {
   const cases = c.cases.map((k) => {
     const steps = k.steps.map((s, i) => {
       if (s.intake) { const it = c.intakes.find((x) => x.id === s.intake); return it ? intakeHTML(c, it, i + 1) : ''; }
-      return `<div class="irow"><div class="i-main"><span class="step num" title="진행 계획 ${i + 1}번째">${i + 1}</span><span class="desc" style="color:var(--fg-sub)">${esc(s.title)}</span>${s.target ? `<span class="f12 num">${ymd(s.target)} 목표</span>` : ''}</div><div></div><div></div><div></div></div>`;
+      return `<div class="irow"><div class="i-main"><span class="step num" title="진행 계획 ${i + 1}번째">${i + 1}</span><span class="desc" style="color:var(--fg-sub)">${esc(s.title)}</span>${s.target ? `<span class="f12 num">${ymd(s.target)} 목표</span>` : ''}</div><div></div><div></div></div>`;
     }).join('');
     return `<div class="case"><div class="case-head">${ico('link', 'sm')}<b>${esc(k.title)}</b><span class="f12">중개 건 · 순서는 직접 정함</span></div><div class="case-body">${steps}</div></div>`;
   }).join('');
@@ -1066,7 +1162,7 @@ function expHTML(c) {
   const addBtn = formOpen ? '' : `<button class="btn-text f12" data-act="iopen" data-cid="${c.id}" data-fid="iadd:${c.id}">${ico('plus', 'xs')}${resume ? '의뢰 등록 이어서' : '의뢰 등록'}</button>`;
   // 의뢰가 없으면 그 사실을 한 줄로 보여 주고(가짜 의뢰를 만들지 않는다) 여기서 첫 의뢰를 등록한다.
   const intakes = c.intakes.length
-    ? `<div class="tree">${cases}${looseHTML}${addBtn ? `<div class="tree-add">${addBtn}</div>` : ''}</div>`
+    ? `<div class="intake-heading"><strong>의뢰 ${c.intakes.length}건</strong>${addBtn}</div><div class="intake-columns"><span>거래 조건 · 소재지</span><span>상태</span><span>담당</span></div><div class="tree">${cases}${looseHTML}</div>`
     : `<div class="kv"><span class="k">의뢰</span><div class="v"><span class="empty">아직 없습니다. 조건이 정해지면 등록합니다.</span></div><span class="acts">${addBtn}</span></div>`;
 
   return `<div class="exp${state.just === c.id ? ' just' : ''}" role="region" aria-label="${esc(c.name)} 상세">
@@ -1076,6 +1172,8 @@ function expHTML(c) {
       ${composerHTML(c)}
       ${nextLineHTML(c)}
       ${customerIntrosHTML(c)}
+    </div>
+    <div class="intake-panel">
       ${intakes}
       ${intakeFormHTML(c)}
     </div>
@@ -1500,19 +1598,18 @@ const ACT = {
     const owner = introOwner(d.oid);
     if (!owner) return;
     const listing = owner.it?.kind === 'listing';
-    const list = candidates(owner.c, owner.it);
+    if (!listing) { openPropertyPicker(d.oid, owner); return; }
+    const list = buyerCandidates(owner.c, owner.it);
     const options = list.length
-      ? list.map((p, i) => ({ v: i, label: shownName(p), sub: listing ? p.spec : `${p.spec} · ${won(p.now)}` }))
+      ? list.map((p, i) => ({ v: i, label: shownName(p), sub: p.spec }))
       : [{ disabled: true, label: '이 시안에는 더 고를 후보가 없습니다' }];
-    choice(el, listing ? '오늘 소개한 손님' : '오늘 소개한 매물', options, null, (v) => {
+    choice(el, '오늘 소개한 손님', options, null, (v) => {
       const p = list[v];
       commit('소개 기록을 추가했습니다. 가격은 오늘 기준으로 남깁니다', () => {
         const o = introOwner(d.oid);
         const id = newId('m');
         const who = p.cid ? { cid: p.cid, name: shownName(p) } : { name: p.name };
-        o.list.unshift(listing
-          ? { id, ...who, spec: p.spec, d: TODAY, via: '문자', then: clone(o.it.price), rx: 'wait', memo: '' }
-          : { id, ...who, spec: p.spec, d: TODAY, via: '문자', then: clone(p.now), now: clone(p.now), rx: 'wait', memo: '' });
+        o.list.unshift({ id, ...who, spec: p.spec, d: TODAY, via: '문자', then: clone(o.it.price), rx: 'wait', memo: '' });
       });
       state.introsClosed.delete(d.oid);
     });

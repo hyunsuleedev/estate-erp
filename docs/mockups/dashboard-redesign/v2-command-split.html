@@ -1,0 +1,904 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>V2 · 커맨드 워크벤치 — Estait Flow 대시보드</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./shared-shell.css">
+<link rel="stylesheet" href="./shared-hero.css">
+<style>
+  .req-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 9px;
+    background: var(--destructive-soft);
+    border: 1px solid rgba(187, 52, 48, 0.16);
+    font-size: 13px;
+    color: var(--fg);
+    cursor: pointer;
+    transition: background-color 140ms ease;
+  }
+  .req-banner:hover {
+    background: #ffd4cd;
+  }
+
+  .cmd-grid {
+    display: grid;
+    grid-template-columns: minmax(270px, 315px) minmax(0, 1fr) minmax(280px, 325px);
+    gap: 12px;
+    flex: 1;
+    min-height: 460px;
+  }
+
+  .pane {
+    background: var(--bg);
+    border-radius: 12px;
+    box-shadow: var(--shadow-card);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .pane-head {
+    padding: 11px 13px 9px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: none;
+  }
+  .pane-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .pane-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13.5px;
+    font-weight: 600;
+  }
+  .pane-title svg {
+    color: var(--icon);
+  }
+  .kbd-hint {
+    font-size: 11px;
+    color: var(--fg3);
+    background: var(--muted);
+    border: 1px solid var(--input);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+
+  .filter-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .pill-btn {
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--fg2);
+    background: var(--muted);
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+  .pill-btn:hover {
+    background: var(--hover-strong);
+  }
+  .pill-btn[aria-pressed='true'] {
+    background: var(--fg);
+    color: #ffffff;
+  }
+
+  .pane-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .queue-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 9px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .queue-item:hover {
+    background: var(--hover);
+  }
+  .queue-item.selected {
+    background: var(--muted);
+    border-color: var(--input);
+  }
+  .queue-main {
+    flex: 1;
+    min-width: 0;
+  }
+  .queue-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 2px;
+  }
+  .queue-title {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--fg);
+    line-height: 17px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .queue-sub {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--fg3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .queue-footer {
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+    background: var(--muted);
+  }
+  .queue-footer input {
+    width: 100%;
+    height: 28px;
+    padding: 0 9px;
+    border-radius: 6px;
+    border: 1px solid var(--input);
+    background: var(--bg);
+    font-size: 12.5px;
+    outline: none;
+  }
+  .queue-footer input:focus {
+    border-color: var(--ring);
+  }
+
+  /* 중앙 워크스페이스 */
+  .center-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .mini-week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .mini-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 5px 2px;
+    border-radius: 7px;
+    font-size: 11px;
+    color: var(--fg3);
+  }
+  .mini-day:hover {
+    background: var(--hover);
+  }
+  .mini-day[aria-pressed='true'] {
+    background: var(--sel);
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .mini-day.today .num-pill {
+    background: var(--destructive);
+    color: #ffffff;
+  }
+  .num-pill {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  .sched-chip-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sched-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 12.5px;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .sched-row:hover {
+    background: var(--hover);
+  }
+  .sched-row.selected {
+    background: var(--muted);
+    border-color: var(--fg3);
+  }
+
+  .deal-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .deal-card {
+    padding: 10px 11px;
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    transition: background-color 140ms ease, border-color 140ms ease;
+  }
+  .deal-card:hover {
+    background: var(--muted);
+  }
+  .deal-card.selected {
+    background: var(--muted);
+    border-color: var(--info);
+    box-shadow: 0 0 0 1px rgba(35, 131, 226, 0.25);
+  }
+  .deal-bar {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 3px;
+  }
+  .deal-bar span {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--secondary);
+  }
+  .deal-bar span.done {
+    background: var(--fg);
+  }
+  .deal-bar span.curr {
+    background: var(--info);
+  }
+
+  /* 우측 인스펙터 */
+  .insp-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .insp-box {
+    background: var(--muted);
+    border-radius: 9px;
+    padding: 11px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .insp-kv {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12.5px;
+  }
+  .insp-kv span:first-child {
+    color: var(--fg3);
+  }
+  .insp-kv span:last-child {
+    font-weight: 500;
+    text-align: right;
+  }
+  .insp-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  @media (max-width: 1250px) {
+    .cmd-grid {
+      grid-template-columns: 265px minmax(0, 1fr) 280px;
+    }
+  }
+  @media (max-width: 1020px) {
+    .cmd-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+<script src="./shared-data.js"></script>
+<script src="./shared-hero.js"></script>
+<script src="./shared-shell.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const Data = window.DashMockData;
+  const shell = window.mountDashShell({ activeId: 'v2' });
+
+  const initial = Data.getScopedData();
+  const hero = window.mountDashHero(shell.heroHostEl, {
+    officeName: Data.state.officeName,
+    userName: Data.state.userName,
+    scope: initial.scope,
+    counts: initial.heroCounts,
+    flags: initial.heroFlags,
+    onScopeChange: (nextScope) => Data.setScope(nextScope),
+    onPin: (pin) => {
+      if (pin === 'schedule') {
+        Data.selectDay(Data.getScopedData().todayKey);
+        const firstEv = Data.getScopedData().todayEvents[0];
+        if (firstEv) uiState.selection = { type: 'event', id: firstEv.id };
+      } else {
+        uiState.queueFilter = 'task';
+        const d = Data.getScopedData();
+        const target = pin === 'overdue' ? d.overdueTasks[0] : d.todayTasks[0] || d.openTasks[0];
+        if (target) uiState.selection = { type: 'task', id: target.id };
+      }
+      render();
+    },
+    onQuickCreate: (btn) => shell.openQuickCreate(btn),
+  });
+  shell.bindHero(hero);
+
+  const uiState = {
+    queueFilter: 'all', // 'all' | 'task' | 'verify' | 'call_ad'
+    selection: { type: 'task', id: 'task-1' },
+    taskDraft: '',
+  };
+
+  function buildQueueItems(d) {
+    const items = [];
+    for (const t of d.openTasks) {
+      items.push({
+        type: 'task',
+        id: t.id,
+        filterGroup: 'task',
+        sortScore: t.dueOffsetDays < 0 ? 10 + t.dueOffsetDays : t.dueOffsetDays === 0 ? 30 : 70 + t.dueOffsetDays,
+        badge: t.dueOffsetDays < 0 ? `${Math.abs(t.dueOffsetDays)}일 지남` : t.categoryLabel,
+        tone: t.dueOffsetDays < 0 ? 'destructive' : t.dueOffsetDays === 0 ? 'info' : 'gray',
+        title: t.title,
+        sub: [t.propertyLabel, t.contactName, Data.relativeDateLabel(t.dueOffsetDays)].filter(Boolean).join(' · '),
+        raw: t,
+      });
+    }
+    for (const c of d.pendingSuggestions) {
+      items.push({
+        type: 'call',
+        id: c.id,
+        filterGroup: 'call_ad',
+        sortScore: c.kind === 'missed_call' ? 15 : 42,
+        badge: c.badge,
+        tone: c.tone,
+        title: `${c.contactName} — ${c.suggestionAction}`,
+        sub: c.summary,
+        raw: c,
+      });
+    }
+    for (const s of d.activeSignals) {
+      items.push({
+        type: 'signal',
+        id: s.id,
+        filterGroup: s.kind === 'verify_overdue' ? 'verify' : 'call_ad',
+        sortScore: s.kind === 'verify_overdue' ? 22 : 48,
+        badge: s.badge,
+        tone: s.tone,
+        title: s.title,
+        sub: s.sub,
+        raw: s,
+      });
+    }
+    items.sort((a, b) => a.sortScore - b.sortScore);
+    return items.filter((item) => uiState.queueFilter === 'all' || item.filterGroup === uiState.queueFilter);
+  }
+
+  function renderInspector(d, queueItems) {
+    const sel = uiState.selection;
+    if (sel?.type === 'deal') {
+      const deal = Data.state.deals.find((x) => x.id === sel.id);
+      if (deal) {
+        const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray', step: 1 };
+        return `
+          <div>
+            <div style="display:flex;gap:6px;margin-bottom:6px">
+              <span class="badge sm" data-tone="${st.tone}">${st.label}</span>
+              <span class="badge sm" data-tone="${deal.health === 'overdue' ? 'destructive' : deal.health === 'urgent' ? 'orange' : 'gray'}">${deal.healthText}</span>
+            </div>
+            <h3 style="font-size:16px;font-weight:600;line-height:22px">${deal.siteName} ${deal.dongHo}</h3>
+            <div style="font-size:12px;color:var(--fg3);margin-top:2px">담당 ${deal.assignee}${deal.isJointBrokerage ? ` · 공동중개 (${deal.partnerName})` : ''}</div>
+          </div>
+          <div class="insp-box">
+            <div class="insp-kv"><span>거래 조건</span><span class="num">${deal.amountText}</span></div>
+            <div class="insp-kv"><span>예상 중개보수</span><span class="num">${deal.commissionExpectedManwon.toLocaleString('ko-KR')}만</span></div>
+            <div class="insp-kv"><span>매도·임대인</span><span>${deal.sellerName} (${deal.sellerPhone})</span></div>
+            <div class="insp-kv"><span>매수·임차인</span><span>${deal.buyerName} (${deal.buyerPhone})</span></div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--fg2);margin-bottom:6px">대금 스케줄</div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              ${deal.payments
+                .map(
+                  (p, idx) => `
+                <div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--border);border-radius:7px">
+                  <button type="button" class="chk" data-insp-pay="${deal.id}:${idx}" aria-checked="${p.paid}">
+                    <svg viewBox="0 0 12 12"><path pathLength="1" d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+                  </button>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:12.5px;font-weight:500">${p.kind} · <span class="num">${p.amount}</span></div>
+                    <div style="font-size:11px;color:var(--fg3)" class="num">${Data.relativeDateLabel(p.dateOffset)}</div>
+                  </div>
+                  <span class="badge sm" data-tone="${p.paid ? 'success' : 'warning'}">${p.paid ? '완료' : '예정'}</span>
+                </div>`,
+                )
+                .join('')}
+            </div>
+          </div>
+          <div class="insp-box">
+            <div style="font-size:11.5px;font-weight:600;color:var(--fg2)">특약·메모</div>
+            <div style="font-size:12.5px;line-height:18px;color:var(--fg)">${shell.escapeHtml(deal.specialTerms)}</div>
+          </div>
+        `;
+      }
+    }
+
+    if (sel?.type === 'event') {
+      const ev = Data.state.events.find((x) => x.id === sel.id);
+      if (ev) {
+        return `
+          <div>
+            <span class="badge sm" data-tone="orange" style="margin-bottom:6px">일정</span>
+            <h3 style="font-size:16px;font-weight:600;line-height:22px">${shell.escapeHtml(ev.title)}</h3>
+            <div style="font-size:12px;color:var(--fg3);margin-top:2px" class="num">${Data.formatHour(ev.hour)} · 담당 ${ev.assignee}</div>
+          </div>
+          <div class="insp-box">
+            <div class="insp-kv"><span>장소·매물</span><span>${shell.escapeHtml(ev.propertyLabel)}</span></div>
+            <div class="insp-kv"><span>관련 고객</span><span>${shell.escapeHtml(ev.contactName)}</span></div>
+          </div>
+          <div class="insp-box">
+            <div style="font-size:11.5px;font-weight:600;color:var(--fg2)">일정 메모</div>
+            <div style="font-size:12.5px;line-height:18px">${shell.escapeHtml(ev.memo)}</div>
+          </div>
+        `;
+      }
+    }
+
+    // Queue selection fallback
+    let q = queueItems.find((x) => x.type === sel?.type && x.id === sel?.id) || queueItems[0];
+    if (!q) {
+      return '<div style="padding:30px 10px;text-align:center;font-size:13px;color:var(--fg3)">대기 중인 항목을 모두 처리했습니다. 중앙의 거래나 일정을 눌러 상세를 볼 수 있습니다.</div>';
+    }
+    uiState.selection = { type: q.type, id: q.id };
+
+    if (q.type === 'task') {
+      const t = q.raw;
+      return `
+        <div>
+          <span class="badge sm" data-tone="${q.tone}" style="margin-bottom:6px">${q.badge}</span>
+          <h3 style="font-size:15.5px;font-weight:600;line-height:22px">${shell.escapeHtml(t.title)}</h3>
+          <div style="font-size:12px;color:var(--fg3);margin-top:2px">담당 ${t.assignee} · ${Data.relativeDateLabel(t.dueOffsetDays)} ${t.dueTime}</div>
+        </div>
+        <div class="insp-box">
+          <div class="insp-kv"><span>관련 매물</span><span>${shell.escapeHtml(t.propertyLabel || '—')}</span></div>
+          <div class="insp-kv"><span>고객</span><span>${shell.escapeHtml(t.contactName || '—')}</span></div>
+          <div class="insp-kv"><span>연락처</span><span class="num">${shell.escapeHtml(t.contactPhone || '—')}</span></div>
+        </div>
+        <div class="insp-box">
+          <div style="font-size:11.5px;font-weight:600;color:var(--fg2)">업무 맥락</div>
+          <div style="font-size:12.5px;line-height:18px">${shell.escapeHtml(t.memo)}</div>
+        </div>
+        <div>
+          <div style="font-size:11.5px;font-weight:600;color:var(--fg2);margin-bottom:6px">즉시 처리</div>
+          <div class="insp-actions">
+            <button type="button" class="btn btn-primary" data-insp-task-done="${t.id}">완료 처리</button>
+            <button type="button" class="btn btn-outline" data-insp-task-snooze="${t.id}:1">내일로</button>
+            <button type="button" class="btn btn-outline" data-insp-task-snooze="${t.id}:3">3일 뒤</button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (q.type === 'call') {
+      const c = q.raw;
+      return `
+        <div>
+          <span class="badge sm" data-tone="${c.tone}" style="margin-bottom:6px">${c.badge}</span>
+          <h3 style="font-size:15.5px;font-weight:600;line-height:22px">${shell.escapeHtml(c.contactName)}</h3>
+          <div style="font-size:12px;color:var(--fg3);margin-top:2px" class="num">${c.phone} · ${c.timeAgo}</div>
+        </div>
+        <div class="insp-box">
+          <div style="font-size:11.5px;font-weight:600;color:var(--fg2)">통화 발화 근거</div>
+          <div style="font-size:12.5px;line-height:18px">${shell.escapeHtml(c.summary)}</div>
+        </div>
+        <div class="insp-box">
+          <div style="font-size:11.5px;font-weight:600;color:var(--info-strong)">제안 동작</div>
+          <div style="font-size:13px;font-weight:600">${shell.escapeHtml(c.suggestionAction)}</div>
+        </div>
+        <div class="insp-actions">
+          <button type="button" class="btn btn-info" data-insp-call-accept="${c.id}">업무·일정에 반영</button>
+          <button type="button" class="btn btn-outline" data-insp-call-dismiss="${c.id}">무시</button>
+        </div>
+      `;
+    }
+
+    const s = q.raw;
+    return `
+      <div>
+        <span class="badge sm" data-tone="${s.tone}" style="margin-bottom:6px">${s.badge}</span>
+        <h3 style="font-size:15.5px;font-weight:600;line-height:22px">${shell.escapeHtml(s.title)}</h3>
+        <div style="font-size:12px;color:var(--fg3);margin-top:2px">${shell.escapeHtml(s.owner)}</div>
+      </div>
+      <div class="insp-box">
+        <div style="font-size:11.5px;font-weight:600;color:var(--fg2)">상세 내용</div>
+        <div style="font-size:12.5px;line-height:18px">${shell.escapeHtml(s.sub)}</div>
+      </div>
+      <div class="insp-actions">
+        ${
+          s.kind === 'verify_overdue'
+            ? `<button type="button" class="btn btn-success" data-insp-sig="${s.id}:정상 확인">정상 확인</button>
+               <button type="button" class="btn btn-info" data-insp-sig="${s.id}:가격 변동 반영">가격 변동</button>
+               <button type="button" class="btn btn-outline" data-insp-sig="${s.id}:부재중 기록">부재중</button>`
+            : `<button type="button" class="btn btn-primary" data-insp-sig="${s.id}:조치 완료">조치 완료</button>`
+        }
+      </div>
+    `;
+  }
+
+  function render() {
+    const d = Data.getScopedData();
+    hero.setScope(d.scope);
+    hero.updateCounts(d.heroCounts);
+    hero.setFlags(d.heroFlags);
+
+    const queueItems = buildQueueItems(d);
+    const reqNotice = d.unreadRequiredNotices[0];
+
+    shell.contentHostEl.innerHTML = `
+      ${
+        reqNotice
+          ? `<div class="req-banner" data-notice-id="${reqNotice.id}" role="button" tabindex="0">
+              <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                <span class="badge sm" data-tone="destructive">필독 공지</span>
+                <span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${shell.escapeHtml(reqNotice.title)}</span>
+              </div>
+              <span style="font-size:12px;font-weight:600;color:var(--destructive-strong);white-space:nowrap">전문 읽기 →</span>
+            </div>`
+          : ''
+      }
+
+      <div class="cmd-grid">
+        <section class="pane" aria-label="통합 액션 큐">
+          <div class="pane-head">
+            <div class="pane-title-row">
+              <div class="pane-title">
+                <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><path d="M13 6h8M13 12h8M13 18h8"/></svg>
+                <span>지금 처리할 것</span>
+                <span class="num" style="color:var(--fg3);font-weight:500">${queueItems.length}</span>
+              </div>
+              <span class="kbd-hint" title="키보드 탐색">J / K</span>
+            </div>
+            <div class="filter-pills">
+              <button type="button" class="pill-btn" data-qf="all" aria-pressed="${uiState.queueFilter === 'all'}">전체</button>
+              <button type="button" class="pill-btn" data-qf="task" aria-pressed="${uiState.queueFilter === 'task'}">할 일</button>
+              <button type="button" class="pill-btn" data-qf="verify" aria-pressed="${uiState.queueFilter === 'verify'}">매물확인</button>
+              <button type="button" class="pill-btn" data-qf="call_ad" aria-pressed="${uiState.queueFilter === 'call_ad'}">통화·광고</button>
+            </div>
+          </div>
+          <div class="pane-scroll">
+            ${
+              queueItems.length === 0
+                ? '<div style="padding:24px 8px;text-align:center;font-size:12.5px;color:var(--fg3)">대기 항목이 없습니다.</div>'
+                : queueItems
+                    .map((item) => {
+                      const isSel = uiState.selection?.type === item.type && uiState.selection?.id === item.id;
+                      return `
+                <div class="queue-item${isSel ? ' selected' : ''}" data-q-type="${item.type}" data-q-id="${item.id}" tabindex="0">
+                  ${
+                    item.type === 'task'
+                      ? `<button type="button" class="chk" style="margin-top:2px" data-q-done="${item.id}" aria-checked="false" aria-label="완료">
+                          <svg viewBox="0 0 12 12"><path pathLength="1" d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+                        </button>`
+                      : `<span style="width:16px;height:16px;display:grid;place-items:center;margin-top:1px"><i style="width:7px;height:7px;border-radius:50%;background:var(--${item.tone === 'destructive' ? 'destructive' : item.tone === 'violet' ? 'violet' : 'info'})"></i></span>`
+                  }
+                  <div class="queue-main">
+                    <div class="queue-top">
+                      <span class="badge sm" data-tone="${item.tone}">${item.badge}</span>
+                      ${item.type === 'task' ? `<span class="num" style="font-size:11px;color:var(--fg3)">${item.raw.dueTime}</span>` : ''}
+                    </div>
+                    <div class="queue-title">${shell.escapeHtml(item.title)}</div>
+                    <div class="queue-sub">${shell.escapeHtml(item.sub)}</div>
+                  </div>
+                </div>`;
+                    })
+                    .join('')
+            }
+          </div>
+          <form class="queue-footer" data-role="v2AddForm">
+            <input type="text" data-role="v2TaskInput" value="${shell.escapeHtml(uiState.taskDraft)}" placeholder="+ 할 일 빠르게 추가 후 Enter" aria-label="할 일 빠른 추가">
+          </form>
+        </section>
+
+        <section class="pane" aria-label="일정과 진행 거래">
+          <div class="pane-head">
+            <div class="pane-title-row">
+              <div class="pane-title">
+                <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                <span>주간 일정 & 진행 거래</span>
+              </div>
+              <span class="num" style="font-size:12px;color:var(--fg2)">이달 수금 <b>${Data.formatMoneyManwon(d.summary.collectedManwon)}</b> (${d.summary.collectionPct}%)</span>
+            </div>
+          </div>
+          <div class="center-wrap">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div class="mini-week">
+                ${d.weekDays
+                  .map(
+                    (wd) => `
+                  <button type="button" class="mini-day${wd.isToday ? ' today' : ''}" data-v2-day="${wd.key}" aria-pressed="${wd.key === d.selectedDayKey}">
+                    <span>${wd.weekday}</span>
+                    <span class="num-pill num">${wd.dayNum}</span>
+                    <span style="font-size:10px;color:var(--fg3)" class="num">${(d.eventCountByDay[wd.key] || 0) > 0 ? `${d.eventCountByDay[wd.key]}건` : '·'}</span>
+                  </button>`,
+                  )
+                  .join('')}
+              </div>
+              <div class="sched-chip-list">
+                ${
+                  d.selectedDayEvents.length === 0
+                    ? '<div style="font-size:12px;color:var(--fg3);padding:4px">선택한 날 일정이 없습니다.</div>'
+                    : d.selectedDayEvents
+                        .map((ev) => {
+                          const isSel = uiState.selection?.type === 'event' && uiState.selection?.id === ev.id;
+                          return `
+                    <div class="sched-row${isSel ? ' selected' : ''}" data-sel-event="${ev.id}">
+                      <span class="num" style="font-weight:600;width:42px">${Data.formatHour(ev.hour)}</span>
+                      <span style="flex:1;min-width:0;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${shell.escapeHtml(ev.title)}</span>
+                      <span style="font-size:11px;color:var(--fg3);white-space:nowrap">${shell.escapeHtml(ev.contactName)}</span>
+                    </div>`;
+                        })
+                        .join('')
+                }
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span style="font-size:12.5px;font-weight:600;color:var(--fg2)">진행 거래 타임라인 (${d.deals.length})</span>
+                <span style="font-size:11.5px;color:var(--fg3)">클릭해 우측에서 대금 확인</span>
+              </div>
+              <div class="deal-cards">
+                ${d.deals
+                  .map((deal) => {
+                    const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray', step: 1 };
+                    const isSel = uiState.selection?.type === 'deal' && uiState.selection?.id === deal.id;
+                    return `
+                  <div class="deal-card${isSel ? ' selected' : ''}" data-sel-deal="${deal.id}">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                      <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${deal.siteName} ${deal.dongHo}</div>
+                      <div style="display:flex;align-items:center;gap:5px;flex:none">
+                        <span class="badge sm" data-tone="${st.tone}">${st.label}</span>
+                        <span class="badge sm" data-tone="${deal.health === 'overdue' ? 'destructive' : deal.health === 'urgent' ? 'orange' : 'gray'}">${deal.healthText}</span>
+                      </div>
+                    </div>
+                    <div class="deal-bar">${[1, 2, 3, 4, 5].map((i) => `<span class="${i < st.step ? 'done' : i === st.step ? 'curr' : ''}"></span>`).join('')}</div>
+                    <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--fg2)">
+                      <span class="num">${deal.amountText} · ${deal.sellerName} ↔ ${deal.buyerName}</span>
+                      <span>담당 ${deal.assignee}</span>
+                    </div>
+                  </div>`;
+                  })
+                  .join('')}
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+              <span style="font-size:11.5px;font-weight:600;color:var(--fg3);margin-right:2px">공지사항</span>
+              ${d.unreadNotices.length > 0 ? `<span class="badge sm" data-tone="info">안 읽음 ${d.unreadNotices.length}</span>` : ''}
+              <div style="display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:0">
+                ${d.notices
+                  .slice(0, 3)
+                  .map(
+                    (n) => `
+                  <button type="button" class="btn btn-ghost btn-xs" data-notice-id="${n.id}" style="max-width:190px;justify-content:flex-start;gap:5px;color:${n.readAt ? 'var(--fg3)' : 'var(--fg)'};font-weight:${n.readAt ? 400 : 600}">
+                    <span style="width:5px;height:5px;border-radius:50%;flex:none;background:${n.readAt ? 'var(--fg3)' : 'var(--info)'};opacity:${n.readAt ? 0.35 : 1}"></span>
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${shell.escapeHtml(n.title)}</span>
+                  </button>`,
+                  )
+                  .join('')}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="pane" aria-label="라이브 인스펙터">
+          <div class="pane-head">
+            <div class="pane-title-row">
+              <div class="pane-title">
+                <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                <span>라이브 인스펙터</span>
+              </div>
+              <span style="font-size:11px;color:var(--fg3)">바로 처리</span>
+            </div>
+          </div>
+          <div class="insp-body">${renderInspector(d, queueItems)}</div>
+        </aside>
+      </div>
+    `;
+
+    const root = shell.contentHostEl;
+
+    root.querySelectorAll('[data-notice-id]').forEach((el) =>
+      el.addEventListener('click', () => {
+        const n = Data.state.notices.find((x) => x.id === el.dataset.noticeId);
+        if (n) shell.openNoticeModal(n);
+      }),
+    );
+
+    root.querySelectorAll('[data-qf]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        uiState.queueFilter = btn.dataset.qf;
+        render();
+      }),
+    );
+
+    root.querySelectorAll('[data-q-type]').forEach((row) =>
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('[data-q-done]')) return;
+        uiState.selection = { type: row.dataset.qType, id: row.dataset.qId };
+        render();
+      }),
+    );
+
+    root.querySelectorAll('[data-q-done]').forEach((chk) =>
+      chk.addEventListener('click', (e) => {
+        e.stopPropagation();
+        chk.setAttribute('aria-checked', 'true');
+        const res = Data.completeTask(chk.dataset.qDone);
+        if (res) {
+          hero.cheer();
+          shell.showToast('업무를 완료했습니다', res.task.title, () => Data.restoreTaskStatus(res.task.id, res.previousStatus));
+        }
+      }),
+    );
+
+    const v2Input = root.querySelector('[data-role="v2TaskInput"]');
+    v2Input?.addEventListener('input', (e) => {
+      uiState.taskDraft = e.target.value;
+    });
+    root.querySelector('[data-role="v2AddForm"]')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const val = uiState.taskDraft.trim();
+      if (!val) return;
+      uiState.taskDraft = '';
+      const created = Data.addTask(val);
+      if (created) uiState.selection = { type: 'task', id: created.id };
+      shell.showToast('오늘 할 일에 추가했습니다', val);
+    });
+
+    root.querySelectorAll('[data-v2-day]').forEach((btn) =>
+      btn.addEventListener('click', () => Data.selectDay(btn.dataset.v2Day)),
+    );
+
+    root.querySelectorAll('[data-sel-event]').forEach((el) =>
+      el.addEventListener('click', () => {
+        uiState.selection = { type: 'event', id: el.dataset.selEvent };
+        render();
+      }),
+    );
+
+    root.querySelectorAll('[data-sel-deal]').forEach((el) =>
+      el.addEventListener('click', () => {
+        uiState.selection = { type: 'deal', id: el.dataset.selDeal };
+        render();
+      }),
+    );
+
+    root.querySelectorAll('[data-insp-pay]').forEach((chk) =>
+      chk.addEventListener('click', () => {
+        const [dealId, idx] = chk.dataset.inspPay.split(':');
+        Data.toggleDealPaymentPaid(dealId, Number(idx));
+        shell.showToast('대금 상태를 변경했습니다', '');
+      }),
+    );
+
+    root.querySelectorAll('[data-insp-task-done]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const res = Data.completeTask(btn.dataset.inspTaskDone);
+        if (res) {
+          hero.cheer();
+          shell.showToast('업무를 완료했습니다', res.task.title, () => Data.restoreTaskStatus(res.task.id, res.previousStatus));
+        }
+      }),
+    );
+
+    root.querySelectorAll('[data-insp-task-snooze]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const [id, days] = btn.dataset.inspTaskSnooze.split(':');
+        const label = Number(days) === 1 ? '내일' : `${days}일 뒤`;
+        const res = Data.snoozeTask(id, Number(days), label);
+        if (res) shell.showToast(`${label}로 미뤘습니다`, res.task.title);
+      }),
+    );
+
+    root.querySelectorAll('[data-insp-call-accept]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const item = Data.resolveCallSuggestion(btn.dataset.inspCallAccept, 'accepted');
+        if (item) {
+          hero.cheer();
+          shell.showToast('통화 제안을 반영했습니다', item.suggestionAction);
+        }
+      }),
+    );
+
+    root.querySelectorAll('[data-insp-call-dismiss]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const item = Data.resolveCallSuggestion(btn.dataset.inspCallDismiss, 'dismissed');
+        if (item) shell.showToast('제안을 건너뛰었습니다', item.contactName);
+      }),
+    );
+
+    root.querySelectorAll('[data-insp-sig]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const [id, label] = btn.dataset.inspSig.split(':');
+        const sig = Data.resolveSignal(id, label);
+        if (sig) {
+          if (sig.kind === 'verify_overdue') hero.cheer();
+          shell.showToast(label, sig.title, () => Data.reopenSignal(sig.id));
+        }
+      }),
+    );
+  }
+
+  // Keyboard J / K navigation for queue
+  document.addEventListener('keydown', (e) => {
+    if (e.target.matches('input, textarea')) return;
+    if (e.key !== 'j' && e.key !== 'k' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const d = Data.getScopedData();
+    const items = buildQueueItems(d);
+    if (!items.length) return;
+    e.preventDefault();
+    const curIdx = items.findIndex((x) => x.type === uiState.selection?.type && x.id === uiState.selection?.id);
+    const delta = e.key === 'j' || e.key === 'ArrowDown' ? 1 : -1;
+    const nextIdx = (curIdx + delta + items.length) % items.length;
+    uiState.selection = { type: items[nextIdx].type, id: items[nextIdx].id };
+    render();
+  });
+
+  Data.subscribe(render);
+  render();
+})();
+</script>
+</body>
+</html>

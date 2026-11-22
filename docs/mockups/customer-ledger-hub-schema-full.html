@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>전체 스키마와 연결</title>
+<link rel="icon" href="data:,">
+<style>
+  /*
+   * 고객 원장 데이터 구조 — 프로젝트 중심 (2026-11-20). customer-ledger-schema.html(사람 줄 기준)을 대신한다.
+   * 이름은 "업무 hub" → "건"을 거쳐 "프로젝트"로 정했다(표는 projects, 2026-11-21에 brokerage_cases에서 이름을 바꿨다). 상담·할 일은 사람에 그대로 둔다.
+   *  1. 한눈에: 사람 → 프로젝트 → 그 안에 담기는 것
+   *  2. 한 손님의 시간: 프로젝트는 닫히고 새로 열리지만 사람은 하나
+   *  3. 표와 칸: 무엇이 지금 있고 무엇을 새로 넣는가
+   * 색은 앱 토큰. 파랑은 "새로 넣는 것"에만, 초록·회색은 원장의 상태 배지와 같은 뜻으로만 쓴다.
+   */
+  :root {
+    --bg: #fff; --fg: #2c2c2b; --fg2: #5f5e5b; --muted: #79766f; --faint: #a9a7a1;
+    --line: #e6e5e3; --stroke: #cfcdc8; --edge: #a3a09a; --soft: #f7f6f5;
+    --new: #2383e2; --new-soft: #eaf3fc;
+    --go: #44745a; --go-soft: #eef3ed; --idle: #5f5e5b; --idle-soft: #f1f1ef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191919; --fg: #e9e9e7; --fg2: #c4c3bf; --muted: #9b9a97; --faint: #6f6e6b;
+      --line: #2f2f2e; --stroke: #4a4947; --edge: #7d7c79; --soft: #222221;
+      --new: #5aa7f0; --new-soft: #17293b;
+      --go: #7fc09a; --go-soft: #1d2a22; --idle: #c4c3bf; --idle-soft: #2a2a29;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px 20px 56px; background: var(--bg); color: var(--fg); font: 14px/1.6 "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1160px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.3; letter-spacing: -0.02em; }
+  h2 { margin: 48px 0 4px; font-size: 16px; letter-spacing: -0.01em; }
+  h3 { margin: 16px 0 4px; font-size: 13px; }
+  p { margin: 0; }
+  .lede { max-width: 74ch; color: var(--fg2); }
+  .sub { max-width: 80ch; color: var(--muted); font-size: 13px; }
+  .three { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 28px; margin: 18px 0 0; padding: 0; list-style: none; }
+  .three li { margin: 0; padding-top: 10px; border-top: 2px solid var(--fg); font-size: 13px; color: var(--fg2); }
+  .three b { display: block; margin-bottom: 2px; font-size: 14px; color: var(--fg); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 18px 0 0; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 14px; height: 12px; border-radius: 3px; border: 1.5px solid var(--stroke); }
+  .sw.new { border-color: var(--new); background: var(--new-soft); }
+  .sw.later { border-style: dashed; }
+  .sw.arrow { width: 18px; height: 0; border: 0; border-top: 1.5px solid var(--edge); border-radius: 0; }
+  figure { margin: 14px 0 0; }
+  .scroll { overflow-x: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 10px 0; }
+  svg { display: block; width: 100%; min-width: 900px; height: auto; color: var(--fg); }
+  figcaption { margin-top: 8px; max-width: 88ch; font-size: 13px; color: var(--muted); }
+  svg text { font-family: inherit; fill: currentColor; }
+  .tt { font-size: 15px; font-weight: 700; }
+  .t { font-size: 13px; font-weight: 600; }
+  .b { font-size: 12px; font-weight: 600; fill: var(--fg2); }
+  .s { font-size: 11.5px; fill: var(--muted); }
+  .r { font-size: 12px; }
+  .dk { fill: var(--fg2); }
+  .dkb { fill: var(--fg); font-weight: 600; }
+  .mono { font: 10.5px ui-monospace, "SF Mono", Menlo, monospace; fill: var(--faint); }
+  .newt { fill: var(--new); font-weight: 600; }
+  .mono.newt { font-weight: 400; }
+  .faintt { fill: var(--faint); }
+  .n { fill: var(--bg); stroke: var(--stroke); stroke-width: 1.2; }
+  .n.new { fill: var(--new-soft); stroke: var(--new); stroke-width: 1.6; }
+  .n.hub { stroke: var(--fg); stroke-width: 1.7; }
+  .n.later { stroke-dasharray: 5 4; }
+  .chip { fill: var(--idle-soft); }
+  .note { fill: var(--soft); }
+  .rownew { fill: var(--new-soft); }
+  .sep { stroke: var(--line); stroke-width: 1; }
+  .sep.later { stroke-dasharray: 5 4; }
+  .e { fill: none; stroke: var(--edge); stroke-width: 1.3; }
+  .e.new { stroke: var(--new); stroke-width: 1.8; }
+  .e.dash { stroke-dasharray: 4 4; }
+  .e.faint { stroke: var(--stroke); }
+  .ah { fill: var(--edge); }
+  .ah.new { fill: var(--new); }
+  .zone { font-size: 11px; font-weight: 600; fill: var(--muted); }
+  .halo { paint-order: stroke; stroke: var(--bg); stroke-width: 6px; stroke-linejoin: round; }
+  .lbl { font-size: 11.5px; fill: var(--muted); }
+  .row-l { font-size: 12px; font-weight: 600; fill: var(--fg2); }
+  .tick { font-size: 11px; fill: var(--faint); }
+  .grid { stroke: var(--line); stroke-width: 1; fill: none; }
+  .grid.strong { stroke: var(--stroke); }
+  .today { stroke: var(--fg); stroke-width: 1.2; stroke-dasharray: 3 3; fill: none; }
+  .person { fill: var(--soft); stroke: var(--fg); stroke-width: 1.5; }
+  .work { fill: var(--bg); stroke: var(--stroke); stroke-width: 1.3; }
+  .work.open { fill: var(--go-soft); stroke: var(--go); }
+  .work.idle { fill: var(--soft); stroke: var(--edge); }
+  .bar { fill: var(--bg); stroke: var(--line); stroke-width: 1; }
+  .dot { fill: var(--fg2); }
+  .dot.free { fill: var(--bg); stroke: var(--fg2); stroke-width: 1.5; }
+  .st-idle { fill: var(--idle-soft); }
+  .st-go { fill: var(--bg); }
+  .st-end { fill: var(--bg); stroke: var(--stroke); stroke-width: 1.2; }
+  .st-t { font-size: 11px; font-weight: 500; fill: var(--fg2); }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 8px 44px; margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { font-weight: 500; color: var(--muted); white-space: nowrap; }
+  thead th { font-size: 12px; }
+  ul { margin: 4px 0 0; padding-left: 18px; }
+  li { margin: 3px 0; }
+  code { font: 12px ui-monospace, "SF Mono", Menlo, monospace; color: var(--fg2); }
+  .tag { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--new-soft); color: var(--new); font-size: 12px; font-weight: 600; line-height: 20px; white-space: nowrap; }
+  .tag.same { background: var(--idle-soft); color: var(--fg2); }
+  .tag.open { background: none; box-shadow: inset 0 0 0 1px var(--stroke); color: var(--muted); }
+
+  /* 전체 지도 페이지에서 더한 것 */
+  .wrap { max-width: 1300px; }
+  .mx { margin-top: 10px; }
+  .mx th small { display: block; font: 10.5px ui-monospace, "SF Mono", Menlo, monospace; color: var(--faint); font-weight: 400; }
+  .mx thead th { text-align: center; font-size: 12px; white-space: normal; line-height: 1.3; padding: 6px 4px; }
+  .mx thead th:first-child, .mx thead th:last-child { text-align: left; }
+  .mx td { text-align: center; padding: 7px 4px; }
+  .mx td.note { text-align: left; font-size: 12px; color: var(--muted); padding-left: 10px; }
+  .mx tr.newrow th { color: var(--new); }
+  .d { font-size: 12px; color: var(--fg2); }
+  .d.req { color: var(--fg); font-size: 14px; }
+  .d.new { color: var(--new); }
+  .d.off { color: var(--line); }
+  .inv td:first-child, .inv th { white-space: nowrap; }
+  .inv td { font-size: 13px; }
+  .inv code { white-space: normal; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>전체 스키마와 연결</h1>
+  <p class="lede">지금 DB에 있는 표 전체와 그 연결을 한 장에 옮기고, 그 위에 새로 넣으려는 것(프로젝트의 칸, 코멘트, 파일)을 파란색으로 얹었습니다. 관계는 <code>prisma/schema/*.prisma</code>에서 읽은 그대로입니다. 프로젝트 안쪽의 설명은 <a href="./customer-ledger-hub-schema.html">프로젝트 중심 그림</a>에 있습니다.</p>
+  <div class="legend">
+    <span><i class="sw new"></i>새로 넣는 것 (제안)</span>
+    <span><i class="sw"></i>지금 있는 것</span>
+    <span><i class="sw arrow"></i>화살표: 왼쪽 것 하나에 오른쪽 것이 여러 개 달린다</span>
+  </div>
+
+  <h2>1. 뼈대</h2>
+  <p class="sub">위 줄은 장소, 가운데 오른쪽은 집을 내놓는 쪽과 구하는 쪽이 만나 거래가 되는 흐름, 왼쪽은 사람입니다.</p>
+  <figure>
+    <div class="scroll"><svg viewBox="0 0 1300 580" role="img" aria-label="전체 뼈대. 장소는 단지, 동, 호, 관리 호실로 이어진다. 내놓는 쪽은 관리 호실에서 매물 의뢰, 거래 조건으로 이어지고, 구하는 쪽은 구매 의뢰에서 희망조건으로 이어진다. 거래 조건과 희망조건이 매칭에서 만나 거래, 계약으로 간다. 거래에는 수수료 입금이 달리고 직원 정산으로 이어진다. 사람(연락처)은 집과 사람 표를 거쳐 관리 호실에, 의뢰 참여자 표를 거쳐 구매 의뢰에 걸린다. 상담은 사람에 달린다. 프로젝트는 매물 의뢰와 구매 의뢰를 담고, 새로 사람(대표 고객)에 달리며, 새 코멘트와 파일이 프로젝트에 달린다.">
+<defs>
+  <marker id="fs-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah"/></marker>
+  <marker id="fs-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah new"/></marker>
+</defs>
+<text x="40" y="28" class="zone" >장소</text><text x="880" y="28" class="zone" >광고</text><text x="1090" y="28" class="zone" >돈</text>
+<text x="40" y="178" class="zone" >대화</text><text x="670" y="178" class="zone" >내놓는 쪽</text>
+<text x="40" y="318" class="zone" >사람</text><text x="880" y="328" class="zone" >만남과 거래</text>
+<text x="460" y="478" class="zone" >구하는 쪽</text>
+<path d="M210 72H248" class="e" marker-end="url(#fs-a)"/><path d="M420 72H458" class="e" marker-end="url(#fs-a)"/><path d="M630 72H668" class="e" marker-end="url(#fs-a)"/>
+<path d="M755 104V188" class="e" marker-end="url(#fs-a)"/><path d="M840 222H878" class="e" marker-end="url(#fs-a)"/><path d="M965 190V106" class="e" marker-end="url(#fs-a)"/><path d="M965 254V338" class="e" marker-end="url(#fs-a)"/>
+<path d="M630 522H668" class="e" marker-end="url(#fs-a)"/><path d="M840 522H930V406" class="e" marker-end="url(#fs-a)"/><path d="M1050 372H1088" class="e" marker-end="url(#fs-a)"/><path d="M1175 404V488" class="e" marker-end="url(#fs-a)"/>
+<path d="M1175 340V256" class="e" marker-end="url(#fs-a)"/><path d="M1175 190V106" class="e" marker-end="url(#fs-a)"/>
+<path d="M125 330V256" class="e" marker-end="url(#fs-a)"/>
+<path d="M210 350H335V256" class="e" marker-end="url(#fs-a)"/><path d="M720 104V132H335V188" class="e" marker-end="url(#fs-a)"/>
+<path d="M210 400H335V488" class="e" marker-end="url(#fs-a)"/><path d="M460 522H422" class="e" marker-end="url(#fs-a)"/>
+<path d="M210 375H458" class="e new" marker-end="url(#fs-b)"/>
+<path d="M545 340V256" class="e new" marker-end="url(#fs-b)"/>
+<path d="M630 360H720V256" class="e" marker-end="url(#fs-a)"/><path d="M545 404V488" class="e" marker-end="url(#fs-a)"/>
+<rect x="40" y="40" width="170" height="64" rx="8" class="n "/><text x="52" y="63" class="t" >단지</text><text x="52" y="79" class="mono" >Site</text><rect x="250" y="40" width="170" height="64" rx="8" class="n "/><text x="262" y="63" class="t" >동</text><text x="262" y="79" class="mono" >Dong</text><rect x="460" y="40" width="170" height="64" rx="8" class="n "/><text x="472" y="63" class="t" >호 · 층</text><text x="472" y="79" class="mono" >Unit</text><rect x="670" y="40" width="170" height="64" rx="8" class="n "/><text x="682" y="63" class="t" >관리 호실</text><text x="682" y="79" class="mono" >Property</text><text x="682" y="95" class="s" >우리가 관리하는 집</text>
+<rect x="880" y="40" width="170" height="64" rx="8" class="n "/><text x="892" y="63" class="t" >광고 · 공개 매물</text><text x="892" y="79" class="mono" >ListingAdvertisement …</text><rect x="1090" y="40" width="170" height="64" rx="8" class="n "/><text x="1102" y="63" class="t" >직원 정산</text><text x="1102" y="79" class="mono" >Settlement</text>
+<rect x="40" y="190" width="170" height="64" rx="8" class="n "/><text x="52" y="213" class="t" >상담</text><text x="52" y="229" class="mono" >Consultation</text><text x="52" y="245" class="s" >사람과 나눈 대화</text><rect x="250" y="190" width="170" height="64" rx="8" class="n "/><text x="262" y="213" class="t" >집과 사람</text><text x="262" y="229" class="mono" >PropertyContact</text><text x="262" y="245" class="s" >소유자 · 대리인</text>
+<rect x="460" y="190" width="170" height="64" rx="8" class="n new"/><text x="472" y="213" class="t newt" >코멘트 · 파일</text><text x="472" y="229" class="mono newt" >새 표 둘</text><text x="472" y="245" class="s" >프로젝트 · 거래에 붙음</text>
+<rect x="670" y="190" width="170" height="64" rx="8" class="n "/><text x="682" y="213" class="t" >매물 의뢰</text><text x="682" y="229" class="mono" >ListingIntake</text><text x="682" y="245" class="s" >한 번 들어온 의뢰</text><rect x="880" y="190" width="170" height="64" rx="8" class="n "/><text x="892" y="213" class="t" >거래 조건</text><text x="892" y="229" class="mono" >Listing</text><text x="892" y="245" class="s" >매매 · 전세 · 월세</text>
+<rect x="1090" y="190" width="170" height="64" rx="8" class="n "/><text x="1102" y="213" class="t" >수수료 입금</text><text x="1102" y="229" class="mono" >CommissionPayment</text>
+<rect x="40" y="330" width="170" height="90" rx="8" class="n hub"/><text x="52" y="353" class="t" >사람</text><text x="52" y="369" class="mono" >Contact</text><text x="52" y="385" class="s" >연락처 · 끝나지 않는 기록</text>
+<rect x="460" y="340" width="170" height="64" rx="8" class="n hub"/><text x="472" y="363" class="t" >프로젝트</text><text x="472" y="379" class="mono" >Project</text><text x="472" y="395" class="s newt" >+ 대표 고객 · 담당</text>
+<rect x="880" y="340" width="170" height="64" rx="8" class="n "/><text x="892" y="363" class="t" >매칭</text><text x="892" y="379" class="mono" >Match</text><text x="892" y="395" class="s" >손님 ↔ 매물</text><rect x="1090" y="340" width="170" height="64" rx="8" class="n "/><text x="1102" y="363" class="t" >거래</text><text x="1102" y="379" class="mono" >Deal</text><text x="1102" y="395" class="s" >매도인 · 매수인 → 사람</text>
+<rect x="40" y="490" width="170" height="64" rx="8" class="n "/><text x="52" y="513" class="t" >할 일 · 일정</text><text x="52" y="529" class="mono" >Task, CalendarEvent</text><text x="52" y="545" class="s" >여러 곳에 붙음 (3번 표)</text>
+<rect x="250" y="490" width="170" height="64" rx="8" class="n "/><text x="262" y="513" class="t" >의뢰 참여자</text><text x="262" y="529" class="mono" >BuyerIntakeContact</text><text x="262" y="545" class="s" >구하는 사람 · 함께</text>
+<rect x="460" y="490" width="170" height="64" rx="8" class="n "/><text x="472" y="513" class="t" >구매 의뢰</text><text x="472" y="529" class="mono" >BuyerIntake</text><rect x="670" y="490" width="170" height="64" rx="8" class="n "/><text x="682" y="513" class="t" >희망조건</text><text x="682" y="529" class="mono" >BuyerRequirement</text><text x="682" y="545" class="s" >찾는 조건</text>
+<rect x="1090" y="490" width="170" height="64" rx="8" class="n "/><text x="1102" y="513" class="t" >계약</text><text x="1102" y="529" class="mono" >Contract</text><text x="1102" y="545" class="s" >당사자 · 계약 문서</text>
+<text x="294" y="368" class="lbl newt halo" text-anchor="middle">대표 고객 (새 칸)</text>
+</svg></div>
+    <figcaption>사람은 두 군데로 걸립니다. 내놓는 쪽은 "집과 사람" 표(그 집의 소유자)를 거치고, 구하는 쪽은 "의뢰 참여자" 표를 거칩니다. 매물 의뢰는 사람을 직접 가리키지 않습니다. 프로젝트는 지금도 두 의뢰를 담고 있고, 새로 하는 일은 프로젝트를 사람(대표 고객)에 잇는 것과 코멘트 · 파일을 붙이는 것입니다.</figcaption>
+  </figure>
+
+  <h2>2. 프로젝트와 거래는 여러 대 여러</h2>
+  <p class="sub">프로젝트 하나에 거래가 여럿 걸릴 수 있고, 거래 하나도 여러 프로젝트에 걸릴 수 있습니다. 걸리는 길은 둘입니다.</p>
+  <figure>
+    <div class="scroll"><svg viewBox="0 0 1160 372" role="img" aria-label="프로젝트와 거래는 여러 대 여러로 이어진다. 한지우의 갈아타기 프로젝트에는 매물 의뢰와 구매 의뢰가 담겨 있고, 각각에서 거래가 하나씩 나와 프로젝트 하나에 거래가 둘 걸린다. 거래 ①의 상대편에는 오하늘의 프로젝트(구매 의뢰)가, 거래 ②의 상대편에는 엘스 집주인의 프로젝트(매물 의뢰)가 있어 거래 하나에 프로젝트가 둘 걸린다. 연결은 새 표 없이 거래가 가리키는 의뢰를 따라가서 읽는다.">
+<defs>
+  <marker id="fd-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah"/></marker>
+  <marker id="fd-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="ah new"/></marker>
+</defs>
+<text x="20" y="22" class="zone" >프로젝트 하나에 거래 여럿</text><text x="440" y="22" class="zone" >거래는 각각 한 줄</text><text x="840" y="22" class="zone" >거래의 상대편에도 프로젝트</text>
+<rect x="20" y="44" width="320" height="300" rx="10" class="n hub"/><text x="36" y="72" class="t" >한지우의 프로젝트</text><text x="36" y="92" class="s" >고덕 → 잠실 갈아타기 · 담당 박지훈</text>
+<rect x="36" y="112" width="288" height="64" rx="8" class="n"/><rect x="48" y="132" width="88" height="24" rx="4" class="chip"/><text x="92" y="148" class="s dk" text-anchor="middle">매물 의뢰</text><text x="148" y="148" class="s dk" >아르테온 1203호</text>
+<rect x="36" y="258" width="288" height="64" rx="8" class="n"/><rect x="48" y="278" width="88" height="24" rx="4" class="chip"/><text x="92" y="294" class="s dk" text-anchor="middle">구매 의뢰</text><text x="148" y="294" class="s dk" >잠실 33~34평</text>
+<text x="36" y="222" class="s faintt" >프로젝트의 코멘트 · 파일 · 할 일</text>
+<path d="M324 144H438" class="e" marker-end="url(#fd-a)"/>
+<path d="M324 290H438" class="e" marker-end="url(#fd-a)"/>
+<text x="381" y="134" class="lbl halo" text-anchor="middle">내놓는 쪽</text><text x="381" y="280" class="lbl halo" text-anchor="middle">구하는 쪽</text>
+<rect x="440" y="94" width="280" height="100" rx="10" class="n hub"/><text x="456" y="122" class="tt" >거래 ①</text><text x="456" y="146" class="r" >아르테온 1203호 매매</text><text x="456" y="168" class="s" >매도 한지우 · 매수 오하늘</text><text x="456" y="184" class="s faintt" >계약 · 수수료 · 코멘트 · 파일이 붙는 곳</text>
+<rect x="440" y="240" width="280" height="100" rx="10" class="n hub"/><text x="456" y="268" class="tt" >거래 ②</text><text x="456" y="292" class="r" >엘스 1502호 매매</text><text x="456" y="314" class="s" >매도 엘스 집주인 · 매수 한지우</text><text x="456" y="330" class="s faintt" >계약 · 수수료 · 코멘트 · 파일이 붙는 곳</text>
+<path d="M840 144H722" class="e" marker-end="url(#fd-a)"/>
+<path d="M840 290H722" class="e" marker-end="url(#fd-a)"/>
+<text x="781" y="134" class="lbl halo" text-anchor="middle">구하는 쪽</text><text x="781" y="280" class="lbl halo" text-anchor="middle">내놓는 쪽</text>
+<rect x="840" y="94" width="300" height="100" rx="10" class="n"/><text x="856" y="122" class="t" >오하늘의 프로젝트</text><text x="856" y="144" class="s" >고덕동 34평 매수</text><rect x="856" y="156" width="88" height="24" rx="4" class="chip"/><text x="900" y="172" class="s dk" text-anchor="middle">구매 의뢰</text>
+<rect x="840" y="240" width="300" height="100" rx="10" class="n"/><text x="856" y="268" class="t" >엘스 집주인의 프로젝트</text><text x="856" y="290" class="s" >엘스 1502호 매도</text><rect x="856" y="302" width="88" height="24" rx="4" class="chip"/><text x="900" y="318" class="s dk" text-anchor="middle">매물 의뢰</text>
+</svg></div>
+    <figcaption>한지우의 갈아타기 프로젝트에는 거래가 둘(매도, 매수) 걸립니다. 각 거래의 상대편도 우리 손님이면 그쪽에도 프로젝트가 있습니다. 프로젝트와 거래를 잇는 표는 새로 만들지 않습니다. 거래가 가리키는 의뢰를 따라가면 프로젝트가 나오고, 진행 계획 단계가 거래를 직접 가리키는 지금의 길도 그대로 있습니다.</figcaption>
+  </figure>
+  <table style="margin-top:14px">
+    <thead><tr><th>거래가 프로젝트에 걸리는 길</th><th>거래 하나에 몇 개</th><th>지금 구현</th></tr></thead>
+    <tr><th>의뢰를 따라</th><td>0 ~ 2개</td><td>거래 → 거래 조건 → 매물 의뢰 → 프로젝트, 거래 → 구매 의뢰 → 프로젝트. 양쪽 의뢰가 각각 프로젝트에 담겨 있으면 둘. 의뢰의 프로젝트 칸은 지금 비울 수 있어서, 담겨 있지 않으면 그쪽은 0. 다른 사무소 매물에 매수 쪽으로만 붙은 거래(외부 매물)는 내놓는 쪽이 없습니다</td></tr>
+    <tr><th>진행 계획 단계가 직접 가리켜서</th><td>0개 이상 (상한 없음)</td><td>사용자가 프로젝트의 진행 계획에 거래를 단계로 넣는 경우. 같은 프로젝트에 같은 거래를 두 번 넣는 것(DB 유일 색인)과, 그 프로젝트의 의뢰에서 나온 거래를 단계로 또 넣는 것(서버 검사)만 막습니다. 서로 다른 프로젝트 여럿이 같은 거래를 단계로 가리키는 것은 막지 않습니다</td></tr>
+  </table>
+  <table style="margin-top:14px">
+    <thead><tr><th>프로젝트 하나에 걸리는 거래</th><th>몇 개</th><th>어떻게 생기나</th></tr></thead>
+    <tr><th>의뢰를 따라</th><td>0개 이상</td><td>갈아타기처럼 의뢰가 둘이면 거래도 둘. 한 의뢰에서도 거래가 깨지고 다시 잡히면 여럿. 임대인이 여러 호실을 내놓은 경우도 여럿</td></tr>
+    <tr><th>단계가 직접 가리켜서</th><td>0개 이상</td><td>의뢰를 거치지 않은 거래를 진행 계획에 넣었을 때</td></tr>
+  </table>
+  <p class="sub" style="margin-top:8px">그래서 "이 프로젝트의 거래"는 두 길을 합쳐 읽어야 합니다. 정할 것이 하나 있습니다. 거래의 코멘트와 파일을 프로젝트 화면에 읽어 올 때, 단계로만 가리킨 프로젝트에도 보여 줄지입니다. 지금 구현대로면 아무 프로젝트나 남의 거래를 단계로 넣을 수 있으므로, 의뢰를 따라 걸린 프로젝트에만 보여 주거나 단계로 넣을 수 있는 거래를 좁히는 것이 안전합니다.</p>
+  <p class="sub" style="margin-top:8px">거래 표에는 지금도 "거래 담당"이 따로 있고, 매도 측 · 매수 측 · 양쪽 가운데 어느 쪽 담당인지 적습니다. 한 손님 쪽의 사정은 그 손님의 프로젝트에, 계약서처럼 거래에 관한 것은 그 거래에 붙입니다. 프로젝트 화면은 자기에게 걸린 거래들을 목록으로 보여 주고, 각 거래의 코멘트와 파일을 거래별로 나눠 읽어 옵니다.</p>
+
+  <h2>3. 기록은 어디에 붙나</h2>
+  <p class="sub">세로는 기록의 종류, 가로는 붙을 수 있는 곳입니다. 선으로 그리면 엉켜서 표로 옮겼습니다.</p>
+  <table class="mx">
+    <thead><tr><th></th><th>사람</th><th>집</th><th>매물<br>의뢰</th><th>거래<br>조건</th><th>구매<br>의뢰</th><th>희망<br>조건</th><th>매칭</th><th>거래</th><th>계약</th><th>프로<br>젝트</th><th></th></tr></thead>
+    <tr><th>상담<small>Consultation</small></th><td><span class="d req">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td class="note">사람은 반드시. 나머지는 적은 화면이 채우는 맥락. 프로젝트 칸은 넣지 않음</td></tr>
+    <tr><th>할 일<small>Task</small></th><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d off">·</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d new">◆</span></td><td class="note">상담에도 붙을 수 있음. 프로젝트 칸은 새로 넣음</td></tr>
+    <tr><th>일정<small>CalendarEvent</small></th><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d">●</span></td><td><span class="d">●</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td class="note"></td></tr>
+    <tr><th>진행 계획 단계<small>ProjectStep</small></th><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d">●</span></td><td><span class="d off">·</span></td><td><span class="d">●</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d">●</span></td><td><span class="d off">·</span></td><td><span class="d req">●</span></td><td class="note">프로젝트는 반드시. 나머지는 셋 중 하나만</td></tr>
+    <tr class="newrow"><th>코멘트<small>새 표</small></th><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d new">◆</span></td><td><span class="d off">·</span></td><td><span class="d new">◆</span></td><td class="note">프로젝트나 거래 가운데 정확히 하나. 의뢰 · 매칭은 나중에 칸을 늘림</td></tr>
+    <tr class="newrow"><th>파일<small>새 표</small></th><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d new">◆</span></td><td><span class="d off">·</span></td><td><span class="d new">◆</span></td><td class="note">위와 같음. 파일 저장소가 붙은 뒤</td></tr>
+    <tr><th>사진<small>PropertyPhoto</small></th><td><span class="d off">·</span></td><td><span class="d req">●</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td class="note">지금 있는 파일 성격의 표</td></tr>
+    <tr><th>공부 서류<small>PublicDocument</small></th><td><span class="d off">·</span></td><td><span class="d">●</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td class="note">단지는 반드시, 집은 선택. 지금 있는 파일 성격의 표</td></tr>
+    <tr><th>계약 문서<small>ContractDocument</small></th><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d req">●</span></td><td><span class="d off">·</span></td><td class="note">지금 있는 파일 성격의 표</td></tr>
+    <tr><th>수수료 입금<small>CommissionPayment</small></th><td><span class="d">●</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d req">●</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td class="note">사람은 낸 사람</td></tr>
+    <tr><th>통화 녹음<small>CallRecording</small></th><td><span class="d">●</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td><span class="d off">·</span></td><td class="note">통화 기록(CallLog)은 사람과 상담을 가리킴</td></tr>
+  </table>
+  <p class="sub" style="margin-top:8px"><span class="d req">●</span> 반드시 &nbsp; <span class="d">●</span> 선택 &nbsp; <span class="d new">◆</span> 새로 넣는 칸</p>
+
+  <h2>4. 사람이 걸리는 곳</h2>
+  <p class="sub">연락처 한 줄을 가리키는 표들입니다. 역할은 연락처의 속성이 아니라 이 연결들이 말해 줍니다.</p>
+  <table style="margin-top:8px">
+    <thead><tr><th>표</th><th>뜻</th><th>칸</th></tr></thead>
+    <tr><th>집과 사람 <code>PropertyContact</code></th><td>그 집의 소유자 · 공동 소유자 · 대리인. 매물 의뢰의 "내놓은 사람"은 여기서 읽습니다</td><td><code>contactId</code>, <code>propertyId</code>, <code>role</code></td></tr>
+    <tr><th>임차인 <code>Tenant</code></th><td>그 집에 사는 임차인</td><td><code>contactId</code>, <code>propertyId</code></td></tr>
+    <tr><th>의뢰 참여자 <code>BuyerIntakeContact</code></th><td>구매 의뢰에 참여한 사람과 역할, 주 연락 창구</td><td><code>contactId</code>, <code>buyerIntakeId</code>, <code>role</code>, <code>isPrimary</code></td></tr>
+    <tr><th>거래 <code>Deal</code></th><td>매도인과 매수인</td><td><code>sellerContactId</code>, <code>buyerContactId</code></td></tr>
+    <tr><th>계약 <code>Contract</code> · 계약 당사자 <code>ContractParty</code></th><td>계약서의 당사자</td><td><code>sellerContactId</code>, <code>buyerContactId</code>, <code>contactId</code></td></tr>
+    <tr><th>상담 · 할 일 · 일정</th><td>누구와, 누구 일</td><td><code>contactId</code></td></tr>
+    <tr><th>수수료 입금 <code>CommissionPayment</code></th><td>낸 사람</td><td><code>payerContactId</code></td></tr>
+    <tr><th>통화 기록 · 녹음</th><td>통화 상대</td><td><code>contactId</code></td></tr>
+    <tr><th>가족 관계 <code>ContactRelation</code></th><td>사람과 사람</td><td><code>contactId</code>, <code>relatedContactId</code></td></tr>
+    <tr><th><span class="tag">새 칸</span> 프로젝트 <code>Project</code></th><td>누구의 일인가 (대표 고객)</td><td><code>primaryContactId</code></td></tr>
+  </table>
+
+  <h2>5. 표 전체 목록</h2>
+  <p class="sub">스키마 파일에 있는 모든 표입니다. 위 그림에 넣지 않은 표도 여기에 있습니다. 한글 이름을 확인하지 못한 표는 모델 이름만 적었습니다.</p>
+  <table class="inv" style="margin-top:8px">
+    <thead><tr><th>영역</th><th>표</th><th>1번 그림</th></tr></thead>
+    <tr><th>사무소 · 직원</th><td>사무소 <code>Office</code>, 직원 <code>User</code></td><td>담당 · 작성자로만 등장</td></tr>
+    <tr><th>법정동</th><td><code>Province</code>, <code>District</code>, <code>Ward</code></td><td>단지가 법정동을 가리킴</td></tr>
+    <tr><th>장소</th><td>단지 <code>Site</code>, <code>OfficeSite</code>, <code>SiteUnitType</code>, 동 <code>Dong</code>, 호 <code>Unit</code>, 관리 호실 <code>Property</code>, 사진 <code>PropertyPhoto</code>, 가격 이력 <code>PriceHistory</code>, 공부 서류 <code>PublicDocument</code></td><td>있음</td></tr>
+    <tr><th>사람</th><td>연락처 <code>Contact</code>, <code>ContactPhone</code>, 가족 관계 <code>ContactRelation</code>, 그룹 <code>ContactGroup</code> · <code>ContactGroupMember</code>, 태그 <code>ContactTag</code> · <code>ContactTagAssignment</code>, 집과 사람 <code>PropertyContact</code>, 임차인 <code>Tenant</code></td><td>있음</td></tr>
+    <tr><th>내놓는 쪽</th><td>매물 의뢰 <code>ListingIntake</code>, 거래 조건 <code>Listing</code></td><td>있음</td></tr>
+    <tr><th>구하는 쪽</th><td>구매 의뢰 <code>BuyerIntake</code>, 의뢰 참여자 <code>BuyerIntakeContact</code>, 희망조건 <code>BuyerRequirement</code>, <code>BuyerRequirementSite</code>, <code>BuyerRequirementRegion</code></td><td>있음</td></tr>
+    <tr><th>만남과 거래</th><td>매칭 <code>Match</code>, 거래 <code>Deal</code>, 거래 담당 <code>DealParticipant</code>, <code>DealPayment</code>, 계약 <code>Contract</code>, 계약 당사자 <code>ContractParty</code>, 계약 문서 <code>ContractDocument</code> · <code>ContractDocumentRevision</code> · <code>ContractDocumentTemplate</code> · <code>ContractClauseTemplate</code> · <code>OfficePrintTemplate</code></td><td>있음</td></tr>
+    <tr><th>프로젝트</th><td>프로젝트 <code>Project</code> (옛 이름 중개 건), 진행 계획 단계 <code>ProjectStep</code>, <span class="tag">새 표</span> 코멘트, <span class="tag">새 표</span> 파일</td><td>있음</td></tr>
+    <tr><th>기록</th><td>상담 <code>Consultation</code>, 할 일 <code>Task</code>, 일정 <code>CalendarEvent</code>, <code>ActivityLog</code>, <code>Notification</code></td><td>상담 · 할 일 · 일정</td></tr>
+    <tr><th>전화</th><td>통화 기록 <code>CallLog</code>, 통화 녹음 <code>CallRecording</code>, <code>CallRecordingMessage</code>, <code>CallActionSuggestion</code></td><td>없음 (사람 · 상담을 가리킴)</td></tr>
+    <tr><th>돈</th><td>수수료 입금 <code>CommissionPayment</code>, <code>CommissionDistribution</code>, <code>CommissionAdjustment</code>, <code>CommissionReceipt</code>, <code>OfficeExpenseTemplate</code>, 직원 정산 <code>Settlement</code> · <code>SettlementLine</code></td><td>수수료 입금 · 직원 정산</td></tr>
+    <tr><th>광고</th><td>광고 <code>ListingAdvertisement</code>, <code>AdvertisementChangeRequest</code>, <code>ListingAdvertisementHistory</code>, <code>ListingAdvertisementSnapshotSession</code> · <code>ListingAdvertisementSnapshotItem</code>, <code>AdvertisementComparison</code> · <code>AdvertisementComparisonRecord</code></td><td>한 상자로</td></tr>
+    <tr><th>공개 · 외부</th><td>공개 매물 <code>PublicListing</code>, <code>ConsumerRequest</code>, <code>ExternalListingGroup</code>, <code>ExternalListing</code>, <code>ExternalListingSnapshotSession</code></td><td>없음</td></tr>
+    <tr><th>공동중개</th><td><code>PartnerBroker</code>, <code>NetworkRoom</code>, <code>NetworkRoomMember</code>, <code>NetworkSharedProperty</code>, <code>NetworkInquiry</code>, <code>NetworkMessage</code></td><td>없음</td></tr>
+    <tr><th>업체</th><td><code>ServiceVendor</code>, <code>VendorContact</code>, <code>OfficeVendorFavorite</code></td><td>없음</td></tr>
+    <tr><th>공지</th><td>공지사항 <code>Notice</code>, <code>NoticeRead</code></td><td>없음</td></tr>
+  </table>
+
+  <h2>이 그림을 그리면서 눈에 띈 것</h2>
+  <div class="cols">
+    <div>
+      <h3>파일 성격의 표가 이미 셋 있습니다</h3>
+      <ul>
+        <li>사진(<code>PropertyPhoto</code>), 공부 서류(<code>PublicDocument</code>), 계약 문서(<code>ContractDocument</code>)가 각각 파일 주소(<code>fileUrl</code>) 칸을 가지고 있습니다.</li>
+        <li>프로젝트 · 거래용 파일 표를 새로 만들면 넷이 됩니다. 계약서 스캔을 "계약 문서"에 둘지 "거래의 파일"에 둘지 같은 겹침을 정해야 합니다.</li>
+        <li>이 셋에 실제 파일이 어떻게 올라가는지(저장소)는 확인하지 않았습니다.</li>
+      </ul>
+      <h3>거래에는 이미 양쪽 담당이 있습니다</h3>
+      <ul>
+        <li>거래 담당(<code>DealParticipant</code>)이 매도 측 · 매수 측 · 양쪽을 구분합니다. 프로젝트마다 담당을 두는 안과 겹치므로, 거래가 생길 때 양쪽 프로젝트의 담당을 기본값으로 가져오는 식으로 맞추면 됩니다.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>내놓는 쪽과 구하는 쪽이 사람에 걸리는 방식이 다릅니다</h3>
+      <ul>
+        <li>구하는 쪽은 의뢰에 참여자가 직접 적힙니다. 내놓는 쪽은 의뢰가 아니라 집에 소유자가 적힙니다.</li>
+        <li>그래서 집이 팔려 소유자가 바뀌면 지난 매물 의뢰의 "내놓은 사람"도 바뀌어 읽힙니다. 프로젝트에 대표 고객 칸을 넣으면 "누구의 일이었나"는 프로젝트에 남습니다.</li>
+      </ul>
+      <h3>상담의 맥락 칸은 여섯 개입니다</h3>
+      <ul>
+        <li>집, 매물 의뢰, 거래 조건, 구매 의뢰, 희망조건, 매칭. 적은 화면에 따라 채워집니다. 이번 안은 이 칸들을 늘리지도 줄이지도 않습니다.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

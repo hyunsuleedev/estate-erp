@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>고객 원장 스키마 안</title>
+<link rel="icon" href="data:,">
+<style>
+  /*
+   * 고객 원장 스키마 안 (2026-11-20). 그림 세 장으로 설명한다.
+   *  1. 전체 구조: 사람(연락처)이 맨 위, 일(의뢰)은 그 아래. 새로 생기는 것만 파랑.
+   *  2. 매물 쪽의 지금과 바꾼 뒤: "누가 내놨나"를 어디서 읽는가.
+   *  3. 한 손님의 시간: 사람은 끝나지 않고, 일은 시작과 끝이 있다.
+   * 색은 앱 토큰. 파랑은 "새로 만드는 것"에만, 초록·회색은 원장의 상태 배지와 같은 뜻으로만 쓴다.
+   */
+  :root {
+    --bg: #fff; --fg: #2c2c2b; --fg2: #5f5e5b; --muted: #79766f; --faint: #a9a7a1;
+    --line: #e6e5e3; --stroke: #cfcdc8; --edge: #a3a09a; --soft: #f7f6f5;
+    --new: #2383e2; --new-soft: #eaf3fc;
+    --go: #44745a; --go-soft: #eef3ed; --idle: #5f5e5b; --idle-soft: #f1f1ef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191919; --fg: #e9e9e7; --fg2: #c4c3bf; --muted: #9b9a97; --faint: #6f6e6b;
+      --line: #2f2f2e; --stroke: #4a4947; --edge: #7d7c79; --soft: #222221;
+      --new: #5aa7f0; --new-soft: #17293b;
+      --go: #7fc09a; --go-soft: #1d2a22; --idle: #c4c3bf; --idle-soft: #2a2a29;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px 20px 48px; background: var(--bg); color: var(--fg); font: 14px/1.6 "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1160px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.3; letter-spacing: -0.02em; }
+  h2 { margin: 44px 0 4px; font-size: 16px; letter-spacing: -0.01em; }
+  p { margin: 0; }
+  .lede { max-width: 72ch; color: var(--fg2); }
+  .sub { max-width: 78ch; color: var(--muted); font-size: 13px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 0; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 14px; height: 12px; border-radius: 3px; border: 1.5px solid var(--stroke); }
+  .sw.new { border-color: var(--new); background: var(--new-soft); }
+  .sw.opt { border-style: dashed; }
+  figure { margin: 14px 0 0; }
+  .scroll { overflow-x: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 8px 0; }
+  svg { display: block; width: 100%; min-width: 900px; height: auto; color: var(--fg); }
+  figcaption { margin-top: 8px; max-width: 86ch; font-size: 13px; color: var(--muted); }
+  svg text { font-family: inherit; fill: currentColor; }
+  .t { font-size: 13px; font-weight: 600; }
+  .s { font-size: 11px; fill: var(--muted); }
+  .n { fill: var(--bg); stroke: var(--stroke); stroke-width: 1.2; }
+  .n.new { fill: var(--new-soft); stroke: var(--new); stroke-width: 1.8; }
+  .n.hub { stroke: var(--fg); stroke-width: 1.6; }
+  .n.dim { stroke-dasharray: none; fill: var(--soft); }
+  .newt { fill: var(--new); }
+  .e { fill: none; stroke: var(--edge); stroke-width: 1.3; }
+  .e.new { stroke: var(--new); stroke-width: 1.8; }
+  .e.dash { stroke-dasharray: 4 4; }
+  .e.faint { stroke: var(--stroke); }
+  .zone { font-size: 11px; font-weight: 600; fill: var(--muted); letter-spacing: 0.02em; }
+  .halo { paint-order: stroke; stroke: var(--bg); stroke-width: 6px; stroke-linejoin: round; }
+  .band { fill: none; stroke: var(--edge); stroke-width: 1.2; stroke-dasharray: 6 5; }
+  .lbl { font-size: 11px; fill: var(--muted); }
+  .warn { font-size: 12px; fill: var(--fg2); }
+  .panel-t { font-size: 13px; font-weight: 600; }
+  .row-l { font-size: 12px; font-weight: 600; fill: var(--fg2); }
+  .tick { font-size: 11px; fill: var(--faint); }
+  .grid { stroke: var(--line); stroke-width: 1; }
+  .person { fill: var(--soft); stroke: var(--fg); stroke-width: 1.4; }
+  .work { fill: var(--bg); stroke: var(--stroke); stroke-width: 1.3; }
+  .work.open { fill: var(--go-soft); stroke: var(--go); }
+  .dot { fill: var(--fg2); }
+  .dot.free { fill: var(--bg); stroke: var(--fg2); stroke-width: 1.4; }
+  .st-idle { fill: var(--idle-soft); }
+  .st-go { fill: var(--go-soft); }
+  .st-end { fill: var(--bg); stroke: var(--stroke); stroke-width: 1.2; }
+  .st-t { font-size: 11.5px; font-weight: 500; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px 40px; margin-top: 12px; }
+  .cols h3 { margin: 12px 0 4px; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { font-weight: 500; color: var(--muted); white-space: nowrap; }
+  ul { margin: 4px 0 0; padding-left: 18px; }
+  li { margin: 3px 0; }
+  .tag { display: inline-block; padding: 0 6px; border-radius: 4px; background: var(--new-soft); color: var(--new); font-size: 12px; font-weight: 600; line-height: 20px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>고객 원장 스키마 안</h1>
+  <p class="lede">사람(연락처)이 맨 위에 있고, 일(의뢰)은 그 아래에 시작과 끝을 가지고 쌓입니다. 고객 표나 원장 표는 만들지 않습니다. 새로 만드는 것은 표 하나와 칸 하나입니다.</p>
+  <div class="legend">
+    <span><i class="sw new"></i>새로 만드는 것</span>
+    <span><i class="sw"></i>지금 있는 것 (그대로)</span>
+    <span><i class="sw opt"></i>선택 사항</span>
+  </div>
+
+  <h2>1. 전체 구조</h2>
+  <p class="sub">위에서 아래로 읽습니다. 아래에 있는 것이 위에 있는 것에 속합니다.</p>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1160 570" role="img" aria-label="연락처가 맨 위에 있고, 그 아래로 구하는 쪽(구매 의뢰 참여자, 구매 의뢰, 희망조건)과 내놓는 쪽(새로 만드는 매물 의뢰 참여자, 매물 의뢰, 거래 조건)이 갈라져 매칭, 거래, 계약으로 모인다. 상담은 연락처에 쌓이고 어느 의뢰의 것인지 가리킨다. 중개 건은 두 의뢰를 묶는 선택 사항이다.">
+        <defs>
+          <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="var(--edge)"/></marker>
+        </defs>
+
+        <!-- 선 -->
+        <path class="e" d="M500 104V138H200V170"/>
+        <path class="e" d="M580 104V170"/>
+        <path class="e new" d="M660 104V138H800V170"/>
+        <path class="e" d="M740 64H1050V170"/>
+        <path class="e" d="M200 226V290"/>
+        <path class="e new" d="M800 226V290"/>
+        <path class="e" d="M1050 226V290"/>
+        <path class="e" d="M900 318H960"/>
+        <path class="e" d="M200 346V410"/>
+        <path class="e" d="M800 346V410"/>
+        <path class="e" d="M200 466V522H380" marker-end="url(#a1)"/>
+        <path class="e" d="M800 466V484H435V500" marker-end="url(#a1)"/>
+        <path class="e" d="M490 522H525" marker-end="url(#a1)"/>
+        <path class="e" d="M635 522H670" marker-end="url(#a1)"/>
+        <path class="e dash" d="M540 226V250H330V318H300" marker-end="url(#a1)"/>
+        <path class="e dash" d="M620 226V250H670V318H700" marker-end="url(#a1)"/>
+
+        <!-- 중개 건 (선택) -->
+        <rect class="band" x="80" y="268" width="840" height="100" rx="12"/>
+        <text class="t halo" x="500" y="314" text-anchor="middle">중개 건 (선택)</text>
+        <text class="s halo" x="500" y="333" text-anchor="middle">갈아타기처럼 물린 일을 묶고 순서를 적을 때만</text>
+
+        <!-- 구역 이름 -->
+        <text class="zone halo" x="200" y="159" text-anchor="middle">구하는 쪽</text>
+        <text class="zone halo" x="800" y="159" text-anchor="middle">내놓는 쪽</text>
+        <text class="zone halo" x="1040" y="159" text-anchor="end">집 (지금의 소유 관계)</text>
+        <text class="lbl halo" x="435" y="244" text-anchor="middle">어느 일의 것인지 가리킴</text>
+        <text class="lbl halo" x="895" y="58" text-anchor="middle">소유자 · 대리인</text>
+
+        <!-- 연락처 -->
+        <rect class="n hub" x="420" y="24" width="320" height="80" rx="10"/>
+        <text class="t" x="580" y="50" text-anchor="middle">연락처</text>
+        <text class="s" x="580" y="68" text-anchor="middle">사람 한 명 · 끝나지 않는 자료 모음</text>
+        <text class="s newt" x="580" y="88" text-anchor="middle" font-weight="600">+ 담당 직원 칸 추가</text>
+
+        <!-- 둘째 줄 -->
+        <rect class="n" x="100" y="170" width="200" height="56" rx="8"/>
+        <text class="t" x="200" y="194" text-anchor="middle">구매 의뢰 참여자</text>
+        <text class="s" x="200" y="212" text-anchor="middle">역할 · 주 연락 창구</text>
+
+        <rect class="n" x="480" y="170" width="200" height="56" rx="8"/>
+        <text class="t" x="580" y="194" text-anchor="middle">상담 · 후속 업무 · 통화</text>
+        <text class="s" x="580" y="212" text-anchor="middle">사람에 쌓인다</text>
+
+        <rect class="n new" x="700" y="170" width="200" height="56" rx="8"/>
+        <text class="t" x="800" y="194" text-anchor="middle">매물 의뢰 참여자</text>
+        <text class="s newt" x="800" y="212" text-anchor="middle" font-weight="600">새 표 · 역할 · 주 연락 창구</text>
+
+        <rect class="n" x="960" y="170" width="180" height="56" rx="8"/>
+        <text class="t" x="1050" y="194" text-anchor="middle">호실 관계</text>
+        <text class="s" x="1050" y="212" text-anchor="middle">지금 누가 가진 집인가</text>
+
+        <!-- 셋째 줄 -->
+        <rect class="n" x="100" y="290" width="200" height="56" rx="8"/>
+        <text class="t" x="200" y="314" text-anchor="middle">구매 의뢰</text>
+        <text class="s" x="200" y="332" text-anchor="middle">일 한 번 · 진행 · 보류 · 종료</text>
+
+        <rect class="n" x="700" y="290" width="200" height="56" rx="8"/>
+        <text class="t" x="800" y="314" text-anchor="middle">매물 의뢰</text>
+        <text class="s" x="800" y="332" text-anchor="middle">일 한 번 · 진행 · 보류 · 종료</text>
+
+        <rect class="n" x="960" y="290" width="180" height="56" rx="8"/>
+        <text class="t" x="1050" y="314" text-anchor="middle">호실</text>
+        <text class="s" x="1050" y="332" text-anchor="middle">단지 · 동 · 호</text>
+
+        <!-- 넷째 줄 -->
+        <rect class="n" x="100" y="410" width="200" height="56" rx="8"/>
+        <text class="t" x="200" y="434" text-anchor="middle">희망조건</text>
+        <text class="s" x="200" y="452" text-anchor="middle">찾는 조건 · 여러 개</text>
+
+        <rect class="n" x="700" y="410" width="200" height="56" rx="8"/>
+        <text class="t" x="800" y="434" text-anchor="middle">거래 조건</text>
+        <text class="s" x="800" y="452" text-anchor="middle">매매 · 전세 · 월세 · 여러 개</text>
+
+        <!-- 진행 -->
+        <rect class="n" x="380" y="500" width="110" height="44" rx="8"/>
+        <text class="t" x="435" y="527" text-anchor="middle">매칭</text>
+        <rect class="n" x="525" y="500" width="110" height="44" rx="8"/>
+        <text class="t" x="580" y="527" text-anchor="middle">거래</text>
+        <rect class="n" x="670" y="500" width="110" height="44" rx="8"/>
+        <text class="t" x="725" y="527" text-anchor="middle">계약</text>
+      </svg>
+    </div>
+    <figcaption>구하는 쪽에는 이미 "의뢰마다 누가 참여하는지"를 적는 표가 있습니다. 내놓는 쪽에는 그 표가 없어서, 같은 모양의 표를 하나 만듭니다(파랑). 상담은 계속 사람에 쌓이고, 적을 때 어느 의뢰의 상담인지만 함께 가리킵니다. 그 칸은 지금도 있습니다.</figcaption>
+  </figure>
+
+  <h2>2. 매물 쪽: 지금과 바꾼 뒤</h2>
+  <p class="sub">"이 매물을 누가 내놨나"를 어디서 읽는지가 달라집니다.</p>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1160 262" role="img" aria-label="지금은 매물 의뢰에서 호실, 호실 관계(지금 소유자)를 거쳐 연락처를 읽는다. 바꾼 뒤에는 매물 의뢰가 새 참여자 표를 통해 연락처를 직접 가리키고, 호실의 소유 관계는 따로 유지한다.">
+        <defs>
+          <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--edge)"/></marker>
+          <marker id="a2n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="var(--new)"/></marker>
+        </defs>
+        <line class="grid" x1="580" y1="8" x2="580" y2="254"/>
+
+        <!-- 지금 -->
+        <text class="panel-t" x="20" y="28">지금</text>
+        <rect class="n" x="20" y="56" width="110" height="52" rx="8"/>
+        <text class="t" x="75" y="87" text-anchor="middle">매물 의뢰</text>
+        <path class="e" d="M130 82H160" marker-end="url(#a2)"/>
+        <rect class="n" x="160" y="56" width="90" height="52" rx="8"/>
+        <text class="t" x="205" y="87" text-anchor="middle">호실</text>
+        <path class="e" d="M250 82H280" marker-end="url(#a2)"/>
+        <rect class="n" x="280" y="56" width="130" height="52" rx="8"/>
+        <text class="t" x="345" y="79" text-anchor="middle">호실 관계</text>
+        <text class="s" x="345" y="97" text-anchor="middle">지금의 소유자</text>
+        <path class="e" d="M410 82H440" marker-end="url(#a2)"/>
+        <rect class="n hub" x="440" y="56" width="110" height="52" rx="8"/>
+        <text class="t" x="495" y="87" text-anchor="middle">연락처</text>
+        <text class="warn" x="20" y="146">의뢰에는 사람이 적혀 있지 않습니다. 그 집의 "지금 소유자"를 손님으로 읽습니다.</text>
+        <text class="warn" x="20" y="168">• 매매가 끝나 소유자가 바뀌면, 지난 의뢰의 손님도 새 소유자로 바뀌어 보입니다.</text>
+        <text class="warn" x="20" y="190">• 대리인이나 가족이 내놓아도 소유자가 손님으로 잡힙니다.</text>
+        <text class="warn" x="20" y="212">• 소유자 연락처가 없는 매물은 원장에 나오지 않습니다.</text>
+
+        <!-- 바꾼 뒤 -->
+        <text class="panel-t" x="610" y="28">바꾼 뒤</text>
+        <rect class="n" x="610" y="56" width="110" height="52" rx="8"/>
+        <text class="t" x="665" y="87" text-anchor="middle">매물 의뢰</text>
+        <path class="e new" d="M720 82H760" marker-end="url(#a2n)"/>
+        <rect class="n new" x="760" y="56" width="190" height="52" rx="8"/>
+        <text class="t" x="855" y="79" text-anchor="middle">매물 의뢰 참여자</text>
+        <text class="s newt" x="855" y="97" text-anchor="middle" font-weight="600">이번에 누가 내놨나</text>
+        <path class="e new" d="M950 82H990" marker-end="url(#a2n)"/>
+        <rect class="n hub" x="990" y="56" width="110" height="52" rx="8"/>
+        <text class="t" x="1045" y="87" text-anchor="middle">연락처</text>
+
+        <path class="e faint" d="M665 108V176"/>
+        <rect class="n dim" x="610" y="176" width="110" height="52" rx="8"/>
+        <text class="t" x="665" y="207" text-anchor="middle">호실</text>
+        <path class="e faint" d="M720 202H760" marker-end="url(#a2)"/>
+        <rect class="n dim" x="760" y="176" width="190" height="52" rx="8"/>
+        <text class="t" x="855" y="199" text-anchor="middle">호실 관계</text>
+        <text class="s" x="855" y="217" text-anchor="middle">지금 누가 가진 집인가 (따로 유지)</text>
+        <path class="e faint" d="M950 202H1045V108" marker-end="url(#a2)"/>
+      </svg>
+    </div>
+    <figcaption>바꾼 뒤에는 의뢰가 사람을 직접 가리킵니다. 집이 팔려 소유자가 바뀌어도 지난 의뢰의 참여자는 그대로 남습니다. 새 의뢰를 만들 때는 그 집의 현재 소유자를 기본값으로 채우고 고칠 수 있게 합니다. 참여자가 없는 의뢰(소유자 연락처를 모르는 매물)도 허용합니다.</figcaption>
+  </figure>
+
+  <h2>3. 한 손님의 시간</h2>
+  <p class="sub">예: 한지우·서민호 부부가 집을 팔고 새 집을 산 뒤, 2년쯤 지나 부모님 전세를 구하러 다시 옵니다.</p>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1160 336" role="img" aria-label="연락처 한지우는 처음부터 끝까지 이어진다. 2026년 10월부터 2027년 2월까지 매물 의뢰와 구매 의뢰가 진행되다 종료되고, 2028년 9월에 새 구매 의뢰가 시작된다. 상담은 각 의뢰에 연결되고, 그 사이의 안부 전화는 사람에게만 붙는다. 원장의 상태는 파악 중, 진행 중, 종료, 다시 파악 중, 진행 중으로 바뀐다.">
+        <!-- 눈금 -->
+        <line class="grid" x1="352" y1="34" x2="352" y2="316"/>
+        <line class="grid" x1="736" y1="34" x2="736" y2="316"/>
+        <line class="grid" x1="1120" y1="34" x2="1120" y2="316"/>
+        <text class="tick" x="160" y="26">2026년 7월</text>
+        <text class="tick" x="352" y="26" text-anchor="middle">2027</text>
+        <text class="tick" x="736" y="26" text-anchor="middle">2028</text>
+        <text class="tick" x="1120" y="26" text-anchor="end">2029</text>
+
+        <!-- 사람 -->
+        <text class="row-l" x="20" y="67">사람</text>
+        <rect class="person" x="160" y="48" width="960" height="30" rx="6"/>
+        <text class="t" x="174" y="68">연락처 한지우</text>
+        <text class="s" x="270" y="68">함께: 서민호 · 처음부터 끝까지 이어진다</text>
+
+        <!-- 일 -->
+        <text class="row-l" x="20" y="124">일 (의뢰)</text>
+        <rect class="band" x="248" y="98" width="144" height="76" rx="8"/>
+        <text class="lbl halo" x="320" y="101" text-anchor="middle">중개 건 (선택)</text>
+        <rect class="work" x="256" y="108" width="128" height="24" rx="5"/>
+        <text class="st-t" x="320" y="124" text-anchor="middle">매물 의뢰</text>
+        <text class="s" x="402" y="124">아르테온 305동 매도 · 종료 (거래 완료)</text>
+        <rect class="work" x="256" y="140" width="128" height="24" rx="5"/>
+        <text class="st-t" x="320" y="156" text-anchor="middle">구매 의뢰</text>
+        <text class="s" x="402" y="156">잠실 34평 매수 · 종료 (거래 완료)</text>
+
+        <rect class="work open" x="992" y="108" width="128" height="24" rx="5"/>
+        <text class="st-t" x="1056" y="124" text-anchor="middle" fill="var(--go)">구매 의뢰</text>
+        <text class="s" x="984" y="124" text-anchor="end">부모님 전세 구함 · 새 일</text>
+
+        <!-- 상담 -->
+        <text class="row-l" x="20" y="212">상담</text>
+        <circle class="dot" cx="262" cy="208" r="4"/><circle class="dot" cx="290" cy="208" r="4"/><circle class="dot" cx="322" cy="208" r="4"/><circle class="dot" cx="352" cy="208" r="4"/><circle class="dot" cx="380" cy="208" r="4"/>
+        <path class="e" d="M256 222H386"/>
+        <text class="lbl" x="321" y="238" text-anchor="middle">그 일에 연결</text>
+        <circle class="dot free" cx="672" cy="208" r="4"/>
+        <text class="lbl" x="672" y="238" text-anchor="middle">안부 전화 · 사람에게만 (어느 일도 아님)</text>
+        <circle class="dot" cx="998" cy="208" r="4"/><circle class="dot" cx="1030" cy="208" r="4"/><circle class="dot" cx="1090" cy="208" r="4"/>
+        <path class="e" d="M992 222H1096"/>
+        <text class="lbl" x="1044" y="238" text-anchor="middle">새 일에 연결</text>
+
+        <!-- 원장의 상태 -->
+        <text class="row-l" x="20" y="290">원장의 상태</text>
+        <rect class="st-idle" x="256" y="272" width="64" height="26" rx="5"/>
+        <text class="st-t" x="288" y="289" text-anchor="middle" fill="var(--idle)">파악 중</text>
+        <rect class="st-go" x="322" y="272" width="62" height="26" rx="5"/>
+        <text class="st-t" x="353" y="289" text-anchor="middle" fill="var(--go)">진행 중</text>
+        <rect class="st-end" x="386" y="272" width="604" height="26" rx="5"/>
+        <text class="st-t" x="688" y="289" text-anchor="middle" fill="var(--muted)">종료 — 줄은 사라지지 않고 남는다</text>
+        <rect class="st-idle" x="992" y="272" width="62" height="26" rx="5"/>
+        <text class="st-t" x="1023" y="289" text-anchor="middle" fill="var(--idle)">파악 중</text>
+        <rect class="st-go" x="1056" y="272" width="64" height="26" rx="5"/>
+        <text class="st-t" x="1088" y="289" text-anchor="middle" fill="var(--go)">진행 중</text>
+        <text class="lbl" x="160" y="320">상태는 저장하지 않습니다. 진행 중인 의뢰에 소개나 거래가 있으면 진행 중, 없으면 파악 중, 끝난 의뢰만 있으면 종료입니다.</text>
+      </svg>
+    </div>
+    <figcaption>걱정하신 두 가지가 여기서 갈립니다. 거래가 끝나도 사람(맨 윗줄)은 그대로라 자료를 모아 둔 곳이 사라지지 않습니다. 다시 오면 새 의뢰가 따로 생기고, 상담도 그 의뢰에 연결되므로 지난 일과 섞이지 않습니다. 원장의 한 줄은 이 사람 한 명이고, 줄의 id는 연락처 id입니다.</figcaption>
+  </figure>
+
+  <h2>무엇이 바뀌나</h2>
+  <div class="cols">
+    <div>
+      <h3><span class="tag">새 표</span> 매물 의뢰 참여자</h3>
+      <table>
+        <tr><th>매물 의뢰</th><td>어느 의뢰의 참여자인가</td></tr>
+        <tr><th>연락처</th><td>누구인가</td></tr>
+        <tr><th>역할</th><td>내놓음 / 공동 내놓음 / 대리인 / 기타</td></tr>
+        <tr><th>주 연락 창구</th><td>의뢰당 한 명만</td></tr>
+      </table>
+      <p class="sub" style="margin-top:8px">기존 의뢰는 한 번 옮깁니다. 진행 중인 의뢰는 현재 소유자를, 거래로 끝난 의뢰는 거래에 적힌 매도인을 참여자로 넣습니다. 거래 없이 끝난 의뢰는 현재 소유자로 채우는데, 그 사이 소유자가 바뀌었다면 틀릴 수 있습니다.</p>
+      <h3><span class="tag">새 칸</span> 연락처의 담당 직원</h3>
+      <p class="sub">비워 둘 수 있습니다. 희망조건마다 있는 담당은 그대로 두고, 연락처 담당이 비어 있으면 원장은 희망조건의 담당을 보여 줍니다.</p>
+    </div>
+    <div>
+      <h3>표는 그대로, 규칙만 바뀌는 것</h3>
+      <ul>
+        <li>원장의 한 줄은 의뢰의 주 연락 창구인 사람 한 명입니다. 함께 묶인 사람은 그 줄의 동반자로 보입니다.</li>
+        <li>상담을 적을 때 진행 중인 의뢰에 연결합니다.</li>
+        <li>다음 연락은 후속 업무로 씁니다.</li>
+      </ul>
+      <h3>만들지 않는 것</h3>
+      <ul>
+        <li>고객 표, 원장 표, 가구 표</li>
+        <li>모든 의뢰가 반드시 속하는 중개 건</li>
+        <li>저장하는 상태 칸</li>
+      </ul>
+      <h3>걸리는 점</h3>
+      <ul>
+        <li>부부가 의뢰마다 주 연락을 다르게 잡으면 두 줄로 갈립니다.</li>
+        <li>담당이 연락처와 희망조건 두 군데에 생깁니다.</li>
+        <li>공용 DB 마이그레이션과 서버 재빌드가 필요합니다.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estait Flow · N1 정통 노션 홈 데스크</title>
+<link rel="stylesheet" href="./shared-hero.css">
+<link rel="stylesheet" href="./shared-desktop-chrome.css">
+<style>
+  .n1-wrap {
+    max-width: 1020px;
+    margin: 0 auto;
+    padding: 20px 36px 52px;
+  }
+
+  .n1-hero-gap {
+    margin-bottom: 26px;
+  }
+
+  /* Section 1: Recently Visited / Active Deals Soft Pastel Cards */
+  .n1-deals-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .n1-deal-card {
+    border-radius: 14px;
+    background: var(--bg);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    transition: transform 160ms var(--ease-out), box-shadow 160ms ease;
+  }
+  .n1-deal-card:active {
+    transform: scale(0.985);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .n1-deal-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-card-hover);
+    }
+  }
+
+  .n1-deal-cover {
+    height: 32px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .n1-deal-cover.is-prep { background: #f5f1fa; color: var(--violet); }
+  .n1-deal-cover.is-contract { background: #edf4fc; color: var(--blue); }
+  .n1-deal-cover.is-settle { background: #edf8f4; color: var(--green); }
+  .n1-deal-cover.is-overdue { background: #fdf0ef; color: var(--red); }
+
+  .n1-deal-body {
+    padding: 11px 13px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+  }
+  .n1-deal-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--fg);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .n1-deal-meta {
+    font-size: 12px;
+    color: var(--fg2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .n1-deal-foot {
+    margin-top: auto;
+    padding-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .n1-deal-due {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--fg3);
+  }
+  .n1-deal-due.bad { color: var(--red); }
+  .n1-deal-due.warn { color: var(--orange); }
+
+  .n1-thin-bar {
+    height: 2px;
+    width: 100%;
+    border-radius: 2px;
+    background: rgba(55, 53, 47, 0.08);
+    overflow: hidden;
+  }
+  .n1-thin-bar > i {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--green);
+  }
+
+  /* Section 2: Notion 2-Column Home Widgets */
+  .n1-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr);
+    gap: 22px;
+    margin-top: 26px;
+    align-items: start;
+  }
+
+  .n1-widget-card {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    padding: 14px 16px;
+  }
+
+  /* Notion Calendar Widget */
+  .n1-cal-days {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 10px;
+  }
+  .n1-cal-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 0;
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--fg3);
+    transition: background-color 120ms ease;
+  }
+  .n1-cal-day:hover {
+    background: var(--hover);
+  }
+  .n1-cal-day.selected {
+    background: var(--bg-soft);
+    color: var(--fg);
+  }
+  .n1-cal-num {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg);
+  }
+  .n1-cal-day.today .n1-cal-num {
+    background: var(--notion-today);
+    color: #fff;
+    font-weight: 600;
+  }
+  .n1-cal-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--orange);
+  }
+  .n1-cal-dot.none {
+    background: transparent;
+  }
+
+  .n1-ev-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .n1-ev-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    width: 100%;
+    transition: background-color 120ms ease;
+  }
+  .n1-ev-row:hover {
+    background: var(--hover);
+  }
+  .n1-ev-bar {
+    width: 3px;
+    height: 28px;
+    border-radius: 3px;
+    flex: none;
+    background: var(--orange);
+  }
+  .n1-ev-bar.meeting { background: var(--blue); }
+  .n1-ev-bar.contract { background: var(--violet); }
+
+  /* Signals quiet list under calendar */
+  .n1-sig-card {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .n1-sig-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+  .n1-sig-row:hover {
+    background: var(--hover);
+  }
+  .n1-sig-act {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .n1-sig-row:hover .n1-sig-act {
+    opacity: 1;
+  }
+
+  /* Notion My Tasks Widget (Toggle Groups + Borderless Rows) */
+  .n1-tasks-card {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    padding: 10px 10px 8px;
+  }
+  .n1-group-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg2);
+    margin-top: 2px;
+  }
+  .n1-group-toggle:hover {
+    background: var(--hover);
+  }
+  .n1-task-row {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background-color 110ms ease;
+  }
+  .n1-task-row:hover {
+    background: var(--hover);
+  }
+  .n1-task-act {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    opacity: 0;
+    transition: opacity 110ms ease;
+  }
+  .n1-task-row:hover .n1-task-act {
+    opacity: 1;
+  }
+  .n1-task-due {
+    font-size: 11.5px;
+    color: var(--fg3);
+    white-space: nowrap;
+  }
+  .n1-task-due.bad {
+    color: var(--red);
+    font-weight: 500;
+  }
+
+  .n1-add-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px 3px;
+    margin-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+  .n1-add-input {
+    flex: 1;
+    border: 0;
+    outline: none;
+    background: transparent;
+    font-size: 13px;
+    color: var(--fg);
+  }
+  .n1-add-input::placeholder {
+    color: var(--fg3);
+  }
+
+  /* Section 3: Soft Warm Callout Footer */
+  .n1-footer-callout {
+    margin-top: 24px;
+    background: var(--bg-soft);
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: grid;
+    grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+    gap: 24px;
+    align-items: start;
+  }
+  .n1-notice-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    transition: background-color 110ms ease;
+  }
+  .n1-notice-row:hover {
+    background: rgba(55, 53, 47, 0.05);
+  }
+
+  @media (max-width: 1120px) {
+    .n1-deals-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 920px) {
+    .n1-wrap {
+      padding: 16px 20px 44px;
+    }
+    .n1-cols,
+    .n1-footer-callout {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 640px) {
+    .n1-deals-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+<script src="./shared-data.js"></script>
+<script src="./shared-hero.js"></script>
+<script src="./shared-desktop-chrome.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const Data = window.DashMockData;
+  const ui = {
+    dealFilter: 'all',
+    showAllDeals: false,
+    taskFilter: 'all',
+    collapsedGroups: { upcoming: true, overdue: false, today: false },
+  };
+
+  const chrome = window.mountNotionDesktop({
+    activeVariant: 'n1',
+    wrapClass: 'n1-wrap',
+    onPin: (pin) => {
+      if (pin === 'schedule') {
+        Data.selectDay(Data.getScopedData().todayKey);
+        chrome.homeEl.querySelector('#n1CalBlock')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        ui.taskFilter = pin === 'overdue' ? 'overdue' : 'today';
+        render();
+        chrome.homeEl.querySelector('#n1TasksBlock')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    },
+    onQuickCreate: () => chrome.contentHost.querySelector('#n1QuickInput')?.focus(),
+  });
+
+  // Add breathing room under mounted hero
+  chrome.contentHost.parentElement.querySelector('#ntHeroHost').classList.add('n1-hero-gap');
+
+  function coverClassFor(deal) {
+    if (deal.health === 'overdue') return 'is-overdue';
+    if (deal.stage === 'preparing' || deal.stage === 'preContract') return 'is-prep';
+    if (deal.stage === 'contracted') return 'is-contract';
+    return 'is-settle';
+  }
+
+  function render() {
+    const d = Data.getScopedData();
+    chrome.hero.setScope(d.scope);
+    chrome.hero.updateCounts(d.heroCounts);
+    chrome.hero.setFlags(d.heroFlags);
+
+    const filteredDeals = d.deals.filter((deal) => {
+      if (ui.dealFilter === 'all') return true;
+      if (ui.dealFilter === 'pre') return deal.stage === 'preparing' || deal.stage === 'preContract';
+      if (ui.dealFilter === 'con') return deal.stage === 'contracted';
+      return deal.stage === 'settling' || deal.stage === 'completed';
+    });
+    const visibleDeals = ui.showAllDeals || ui.dealFilter !== 'all' ? filteredDeals : filteredDeals.slice(0, 4);
+
+    const sigFeed = [
+      ...d.pendingSuggestions.map((c) => ({
+        isCall: true,
+        id: c.id,
+        key: `call:${c.id}`,
+        title: `${c.contactName} — ${c.suggestionAction}`,
+        sub: c.summary,
+        dot: 'var(--violet)',
+      })),
+      ...d.activeSignals.slice(0, 3).map((s) => ({
+        isCall: false,
+        id: s.id,
+        key: `signal:${s.id}`,
+        title: s.title,
+        sub: s.sub,
+        dot: s.tone === 'destructive' ? 'var(--red)' : 'var(--orange)',
+      })),
+    ];
+
+    const taskGroups = [
+      { id: 'overdue', label: '기한 지남', list: d.overdueTasks, isOverdue: true },
+      { id: 'today', label: '오늘', list: d.todayTasks, isOverdue: false },
+      { id: 'upcoming', label: '다가오는 할 일', list: d.upcomingTasks, isOverdue: false },
+    ].filter((g) => {
+      if (ui.taskFilter === 'overdue') return g.id === 'overdue';
+      if (ui.taskFilter === 'today') return g.id === 'overdue' || g.id === 'today';
+      return g.list.length > 0;
+    });
+
+    chrome.contentHost.innerHTML = `
+      <section aria-label="진행 중인 거래">
+        <div class="nt-sec-head">
+          <div class="nt-sec-title">
+            ${chrome.svgIcon('handshake', 'ic ic-sm')}
+            <span>진행 중인 거래</span>
+            <span class="num" style="color:var(--fg3);font-weight:400">${filteredDeals.length}건</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="nt-text-tabs">
+              ${[
+                { id: 'all', label: '전체' },
+                { id: 'pre', label: '가계약' },
+                { id: 'con', label: '본계약' },
+                { id: 'set', label: '잔금' },
+              ]
+                .map(
+                  (f) => `<button type="button" class="nt-ttab${ui.dealFilter === f.id ? ' active' : ''}" data-n1-df="${f.id}">${f.label}</button>`,
+                )
+                .join('')}
+            </div>
+            ${
+              ui.dealFilter === 'all' && filteredDeals.length > 4
+                ? `<button type="button" class="nt-ghost-btn" data-n1-more-deals>${ui.showAllDeals ? '접기' : `+${filteredDeals.length - 4}건 더`}</button>`
+                : ''
+            }
+          </div>
+        </div>
+
+        <div class="n1-deals-grid">
+          ${visibleDeals
+            .map((deal) => {
+              const st = Data.STAGE_META[deal.stage] || { label: deal.stage, step: 1 };
+              const pct = Math.round((st.step / 5) * 100);
+              const dueCls = deal.health === 'overdue' ? 'bad' : deal.health === 'urgent' ? 'warn' : '';
+              return `
+              <article class="n1-deal-card" data-n1-deal="${deal.id}">
+                <div class="n1-deal-cover ${coverClassFor(deal)}">
+                  <span>${st.label}</span>
+                  <span style="opacity:0.8">${deal.isJointBrokerage ? '공동' : deal.assignee}</span>
+                </div>
+                <div class="n1-deal-body">
+                  <div class="n1-deal-title">${chrome.escapeHtml(deal.siteName)} ${chrome.escapeHtml(deal.dongHo)}</div>
+                  <div class="n1-deal-meta num">${chrome.escapeHtml(deal.amountText)} · ${chrome.escapeHtml(deal.sellerName)}↔${chrome.escapeHtml(deal.buyerName)}</div>
+                  <div class="n1-deal-foot">
+                    <div class="n1-deal-due ${dueCls} num">${chrome.escapeHtml(deal.healthText)}</div>
+                    <div class="n1-thin-bar"><i style="width:${pct}%"></i></div>
+                  </div>
+                </div>
+              </article>`;
+            })
+            .join('')}
+        </div>
+      </section>
+
+      <div class="n1-cols">
+        <div>
+          <section id="n1CalBlock" aria-label="다가오는 일정">
+            <div class="nt-sec-head">
+              <div class="nt-sec-title">
+                ${chrome.svgIcon('calendar', 'ic ic-sm')}
+                <span>다가오는 일정</span>
+              </div>
+              ${d.selectedDayKey !== d.todayKey ? '<button type="button" class="nt-ghost-btn" data-n1-today>오늘</button>' : ''}
+            </div>
+            <div class="n1-widget-card">
+              <div class="n1-cal-days">
+                ${d.weekDays
+                  .map(
+                    (wd) => `
+                  <button type="button" class="n1-cal-day${wd.isToday ? ' today' : ''}${wd.key === d.selectedDayKey ? ' selected' : ''}" data-n1-day="${wd.key}">
+                    <span>${wd.weekday}</span>
+                    <span class="n1-cal-num num">${wd.dayNum}</span>
+                    <span class="n1-cal-dot${(d.eventCountByDay[wd.key] || 0) > 0 ? '' : ' none'}"></span>
+                  </button>`,
+                  )
+                  .join('')}
+              </div>
+              <div class="n1-ev-list">
+                ${
+                  d.selectedDayEvents.length === 0
+                    ? '<div style="padding:18px 8px;text-align:center;color:var(--fg3);font-size:12.5px">선택한 날 일정이 없습니다.</div>'
+                    : d.selectedDayEvents
+                        .map(
+                          (ev) => `
+                        <button type="button" class="n1-ev-row" data-n1-ev="${ev.id}">
+                          <span class="n1-ev-bar ${ev.type || ''}"></span>
+                          <div style="min-width:0;flex:1">
+                            <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(ev.title)}</div>
+                            <div style="font-size:11.5px;color:var(--fg3)" class="num">${Data.formatHour(ev.hour)}${ev.propertyLabel ? ` · ${chrome.escapeHtml(ev.propertyLabel)}` : ''}</div>
+                          </div>
+                        </button>`,
+                        )
+                        .join('')
+                }
+              </div>
+            </div>
+          </section>
+
+          <section style="margin-top:20px" aria-label="통화 제안 및 신호">
+            <div class="nt-sec-head">
+              <div class="nt-sec-title">
+                ${chrome.svgIcon('phone', 'ic ic-sm')}
+                <span>통화 제안 · 매물 신호</span>
+                <span class="num" style="color:var(--fg3);font-weight:400">${sigFeed.length}</span>
+              </div>
+            </div>
+            <div class="n1-sig-card">
+              ${
+                sigFeed.length === 0
+                  ? '<div style="padding:16px;text-align:center;color:var(--fg3);font-size:12.5px">처리할 신호가 없습니다.</div>'
+                  : sigFeed
+                      .map(
+                        (s) => `
+                    <div class="n1-sig-row" data-n1-sigkind="${s.isCall ? 'call' : 'signal'}" data-n1-sigid="${s.id}" data-n1-sigtitle="${chrome.escapeHtml(s.title)}">
+                      <span style="width:6px;height:6px;border-radius:50%;background:${s.dot};flex:none"></span>
+                      <div style="min-width:0;flex:1">
+                        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(s.title)}</div>
+                        <div style="font-size:11.5px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(s.sub)}</div>
+                      </div>
+                      <button type="button" class="nt-ghost-btn soft n1-sig-act" data-n1-act="${s.isCall ? 'call' : 'signal'}" data-n1-id="${s.id}">${s.isCall ? '반영' : '확인'}</button>
+                    </div>`,
+                      )
+                      .join('')
+              }
+            </div>
+          </section>
+        </div>
+
+        <section id="n1TasksBlock" aria-label="내 할 일">
+          <div class="nt-sec-head">
+            <div class="nt-sec-title">
+              ${chrome.svgIcon('todo', 'ic ic-sm')}
+              <span>내 할 일</span>
+              <span class="num" style="color:var(--fg3);font-weight:400">${d.openTasks.length}</span>
+            </div>
+            <div class="nt-text-tabs">
+              ${[
+                { id: 'all', label: '전체' },
+                { id: 'overdue', label: '기한 지남' },
+                { id: 'today', label: '오늘' },
+              ]
+                .map(
+                  (f) => `<button type="button" class="nt-ttab${ui.taskFilter === f.id ? ' active' : ''}" data-n1-tf="${f.id}">${f.label}</button>`,
+                )
+                .join('')}
+            </div>
+          </div>
+
+          <div class="n1-tasks-card">
+            ${taskGroups
+              .map((g) => {
+                const isCollapsed = ui.taskFilter === 'all' && ui.collapsedGroups[g.id];
+                return `
+                <div>
+                  <button type="button" class="n1-group-toggle" data-n1-group="${g.id}">
+                    <span style="font-size:10px;width:12px">${isCollapsed ? '▸' : '▾'}</span>
+                    <span style="${g.isOverdue && g.list.length > 0 ? 'color:var(--red)' : ''}">${g.label}</span>
+                    <span class="num" style="color:var(--fg3);font-weight:400">${g.list.length}</span>
+                  </button>
+                  ${
+                    isCollapsed
+                      ? ''
+                      : g.list.length === 0
+                        ? '<div style="padding:8px 26px;font-size:12px;color:var(--fg3)">항목이 없습니다.</div>'
+                        : g.list
+                            .map(
+                              (t) => `
+                          <div class="n1-task-row" data-n1-task="${t.id}">
+                            <button type="button" class="nt-chk" data-n1-done="${t.id}" aria-checked="false" aria-label="${chrome.escapeHtml(t.title)} 완료">
+                              <svg viewBox="0 0 12 12"><path d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+                            </button>
+                            <div style="min-width:0">
+                              <div style="font-size:13px;font-weight:500;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(t.title)}</div>
+                              <div style="font-size:11.5px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${[t.propertyLabel, t.contactName, d.scope === 'all' ? t.assignee : null].filter(Boolean).join(' · ') || chrome.escapeHtml(t.categoryLabel || '업무')}</div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:6px">
+                              <div class="n1-task-act">
+                                <button type="button" class="nt-ghost-btn" data-n1-snooze="${t.id}">내일로</button>
+                              </div>
+                              <span class="n1-task-due num${t.dueOffsetDays < 0 ? ' bad' : ''}">${Data.dDayLabel(t.dueOffsetDays)}</span>
+                            </div>
+                          </div>`,
+                            )
+                            .join('')
+                  }
+                </div>`;
+              })
+              .join('')}
+
+            <form class="n1-add-row" id="n1QuickForm">
+              <span style="color:var(--fg3);font-weight:500">+</span>
+              <input type="text" class="n1-add-input" id="n1QuickInput" placeholder="새 할 일 추가 후 Enter..." aria-label="새 할 일 추가">
+            </form>
+          </div>
+        </section>
+      </div>
+
+      <section class="n1-footer-callout" aria-label="이달 수금 및 공지사항">
+        <div style="cursor:pointer" data-n1-cashflow>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:12.5px;font-weight:600;color:var(--fg2)">이달 수금</span>
+            <span class="nt-pill num" data-tone="green">${d.summary.collectionPct}%</span>
+          </div>
+          <div style="font-size:20px;font-weight:700;letter-spacing:-0.02em" class="num">${Data.formatMoneyManwon(d.summary.collectedManwon)}</div>
+          <div class="n1-thin-bar" style="height:5px;margin:8px 0 6px"><i style="width:${d.summary.collectionPct}%"></i></div>
+          <div style="font-size:12px;color:var(--fg3)" class="num">목표 ${Data.formatMoneyManwon(d.summary.expectedManwon)} · 이번 달 계약 ${d.summary.contractCount}건</div>
+        </div>
+
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:12.5px;font-weight:600;color:var(--fg2)">공지사항</span>
+            <span class="num" style="font-size:11.5px;color:var(--blue)">안 읽음 ${d.unreadNotices.length}</span>
+          </div>
+          <div>
+            ${d.notices
+              .slice(0, 4)
+              .map(
+                (n) => `
+              <button type="button" class="n1-notice-row" data-n1-notice="${n.id}">
+                <span style="width:6px;height:6px;border-radius:50%;flex:none;background:${n.readAt ? 'transparent' : 'var(--blue)'}"></span>
+                ${n.isRequired ? '<span class="nt-pill" data-tone="red">필독</span>' : ''}
+                <span style="flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:${n.readAt ? 400 : 600};color:${n.readAt ? 'var(--fg2)' : 'var(--fg)'}">${chrome.escapeHtml(n.title)}</span>
+                <span class="num" style="font-size:11.5px;color:var(--fg3)">${n.publishedAt}</span>
+              </button>`,
+              )
+              .join('')}
+          </div>
+        </div>
+      </section>
+    `;
+
+    const root = chrome.contentHost;
+    root.querySelectorAll('[data-n1-df]').forEach((b) =>
+      b.addEventListener('click', () => {
+        ui.dealFilter = b.dataset.n1Df;
+        render();
+      }),
+    );
+    root.querySelector('[data-n1-more-deals]')?.addEventListener('click', () => {
+      ui.showAllDeals = !ui.showAllDeals;
+      render();
+    });
+    root.querySelectorAll('[data-n1-deal]').forEach((card) => {
+      const deal = Data.state.deals.find((x) => x.id === card.dataset.n1Deal);
+      if (!deal) return;
+      card.addEventListener('click', (e) => {
+        chrome.openTab(
+          { key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--green)' },
+          { background: e.metaKey || e.ctrlKey },
+        );
+      });
+      card.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        chrome.openContextMenu(e.clientX, e.clientY, [
+          { label: '새 탭으로 열기', action: () => chrome.openTab({ key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--green)' }) },
+          { label: '백그라운드 탭으로 열기', action: () => chrome.openTab({ key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--green)' }, { background: true }) },
+          { sep: true },
+          { label: '전화 걸기 (CTI)', action: () => chrome.triggerCti({ callerName: deal.buyerName, callerRole: `${deal.siteName} ${deal.dongHo} 매수인`, phone: deal.buyerPhone, memo: deal.specialTerms }) },
+        ]);
+      });
+    });
+
+    root.querySelectorAll('[data-n1-day]').forEach((b) =>
+      b.addEventListener('click', () => Data.selectDay(b.dataset.n1Day)),
+    );
+    root.querySelector('[data-n1-today]')?.addEventListener('click', () => Data.selectDay(d.todayKey));
+    root.querySelectorAll('[data-n1-ev]').forEach((b) => {
+      const ev = Data.state.events.find((x) => x.id === b.dataset.n1Ev);
+      if (!ev) return;
+      b.addEventListener('click', (e) =>
+        chrome.openTab({ key: `event:${ev.id}`, title: ev.title, kind: 'event', payload: { eventId: ev.id }, dotColor: 'var(--orange)' }, { background: e.metaKey || e.ctrlKey }),
+      );
+    });
+
+    root.querySelectorAll('[data-n1-act]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (b.dataset.n1Act === 'call') {
+          Data.resolveCallSuggestion(b.dataset.n1Id, 'accepted');
+          chrome.hero.cheer();
+          chrome.showToast('통화 제안을 반영했습니다');
+        } else {
+          Data.resolveSignal(b.dataset.n1Id, '확인 완료');
+          chrome.hero.cheer();
+          chrome.showToast('신호를 확인 처리했습니다');
+        }
+      }),
+    );
+    root.querySelectorAll('[data-n1-sigid]').forEach((row) =>
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        const kind = row.dataset.n1Sigkind;
+        chrome.openTab(
+          { key: `${kind}:${row.dataset.n1Sigid}`, title: row.dataset.n1Sigtitle, kind, payload: { id: row.dataset.n1Sigid }, dotColor: kind === 'call' ? 'var(--violet)' : 'var(--orange)' },
+          { background: e.metaKey || e.ctrlKey },
+        );
+      }),
+    );
+
+    root.querySelectorAll('[data-n1-tf]').forEach((b) =>
+      b.addEventListener('click', () => {
+        ui.taskFilter = b.dataset.n1Tf;
+        render();
+      }),
+    );
+    root.querySelectorAll('[data-n1-group]').forEach((b) =>
+      b.addEventListener('click', () => {
+        ui.collapsedGroups[b.dataset.n1Group] = !ui.collapsedGroups[b.dataset.n1Group];
+        render();
+      }),
+    );
+    root.querySelectorAll('[data-n1-done]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        b.setAttribute('aria-checked', 'true');
+        const res = Data.completeTask(b.dataset.n1Done);
+        if (!res) return;
+        chrome.hero.cheer();
+        chrome.showToast('할 일을 완료했습니다', res.task.title, () => Data.restoreTaskStatus(res.task.id, res.previousStatus));
+      }),
+    );
+    root.querySelectorAll('[data-n1-snooze]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const res = Data.snoozeTask(b.dataset.n1Snooze, 1, '내일');
+        if (res) chrome.showToast('내일로 미뤘습니다', res.task.title, () => Data.snoozeTask(res.task.id, res.prevOffset, '원래 기한'));
+      }),
+    );
+    root.querySelectorAll('[data-n1-task]').forEach((row) => {
+      const t = Data.state.tasks.find((x) => x.id === row.dataset.n1Task);
+      if (!t) return;
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        chrome.openTab({ key: `task:${t.id}`, title: t.title, kind: 'task', payload: { id: t.id }, dotColor: 'var(--blue)' }, { background: e.metaKey || e.ctrlKey });
+      });
+    });
+
+    root.querySelector('#n1QuickForm')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const inp = root.querySelector('#n1QuickInput');
+      const created = Data.addTask(inp.value);
+      if (created) {
+        inp.value = '';
+        chrome.showToast('할 일을 추가했습니다', created.title);
+      }
+    });
+
+    root.querySelector('[data-n1-cashflow]')?.addEventListener('click', (e) =>
+      chrome.openTab({ key: 'route:/cashflow', title: '수수료/정산', kind: 'route', payload: { route: '/cashflow' }, dotColor: 'var(--green)' }, { background: e.metaKey || e.ctrlKey }),
+    );
+    root.querySelectorAll('[data-n1-notice]').forEach((b) => {
+      const n = Data.state.notices.find((x) => x.id === b.dataset.n1Notice);
+      if (!n) return;
+      b.addEventListener('click', (e) =>
+        chrome.openTab({ key: `notice:${n.id}`, title: n.title, kind: 'notice', payload: { noticeId: n.id }, dotColor: 'var(--blue)' }, { background: e.metaKey || e.ctrlKey }),
+      );
+    });
+  }
+
+  Data.subscribe(render);
+  render();
+})();
+</script>
+</body>
+</html>

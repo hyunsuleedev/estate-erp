@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estait Flow · 3단 풀화면 대시보드</title>
+<link rel="stylesheet" href="./shared-hero.css">
+<link rel="stylesheet" href="./shared-desktop-chrome.css">
+<style>
+  /* Container query watches workspace inline width: hides right rail when sidebar
+     expands at desktop widths or viewport drops below 1260px */
+  #ntHomeView {
+    container-type: inline-size;
+    container-name: nt-canvas;
+  }
+
+  .wd-wrap {
+    width: 100%;
+    max-width: 1560px;
+    margin: 0 auto;
+    padding: 16px 24px 52px;
+  }
+  .wd-hero-gap {
+    width: 100%;
+    min-width: 0;
+    margin-bottom: 16px;
+  }
+  .wd-wrap .dash-hero {
+    border-radius: 14px;
+  }
+
+  .wd-grid {
+    display: grid;
+    grid-template-columns: 308px minmax(0, 1fr) 276px;
+    column-gap: 18px;
+    align-items: start;
+  }
+
+  .wd-card {
+    background: var(--bg);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 2px rgba(15, 15, 15, 0.03);
+  }
+
+  /* =========================================================
+     Left Column: Monthly Mini Calendar + Connected Schedule Cards
+     ========================================================= */
+  .wd-left {
+    position: sticky;
+    top: 18px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .wd-cal-card {
+    padding: 15px 15px 13px;
+  }
+  .wd-sched-card {
+    padding: 15px 16px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .wd-upcoming-sec {
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+  .wd-cal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .wd-cal-month {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--fg);
+    letter-spacing: -0.015em;
+  }
+  .wd-cal-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .wd-cal-btn {
+    height: 22px;
+    min-width: 22px;
+    padding: 0 5px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--fg2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 110ms ease, color 110ms ease;
+  }
+  .wd-cal-btn:hover {
+    background: rgba(55, 53, 47, 0.08);
+    color: var(--fg);
+  }
+
+  .wd-cal-weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+    margin-bottom: 4px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--fg3);
+  }
+  .wd-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+  }
+  .wd-cal-day {
+    height: 32px;
+    border-radius: 7px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 12px;
+    color: var(--fg);
+    position: relative;
+    transition: background-color 110ms ease, color 110ms ease;
+  }
+  .wd-cal-day:hover {
+    background: rgba(55, 53, 47, 0.065);
+  }
+  .wd-cal-day.is-out {
+    opacity: 0.32;
+  }
+  .wd-cal-num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-grid;
+    place-items: center;
+    line-height: 1;
+  }
+  .wd-cal-day.is-today:not(.is-selected) .wd-cal-num {
+    background: rgba(235, 87, 87, 0.14);
+    color: var(--notion-today);
+    font-weight: 700;
+  }
+  .wd-cal-day.is-selected .wd-cal-num {
+    background: var(--fg);
+    color: #ffffff;
+    font-weight: 700;
+  }
+  .wd-cal-day.is-today.is-selected .wd-cal-num {
+    background: var(--notion-today);
+    color: #ffffff;
+    font-weight: 700;
+  }
+  .wd-cal-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: transparent;
+  }
+  .wd-cal-dot.has {
+    background: rgba(55, 53, 47, 0.42);
+  }
+  .wd-cal-day.is-today .wd-cal-dot.has {
+    background: var(--notion-today);
+  }
+
+  .wd-subhead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 6px;
+    margin: 0 0 8px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .wd-subhead-count {
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--fg3);
+  }
+
+  /* Paper Vertical Timeline */
+  .wd-timeline {
+    position: relative;
+    padding-left: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .wd-timeline::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 8px;
+    bottom: 8px;
+    width: 1px;
+    background: var(--border-strong);
+  }
+  .wd-tl-item {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 5px 7px;
+    border-radius: 7px;
+    text-align: left;
+    transition: background-color 110ms ease;
+  }
+  .wd-tl-item:hover {
+    background: var(--hover);
+  }
+  .wd-tl-dot {
+    position: absolute;
+    left: -14px;
+    top: 10px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--orange);
+    box-shadow: 0 0 0 3px var(--bg);
+  }
+  .wd-tl-dot.meeting { background: var(--blue); }
+  .wd-tl-dot.contract { background: var(--violet); }
+
+  .wd-upcoming-row {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 6px;
+    margin: 0 -6px;
+    border-radius: 7px;
+    text-align: left;
+    transition: background-color 110ms ease;
+  }
+  .wd-upcoming-row:hover {
+    background: var(--hover);
+  }
+  .wd-upcoming-date {
+    width: 44px;
+    flex: none;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--fg3);
+    padding-top: 1px;
+  }
+  .wd-upcoming-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-top: 6px;
+    flex: none;
+    background: var(--orange);
+  }
+  .wd-upcoming-dot.meeting { background: var(--blue); }
+  .wd-upcoming-dot.contract { background: var(--violet); }
+
+  /* =========================================================
+     Center Column: Bento Card Stacks (Tasks + Deals + Signals)
+     ========================================================= */
+  .wd-center {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .wd-center-card {
+    padding: 16px 18px 10px;
+  }
+  .wd-center-card.compact {
+    padding: 10px 14px;
+  }
+
+  .wd-h2 {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin: 0 0 10px;
+  }
+  .wd-h2-left {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+  .wd-h2-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--fg);
+  }
+  .wd-h2-meta {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--fg3);
+  }
+  .wd-scope-caption {
+    font-size: 12px;
+    color: var(--fg3);
+  }
+  .wd-link-btn {
+    height: 24px;
+    padding: 0 6px;
+    margin-right: -4px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg3);
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .wd-link-btn:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+
+  /* Compact triggers shown ONLY when right margin rail hides */
+  .wd-compact-actions {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+  }
+  .n2-compact-pill {
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 6px;
+    background: var(--bg-soft);
+    color: var(--fg2);
+    font-size: 12px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .n2-compact-pill:hover {
+    background: rgba(55, 53, 47, 0.08);
+    color: var(--fg);
+  }
+
+  .wd-group-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 4px;
+    margin-top: 4px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--fg2);
+  }
+  .wd-group-btn:hover {
+    background: var(--hover);
+  }
+
+  /* Paper To-Do Checklists */
+  .n2-todo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background-color 110ms ease;
+  }
+  .n2-todo:hover {
+    background: var(--hover);
+  }
+  .n2-todo-act {
+    opacity: 0;
+    transition: opacity 110ms ease;
+  }
+  .n2-todo:hover .n2-todo-act {
+    opacity: 1;
+  }
+
+  /* Notion Inline Database List View for Deals */
+  .n2-db-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 86px 120px 126px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 8px;
+    border-radius: 7px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background-color 110ms ease;
+  }
+  .n2-db-row:last-child {
+    border-bottom: 0;
+  }
+  .n2-db-row:hover {
+    background: var(--hover);
+  }
+
+  /* Consultation Rows inside Center Bento Card */
+  .wd-consult-row {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 8px;
+    border-radius: 8px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    transition: background-color 110ms ease;
+  }
+  .wd-consult-row:last-child {
+    border-bottom: 0;
+  }
+  .wd-consult-row:hover {
+    background: var(--hover);
+  }
+  .wd-consult-main {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .wd-consult-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .wd-consult-summary {
+    font-size: 12.5px;
+    color: var(--fg2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wd-consult-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    flex: none;
+  }
+
+  /* =========================================================
+     Right Sticky Margin Rail (White Bento Cards + Guide Banner)
+     ========================================================= */
+  .wd-rail {
+    position: sticky;
+    top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+
+  .n2-side-card {
+    padding: 13px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .n2-cash-card {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    text-align: left;
+    transition: border-color 140ms ease, background-color 140ms ease;
+  }
+  .n2-cash-card:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-card-hover);
+  }
+
+  .n2-rail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--fg3);
+  }
+
+  .n2-tl-feed {
+    border-left: 1px solid rgba(55, 53, 47, 0.11);
+    margin-left: 4px;
+    padding-left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .n2-tl-entry {
+    position: relative;
+    width: 100%;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-radius: 5px;
+    transition: color 120ms ease;
+  }
+  .n2-tl-entry::before {
+    content: "";
+    position: absolute;
+    left: -16px;
+    top: 5px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #c8c6c1;
+    box-shadow: 0 0 0 3px #ffffff;
+  }
+  .n2-tl-entry.unread::before {
+    background: var(--blue);
+  }
+
+  .n2-rail-row {
+    width: 100%;
+    padding: 4px 7px;
+    margin: 0 -7px;
+    border-radius: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+    transition: background-color 120ms ease;
+  }
+  .n2-rail-row:hover {
+    background: rgba(55, 53, 47, 0.05);
+  }
+  .n2-rail-title {
+    font-size: 12.5px;
+    line-height: 1.38;
+    color: #5f5e59;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    transition: color 120ms ease;
+  }
+  .n2-tl-entry:hover .n2-rail-title,
+  .n2-rail-row:hover .n2-rail-title {
+    color: var(--fg);
+  }
+  .n2-rail-meta {
+    font-size: 11px;
+    color: var(--fg3);
+  }
+  .n2-rail-more {
+    align-self: flex-start;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--fg3);
+    padding: 2px 4px;
+    margin: -2px -4px 0;
+    border-radius: 5px;
+  }
+  .n2-rail-more:hover {
+    color: var(--fg);
+    background: rgba(55, 53, 47, 0.055);
+  }
+
+  /* Editorial Community-Board Style App Guide Spotlight Banner */
+  .wd-guide-banner {
+    border-radius: 14px;
+    padding: 13px 15px 12px;
+    color: #ffffff;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    user-select: none;
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+    transition: transform 150ms var(--ease-out), box-shadow 150ms ease;
+  }
+  .wd-guide-banner.is-slate {
+    background: linear-gradient(135deg, #1e293b 0%, #2c3e5e 60%, #3a4f75 100%);
+  }
+  .wd-guide-banner.is-forest {
+    background: linear-gradient(135deg, #133830 0%, #1c5447 62%, #246858 100%);
+  }
+  .wd-guide-banner.is-stone {
+    background: linear-gradient(135deg, #2d2926 0%, #443e37 62%, #574f46 100%);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .wd-guide-banner:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+    }
+  }
+  .wd-banner-svg {
+    position: absolute;
+    right: -6px;
+    bottom: -10px;
+    width: 78px;
+    height: 78px;
+    pointer-events: none;
+    opacity: 0.16;
+  }
+  .wd-banner-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    position: relative;
+    z-index: 1;
+  }
+  .wd-banner-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.16);
+    color: rgba(255, 255, 255, 0.94);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .wd-banner-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .wd-banner-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.36);
+    transition: width 160ms var(--ease-out), background-color 140ms ease;
+  }
+  .wd-banner-dot:hover {
+    background: rgba(255, 255, 255, 0.72);
+  }
+  .wd-banner-dot.active {
+    width: 14px;
+    background: rgba(255, 255, 255, 0.94);
+  }
+  .wd-banner-title {
+    font-size: 13.5px;
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: -0.015em;
+    color: #ffffff;
+    position: relative;
+    z-index: 1;
+  }
+  .wd-banner-sub {
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.78);
+    position: relative;
+    z-index: 1;
+  }
+  .wd-banner-cta {
+    margin-top: 2px;
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.92);
+    position: relative;
+    z-index: 1;
+  }
+
+  /* =========================================================
+     Lightweight Side Peek Drawer (News Articles & Digest)
+     ========================================================= */
+  .hy-side-peek {
+    position: fixed;
+    top: 44px;
+    right: 12px;
+    bottom: 12px;
+    width: 440px;
+    max-width: calc(100vw - 24px);
+    background: var(--bg);
+    border-radius: 14px;
+    box-shadow: var(--shadow-float);
+    z-index: 55;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(24px);
+    transition: opacity 180ms var(--ease-out), transform 200ms var(--ease-out);
+  }
+  .hy-side-peek.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+  .hy-peek-head {
+    height: 44px;
+    flex: none;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .hy-peek-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 18px 20px 28px;
+  }
+
+  @container nt-canvas (max-width: 1259px) {
+    .wd-grid {
+      grid-template-columns: 296px minmax(0, 1fr);
+      column-gap: 18px;
+    }
+    .wd-rail {
+      display: none;
+    }
+    .wd-scope-caption {
+      display: none;
+    }
+    .wd-compact-actions {
+      display: inline-flex;
+    }
+  }
+  @container nt-canvas (max-width: 959px) {
+    .wd-wrap {
+      padding: 14px 16px 40px;
+    }
+    .wd-grid {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 14px;
+    }
+    .wd-left {
+      position: static;
+    }
+  }
+  @container nt-canvas (max-width: 640px) {
+    .n2-db-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .n2-db-hide {
+      display: none;
+    }
+  }
+</style>
+</head>
+<body>
+<script src="./shared-data.js"></script>
+<script src="./shared-hero.js"></script>
+<script src="./shared-desktop-chrome.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const Data = window.DashMockData;
+  const WEEKDAYS_MON = ['월', '화', '수', '목', '금', '토', '일'];
+  const WEEKDAYS_SUN = Data.WEEKDAYS;
+
+  function dateKeyFromDate(dt) {
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function parseDateKey(key) {
+    const [y, m, d] = String(key || '').split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+  }
+
+  function offsetDateKey(baseDate, offsetDays) {
+    return dateKeyFromDate(new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + offsetDays));
+  }
+
+  const baseToday = new Date(Data.getScopedData().today);
+
+  // Additional upcoming events anchored relative to today so calendar dots &
+  // "다가오는 일정" always stay rich regardless of day-of-week.
+  const UPCOMING_EXTRA_EVENTS = [
+    {
+      id: 'up-ext-1',
+      dayKey: offsetDateKey(baseToday, 1),
+      hour: 10.5,
+      title: '가계약금 정산 및 본계약 일정 확정',
+      type: 'contract',
+      propertyLabel: '고덕아르테온 301동 604호',
+      contactName: '송유진',
+      dealId: null,
+      assignee: '현수',
+      mine: true,
+      memo: '인감증명서·등기권리증 지참 및 특약 문구 사전 안내',
+    },
+    {
+      id: 'up-ext-2',
+      dayKey: offsetDateKey(baseToday, 2),
+      hour: 14.0,
+      title: '잠실엘스 118동 중도금 2억 입금 확인',
+      type: 'contract',
+      propertyLabel: '잠실엘스 118동 1502호',
+      contactName: '최민준 · 정하은',
+      dealId: 'deal-2',
+      assignee: '현수',
+      mine: true,
+      memo: '공동중개(잠실중앙공인) 중도금 2억 이체 영수증 확인',
+    },
+    {
+      id: 'up-ext-3',
+      dayKey: offsetDateKey(baseToday, 3),
+      hour: 15.5,
+      title: '고덕그라시움 112동 전세 잔금 서류 점검',
+      type: 'viewing',
+      propertyLabel: '고덕그라시움 112동 703호',
+      contactName: '강서진 · 서지우',
+      dealId: 'deal-5',
+      assignee: '박지훈',
+      mine: false,
+      memo: '확정일자·전입신고 일정 및 도배 특약 최종 점검',
+    },
+    {
+      id: 'up-ext-4',
+      dayKey: offsetDateKey(baseToday, 5),
+      hour: 11.0,
+      title: '고덕아르테온 301동 세입자 만기 협의',
+      type: 'meeting',
+      propertyLabel: '고덕아르테온 301동 604호',
+      contactName: '임지훈',
+      dealId: null,
+      assignee: '현수',
+      mine: true,
+      memo: '전세 7.5억 갱신 / 퇴거 의사 확인 미팅',
+    },
+  ];
+
+  const BROKERAGE_NEWS = [
+    {
+      id: 'news-1',
+      source: '한국경제 부동산',
+      time: '2시간 전',
+      tag: '강동권 시황',
+      title: '고덕·상일 신축 전세가율 3주 연속 상승… 갈아타기 매수 문의 증가',
+      summary: '고덕아르테온·고덕그라시움 등 대단지 중심으로 전세 매물이 빠르게 소진되며 84㎡ 전세 호가가 강보합을 보이고 있습니다. 매도·전세 동시 진행 고객 상담 시 잔금 일정과 세입자 퇴거 시점 조율 중요도가 높아지고 있습니다.',
+    },
+    {
+      id: 'news-2',
+      source: '국토교통부 보도',
+      time: '오늘 오전',
+      tag: '제도·신고',
+      title: '주택 임대차 계약 신고 과태료 계도기간 종료 및 필수 확인사항',
+      summary: '보증금 6,000만 원 초과 또는 월세 30만 원 초과 신규·갱신(금액 변동) 임대차 계약은 계약 체결일로부터 30일 이내 거래신고가 필수입니다. 잔금 전 안내 체크리스트에 포함해 고객 누락을 예방하세요.',
+    },
+    {
+      id: 'news-3',
+      source: '서울경제',
+      time: '어제',
+      tag: '금융·대출',
+      title: '주담대 스트레스 DSR 3단계 적용 전 실수요자 자금 계획 점검 포인트',
+      summary: '생애최초·신생아 특례 외 일반 주담대의 한도 산정 시 가산 금리가 반영되므로, 가계약 전 고객의 기존 대출 보유 현황과 잔금일 기준 심사 시점을 사전 안내하는 것이 안전합니다.',
+    },
+    {
+      id: 'news-4',
+      source: '매일경제 매부리',
+      time: '11.20',
+      tag: '단지 동향',
+      title: '잠실·송파 학군지 입주장 마무리… 급매 소화 후 호가 안착 흐름',
+      summary: '잠실엘스·리센츠 등 주요 단지의 저가 매물이 소진되면서 매수 대기자들이 상급지 갈아타기와 전세 끼고 매수 사이에서 저울질을 이어가고 있습니다.',
+    },
+  ];
+
+  const APP_GUIDES = [
+    {
+      id: 'guide-start',
+      theme: 'is-slate',
+      badge: 'GUIDE · 3분 시작',
+      title: '에스테잇플로우 빠른 시작 가이드',
+      sub: '매물 접수부터 프로젝트·계약까지 핵심 흐름 한눈에',
+      tip: '⌘K로 거래·고객·메뉴를 즉시 열고, ⌘\\ 로 왼쪽 메뉴를 펼치거나 접을 수 있습니다.',
+      steps: [
+        { title: '1. 매물·의뢰 등록', desc: '단지와 동·호수를 고르고 매매·전세·월세 의뢰 조건을 차곡차곡 쌓습니다.' },
+        { title: '2. 프로젝트로 손님별 진행 묶기', desc: '계속 주고받을 손님이나 공동중개 건은 프로젝트로 열어 상담·단계·코멘트를 한곳에서 봅니다.' },
+        { title: '3. 거래·계약·수금 자동 추적', desc: '가계약·본계약·중도금·잔금 일정과 중개보수 수금 현황을 대시보드에서 바로 확인합니다.' },
+      ],
+    },
+    {
+      id: 'guide-mcp',
+      theme: 'is-forest',
+      badge: 'MCP · AI 연동',
+      title: 'Claude로 네이버 내광고 비교하기',
+      sub: '내 광고 순위·층 노출 분석을 MCP로 바로 확인하세요',
+      tip: '로컬 Skill로 수집한 스냅샷만 서버에 반영되므로 네이버 계정이나 차단 걱정 없이 안전하게 비교할 수 있습니다.',
+      steps: [
+        { title: '1. 로컬 Skill로 이실장·네이버 스냅샷 수집', desc: '이실장 내 광고와 네이버 동일 매물 묶음 스냅샷을 PC에서 안전하게 읽습니다.' },
+        { title: '2. 순위·대표광고·층 노출 차이 비교', desc: '더 저렴한 경쟁 광고나 정확한 층수가 공개된 타사 매물을 자동으로 짚어냅니다.' },
+        { title: '3. 수정 요청 정리 및 ERP 태스크 연계', desc: '가격·층 노출 조정과 재전송 요청을 ERP 광고 업무 태스크로 이어서 관리합니다.' },
+      ],
+    },
+    {
+      id: 'guide-tabs',
+      theme: 'is-stone',
+      badge: 'TIP · 멀티탭',
+      title: '멀티탭 & 단축키로 빠르게 일하기',
+      sub: '여러 거래·고객을 탭으로 열어두고 오가며 상담하세요',
+      tip: '거래나 할 일을 ⌘/Ctrl+클릭하면 현재 대시보드 화면을 잃지 않고 새 탭을 백그라운드로 띄웁니다.',
+      steps: [
+        { title: '1. ⌘/Ctrl+클릭으로 백그라운드 탭 열기', desc: '상담 중인 매물과 계약서 화면 여러 개를 상단 탭에 나란히 열어두고 전환할 수 있습니다.' },
+        { title: '2. 상단 ⌘K로 거래·고객·메뉴 즉시 이동', desc: '마우스 이동 없이 검색창에서 단지명·고객명·정산 화면으로 한 번에 점프합니다.' },
+        { title: '3. 수신 전화 팝업에서 바로 메모·일정 연결', desc: '오른쪽 상단 수신 전화 알림에서 고객 정보를 바로 띄우고 후속 할 일을 추가합니다.' },
+      ],
+    },
+  ];
+
+  const RECENT_CONSULTATIONS = [
+    {
+      id: 'consult-1',
+      mine: true,
+      channel: '전화',
+      tone: 'violet',
+      time: '24분 전',
+      contactName: '김도윤',
+      contactRole: '매수인',
+      phone: '010-8122-4410',
+      propertyLabel: '고덕아르테온 305동 1203호',
+      summary: '오늘 17:30 본계약 특약 문구(근저당 말소·누수 담보 6개월) 최종 확인 요청',
+      memo: '부재중 이후 콜백 통화 완료 예정. 계약금 1억 4,700만 이체 계좌와 인감 지참 안내 필요.',
+      statusLabel: '회신 필요',
+      statusTone: 'red',
+    },
+    {
+      id: 'consult-2',
+      mine: true,
+      channel: '방문',
+      tone: 'blue',
+      time: '오늘 11:15',
+      contactName: '한지우',
+      contactRole: '매도인',
+      phone: '010-5190-3382',
+      propertyLabel: '고덕아르테온 305동 1203호',
+      summary: '매도 희망가 16.5억 → 16.2억 조정 동의, 갈아타기 잠실 34평 매수 예산 25억선 공유',
+      memo: '잔금일 1월 말 전후 협의 가능. 잠실엘스·리센츠 급매 리스트 내일 중 전달하기로 함.',
+      statusLabel: '후속 진행',
+      statusTone: 'blue',
+    },
+    {
+      id: 'consult-3',
+      mine: true,
+      channel: '전화',
+      tone: 'violet',
+      time: '오늘 09:40',
+      contactName: '오하늘',
+      contactRole: '임차 의뢰',
+      phone: '010-6502-7731',
+      propertyLabel: '고덕그라시움 외 2건',
+      summary: '전세 8.5억 이하 남향 로열층 선호, 오늘 15:00 임장 3곳 동선 확정',
+      memo: '반려동물 없음, 전세대출 3억 예정. 12월 중순 입주 가능한 매물 우선 검토.',
+      statusLabel: '임장 예정',
+      statusTone: 'orange',
+    },
+    {
+      id: 'consult-4',
+      mine: true,
+      channel: '카톡',
+      tone: 'green',
+      time: '어제 17:30',
+      contactName: '임지훈',
+      contactRole: '세입자',
+      phone: '010-7741-5520',
+      propertyLabel: '고덕래미안힐스테이트 302동 1101호',
+      summary: '잔금 송금 일정 하루 순연 문의 및 법무사 서류 제출 시간 재확인',
+      memo: '임대인 측 협의 진행 중. 확정일자·전입신고 서류 체크리스트 카톡 발송 완료.',
+      statusLabel: '조율 중',
+      statusTone: 'orange',
+    },
+    {
+      id: 'consult-5',
+      mine: false,
+      channel: '전화',
+      tone: 'violet',
+      time: '어제 14:10',
+      contactName: '강서진',
+      contactRole: '임차인',
+      phone: '010-2093-4481',
+      propertyLabel: '고덕그라시움 112동 703호',
+      summary: '입주 전 도배 범위 및 관리비 정산 기준 확인 통화 (담당: 박지훈)',
+      memo: '임대인 도배 1식 부담 특약 반영 확인. 공실 키 수령 일정 공유.',
+      statusLabel: '완료',
+      statusTone: 'gray',
+    },
+  ];
+
+  const ui = {
+    calYear: baseToday.getFullYear(),
+    calMonth: baseToday.getMonth(),
+    bannerIdx: 0,
+    collapsedGroups: { overdue: false, today: false, upcoming: true },
+    peek: null, // { kind: 'news' | 'marginDigest' | 'extraEvent' | 'guide' | 'consultation', id: string } | null
+  };
+
+  const chrome = window.mountNotionDesktop({
+    activeVariant: 'wide',
+    initialSidebarOpen: false,
+    wrapClass: 'wd-wrap',
+    onPin: (pin) => {
+      if (pin === 'schedule') {
+        chrome.contentHost.querySelector('#wdSecSched')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        if (pin === 'overdue') ui.collapsedGroups.overdue = false;
+        else ui.collapsedGroups.today = false;
+        render();
+        chrome.contentHost.querySelector('#wdSecTasks')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    },
+    onQuickCreate: () => chrome.contentHost.querySelector('#wdAddInput')?.focus(),
+  });
+
+  chrome.contentHost.parentElement.querySelector('#ntHeroHost')?.classList.add('wd-hero-gap');
+
+  const peekEl = document.createElement('aside');
+  peekEl.id = 'sidePeek';
+  peekEl.className = 'hy-side-peek';
+  peekEl.setAttribute('aria-label', '상세 측면 보기');
+  document.body.appendChild(peekEl);
+
+  function openPeek(kind, id) {
+    ui.peek = { kind, id };
+    renderPeek();
+  }
+
+  function closePeek() {
+    ui.peek = null;
+    peekEl.classList.remove('open');
+  }
+
+  function renderPeek() {
+    if (!ui.peek) {
+      peekEl.classList.remove('open');
+      return;
+    }
+    const d = Data.getScopedData();
+    const { kind, id } = ui.peek;
+    let bodyHtml = '';
+    let headTitle = '참고 브리핑';
+
+    if (kind === 'news') {
+      headTitle = '부동산 뉴스';
+      const item = BROKERAGE_NEWS.find((x) => x.id === id);
+      if (item) {
+        bodyHtml = `
+          <div style="margin-bottom:8px"><span class="nt-pill" data-tone="gray">${chrome.escapeHtml(item.tag)}</span> <span style="font-size:12px;color:var(--fg3);margin-left:6px">${chrome.escapeHtml(item.source)} · ${chrome.escapeHtml(item.time)}</span></div>
+          <h2 style="margin:0 0 14px;font-size:19px;font-weight:700;line-height:1.35">${chrome.escapeHtml(item.title)}</h2>
+          <div style="background:var(--bg-soft);border-radius:9px;padding:14px;font-size:13.5px;line-height:1.75;color:var(--fg)">${chrome.escapeHtml(item.summary)}</div>
+        `;
+      }
+    } else if (kind === 'extraEvent') {
+      headTitle = '예정 일정';
+      const ev = UPCOMING_EXTRA_EVENTS.find((x) => x.id === id);
+      if (ev) {
+        const dt = parseDateKey(ev.dayKey);
+        bodyHtml = `
+          <div style="margin-bottom:8px"><span class="nt-pill num" data-tone="blue">${dt.getMonth() + 1}월 ${dt.getDate()}일 (${WEEKDAYS_SUN[dt.getDay()]}) · ${Data.formatHour(ev.hour)}</span></div>
+          <h2 style="margin:0 0 12px;font-size:20px;font-weight:700">${chrome.escapeHtml(ev.title)}</h2>
+          <div class="nt-prop-table" style="margin:10px 0 16px">
+            <div class="nt-prop-row"><div class="nt-prop-key">장소·매물</div><div class="nt-prop-val">${chrome.escapeHtml(ev.propertyLabel)}</div></div>
+            <div class="nt-prop-row"><div class="nt-prop-key">고객</div><div class="nt-prop-val">${chrome.escapeHtml(ev.contactName)}</div></div>
+            <div class="nt-prop-row"><div class="nt-prop-key">담당</div><div class="nt-prop-val">${chrome.escapeHtml(ev.assignee)}</div></div>
+          </div>
+          <div style="background:var(--bg-soft);border-radius:9px;padding:12px;font-size:13px;line-height:1.65">${chrome.escapeHtml(ev.memo)}</div>
+        `;
+      }
+    } else if (kind === 'guide') {
+      headTitle = '앱 사용법 가이드';
+      const guide = APP_GUIDES.find((x) => x.id === id) || APP_GUIDES[0];
+      bodyHtml = `
+        <div style="margin-bottom:8px"><span class="nt-pill" data-tone="gray">${chrome.escapeHtml(guide.badge)}</span></div>
+        <h2 style="margin:0 0 6px;font-size:20px;font-weight:700;line-height:1.3">${chrome.escapeHtml(guide.title)}</h2>
+        <p style="margin:0 0 16px;font-size:13px;color:var(--fg2);line-height:1.5">${chrome.escapeHtml(guide.sub)}</p>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+          ${guide.steps
+            .map(
+              (st) => `
+            <div style="background:var(--bg-soft);border-radius:9px;padding:11px 13px">
+              <div style="font-size:13px;font-weight:600;color:var(--fg);margin-bottom:3px">${chrome.escapeHtml(st.title)}</div>
+              <div style="font-size:12.5px;color:var(--fg2);line-height:1.55">${chrome.escapeHtml(st.desc)}</div>
+            </div>`,
+            )
+            .join('')}
+        </div>
+        <div style="background:rgba(35,131,226,0.06);border-radius:9px;padding:10px 12px;font-size:12.5px;color:var(--fg2);line-height:1.55;margin-bottom:16px">
+          <b style="color:var(--blue)">TIP</b> · ${chrome.escapeHtml(guide.tip)}
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:20px">
+          <button type="button" class="nt-ghost-btn primary" data-guide-cmd style="height:30px;padding:0 12px">⌘K 빠른 검색 열어보기</button>
+        </div>
+        <div style="border-top:1px solid var(--border);padding-top:14px">
+          <div style="font-size:11.5px;font-weight:600;color:var(--fg3);margin-bottom:6px">다른 가이드 보기</div>
+          <div style="display:flex;flex-direction:column;gap:2px">
+            ${APP_GUIDES.map(
+              (g) => `
+              <button type="button" class="n2-todo" style="width:100%;font-weight:${g.id === guide.id ? 600 : 400}" data-guide-switch="${g.id}">
+                <span style="width:6px;height:6px;border-radius:50%;background:${g.id === guide.id ? 'var(--blue)' : 'var(--border-strong)'};flex:none"></span>
+                <span style="flex:1;min-width:0;font-size:13px;text-align:left">${chrome.escapeHtml(g.title)}</span>
+                <span style="font-size:11px;color:var(--fg3)">${chrome.escapeHtml(g.badge)}</span>
+              </button>`,
+            ).join('')}
+          </div>
+        </div>
+      `;
+    } else if (kind === 'consultation') {
+      headTitle = '상담 내역';
+      const c = RECENT_CONSULTATIONS.find((x) => x.id === id);
+      if (c) {
+        bodyHtml = `
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+            <span class="nt-pill" data-tone="${chrome.escapeHtml(c.tone)}">${chrome.escapeHtml(c.channel)}</span>
+            <span class="nt-pill" data-tone="${chrome.escapeHtml(c.statusTone)}">${chrome.escapeHtml(c.statusLabel)}</span>
+            <span class="num" style="font-size:12px;color:var(--fg3);margin-left:auto">${chrome.escapeHtml(c.time)}</span>
+          </div>
+          <h2 style="margin:0 0 12px;font-size:20px;font-weight:700">${chrome.escapeHtml(c.contactName)} <span style="font-size:14px;font-weight:500;color:var(--fg3)">· ${chrome.escapeHtml(c.contactRole)}</span></h2>
+          <div class="nt-prop-table" style="margin:10px 0 16px">
+            <div class="nt-prop-row"><div class="nt-prop-key">관련 물건</div><div class="nt-prop-val">${chrome.escapeHtml(c.propertyLabel)}</div></div>
+            <div class="nt-prop-row"><div class="nt-prop-key">연락처</div><div class="nt-prop-val num">${chrome.escapeHtml(c.phone)}</div></div>
+          </div>
+          <div style="background:var(--bg-soft);border-radius:9px;padding:12px 14px;margin-bottom:16px">
+            <div style="font-size:13.5px;font-weight:600;color:var(--fg);margin-bottom:6px;line-height:1.5">${chrome.escapeHtml(c.summary)}</div>
+            <div style="font-size:13px;color:var(--fg2);line-height:1.65">${chrome.escapeHtml(c.memo)}</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="nt-ghost-btn soft" data-consult-call="${c.id}" style="height:30px;padding:0 12px">전화 걸기 (CTI)</button>
+            <button type="button" class="nt-ghost-btn primary" data-consult-task="${c.id}" style="height:30px;padding:0 12px">후속 할 일 추가</button>
+          </div>
+        `;
+      }
+    } else if (kind === 'marginDigest') {
+      const guide = APP_GUIDES[ui.bannerIdx] || APP_GUIDES[0];
+      bodyHtml = `
+        <h2 style="margin:0 0 14px;font-size:19px;font-weight:700">이달 수금 · 공지 · 부동산 뉴스</h2>
+        <div style="background:var(--bg-soft);border-radius:10px;padding:12px 14px;margin-bottom:18px;cursor:pointer" data-digest-cash>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:12px;color:var(--fg3)">이달 수금</span>
+            <span class="nt-pill num" data-tone="green">${d.summary.collectionPct}%</span>
+          </div>
+          <div class="num" style="font-size:18px;font-weight:700;margin-top:4px">${Data.formatMoneyManwon(d.summary.collectedManwon)} <span style="font-size:12px;font-weight:400;color:var(--fg3)">/ ${Data.formatMoneyManwon(d.summary.expectedManwon)}</span></div>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--fg3);margin-bottom:6px">공지사항</div>
+        <div style="margin-bottom:16px">
+          ${d.notices
+            .map(
+              (n) => `<button type="button" class="n2-todo" style="width:100%" data-digest-notice="${n.id}"><span style="width:6px;height:6px;border-radius:50%;background:${n.readAt ? 'transparent' : 'var(--blue)'};flex:none"></span>${n.isRequired ? '<span class="nt-pill" data-tone="red">필독</span>' : ''}<span style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:${n.readAt ? 400 : 600}">${chrome.escapeHtml(n.title)}</span><span class="num" style="font-size:11px;color:var(--fg3)">${n.publishedAt}</span></button>`,
+            )
+            .join('')}
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--fg3);margin-bottom:6px">부동산 · 시장 뉴스</div>
+        <div style="margin-bottom:16px">
+          ${BROKERAGE_NEWS.map((nw) => `<button type="button" class="n2-todo" style="width:100%;align-items:flex-start" data-digest-news="${nw.id}"><div style="flex:1;min-width:0;text-align:left"><div style="font-size:13px;font-weight:500">${chrome.escapeHtml(nw.title)}</div><div style="font-size:11px;color:var(--fg3)">${chrome.escapeHtml(nw.source)} · ${chrome.escapeHtml(nw.time)}</div></div></button>`).join('')}
+        </div>
+        <div style="font-size:12px;font-weight:600;color:var(--fg3);margin-bottom:6px">앱 사용법 가이드</div>
+        <button type="button" class="wd-guide-banner ${guide.theme}" style="width:100%" data-digest-guide="${guide.id}">
+          <div class="wd-banner-top"><span class="wd-banner-badge">${chrome.escapeHtml(guide.badge)}</span></div>
+          <div class="wd-banner-title">${chrome.escapeHtml(guide.title)}</div>
+          <div class="wd-banner-sub">${chrome.escapeHtml(guide.sub)}</div>
+          <div class="wd-banner-cta">가이드 보기 →</div>
+        </button>
+      `;
+    }
+
+    peekEl.innerHTML = `
+      <div class="hy-peek-head">
+        <span style="font-size:12px;font-weight:600;color:var(--fg3)">${headTitle}</span>
+        <button type="button" class="nt-icon-btn" id="hyClosePeek" aria-label="측면 보기 닫기">
+          <svg viewBox="0 0 12 12" style="width:12px;height:12px;stroke:currentColor;stroke-width:1.8;fill:none"><path d="M2 2l8 8M10 2l-8 8"/></svg>
+        </button>
+      </div>
+      <div class="hy-peek-body">${bodyHtml}</div>
+    `;
+    peekEl.classList.add('open');
+
+    peekEl.querySelector('#hyClosePeek')?.addEventListener('click', closePeek);
+    peekEl.querySelector('[data-consult-call]')?.addEventListener('click', (e) => {
+      const c = RECENT_CONSULTATIONS.find((x) => x.id === e.currentTarget.dataset.consultCall);
+      if (!c) return;
+      chrome.triggerCti({
+        callerName: c.contactName,
+        callerRole: `${c.propertyLabel} ${c.contactRole}`,
+        phone: c.phone,
+        memo: c.summary,
+      });
+    });
+    peekEl.querySelector('[data-consult-task]')?.addEventListener('click', (e) => {
+      const c = RECENT_CONSULTATIONS.find((x) => x.id === e.currentTarget.dataset.consultTask);
+      if (!c) return;
+      const created = Data.addTask(`${c.contactName} (${c.propertyLabel}) 후속 확인`);
+      if (created) {
+        chrome.hero.cheer();
+        chrome.showToast('후속 할 일을 추가했습니다', created.title);
+      }
+    });
+    peekEl.querySelector('[data-guide-cmd]')?.addEventListener('click', () => {
+      closePeek();
+      chrome.openCmd();
+    });
+    peekEl.querySelectorAll('[data-guide-switch]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const nextIdx = APP_GUIDES.findIndex((g) => g.id === b.dataset.guideSwitch);
+        if (nextIdx >= 0) ui.bannerIdx = nextIdx;
+        openPeek('guide', b.dataset.guideSwitch);
+        render();
+      }),
+    );
+    peekEl.querySelector('[data-digest-guide]')?.addEventListener('click', (e) =>
+      openPeek('guide', e.currentTarget.dataset.digestGuide),
+    );
+    peekEl.querySelector('[data-digest-cash]')?.addEventListener('click', () => {
+      closePeek();
+      chrome.openTab({ key: 'route:/cashflow', title: '수수료/정산', kind: 'route', payload: { route: '/cashflow' }, dotColor: 'var(--green)' });
+    });
+    peekEl.querySelectorAll('[data-digest-notice]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        const n = Data.state.notices.find((x) => x.id === b.dataset.digestNotice);
+        if (!n) return;
+        closePeek();
+        chrome.openTab({ key: `notice:${n.id}`, title: n.title, kind: 'notice', payload: { noticeId: n.id }, dotColor: 'var(--blue)' }, { background: e.metaKey || e.ctrlKey });
+      }),
+    );
+    peekEl.querySelectorAll('[data-digest-news]').forEach((b) =>
+      b.addEventListener('click', () => openPeek('news', b.dataset.digestNews)),
+    );
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && ui.peek) closePeek();
+  });
+
+  function buildCombinedEvents(d) {
+    const extras = UPCOMING_EXTRA_EVENTS.filter((e) => (d.scope === 'mine' ? e.mine : true)).map((e) => ({
+      ...e,
+      isExtra: true,
+    }));
+    const core = d.events.map((e) => ({ ...e, isExtra: false }));
+    const combined = [...core, ...extras].sort((a, b) => a.dayKey.localeCompare(b.dayKey) || a.hour - b.hour);
+    const byDay = new Map();
+    for (const ev of combined) {
+      if (!byDay.has(ev.dayKey)) byDay.set(ev.dayKey, []);
+      byDay.get(ev.dayKey).push(ev);
+    }
+    return { combined, byDay };
+  }
+
+  function renderCalendarCells(d, byDay) {
+    const first = new Date(ui.calYear, ui.calMonth, 1);
+    const startOffset = (first.getDay() + 6) % 7; // Monday = 0
+    const daysInMonth = new Date(ui.calYear, ui.calMonth + 1, 0).getDate();
+    const totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+    const gridStart = new Date(ui.calYear, ui.calMonth, 1 - startOffset);
+
+    let html = '';
+    for (let i = 0; i < totalCells; i += 1) {
+      const dt = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
+      const key = dateKeyFromDate(dt);
+      const isOut = dt.getMonth() !== ui.calMonth;
+      const isToday = key === d.todayKey;
+      const isSelected = key === d.selectedDayKey;
+      const hasEv = (byDay.get(key) || []).length > 0;
+      const cls = ['wd-cal-day', isOut ? 'is-out' : '', isToday ? 'is-today' : '', isSelected ? 'is-selected' : '']
+        .filter(Boolean)
+        .join(' ');
+      html += `
+        <button type="button" class="${cls}" data-wd-cal-day="${key}" aria-label="${dt.getMonth() + 1}월 ${dt.getDate()}일">
+          <span class="wd-cal-num num">${dt.getDate()}</span>
+          <span class="wd-cal-dot${hasEv ? ' has' : ''}"></span>
+        </button>`;
+    }
+    return html;
+  }
+
+  function render() {
+    const d = Data.getScopedData();
+    chrome.hero.setScope(d.scope);
+    chrome.hero.updateCounts(d.heroCounts);
+    chrome.hero.setFlags(d.heroFlags);
+
+    const { combined, byDay } = buildCombinedEvents(d);
+    const selectedDt = parseDateKey(d.selectedDayKey);
+    const isSelToday = d.selectedDayKey === d.todayKey;
+    const selectedEvents = byDay.get(d.selectedDayKey) || [];
+    const upcomingList = combined.filter((ev) => ev.dayKey > d.selectedDayKey).slice(0, 4);
+
+    const taskGroups = [
+      { id: 'overdue', label: '기한 지남', list: d.overdueTasks, isOverdue: true },
+      { id: 'today', label: '오늘', list: d.todayTasks, isOverdue: false },
+      { id: 'upcoming', label: '다가오는 할 일', list: d.upcomingTasks, isOverdue: false },
+    ].filter((g) => g.list.length > 0);
+
+    const pct = d.summary.collectionPct;
+    const r = 18;
+    const circ = +(2 * Math.PI * r).toFixed(1);
+    const dashOff = +(circ * (1 - pct / 100)).toFixed(1);
+    const activeGuide = APP_GUIDES[ui.bannerIdx] || APP_GUIDES[0];
+    const consults = RECENT_CONSULTATIONS.filter((c) => (d.scope === 'mine' ? c.mine : true));
+
+    chrome.contentHost.innerHTML = `
+      <div class="wd-grid">
+        <!-- 1. Left Column: Monthly Mini Calendar + Connected Schedule Bento Cards -->
+        <aside class="wd-left" aria-label="캘린더 및 일정">
+          <div class="wd-card wd-cal-card">
+            <div class="wd-cal-head">
+              <span class="wd-cal-month num">${ui.calYear}년 ${ui.calMonth + 1}월</span>
+              <div class="wd-cal-nav">
+                <button type="button" class="wd-cal-btn" data-wd-month="-1" aria-label="이전 달">‹</button>
+                <button type="button" class="wd-cal-btn" data-wd-today>오늘</button>
+                <button type="button" class="wd-cal-btn" data-wd-month="1" aria-label="다음 달">›</button>
+              </div>
+            </div>
+            <div class="wd-cal-weekdays">
+              ${WEEKDAYS_MON.map((w) => `<span>${w}</span>`).join('')}
+            </div>
+            <div class="wd-cal-grid">
+              ${renderCalendarCells(d, byDay)}
+            </div>
+          </div>
+
+          <div class="wd-card wd-sched-card">
+            <section id="wdSecSched" aria-label="선택한 날짜 일정">
+              <h3 class="wd-subhead">
+                <span>${selectedDt.getMonth() + 1}월 ${selectedDt.getDate()}일 ${WEEKDAYS_SUN[selectedDt.getDay()]}${isSelToday ? ' · 오늘' : ''}</span>
+                <span class="wd-subhead-count num">${selectedEvents.length}건</span>
+              </h3>
+              ${
+                selectedEvents.length === 0
+                  ? `<div style="padding:8px 2px;font-size:12.5px;color:var(--fg3);display:flex;align-items:center;justify-content:space-between;gap:8px">
+                      <span>선택한 날 일정이 없습니다.</span>
+                      ${isSelToday ? '' : '<button type="button" class="wd-link-btn" data-wd-today>오늘 일정 보기</button>'}
+                    </div>`
+                  : `<div class="wd-timeline">
+                      ${selectedEvents
+                        .map(
+                          (ev) => `
+                        <button type="button" class="wd-tl-item" data-wd-ev-id="${ev.id}" data-wd-ev-extra="${ev.isExtra ? '1' : '0'}" data-wd-ev-deal="${ev.dealId || ''}">
+                          <span class="wd-tl-dot ${ev.type || ''}"></span>
+                          <span class="num" style="width:40px;font-size:12px;font-weight:600;color:var(--fg2);flex:none">${Data.formatHour(ev.hour)}</span>
+                          <div style="min-width:0;flex:1">
+                            <div style="font-size:13px;font-weight:500;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(ev.title)}</div>
+                            <div style="font-size:11.5px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(ev.propertyLabel || ev.memo || '')}</div>
+                          </div>
+                        </button>`,
+                        )
+                        .join('')}
+                    </div>`
+              }
+            </section>
+
+            <section id="wdSecUpcoming" class="wd-upcoming-sec" aria-label="다가오는 일정">
+              <h3 class="wd-subhead">
+                <span>다가오는 일정</span>
+                <span class="wd-subhead-count num">${upcomingList.length}건</span>
+              </h3>
+              ${
+                upcomingList.length === 0
+                  ? '<div style="padding:6px 2px;font-size:12.5px;color:var(--fg3)">예정된 다가오는 일정이 없습니다.</div>'
+                  : upcomingList
+                      .map((ev) => {
+                        const dt = parseDateKey(ev.dayKey);
+                        const diffDays = Math.round((dt - d.today) / 86400000);
+                        const dateBadge = diffDays === 1 ? '내일' : `${WEEKDAYS_SUN[dt.getDay()]} ${dt.getDate()}`;
+                        return `
+                        <button type="button" class="wd-upcoming-row" data-wd-ev-id="${ev.id}" data-wd-ev-extra="${ev.isExtra ? '1' : '0'}" data-wd-ev-deal="${ev.dealId || ''}">
+                          <span class="wd-upcoming-date num">${dateBadge}</span>
+                          <span class="wd-upcoming-dot ${ev.type || ''}"></span>
+                          <div style="min-width:0;flex:1">
+                            <div style="display:flex;align-items:baseline;gap:6px;min-width:0">
+                              <span class="num" style="font-size:11.5px;font-weight:600;color:var(--fg2);flex:none">${Data.formatHour(ev.hour)}</span>
+                              <span style="font-size:12.5px;font-weight:500;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(ev.title)}</span>
+                            </div>
+                            <div style="font-size:11.5px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(ev.propertyLabel || '')}</div>
+                          </div>
+                        </button>`;
+                      })
+                      .join('')
+              }
+            </section>
+          </div>
+        </aside>
+
+        <!-- 2. Center Column: Bento Cards (내 할 일 + 진행 중인 거래 + 최근 상담 내역) -->
+        <main class="wd-center">
+          <section id="wdSecTasks" class="wd-card wd-center-card" aria-label="내 할 일">
+            <h2 class="wd-h2">
+              <span class="wd-h2-left">
+                <span class="wd-h2-title">내 할 일</span>
+                <span class="wd-h2-meta num">남은 업무 ${d.openTasks.length}건</span>
+              </span>
+              <span class="wd-scope-caption">${d.scope === 'mine' ? '내 담당 기준' : '사무소 전체 기준'}</span>
+              <div class="wd-compact-actions">
+                <button type="button" class="n2-compact-pill" data-wd-cashflow title="수수료/정산 탭 열기">
+                  <span class="num">이달 수금 <b style="color:var(--green)">${pct}%</b></span>
+                </button>
+                <button type="button" class="n2-compact-pill" id="wdOpenDigestBtn" data-wd-digest title="공지 및 부동산 뉴스 보기">
+                  <span class="num">공지 ${d.unreadNotices.length} · 뉴스</span>
+                </button>
+              </div>
+            </h2>
+
+            <div>
+              ${taskGroups
+                .map((g) => {
+                  const isCollapsed = !!ui.collapsedGroups[g.id];
+                  return `
+                  <div>
+                    <button type="button" class="wd-group-btn" data-wd-group="${g.id}">
+                      <span style="font-size:10px;width:12px">${isCollapsed ? '▸' : '▾'}</span>
+                      <span style="${g.isOverdue && g.list.length > 0 ? 'color:var(--red)' : ''}">${g.label}</span>
+                      <span class="num" style="color:var(--fg3);font-weight:400">${g.list.length}</span>
+                    </button>
+                    ${
+                      isCollapsed
+                        ? ''
+                        : g.list
+                            .map(
+                              (t) => `
+                          <div class="n2-todo" data-wd-task="${t.id}">
+                            <button type="button" class="nt-chk" data-wd-done="${t.id}" aria-checked="false" aria-label="${chrome.escapeHtml(t.title)} 완료">
+                              <svg viewBox="0 0 12 12"><path d="M2.5 6.4l2.4 2.4 4.6-5.3"/></svg>
+                            </button>
+                            <div style="min-width:0;flex:1">
+                              <div style="font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(t.title)}</div>
+                              ${
+                                t.propertyLabel || t.contactName
+                                  ? `<div style="font-size:11.5px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${[t.propertyLabel, t.contactName].filter(Boolean).join(' · ')}</div>`
+                                  : ''
+                              }
+                            </div>
+                            <button type="button" class="nt-ghost-btn n2-todo-act" data-wd-snooze="${t.id}">내일로</button>
+                            <span class="num" style="font-size:12px;color:${t.dueOffsetDays < 0 ? 'var(--red)' : 'var(--fg3)'};white-space:nowrap">${Data.dDayLabel(t.dueOffsetDays)}</span>
+                          </div>`,
+                            )
+                            .join('')
+                    }
+                  </div>`;
+                })
+                .join('')}
+
+              <form id="wdAddForm" style="display:flex;align-items:center;gap:10px;padding:8px 8px;margin-top:4px;border-top:1px solid var(--border)">
+                <span style="width:16px;text-align:center;color:var(--fg3)">+</span>
+                <input type="text" id="wdAddInput" placeholder="새 할 일 추가 후 Enter..." style="flex:1;border:0;outline:none;background:transparent;font-size:13.5px" aria-label="새 할 일 추가">
+              </form>
+            </div>
+          </section>
+
+          <section id="wdSecDeals" class="wd-card wd-center-card" aria-label="진행 중인 거래">
+            <h2 class="wd-h2">
+              <span class="wd-h2-left">
+                <span class="wd-h2-title">진행 중인 거래</span>
+                <span class="wd-h2-meta num">${d.deals.length}건</span>
+              </span>
+              <button type="button" class="wd-link-btn" data-wd-route="/deals">거래관리 →</button>
+            </h2>
+            <div>
+              ${d.deals
+                .map((deal) => {
+                  const st = Data.STAGE_META[deal.stage] || { label: deal.stage, tone: 'gray' };
+                  const dotColor = deal.stage === 'completed' || deal.stage === 'settling' ? 'var(--green)' : deal.stage === 'contracted' ? 'var(--blue)' : 'var(--violet)';
+                  return `
+                  <div class="n2-db-row" data-wd-deal="${deal.id}">
+                    <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                      <span style="color:var(--fg3)">${chrome.svgIcon('file', 'ic ic-sm')}</span>
+                      <span style="font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${chrome.escapeHtml(deal.siteName)} ${chrome.escapeHtml(deal.dongHo)}</span>
+                      ${deal.isJointBrokerage ? '<span class="nt-pill" data-tone="gray">공동</span>' : ''}
+                    </div>
+                    <div class="n2-db-hide" style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--fg2)">
+                      <span style="width:6px;height:6px;border-radius:50%;background:${dotColor}"></span>
+                      <span>${st.label}</span>
+                    </div>
+                    <div class="n2-db-hide num" style="font-size:12px;color:var(--fg2);text-align:right">${chrome.escapeHtml(deal.amountText)}</div>
+                    <div class="num" style="font-size:12px;font-weight:500;text-align:right;color:${deal.health === 'overdue' ? 'var(--red)' : deal.health === 'urgent' ? 'var(--orange)' : 'var(--fg3)'}">${chrome.escapeHtml(deal.healthText)}</div>
+                  </div>`;
+                })
+                .join('')}
+            </div>
+          </section>
+
+          <section id="wdSecConsults" class="wd-card wd-center-card" aria-label="최근 상담 내역">
+            <h2 class="wd-h2">
+              <span class="wd-h2-left">
+                <span class="wd-h2-title">최근 상담 내역</span>
+                <span class="wd-h2-meta num">${consults.length}건</span>
+              </span>
+              <button type="button" class="wd-link-btn" data-wd-route="/consultations">상담분석 →</button>
+            </h2>
+            <div>
+              ${consults
+                .map(
+                  (c) => `
+                <button type="button" class="wd-consult-row" data-wd-consult="${c.id}">
+                  <div class="wd-consult-main">
+                    <div class="wd-consult-top">
+                      <span class="nt-pill" data-tone="${chrome.escapeHtml(c.tone)}">${chrome.escapeHtml(c.channel)}</span>
+                      <span style="font-size:13.5px;font-weight:600;color:var(--fg)">${chrome.escapeHtml(c.contactName)}</span>
+                      <span style="font-size:12px;color:var(--fg3)">${chrome.escapeHtml(c.contactRole)}</span>
+                      <span style="font-size:12px;color:var(--fg3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">· ${chrome.escapeHtml(c.propertyLabel)}</span>
+                    </div>
+                    <div class="wd-consult-summary">${chrome.escapeHtml(c.summary)}</div>
+                  </div>
+                  <div class="wd-consult-right">
+                    <span class="nt-pill" data-tone="${chrome.escapeHtml(c.statusTone)}">${chrome.escapeHtml(c.statusLabel)}</span>
+                    <span class="num" style="font-size:11px;color:var(--fg3)">${chrome.escapeHtml(c.time)}</span>
+                  </div>
+                </button>`,
+                )
+                .join('')}
+            </div>
+          </section>
+        </main>
+
+        <!-- 3. Right Column: White Bento Cards + Guide Banner (이달 수금 + 공지사항 + 가이드 + 부동산·시장 뉴스) -->
+        <aside class="wd-rail" aria-label="이달 수금, 공지사항 및 부동산 뉴스">
+          <button type="button" class="wd-card n2-side-card n2-cash-card" data-wd-cashflow title="수수료/정산 탭 열기">
+            <svg width="46" height="46" viewBox="0 0 46 46" style="flex:none;transform:rotate(-90deg)">
+              <circle cx="23" cy="23" r="${r}" fill="none" stroke="rgba(55,53,47,0.1)" stroke-width="4.5"/>
+              <circle cx="23" cy="23" r="${r}" fill="none" stroke="#0f7b6c" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="${circ}" stroke-dashoffset="${dashOff}"/>
+            </svg>
+            <div>
+              <div style="font-size:11.5px;color:var(--fg3)">이달 수금 <b class="num" style="color:var(--green)">${pct}%</b></div>
+              <div class="num" style="font-size:16px;font-weight:700;letter-spacing:-0.02em;color:var(--fg)">${Data.formatMoneyManwon(d.summary.collectedManwon)}</div>
+              <div class="num" style="font-size:11px;color:var(--fg3)">예정 ${Data.formatMoneyManwon(d.summary.expectedManwon)}</div>
+            </div>
+          </button>
+
+          <div class="wd-card n2-side-card">
+            <div class="n2-rail-head">
+              <span>공지사항</span>
+              <span class="num" style="color:${d.unreadNotices.length > 0 ? 'var(--blue)' : 'var(--fg3)'}">안 읽음 ${d.unreadNotices.length}</span>
+            </div>
+            <div class="n2-tl-feed">
+              ${d.notices
+                .slice(0, 3)
+                .map(
+                  (n) => `
+                <button type="button" class="n2-tl-entry${n.readAt ? '' : ' unread'}" data-wd-notice="${n.id}">
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span class="n2-rail-meta num">${n.publishedAt}</span>
+                    ${n.isRequired ? '<span style="font-size:10.5px;font-weight:600;color:var(--red)">필독</span>' : ''}
+                  </div>
+                  <div class="n2-rail-title" style="font-weight:${n.readAt ? 400 : 500}">${chrome.escapeHtml(n.title)}</div>
+                </button>`,
+                )
+                .join('')}
+            </div>
+            <button type="button" class="n2-rail-more" data-wd-digest>전체 보기 →</button>
+          </div>
+
+          <!-- Community-board style App Guide Spotlight Banner -->
+          <div class="wd-guide-banner ${activeGuide.theme}" role="button" tabindex="0" data-wd-guide="${activeGuide.id}" aria-label="${chrome.escapeHtml(activeGuide.title)}">
+            <svg class="wd-banner-svg" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+              <rect x="14" y="28" width="22" height="44" rx="2" stroke="white" stroke-width="2"/>
+              <rect x="42" y="14" width="26" height="58" rx="2" stroke="white" stroke-width="2"/>
+              <path d="M21 38h8M21 47h8M21 56h8M50 24h10M50 33h10M50 42h10M50 51h10" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div class="wd-banner-top">
+              <span class="wd-banner-badge">${chrome.escapeHtml(activeGuide.badge)}</span>
+              <div class="wd-banner-dots" role="tablist" aria-label="가이드 슬라이드 전환">
+                ${APP_GUIDES.map(
+                  (g, idx) => `<button type="button" class="wd-banner-dot${idx === ui.bannerIdx ? ' active' : ''}" data-wd-banner-dot="${idx}" aria-label="${chrome.escapeHtml(g.badge)}" aria-selected="${idx === ui.bannerIdx}"></button>`,
+                ).join('')}
+              </div>
+            </div>
+            <div class="wd-banner-title">${chrome.escapeHtml(activeGuide.title)}</div>
+            <div class="wd-banner-sub">${chrome.escapeHtml(activeGuide.sub)}</div>
+            <div class="wd-banner-cta">가이드 보기 →</div>
+          </div>
+
+          <div class="wd-card n2-side-card">
+            <div class="n2-rail-head">
+              <span>부동산 · 시장 뉴스</span>
+              <span style="font-weight:400">오늘 브리핑</span>
+            </div>
+            <div>
+              ${BROKERAGE_NEWS.slice(0, 3)
+                .map(
+                  (nw) => `
+                <button type="button" class="n2-rail-row" data-wd-news="${nw.id}">
+                  <div class="n2-rail-title" style="font-weight:500">${chrome.escapeHtml(nw.title)}</div>
+                  <div class="n2-rail-meta">${chrome.escapeHtml(nw.source)} · ${chrome.escapeHtml(nw.time)}</div>
+                </button>`,
+                )
+                .join('')}
+            </div>
+            <button type="button" class="n2-rail-more" data-wd-digest>뉴스 더 보기 →</button>
+          </div>
+        </aside>
+      </div>
+    `;
+
+    const root = chrome.contentHost;
+
+    root.querySelectorAll('[data-wd-cal-day]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.wdCalDay;
+        const dt = parseDateKey(key);
+        ui.calYear = dt.getFullYear();
+        ui.calMonth = dt.getMonth();
+        Data.selectDay(key);
+      }),
+    );
+    root.querySelectorAll('[data-wd-month]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const delta = Number(b.dataset.wdMonth);
+        const next = new Date(ui.calYear, ui.calMonth + delta, 1);
+        ui.calYear = next.getFullYear();
+        ui.calMonth = next.getMonth();
+        render();
+      }),
+    );
+    root.querySelectorAll('[data-wd-today]').forEach((b) =>
+      b.addEventListener('click', () => {
+        ui.calYear = d.today.getFullYear();
+        ui.calMonth = d.today.getMonth();
+        Data.selectDay(d.todayKey);
+      }),
+    );
+
+    root.querySelectorAll('[data-wd-ev-id]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        const id = b.dataset.wdEvId;
+        const isExtra = b.dataset.wdEvExtra === '1';
+        const dealId = b.dataset.wdEvDeal;
+        if (!isExtra) {
+          const ev = Data.state.events.find((x) => x.id === id);
+          if (ev) chrome.openTab({ key: `event:${ev.id}`, title: ev.title, kind: 'event', payload: { eventId: ev.id }, dotColor: 'var(--orange)' }, { background: e.metaKey || e.ctrlKey });
+          return;
+        }
+        if (dealId) {
+          const deal = Data.state.deals.find((x) => x.id === dealId);
+          if (deal) chrome.openTab({ key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--green)' }, { background: e.metaKey || e.ctrlKey });
+          return;
+        }
+        openPeek('extraEvent', id);
+      }),
+    );
+
+    root.querySelectorAll('[data-wd-group]').forEach((b) =>
+      b.addEventListener('click', () => {
+        ui.collapsedGroups[b.dataset.wdGroup] = !ui.collapsedGroups[b.dataset.wdGroup];
+        render();
+      }),
+    );
+    root.querySelectorAll('[data-wd-done]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        b.setAttribute('aria-checked', 'true');
+        const res = Data.completeTask(b.dataset.wdDone);
+        if (res) {
+          chrome.hero.cheer();
+          chrome.showToast('할 일을 완료했습니다', res.task.title, () => Data.restoreTaskStatus(res.task.id, res.previousStatus));
+        }
+      }),
+    );
+    root.querySelectorAll('[data-wd-snooze]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const res = Data.snoozeTask(b.dataset.wdSnooze, 1, '내일');
+        if (res) chrome.showToast('내일로 미뤘습니다', res.task.title, () => Data.snoozeTask(res.task.id, res.prevOffset, '원래 기한'));
+      }),
+    );
+    root.querySelectorAll('[data-wd-task]').forEach((row) => {
+      const t = Data.state.tasks.find((x) => x.id === row.dataset.wdTask);
+      if (!t) return;
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        chrome.openTab({ key: `task:${t.id}`, title: t.title, kind: 'task', payload: { id: t.id }, dotColor: 'var(--blue)' }, { background: e.metaKey || e.ctrlKey });
+      });
+    });
+    root.querySelector('#wdAddForm')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const inp = root.querySelector('#wdAddInput');
+      const created = Data.addTask(inp.value);
+      if (created) {
+        inp.value = '';
+        chrome.showToast('할 일을 추가했습니다', created.title);
+      }
+    });
+
+    root.querySelectorAll('[data-wd-deal]').forEach((el) => {
+      const deal = Data.state.deals.find((x) => x.id === el.dataset.wdDeal);
+      if (!deal) return;
+      el.addEventListener('click', (e) =>
+        chrome.openTab({ key: `deal:${deal.id}`, title: `${deal.siteName} ${deal.dongHo}`, kind: 'deal', payload: { dealId: deal.id }, dotColor: 'var(--green)' }, { background: e.metaKey || e.ctrlKey }),
+      );
+    });
+    root.querySelectorAll('[data-wd-route]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const route = b.dataset.wdRoute;
+        const meta = route === '/consultations'
+          ? { title: '상담분석', dotColor: 'var(--violet)' }
+          : { title: '거래 관리', dotColor: 'var(--green)' };
+        chrome.openTab({ key: `route:${route}`, title: meta.title, kind: 'route', payload: { route }, dotColor: meta.dotColor });
+      }),
+    );
+    root.querySelectorAll('[data-wd-consult]').forEach((b) =>
+      b.addEventListener('click', () => openPeek('consultation', b.dataset.wdConsult)),
+    );
+    root.querySelectorAll('[data-wd-notice]').forEach((b) => {
+      const n = Data.state.notices.find((x) => x.id === b.dataset.wdNotice);
+      if (!n) return;
+      b.addEventListener('click', (e) =>
+        chrome.openTab({ key: `notice:${n.id}`, title: n.title, kind: 'notice', payload: { noticeId: n.id }, dotColor: 'var(--blue)' }, { background: e.metaKey || e.ctrlKey }),
+      );
+    });
+    root.querySelectorAll('[data-wd-cashflow]').forEach((b) =>
+      b.addEventListener('click', () =>
+        chrome.openTab({ key: 'route:/cashflow', title: '수수료/정산', kind: 'route', payload: { route: '/cashflow' }, dotColor: 'var(--green)' }),
+      ),
+    );
+    root.querySelectorAll('[data-wd-news]').forEach((b) =>
+      b.addEventListener('click', () => openPeek('news', b.dataset.wdNews)),
+    );
+    root.querySelectorAll('[data-wd-digest]').forEach((b) =>
+      b.addEventListener('click', () => openPeek('marginDigest', 'digest')),
+    );
+    root.querySelectorAll('[data-wd-banner-dot]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        ui.bannerIdx = Number(b.dataset.wdBannerDot) || 0;
+        render();
+      }),
+    );
+    root.querySelectorAll('[data-wd-guide]').forEach((el) => {
+      const openIt = () => openPeek('guide', el.dataset.wdGuide);
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-wd-banner-dot]')) return;
+        openIt();
+      });
+      el.addEventListener('keydown', (e) => {
+        if (e.target.closest('[data-wd-banner-dot]')) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openIt();
+        }
+      });
+    });
+
+    if (ui.peek) renderPeek();
+  }
+
+  Data.subscribe(render);
+  render();
+})();
+</script>
+</body>
+</html>

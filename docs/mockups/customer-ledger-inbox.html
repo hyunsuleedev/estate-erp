@@ -1,0 +1,1765 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>고객 원장 — 2단 작업 화면</title>
+
+<style>
+  :root {
+    --fg: #2c2c2b;
+    --fg-sub: #5f5e59;
+    --muted: #79766f;
+    --icon: #8e8b86;
+    --faint: #a3a09a;
+    --line: #f0efed;
+    --line-strong: #e6e5e3;
+    --side: #f9f8f7;
+    --hover: rgba(33, 27, 23, 0.05);
+    --row-hover: #fbfaf9;
+    --info: #2383e2; --info-strong: #1b64b1;
+    --success: #0f7b6c;
+    --red: #e03e3e; --red-strong: #bb3430;
+    --warning-strong: #8a5a13;
+    --pop: 0 20px 24px rgba(25, 25, 25, 0.05), 0 5px 8px rgba(25, 25, 25, 0.027), 0 0 0 1px rgba(42, 28, 0, 0.07);
+    --w-tog: 32px; --w-name: 218px; --w-asg: 102px; --w-next: 140px; --w-act: 44px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+      "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: var(--fg); background: #fff;
+    font-size: 14px; line-height: 21px;
+    overflow: hidden;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+  input, textarea, select { font: inherit; color: inherit; }
+  p { margin: 0; }
+  :focus-visible { outline: 2px solid rgba(35, 131, 226, 0.55); outline-offset: -2px; }
+  svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  svg.i.sm { width: 14px; height: 14px; }
+  svg.i.xs { width: 12px; height: 12px; }
+  [hidden] { display: none !important; }
+  .num { font-variant-numeric: tabular-nums; }
+  .tr { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .f12 { font-size: 12px; line-height: 18px; color: var(--muted); }
+  .grow { flex: 1; }
+
+  /* 앱 틀: 사이드바는 자리만 보여 주는 그림이다 */
+  .app { height: 100%; display: flex; }
+  .side { width: 240px; flex: none; background: var(--side); border-right: 1px solid var(--line); padding: 10px 8px; overflow: hidden; user-select: none; }
+  .side .office { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; margin-bottom: 4px; font-weight: 600; }
+  .side .office i { width: 22px; height: 22px; border-radius: 5px; background: var(--fg); color: #fff; display: grid; place-items: center; font-style: normal; font-size: 12px; }
+  .side .grp { margin: 14px 8px 4px; font-size: 12px; font-weight: 500; color: var(--muted); }
+  .side .nav { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 6px; color: var(--fg-sub); }
+  .side .nav svg { color: var(--icon); }
+  .side .nav.on { background: #eeedec; color: var(--fg); font-weight: 500; }
+  .side .nav.on svg { color: var(--fg-sub); }
+  @media (max-width: 1199px) { .side { display: none; } :root { --w-name: 224px; } }
+
+  .page { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #fff; }
+
+  /* 보기 탭 + 도구 줄 */
+  .viewbar { height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 16px 0; }
+  .tabs { display: flex; align-items: center; gap: 2px; margin-left: -4px; flex: none; }
+  .vtab { height: 32px; padding: 0 12px; border-radius: 16px; font-weight: 500; color: var(--muted); display: inline-flex; align-items: center; transition: background-color .12s, color .12s; }
+  .vtab:hover, .vtab[aria-selected="true"] { background: var(--hover); color: var(--fg); }
+  .tools { margin-left: auto; display: flex; align-items: center; gap: 2px; min-width: 0; }
+  .tool { height: 28px; min-width: 28px; padding: 0 6px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: var(--muted); flex: none; transition: background-color .12s, color .12s; }
+  .tool:hover, .tool[aria-pressed="true"] { background: var(--hover); color: var(--fg); }
+  .tool.has { color: var(--info); font-weight: 500; }
+  .search { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px 0 6px; border-radius: 6px; min-width: 0; }
+  .search:focus-within { background: rgba(33, 27, 23, 0.04); }
+  .search > svg { color: var(--muted); }
+  .search input { width: 200px; min-width: 60px; height: 28px; border: 0; outline: 0; background: transparent; }
+  .search input::placeholder { color: var(--muted); }
+  .search .clr { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); flex: none; visibility: hidden; }
+  .search.has .clr { visibility: visible; }
+  .search .clr:hover { background: rgba(33, 27, 23, 0.08); color: var(--fg); }
+  .btn-primary { height: 30px; padding: 0 12px 0 10px; border-radius: 8px; background: var(--fg); color: #fff; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; }
+  .btn-primary:hover { background: #000; }
+  .btn-primary.sm { height: 28px; padding: 0 12px; border-radius: 6px; }
+  .viewbar .btn-primary { margin-left: 8px; }
+  .btn-text { height: 28px; padding: 0 8px; border-radius: 6px; color: var(--fg-sub); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex: none; transition: background-color .12s, color .12s; }
+  .btn-text:hover { background: var(--hover); color: var(--fg); }
+  .btn-text.f12 { height: 24px; padding: 0 6px; color: var(--muted); }
+  .btn-text.f12:hover { color: var(--fg); }
+
+  /* 필터 줄 */
+  .filters { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 0 14px 6px; }
+  .chip { display: inline-flex; align-items: center; height: 28px; max-width: 260px; border-radius: 14px; color: #6f6c66; transition: background-color .12s, color .12s; }
+  .chip:hover, .chip.open { background: rgba(60, 52, 40, 0.06); color: var(--fg); }
+  .chip .main { display: inline-flex; align-items: center; gap: 6px; height: 100%; min-width: 0; padding: 0 10px; border-radius: 14px; white-space: nowrap; }
+  .chip .main svg.sm { color: var(--faint); }
+  .chip .main svg.xs { color: #a5a39f; }
+  .chip.on { background: rgba(35, 131, 226, 0.1); color: var(--info); }
+  .chip.on:hover { background: rgba(35, 131, 226, 0.15); }
+  .chip.on .main { padding: 0 4px 0 10px; }
+  .chip.on .main svg { color: currentColor; }
+  .chip.on b { font-weight: 600; }
+  .chip .x { width: 22px; height: 22px; margin-right: 3px; border-radius: 50%; display: grid; place-items: center; color: var(--info); flex: none; }
+  .chip .x:hover { background: rgba(35, 131, 226, 0.18); }
+
+  /* 표 */
+  .scroller { flex: 1; min-height: 0; overflow: auto; scroll-padding: 40px 0 8px; }
+  .sheet { min-width: 880px; padding: 0 16px; }
+  .row { display: grid; grid-template-columns: var(--w-tog) var(--w-name) minmax(0, 1fr) 60px var(--w-asg) var(--w-next) var(--w-act); align-items: center; }
+  .head { position: sticky; top: 0; z-index: 5; height: 34px; background: #fff; border-bottom: 1px solid var(--line-strong); font-size: 12px; color: var(--muted); }
+  .head .hc { display: flex; align-items: center; gap: 6px; height: 100%; padding: 0 8px; min-width: 0; white-space: nowrap; }
+  .head .hc svg { color: var(--faint); }
+  .head button.hc { width: 100%; border-radius: 4px; }
+  .head button.hc:hover { background: var(--hover); color: var(--fg); }
+  .head .hc .dir { color: var(--fg-sub); transition: transform .12s; }
+  .head .hc .dir.desc { transform: rotate(180deg); }
+
+  .cust { border-bottom: 1px solid var(--line); }
+  .crow { height: 38px; cursor: pointer; transition: background-color .1s; }
+  .crow:hover { background: var(--row-hover); }
+  .cell { min-width: 0; padding: 0 8px; display: flex; align-items: center; gap: 8px; height: 100%; }
+  .tog { width: 24px; height: 24px; margin-left: 4px; border-radius: 4px; display: grid; place-items: center; color: var(--icon); }
+  .tog:hover { background: var(--hover); color: var(--fg); }
+  .tog svg { transition: transform .12s; }
+  .tog[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .c-name .nm { font-weight: 600; white-space: nowrap; flex: 0 1 auto; }
+  .c-name .ph { font-size: 12px; color: var(--muted); white-space: nowrap; flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .intake-panel { grid-column:2 / -1; margin:8px 8px 0; min-width:0; }
+  .intake-heading { display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--line-strong); padding:5px 0; }
+  .intake-heading strong { font-size:14px; }
+  .intake-heading button { margin-left:auto; }
+  .intake-columns, .irow { display:grid; grid-template-columns: minmax(0,1fr) 84px 102px; align-items:center; }
+  .intake-columns { color:var(--muted); font-size:12px; padding:6px 0; }
+  .intake-columns span { padding-left:8px; }
+  .intake-columns span:first-child { padding-left:36px; }
+  .crow .summary { display:block; color:var(--fg-sub); }
+  .kind { font-size: 12px; font-weight: 500; margin-right: 6px; }
+  .kind.demand { color: var(--info-strong); }
+  .kind.listing { color: var(--success); }
+  .off .kind { color: var(--muted); }
+  .c-asg { color: var(--fg-sub); white-space: nowrap; }
+  .c-act .tool { opacity: 0; transition: opacity .1s, background-color .12s; }
+  .crow:hover .c-act .tool, .c-act .tool:focus-visible { opacity: 1; }
+
+  /* 다음 연락·담당 칸 단추 */
+  .cellbtn { display: inline-flex; align-items: baseline; gap: 6px; height: 26px; line-height: 26px; margin-left: -6px; padding: 0 6px; border-radius: 4px; max-width: calc(100% + 6px); white-space: nowrap; transition: background-color .1s; }
+  .cellbtn:hover, .cellbtn[aria-expanded="true"] { background: var(--hover); }
+  .cellbtn .rel { font-size: 12px; color: var(--muted); }
+  .cellbtn .over { color: var(--red-strong); }
+  .cellbtn .today { font-weight: 600; }
+  .cellbtn .none { color: var(--faint); }
+  .dash { color: var(--faint); }
+
+  /* 알약 */
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: 4px; font-size: 12px; line-height: 20px; white-space: nowrap; flex: none; }
+  button.pill:hover { filter: brightness(0.96); }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pill.open { background: #eef3ed; color: #44745a; }
+  .pill.hold { background: #fbf3db; color: #9f6b00; }
+  .pill.closed { background: #f1f1ef; color: #6f6d6a; }
+  .pill.like { background: #eef3ed; color: #44745a; }
+  .pill.think { background: #fbf3db; color: #9f6b00; }
+  .pill.no { background: #f1f1ef; color: #6f6d6a; }
+  .pill.wait { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+  /* 펼친 자리 */
+  .exp { display: grid; grid-template-columns: var(--w-tog) var(--w-name) minmax(0, 1fr); padding: 0 0 18px; }
+  .exp.just { animation: reveal .16s ease-out; }
+  @keyframes reveal { from { opacity: 0; transform: translateY(-3px); } }
+  @media (prefers-reduced-motion: reduce) { .exp.just, .newcust.just { animation: none; } * { transition: none !important; } }
+  .exp-side { grid-column: 2; padding: 2px 8px 0; }
+  .exp-side p + p { margin-top: 2px; }
+  .exp-main { grid-column: 3; min-width: 0; }
+  .kv { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: baseline; column-gap: 8px; min-height: 30px; padding: 0 8px; line-height: 30px; }
+  .kv .k { font-size: 12px; color: var(--muted); }
+  .kv .v { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+  .kv .v .when { font-size: 12px; color: var(--muted); white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 5px; align-self: center; }
+  .kv .v .when svg { color: var(--icon); }
+  .kv .v .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kv.full .v .txt { white-space: normal; line-height: 21px; padding: 4px 0 5px; }
+  .kv .acts { display: inline-flex; align-items: center; gap: 2px; align-self: center; }
+  .kv .note { color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kv .for { font-size: 12px; color: var(--muted); white-space: nowrap; flex: none; }
+  .kv .empty { color: var(--muted); }
+  .kv.old .k { visibility: hidden; }
+  .kv.old .v .txt { color: var(--fg-sub); }
+
+  /* 상담 추가 */
+  .composer { margin: 4px 8px 8px 80px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px 8px; }
+  .composer:focus-within { border-color: #cfcdc8; }
+  .composer textarea { display: block; width: 100%; min-height: 42px; max-height: 168px; margin: 6px 0 4px; padding: 0; border: 0; outline: 0; resize: none; background: transparent; line-height: 21px; }
+  .composer textarea::placeholder { color: var(--faint); }
+  .cmp-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+  .cmp-foot .k { font-size: 12px; color: var(--muted); margin-right: 2px; }
+  .cmp-btns { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; flex: none; }
+  .typeseg { display: inline-flex; gap: 1px; }
+  .typeseg button, .preset { height: 24px; padding: 0 8px; border-radius: 12px; font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; transition: background-color .1s, color .1s; }
+  .typeseg button:hover, .preset:hover { background: var(--hover); color: var(--fg); }
+  .typeseg button[aria-pressed="true"], .preset[aria-pressed="true"] { background: #eeedec; color: var(--fg); font-weight: 500; }
+  .field { height: 26px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 6px; background: #fff; outline: 0; font-size: 12px; }
+  .field:focus { border-color: var(--info); box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.18); }
+  .field.on { border-color: #cfcdc8; color: var(--fg); }
+  select.field { padding-right: 2px; max-width: 220px; }
+  .err { font-size: 12px; line-height: 18px; color: var(--red-strong); min-height: 18px; }
+  .composer .err { min-height: 0; padding-top: 4px; }
+  .composer .err:empty { display: none; }
+
+  /* 의뢰 없는 고객, 새 고객, 의뢰 등록 */
+  .kind.none { color: var(--muted); }
+  .c-req .seg.inq { color: var(--fg-sub); }
+  .exp-side .nophone { color: var(--faint); }
+  .id-open { margin: 4px 0 0 -6px; }
+  .id-edit { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .id-edit .field { width: 100%; height: 30px; font-size: 14px; }
+  .id-edit .err:empty { display: none; }
+  .id-edit .err { min-height: 0; }
+  .id-btns { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+  .cintros { padding: 0 8px 4px 80px; }
+  .tree-add { padding: 4px 8px 0 32px; }
+  .newcust { display: grid; grid-template-columns: var(--w-tog) var(--w-name) minmax(0, 1fr); padding: 10px 0 12px; border-bottom: 1px solid var(--line); }
+  .newcust.just { animation: reveal .16s ease-out; }
+  .nc-id { grid-column: 2; display: flex; flex-direction: column; gap: 6px; padding: 0 8px; min-width: 0; }
+  .nc-id .field { width: 100%; height: 30px; font-size: 14px; }
+  .nc-id .field::placeholder, .line-input::placeholder { color: var(--faint); }
+  .nc-main { grid-column: 3; min-width: 0; }
+  .newcust .composer { margin: 0 8px; }
+  .line-input { display: block; width: 100%; height: 30px; margin: 6px 0 4px; padding: 0; border: 0; outline: 0; background: transparent; }
+  .frow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .vsep { width: 1px; height: 14px; background: var(--line-strong); }
+  .pricerow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 0 8px; font-size: 12px; color: var(--muted); }
+  .pricerow .field { height: 28px; font-size: 14px; }
+  .pricerow .pv { color: var(--fg-sub); }
+  .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-sub); cursor: pointer; margin-left: 6px; }
+  .chk input { margin: 0; accent-color: var(--fg); }
+
+  /* 중개 건과 의뢰 */
+  .tree { margin-top: 4px; }
+  .case-head { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; }
+  .case-head svg { color: var(--icon); margin: 0 2px; }
+  .case-head b { font-weight: 500; }
+  .case-body { position: relative; }
+  .case-body::before { content: ""; position: absolute; left: 17.5px; top: 6px; bottom: 6px; width: 1px; background: var(--line-strong); }
+  .loose-label { padding: 8px 8px 2px 36px; }
+  .irow { min-height: 32px; transition: opacity .12s; }
+  .irow.dim, .irow.dim + .intros { opacity: 0.4; }
+  .i-main { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 8px; }
+  .step { position: relative; z-index: 1; width: 20px; height: 20px; flex: none; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 1px var(--line-strong); display: grid; place-items: center; font-size: 12px; color: var(--fg-sub); }
+  .step.none { visibility: hidden; }
+  .i-main .kind { margin-right: 0; width: 36px; flex: none; }
+  .i-main .tx { color: var(--fg-sub); width: 28px; flex: none; }
+  .i-main .desc { flex: 0 1 auto; }
+  .irow.is-closed .desc, .irow.is-closed .tx { color: var(--muted); }
+  .irow.is-closed .kind { color: var(--muted); }
+  .irow .cell { height: 32px; }
+
+  /* 소개한 매물 */
+  .intros { padding: 0 8px 6px 36px; }
+  .intros-h { display: flex; align-items: center; gap: 8px; height: 26px; }
+  .intros-tog { display: inline-flex; align-items: center; gap: 4px; height: 22px; margin-left: -4px; padding: 0 6px 0 2px; border-radius: 4px; font-size: 12px; color: var(--muted); }
+  .intros-tog:hover { background: var(--hover); color: var(--fg); }
+  .intros-tog svg { transition: transform .12s; }
+  .intros-tog[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .intros-tog b { font-weight: 500; color: var(--fg-sub); }
+  /* 한 의뢰의 소개 줄은 칸 너비를 함께 쓴다: 날짜·가격·반응 칸은 그 목록에서 가장 긴 값에 맞추고 남는 폭은 이름과 메모가 가진다 */
+  .intro-list { display: grid; grid-template-columns: minmax(170px, max-content) auto auto auto minmax(110px, 1fr); column-gap: 16px; padding: 0 8px 0 14px; margin-left: -8px; }
+  .intro { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; align-items: center; min-height: 30px; margin: 0 -8px 0 -14px; padding: 0 8px 0 14px; border-radius: 4px; }
+  @supports not (grid-template-columns: subgrid) {
+    .intro { grid-template-columns: minmax(170px, 1fr) 76px 252px 80px minmax(110px, 1.2fr); column-gap: 16px; }
+  }
+  .intro:hover { background: var(--row-hover); }
+  .intro .in-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .intro .in-name .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; max-width: 100%; }
+  .intro .in-name .sp { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 0; }
+  .intro .in-date { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .intro .in-price { display: flex; align-items: baseline; gap: 5px; white-space: nowrap; }  /* 가격은 줄이지 않는다: 좁으면 이름·메모 칸이 줄어든다 */
+  .intro .in-price .lb { font-size: 12px; color: var(--muted); }
+  .intro .in-price .then { color: var(--fg-sub); }
+  .intro .in-price .now { font-weight: 500; }
+  .intro .in-price svg { color: var(--faint); align-self: center; }
+  .intro .in-price .gone { font-size: 12px; color: var(--muted); }
+  .memo-btn { display: block; width: 100%; height: 26px; line-height: 26px; padding: 0 6px; margin-left: -6px; border-radius: 4px; color: var(--fg-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .memo-btn:hover { background: var(--hover); color: var(--fg); }
+  .memo-btn.ph { color: var(--faint); opacity: 0; }
+  .intro:hover .memo-btn.ph, .memo-btn.ph:focus-visible { opacity: 1; }
+  .memo-in { display: block; width: 100%; height: 26px; padding: 0 5px; margin-left: -6px; border: 1px solid var(--info); border-radius: 4px; outline: 0; box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.18); background: #fff; }
+  .intros-add { margin-top: 2px; }
+
+  /* 표 아래 */
+  .foot { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px; font-size: 12px; color: var(--muted); }
+  .blank { padding: 56px 8px; text-align: center; color: var(--muted); }
+  .blank .btn-text { margin-top: 8px; color: var(--info); }
+
+  /* 떠 있는 판 */
+  #pop { position: fixed; inset: 0; z-index: 50; pointer-events: none; }
+  .pop { position: fixed; pointer-events: auto; min-width: 176px; max-width: 320px; background: #fff; border-radius: 8px; box-shadow: var(--pop); padding: 4px; }
+  .pop .mh { padding: 6px 8px 4px; font-size: 12px; color: var(--muted); }
+  .mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 4px 8px; border-radius: 4px; }
+  .mi:hover, .mi:focus-visible { background: var(--hover); outline: 0; }
+  .mi .ck { margin-left: auto; color: var(--fg-sub); visibility: hidden; }
+  .mi[aria-checked="true"] .ck { visibility: visible; }
+  .mi[disabled] { color: var(--faint); cursor: default; background: none; }
+  .mi .two { display: flex; flex-direction: column; min-width: 0; line-height: 18px; padding: 2px 0; }
+  .pop.next { width: 288px; padding: 10px 12px 10px; }
+  .pop.next .ph-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+  .pop.next .ph-row b { font-weight: 600; }
+  .pop.next .presets { display: flex; gap: 2px; margin: 0 -4px 8px; }
+  .pop.next label { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 4px; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+  .pop.next label .field { width: 100%; height: 28px; font-size: 14px; }
+  .pop.next .pf { display: flex; align-items: center; gap: 2px; margin: 0 -6px 0; }
+
+  /* 알림 */
+  #toast { position: fixed; right: 20px; bottom: 20px; z-index: 40; }
+  .toast { display: flex; align-items: center; gap: 12px; padding: 9px 10px 9px 14px; border-radius: 8px; background: #fff; box-shadow: var(--pop); animation: reveal .16s ease-out; max-width: 420px; }
+  .toast button { height: 24px; padding: 0 8px; border-radius: 4px; color: var(--info); font-weight: 500; flex: none; }
+  .toast button:hover { background: rgba(35, 131, 226, 0.1); }
+  #property-picker { width:min(458px, calc(100vw - 32px)); max-height:90vh; padding:20px; border:1px solid var(--line-strong); border-radius:12px; color:var(--fg); box-shadow:0 12px 46px #0002; }
+  #property-picker::backdrop { background:#25252133; }
+  #property-picker h2 { margin:0; font-size:16px; }
+  #property-context { margin:4px 0 14px; color:var(--muted); }
+  #property-picker .field { width:100%; height:32px; }
+  #property-results { max-height:220px; overflow:auto; margin:8px 0 12px; border-block:1px solid var(--line); }
+  #property-results label { display:flex; align-items:center; gap:9px; padding:8px 3px; cursor:pointer; }
+  #property-results label:has(:checked) { background:var(--hover); }
+  #property-results small { display:block; color:var(--muted); }
+  #property-results h3 { font-size:12px; color:var(--muted); margin:10px 3px 2px; }
+  .intro-fields { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  .intro-fields label { flex:1; min-width:100px; font-size:12px; }
+  .intro-fields label[hidden] { display:none; }
+  #property-picker footer { display:flex; justify-content:flex-end; gap:8px; }
+  .ledger-bar {height:48px; flex:none; display:flex; align-items:center; gap:16px; padding:0 20px; border-bottom:1px solid var(--line);}
+  .ledger-bar strong {font-size:17px}.ledger-bar span {color:var(--muted);font-size:12px}
+  .split {display:grid;grid-template-columns:clamp(280px,28vw,370px) minmax(0,1fr);flex:1;min-height:0}
+  .directory {display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line-strong);background:#fafaf9}
+  .directory .viewbar {height:auto;flex-direction:column;align-items:stretch;gap:8px;padding:12px}
+  .directory .tools {margin:0}.directory .search {width:auto;flex:1}.directory .search input{min-width:0;width:100%}
+  .directory .filters {flex-wrap:wrap;height:auto;min-height:28px;padding:0 12px}
+  .list-order {display:flex;justify-content:space-between;padding:8px 14px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line)}
+  .list-order button {display:flex;align-items:center;gap:4px}
+  .person {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 8px;width:100%;text-align:left;padding:12px 15px;border-bottom:1px solid var(--line)}
+  .person:hover {background:var(--hover)}.person[aria-current=true]{background:#eaf1f8;box-shadow:inset 3px 0 #3a76ae}
+  .person small {font-size:12px;color:var(--muted)}.person .preview {grid-column:1/-1;color:var(--fg-sub)}
+  .directory .foot {margin:0;padding:6px 12px;min-height:30px}
+  #reader {overflow:auto;min-width:0;padding:28px clamp(16px,3vw,52px) 40px}
+  #reader h1 {font-size:26px;letter-spacing:-.04em;margin:8px 0}
+  .person-meta {display:flex;align-items:center;gap:10px;color:var(--muted);flex-wrap:wrap}
+  .section-title {font-size:15px;margin:24px 0 8px}
+  .next-strip {background:#f5f7f8;padding:8px;border-radius:6px;margin:18px 0}
+  #reader .kv {padding:4px 0;line-height:1.55;align-items:center}
+  #reader .kv .v {flex-wrap:wrap}.kv .v .txt {white-space:normal}
+  #reader .intake-panel {margin:22px 0}.intake-link {text-align:left;padding:8px 0;min-width:0;display:flex;align-items:center;gap:8px}
+  .intake-link:hover .desc {text-decoration:underline}.intake-link .desc {white-space:normal}
+  .back-person {color:var(--info-strong);padding:4px 0}.back-person:hover{text-decoration:underline}
+  #reader .intro-list {display:block;margin:0;padding:0}#reader .intro {display:flex;flex-wrap:wrap;gap:8px 16px;padding:10px 0;margin:0;border-bottom:1px solid var(--line)}
+  #reader .in-name {flex:1 1 185px}#reader .in-memo {flex-basis:100%}
+  #reader .newcust {display:block}#reader .case-head {margin-top:6px}
+  .visit-form {display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  @media(max-width:760px){.split{grid-template-columns:minmax(190px,32%) minmax(0,1fr)}#reader{padding:12px}.directory .tools{flex-wrap:wrap}.directory .vtab{padding:0 6px}.intake-columns,.irow{grid-template-columns:minmax(0,1fr) 52px 61px}.intake-link{flex-wrap:wrap}.directory .viewbar{padding:6px}}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-sort" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.3 3.6-6 8-6s8 2.7 8 6"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3 2.9-5.5 6.5-5.5s6.5 2.500 6.500 5.500M16 4.800a3.500 3.500 0 0 1 0 6.400M18 14.800c2 .700 3.500 2.600 3.500 5.200"/></symbol>
+    <symbol id="i-badge" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.500 18.500c1-2.300 3.100-3.500 5.500-3.500s4.500 1.200 5.500 3.500"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.500" y="5" width="17" height="15.500" rx="2"/><path d="M3.500 10h17M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3h8l4.500 4.500V21H6zM14 3v5h4.500M9.500 13h5.500M9.500 17h5.500"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5.500 4h3.300l1.700 4.400-2.200 1.500a11.500 11.500 0 0 0 5.800 5.800l1.500-2.200 4.400 1.700v3.300a2 2 0 0 1-2.200 2A16.500 16.500 0 0 1 3.500 6.200a2 2 0 0 1 2-2.200z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.200 7-11.200a7 7 0 1 0-14 0C5 14.800 12 21 12 21z"/><circle cx="12" cy="9.800" r="2.500"/></symbol>
+    <symbol id="i-msg" viewBox="0 0 24 24"><path d="M4 5.500h16v11H9.500L4 20.500z"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M4 20h4L19.500 8.500l-4-4L4 16zM13.500 6.500l4 4"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M9.500 17H7A5 5 0 0 1 7 7h2.500M14.500 7H17a5 5 0 0 1 0 10h-2.500M8.500 12h7"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.500"/><rect x="13" y="4" width="7" height="7" rx="1.500"/><rect x="4" y="13" width="7" height="7" rx="1.500"/><rect x="13" y="13" width="7" height="7" rx="1.500"/></symbol>
+    <symbol id="i-bldg" viewBox="0 0 24 24"><path d="M5 21V4.500h9V21M14 9.500h5V21M3 21h18M8.500 8.500h2M8.500 12.500h2M8.500 16.500h2"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="m3.500 6.500 5.500-2 6 2 5.500-2v13l-5.500 2-6-2-5.500 2zM9 4.500v13M15 6.500v13"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 4h13.500v16.500H5zM5 4v16.500"/><circle cx="12" cy="10" r="2.200"/><path d="M8.500 16.500c.700-1.700 2-2.500 3.500-2.500s2.800.800 3.500 2.500"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4.500h12l-2.500 4 2.500 4H5"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+  <main class="page">
+    <header class="ledger-bar"><strong>고객 원장</strong><span>한빛공인중개사사무소</span></header>
+    <div class="split"><section class="directory" aria-label="고객 목록">
+    <div class="viewbar">
+      <div class="tabs" role="tablist" aria-label="보기" id="tabs"></div>
+      <div class="tools">
+        <button class="tool" id="ftoggle" data-act="ftoggle" data-fid="ftoggle" aria-label="필터 줄 보이기·숨기기"></button>
+        <label class="search" id="searchbox">
+          <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+          <input id="q" type="text" placeholder="이름, 연락처, 단지 검색" aria-label="고객 원장 검색" autocomplete="off" spellcheck="false">
+          <button class="clr" data-act="qclear" aria-label="검색어 지우기" type="button"><svg class="i xs" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </label>
+        <button class="btn-primary" data-act="newcust" data-fid="newcust"><svg class="i sm" aria-hidden="true"><use href="#i-plus"/></svg>고객 추가</button>
+      </div>
+    </div>
+    <div class="filters" id="chips"></div>
+    <div id="head" class="list-order"></div>
+    <div class="scroller" id="scroller"><div id="rows"></div></div><div class="foot" id="foot"></div>
+    </section><section id="reader" aria-label="고객 작업 화면"></section></div>
+  </main>
+</div>
+
+<dialog id="property-picker" aria-labelledby="property-title">
+  <form id="property-form">
+    <h2 id="property-title">매물 소개 기록</h2><p id="property-context"></p>
+    <input id="property-search" class="field" type="search" placeholder="단지·동·호 검색" aria-label="단지·동·호 검색" autofocus>
+    <div id="property-results" role="group" aria-label="소개할 매물"></div>
+    <div class="intro-fields">
+      <label>소개일<input class="field" type="date" name="day" required></label>
+      <label>전달 방법<select class="field" name="via"><option>문자</option><option>전화</option><option>방문</option><option>카카오톡</option></select></label>
+    </div>
+    <div class="intro-fields">
+      <label hidden><span id="property-price-label">소개 당시 가격</span> (만원)<input class="field" type="number" name="price" min="0" step="1" required disabled></label>
+      <label hidden>당시 월세 (만원)<input class="field" type="number" name="rent" min="0" step="1" required disabled></label>
+    </div>
+    <footer><button type="button" class="btn-text" id="property-cancel">취소</button><button class="btn-primary sm" id="property-save" disabled>소개 기록 저장</button></footer>
+  </form>
+</dialog>
+<div id="pop"></div>
+<div id="toast" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ───────── 기준값과 가상 데이터 ───────── */
+const TODAY = '2026-11-19';
+const ME = '박지훈';
+const STAFF = ['박지훈', '이수민', '최현우'];
+const STATUS = { open: '진행중', hold: '보류', closed: '종료' };
+const KIND = { demand: '구함', listing: '내놓음' };
+const TX = { sale: '매매', jeonse: '전세', monthly: '월세' };
+const RX = { like: '관심', think: '고민 중', no: '거절', wait: '반응 대기' };
+const CTYPE = { call: ['전화', 'phone'], visit: ['방문', 'pin'], text: ['문자', 'msg'], memo: ['메모', 'note'] };
+const NEXT_BUCKETS = { over: '지남', today: '오늘', week: '7일 안', none: '미정' };
+
+// 소개 기록·후보의 손님이 원장에 있는 고객이면 cid로 가리킨다. 이름은 그 고객의 지금 이름을 읽어 보여 주고,
+// name은 그 고객을 찾지 못할 때만 쓰는 사본이다(이름을 고쳐도 소개 기록이 옛 이름으로 남지 않게).
+// 고객은 의뢰 없이도 존재한다(intakes: []). 상담·다음 연락(next)·의뢰 없이 소개한 매물(intros)은 고객에게 붙는다.
+// 의뢰가 생기면 그 의뢰 아래에 소개 기록이 쌓인다. 금액은 만원, 월세는 [보증금, 월세].
+const INITIAL = [
+  { id: 'q1', name: '오하늘', phone: '010-5550-0191', assignee: '박지훈',
+    notes: ['네이버 광고 보고 전화', '주말 통화 선호'],
+    next: { d: '2026-11-20', note: '토요일 방문 가능한지 확인' },
+    intros: [
+      { id: 'x1', name: '고덕그라시움 141동 1202호', spec: '34평 · 12층', d: '2026-11-18', via: '문자', then: 159000, now: 157000, rx: 'like', memo: '구조가 마음에 든다고 함' },
+      { id: 'x2', name: '고덕아르테온 309동 801호', spec: '34평 · 8층', d: '2026-11-18', via: '문자', then: 163000, now: 163000, rx: 'think', memo: '예산보다 조금 높다' },
+    ],
+    pool: [{ name: '고덕센트럴아이파크 112동 904호', spec: '34평 · 9층', now: 155000 }],
+    cases: [], intakes: [],
+    consultations: [
+      { d: '2026-11-18', type: 'call', by: '박지훈', text: '고덕동 34평 매매를 알아보는 중. 예산은 아직 못 정했고 대출 상담부터 받겠다고 함. 사진 두 곳 보냄.' },
+      { d: '2026-11-16', type: 'call', by: '박지훈', text: '광고 보고 첫 전화. 내년 봄 이사를 생각 중.' },
+    ] },
+  { id: 'c1', name: '한지우', phone: '010-5550-0142', assignee: '박지훈',
+    notes: ['배우자 서민호와 공동명의', '평일 저녁 통화 선호'],
+    next: { d: '2026-11-21', note: '엘스 1502호 재방문 일정 확정' }, intros: [], pool: [],
+    cases: [{ id: 'k1', title: '고덕 → 잠실 갈아타기', steps: [{ intake: 'i1a' }, { intake: 'i1b' }, { title: '잔금·이사', target: '2027-02-20' }] }],
+    intakes: [
+      { id: 'i1a', kind: 'listing', tx: 'sale', desc: '고덕아르테온 305동 1203호 · 34평', short: '고덕아르테온 34평', price: 165000, status: 'open', assignee: '박지훈',
+        intros: [
+          { id: 'm1', name: '오세린', spec: '예산 17억 · 실거주', d: '2026-11-15', via: '방문', then: 168000, rx: 'think', memo: '5천 조정되면 계약 의사' },
+          { id: 'm2', name: '문태경', spec: '전세 끼고 매수', d: '2026-11-09', via: '방문', then: 170000, rx: 'no', memo: '12층은 애매, 고층만 본다고 함' },
+        ],
+        pool: [{ name: '배정훈', spec: '예산 17억 · 학군' }] },
+      { id: 'i1b', kind: 'demand', tx: 'sale', desc: '잠실 일대 · 33~34평 · 22억~24억 · 2027.2 입주', short: '잠실 33~34평 · 22억~24억', status: 'open', assignee: '박지훈',
+        intros: [
+          { id: 'm3', name: '잠실엘스 112동 1502호', spec: '33평 · 15층 · 남향', d: '2026-11-12', via: '방문', then: 235000, now: 230000, rx: 'like', memo: '거실 조망 마음에 듦. 23억이면 계약 의사' },
+          { id: 'm4', name: '리센츠 221동 804호', spec: '33평 · 8층', d: '2026-11-12', via: '방문', then: 240000, now: 240000, rx: 'think', memo: '학교는 가깝지만 예산 상한' },
+          { id: 'm5', name: '트리지움 308동 302호', spec: '33평 · 3층', d: '2026-11-05', via: '문자', then: 228000, now: 228000, gone: '거래 완료', rx: 'no', memo: '저층이라 어둡다' },
+        ],
+        pool: [{ name: '레이크팰리스 103동 1101호', spec: '33평 · 11층', now: 232000 }, { name: '잠실엘스 135동 902호', spec: '33평 · 9층', now: 228000 }] },
+      { id: 'i1c', kind: 'demand', tx: 'jeonse', desc: '고덕동 · 25평 · 전세 6억~7억 · 부모님 거주', short: '고덕동 25평 · 6억~7억', status: 'hold', assignee: '이수민',
+        intros: [{ id: 'm6', name: '고덕그라시움 124동 603호', spec: '25평 · 6층', d: '2026-10-28', via: '문자', then: 68000, now: 68000, rx: 'wait', memo: '' }],
+        pool: [{ name: '고덕아르테온 311동 1504호', spec: '25평 · 15층', now: 66000 }] },
+    ],
+    consultations: [
+      { d: '2026-11-18', type: 'call', by: '박지훈', text: '엘스 1502호를 다시 보고 싶다고 함. 토요일 오전 가능. 아르테온은 16억 3,000까지 조정할 수 있다고.' },
+      { d: '2026-11-12', type: 'visit', by: '박지훈', text: '잠실 세 곳 동행. 엘스 조망에 반응이 가장 좋았고 리센츠는 예산이 걸림.' },
+      { d: '2026-11-05', type: 'call', by: '박지훈', text: '트리지움 3층을 소개했으나 저층은 보지 않겠다고 함.' },
+    ] },
+  { id: 'c2', name: '윤태오', phone: '010-5550-0177', assignee: '최현우', notes: ['법인 대표', '문자 선호'],
+    next: { d: '2026-11-17', note: '임대인 렌트프리 답 전달' }, intros: [], pool: [], cases: [],
+    intakes: [
+      { id: 'i2a', kind: 'demand', tx: 'monthly', desc: '문정동 지식산업센터 · 40평대 · 보증금 5,000 / 월 350 이하', short: '문정동 지산 40평대 · 월 350 이하', status: 'open', assignee: '최현우',
+        intros: [
+          { id: 'm7', name: '문정 SK V1 B동 804호', spec: '44평', d: '2026-11-10', via: '방문', then: [5000, 340], now: [5000, 340], rx: 'think', memo: '주차 4대 되는지 확인 요청' },
+          { id: 'm8', name: '가든파이브웍스 912호', spec: '41평', d: '2026-11-10', via: '방문', then: [4000, 330], now: [4000, 320], rx: 'no', memo: '층고가 낮다' },
+        ],
+        pool: [{ name: '문정 현대지식산업센터 C동 1105호', spec: '46평', now: [5000, 350] }] },
+    ],
+    consultations: [{ d: '2026-11-10', type: 'visit', by: '최현우', text: '두 곳 동행. SK V1은 주차 4대가 되는지 확인해 달라고 함.' }] },
+  { id: 'c3', name: '서하린', phone: '010-5550-0119', assignee: '이수민', notes: ['현 세입자 12월 초 퇴거 예정'],
+    next: { d: '2026-11-19', note: '세입자 퇴거일 확인' }, intros: [], pool: [], cases: [],
+    intakes: [
+      { id: 'i3a', kind: 'listing', tx: 'jeonse', desc: '고덕그라시움 118동 904호 · 25평', short: '고덕그라시움 25평', price: 70000, status: 'open', assignee: '이수민',
+        intros: [{ id: 'm9', name: '임도윤', spec: '신혼 · 12월 입주', d: '2026-11-14', via: '방문', then: 72000, rx: 'like', memo: '퇴거일만 맞으면 계약' }],
+        pool: [{ name: '채서준', spec: '전세 7억 · 1월 입주' }] },
+    ],
+    consultations: [{ d: '2026-11-14', type: 'visit', by: '이수민', text: '임도윤 손님 방문. 12월 20일 전 입주를 원함.' }] },
+  { id: 'q2', name: '상일동 상가 문의 최 사장님', phone: '', assignee: '최현우',
+    notes: ['방문 손님', '연락처를 아직 못 받음'],
+    next: null, intros: [], pool: [{ name: '상일동 근린상가 1층 102호', spec: '12평', now: [2000, 150] }],
+    cases: [], intakes: [],
+    consultations: [{ d: '2026-11-17', type: 'visit', by: '최현우', text: '1층 상가 월세 시세를 묻고 감. 명함만 받아 갔고 다시 들르겠다고 함.' }] },
+  { id: 'c4', name: '장민규', phone: '010-5550-0163', assignee: '박지훈', notes: ['부모 장석진 자금 지원'],
+    next: { d: '2026-11-20', note: '대출 한도 확인 결과 듣기' }, intros: [], pool: [], cases: [],
+    intakes: [
+      { id: 'i4a', kind: 'demand', tx: 'sale', desc: '강일동 · 25평 · 9억~10억 · 첫 집', short: '강일동 25평 · 9억~10억', status: 'open', assignee: '박지훈',
+        intros: [
+          { id: 'm10', name: '강일리버파크 9단지 905동 702호', spec: '25평 · 7층', d: '2026-11-16', via: '방문', then: 96000, now: 96000, rx: 'like', memo: '초등학교 가까워서 선호' },
+          { id: 'm11', name: '고덕리엔파크 3단지 312동 1101호', spec: '25평 · 11층', d: '2026-11-16', via: '방문', then: 99000, now: 98000, rx: 'think', memo: '' },
+        ],
+        pool: [{ name: '강일리버파크 7단지 708동 404호', spec: '25평 · 4층', now: 94000 }] },
+    ],
+    consultations: [{ d: '2026-11-16', type: 'visit', by: '박지훈', text: '두 곳 동행. 대출 한도가 나오면 9단지로 가계약을 하고 싶다고 함.' }] },
+  { id: 'c5', name: '문가은', phone: '010-5550-0108', assignee: '이수민', notes: [], next: null, intros: [], pool: [], cases: [],
+    intakes: [
+      { id: 'i5a', kind: 'demand', tx: 'jeonse', desc: '천호동 · 20평대 · 전세 4억 이하 · 1월 말 입주', short: '천호동 20평대 · 4억 이하', status: 'open', assignee: '이수민', intros: [],
+        pool: [{ name: '천호 래미안강동팰리스 102동 2203호', spec: '24평 · 22층', now: 40000 }, { name: '천호태영 105동 801호', spec: '23평 · 8층', now: 37000 }] },
+    ],
+    consultations: [{ d: '2026-11-11', type: 'call', by: '이수민', text: '직장이 천호역 근처. 1월 말 입주, 반려묘 한 마리.' }] },
+  { id: 'c6', name: '노건우', phone: '010-5550-0151', assignee: '최현우', notes: ['자녀 중학교 배정 전에 이사 희망'],
+    next: { d: '2026-11-25', note: '주말 방문 손님 반응 전달' }, intros: [], pool: [],
+    cases: [{ id: 'k2', title: '상일동 매도 후 하남 매수', steps: [{ intake: 'i6a' }, { intake: 'i6b' }] }],
+    intakes: [
+      { id: 'i6a', kind: 'listing', tx: 'sale', desc: '고덕센트럴아이파크 108동 1502호 · 34평', short: '고덕센트럴아이파크 34평', price: 158000, status: 'open', assignee: '최현우',
+        intros: [{ id: 'm12', name: '설지안', spec: '예산 16억 · 갈아타기', d: '2026-11-17', via: '방문', then: 158000, rx: 'wait', memo: '' }],
+        pool: [{ name: '오세린', spec: '예산 17억 · 실거주' }] },
+      { id: 'i6b', kind: 'demand', tx: 'sale', desc: '하남 미사 · 40평대 · 15억 이하 · 매도 계약 뒤 진행', short: '하남 미사 40평대 · 15억 이하', status: 'hold', assignee: '최현우', intros: [],
+        pool: [{ name: '미사강변센트럴자이 2104동 902호', spec: '42평 · 9층', now: 148000 }] },
+    ],
+    consultations: [{ d: '2026-11-17', type: 'call', by: '최현우', text: '매도 계약이 먼저. 하남은 계약금이 들어온 뒤에 보겠다고 함.' }] },
+  { id: 'c7', name: '권소율', phone: '010-5550-0126', assignee: '최현우', notes: ['건물주 · 관리인 통해 연락'],
+    next: { d: '2026-11-13', note: '권리금 조정 가능한지 묻기' }, intros: [], pool: [], cases: [],
+    intakes: [
+      { id: 'i7a', kind: 'listing', tx: 'monthly', desc: '천호동 근린상가 1층 · 15평', short: '천호동 상가 1층 15평', price: [3000, 180], status: 'open', assignee: '최현우',
+        intros: [{ id: 'm13', name: '도예준', spec: '카페 창업', d: '2026-11-06', via: '방문', then: [3000, 200], rx: 'think', memo: '월세 180이면 다시 본다고 함' }],
+        pool: [{ name: '남궁하윤', spec: '반찬 가게 · 1층만' }] },
+    ],
+    consultations: [{ d: '2026-11-07', type: 'call', by: '최현우', text: '월세를 200에서 180으로 내림. 권리금은 임차인과 직접 이야기하라고 함.' }] },
+  { id: 'c8', name: '백승현', phone: '010-5550-0184', assignee: '박지훈', notes: [], next: null, intros: [], pool: [], cases: [],
+    intakes: [
+      { id: 'i8a', kind: 'demand', tx: 'sale', desc: '고덕동 · 34평 · 15억~16억 · 계약 완료', short: '고덕동 34평 · 15억~16억', status: 'closed', assignee: '박지훈',
+        intros: [{ id: 'm14', name: '고덕그라시움 131동 1802호', spec: '34평 · 18층', d: '2026-10-21', via: '방문', then: 158000, now: 158000, gone: '이 손님과 계약', rx: 'like', memo: '10.30 본계약' }],
+        pool: [] },
+    ],
+    consultations: [{ d: '2026-10-30', type: 'visit', by: '박지훈', text: '본계약 체결. 잔금은 12월 15일.' }] },
+  { id: 'c9', name: '임채원', phone: '010-5550-0135', assignee: '이수민', notes: ['배우자 육아휴직 중 · 낮 통화 가능'],
+    next: { d: '2026-11-22', note: '아르테온 전세 나오면 알리기' }, intros: [], pool: [], cases: [],
+    intakes: [
+      { id: 'i9a', kind: 'demand', tx: 'jeonse', desc: '상일동 · 30평대 · 전세 7억~8억 · 초등학교 도보', short: '상일동 30평대 · 7억~8억', status: 'open', assignee: '이수민',
+        intros: [
+          { id: 'm15', name: '고덕아르테온 302동 705호', spec: '34평 · 7층', d: '2026-11-13', via: '문자', then: 78000, now: 80000, rx: 'think', memo: '8억이면 부담' },
+          { id: 'm16', name: '고덕자이 204동 1203호', spec: '31평 · 12층', d: '2026-11-08', via: '방문', then: 74000, now: 74000, rx: 'like', memo: '학교가 길 하나 건너' },
+        ],
+        pool: [{ name: '고덕롯데캐슬베네루체 115동 603호', spec: '30평 · 6층', now: 72000 }] },
+    ],
+    consultations: [{ d: '2026-11-13', type: 'text', by: '이수민', text: '아르테온 705호 사진 보냄. 가격이 조금만 내려오면 보러 오겠다는 답.' }] },
+  { id: 'c10', name: '조하준', phone: '010-5550-0199', assignee: '박지훈', notes: ['해외 체류 · 메신저로만 연락'],
+    next: { d: '2026-11-19', note: '호가 조정 의사 묻기' }, intros: [], pool: [], cases: [],
+    intakes: [
+      { id: 'i10a', kind: 'listing', tx: 'sale', desc: '래미안힐스테이트고덕 207동 402호 · 25평', short: '래미안힐스테이트고덕 25평', price: 118000, status: 'open', assignee: '박지훈', intros: [],
+        pool: [{ cid: 'c4', name: '장민규', spec: '예산 9억~10억 · 첫 집' }] },
+    ],
+    consultations: [{ d: '2026-11-04', type: 'text', by: '박지훈', text: '세입자 만기가 3월. 그 전에 팔리면 좋겠다고 함.' }] },
+  { id: 'c11', name: '안나윤', phone: '010-5550-0170', assignee: '최현우', notes: [],
+    next: { d: '2026-12-03', note: '금리 발표 뒤 다시 연락' }, intros: [], pool: [], cases: [],
+    intakes: [
+      { id: 'i11a', kind: 'demand', tx: 'sale', desc: '명일동 · 30평대 · 13억 이하 · 재건축 관심', short: '명일동 30평대 · 13억 이하', status: 'hold', assignee: '최현우',
+        intros: [{ id: 'm17', name: '삼익그린2차 205동 601호', spec: '32평 · 6층', d: '2026-10-19', via: '문자', then: 128000, now: 126000, rx: 'wait', memo: '' }],
+        pool: [] },
+    ],
+    consultations: [{ d: '2026-10-20', type: 'call', by: '최현우', text: '대출 금리가 내려오면 움직이겠다고 함. 12월 초에 다시 연락.' }] },
+  { id: 'c12', name: '표도현', phone: '010-5550-0113', assignee: '이수민', notes: ['지인 소개로 방문'], next: null, intros: [], pool: [], cases: [],
+    intakes: [
+      { id: 'i12a', kind: 'demand', tx: 'monthly', desc: '암사동 · 원룸·투룸 · 보증금 3,000 / 월 80 이하', short: '암사동 투룸 · 월 80 이하', status: 'open', assignee: '이수민', intros: [],
+        pool: [{ name: '암사동 다가구 2층', spec: '투룸 · 12평', now: [3000, 75] }] },
+    ],
+    consultations: [] },
+];
+// 소개 기록에 고를 수 있는 가상 후보(고객·의뢰의 pool 뒤에 붙는다)
+const PROPERTY_POOL = [
+  { name: '고덕그라시움 127동 903호', spec: '34평 · 9층', now: 156000 },
+  { name: '고덕자이 211동 502호', spec: '31평 · 5층', now: 139000 },
+  { name: '강일리버파크 3단지 304동 1001호', spec: '25평 · 10층', now: 93000 },
+];
+const BUYER_POOL = [{ name: '강유나', spec: '예산 16억 5천 · 신혼' }, { name: '설지안', spec: '예산 16억 · 갈아타기' }];
+
+const clone = (v) => JSON.parse(JSON.stringify(v));
+
+const state = {
+  customers: clone(INITIAL),
+  mode: 'all',                      // all | inquiry(의뢰 없음) | demand | listing
+  q: '',
+  filtersOpen: true,
+  f: { assignee: new Set(), next: new Set(), status: new Set() },
+  sort: null,                       // { key: 'name' | 'next', dir: 'asc' | 'desc' }
+  selected: 'c1', intakeId: null,
+  introsClosed: new Set(INITIAL.flatMap(c => c.intakes.map(it => it.id))),
+  history: new Set(),               // 상담을 모두 펼친 고객
+  composer: {},                     // 고객별 쓰던 상담
+  adding: null,                     // 쓰던 새 고객
+  iform: {},                        // 고객별 쓰던 의뢰 등록
+  idEdit: {},                       // 고객별 고치던 이름·연락처
+  editMemo: null,                   // { id, value }
+  menu: null,
+  just: null,
+  focusAfter: null,
+};
+let undo = null;
+let undoSeq = 0;
+let idSeq = 0;
+let toastTimer = 0;
+
+/* ───────── 작은 도구 ───────── */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ico = (n, cls = '') => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+const pd = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const iso = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+const addDays = (s, n) => { const d = pd(s); d.setDate(d.getDate() + n); return iso(d); };
+const diff = (s) => Math.round((pd(s) - pd(TODAY)) / 864e5);
+const validISO = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && iso(pd(s)) === s;
+const WD = '일월화수목금토';
+const md = (s) => { const d = pd(s); return `${d.getMonth() + 1}.${d.getDate()} (${WD[d.getDay()]})`; };
+const mdShort = (s) => { const d = pd(s); return `${d.getMonth() + 1}.${d.getDate()}`; };
+const ymd = (s) => { const d = pd(s); return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`; };
+const n4 = (v) => v.toLocaleString('ko-KR');
+function won(v) {
+  if (Array.isArray(v)) return `${n4(v[0])} / 월 ${n4(v[1])}`;
+  const eok = Math.floor(v / 10000), rest = v % 10000;
+  if (!eok) return `${n4(rest)}만`;
+  return rest ? `${eok}억 ${n4(rest)}` : `${eok}억`;
+}
+const sameMoney = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// 소개 줄의 좁은 가격 칸에서는 월세를 '보증금/월세'로 줄여 쓴다.
+const wonShort = (v) => (Array.isArray(v) ? `${n4(v[0])}/${n4(v[1])}` : won(v));
+const newId = (p) => `${p}n${++idSeq}`;
+// 만원 단위 숫자. 쉼표와 빈칸은 봐준다. 숫자가 아니면 null.
+function parseMan(s) {
+  const t = String(s).replace(/[,\s]/g, '');
+  return /^\d{1,7}$/.test(t) ? Number(t) : null;
+}
+const phoneDigits = (s) => String(s).replace(/\D/g, '');
+function formatPhone(digits) {
+  if (digits.startsWith('02')) return digits.replace(/^(02)(\d{3,4})(\d{4})$/, '$1-$2-$3');
+  return digits.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
+}
+const normName = (s) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+
+function findCustomer(cid) { return state.customers.find((c) => c.id === cid); }
+function findIntake(id) {
+  for (const c of state.customers) { const it = c.intakes.find((i) => i.id === id); if (it) return { c, it }; }
+  return null;
+}
+// 소개 기록의 주인: 의뢰(id) 또는 고객('@' + 고객 id, 의뢰 없이 소개한 것)
+function introOwner(oid) {
+  if (oid[0] === '@') { const c = findCustomer(oid.slice(1)); return c ? { c, it: null, list: c.intros } : null; }
+  const f = findIntake(oid);
+  return f ? { c: f.c, it: f.it, list: f.it.intros } : null;
+}
+function findIntro(id) {
+  for (const c of state.customers) {
+    const own = c.intros.find((x) => x.id === id);
+    if (own) return { c, it: null, m: own };
+    for (const it of c.intakes) { const m = it.intros.find((x) => x.id === id); if (m) return { c, it, m }; }
+  }
+  return null;
+}
+// 소개 기록·후보에 보일 이름: 원장 고객을 가리키면 그 고객의 지금 이름
+const shownName = (m) => (m.cid && findCustomer(m.cid)?.name) || m.name;
+const refKey = (m) => (m.cid ? '#' + m.cid : m.name);
+const activeIntakes = (c) => c.intakes.filter((i) => i.status !== 'closed');
+const intakeLabel = (it) => `${KIND[it.kind]} ${TX[it.tx]}`;
+// 고객 줄의 담당: 의뢰가 없으면 접수한 사람, 있으면 진행 중인 의뢰의 담당
+function custAssignees(c) {
+  if (!c.intakes.length) return c.assignee ? [c.assignee] : [];
+  const act = activeIntakes(c);
+  return [...new Set((act.length ? act : c.intakes).map((i) => i.assignee))];
+}
+// 다음 연락은 고객에게 붙는다. 의뢰가 모두 종료된 고객은 '미정'으로 치지 않는다.
+function nextBucket(c) {
+  if (!c.next) return c.intakes.length && !activeIntakes(c).length ? null : 'none';
+  const d = diff(c.next.d);
+  if (d < 0) return 'over';
+  if (d === 0) return 'today';
+  return d <= 7 ? 'week' : 'later';
+}
+// 소개 기록에 고를 후보. 같은 목록(그 의뢰, 또는 의뢰 없이 소개한 목록)에 이미 있는 것만 뺀다.
+// 같은 손님을 이 고객의 다른 매물 의뢰에, 같은 매물을 다른 구함 의뢰에 다시 소개하는 것은 따로 남길 기록이다.
+function buyerCandidates(c, it) {
+  const used = new Set((it ? it.intros : c.intros).map(refKey));
+  const seen = new Set();
+  return [...it.pool, ...BUYER_POOL].filter((p) => {
+    if (p.cid ? p.cid === c.id || !findCustomer(p.cid) : p.name === c.name) return false;   // 자기 자신, 원장에서 사라진 고객
+    const key = refKey(p);
+    if (used.has(key) || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// 사무소 매물장 예시. 구함 의뢰에 준비한 후보를 먼저 제시하고 다른 의뢰의 매물도 검색할 수 있다.
+const officeProperties = [
+  ...INITIAL.flatMap(customer => [
+    ...customer.pool.map(p => ({ ...p, tx: Array.isArray(p.now) ? 'monthly' : 'sale' })),
+    ...customer.intakes.filter(it => it.kind === 'demand').flatMap(it =>
+      it.pool.map(p => ({ ...p, tx: it.tx }))),
+  ]),
+  ...PROPERTY_POOL.map(p => ({ ...p, tx: 'sale' })),
+];
+const picker = $('#property-picker');
+const propertyForm = $('#property-form');
+let picking = null;
+function openPropertyPicker(oid, owner) {
+  const preferred = new Set(owner.it?.pool.map(refKey) || []);
+  const seen = new Set(owner.list.map(refKey));
+  const rows = officeProperties.filter(p => {
+    const key = refKey(p);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  picking = { oid, rows, preferred, selected: null };
+  propertyForm.reset();
+  propertyForm.elements.day.max = TODAY;
+  propertyForm.elements.day.value = TODAY;
+  $('#property-context').textContent = [owner.c.name, owner.it?.short || '의뢰 없이 소개'].join(' · ');
+  showPickedProperty(null);
+  renderPropertyResults();
+  picker.showModal();
+  $('#property-search').focus();
+}
+function renderPropertyResults() {
+  const query = $('#property-search').value.trim().toLowerCase().split(/\s+/);
+  const { rows, preferred } = picking;
+  const parts = [];
+  for (const group of [true, false]) {
+    const choices = [];
+    rows.forEach((p, index) => {
+      if (preferred.has(refKey(p)) !== group) return;
+      const words = (p.name + ' ' + p.spec + ' ' + TX[p.tx]).toLowerCase();
+      if (!query.every(word => words.includes(word))) return;
+      choices.push(`<label><input type="radio" name="property" value="${index}" ${p === picking.selected ? 'checked' : ''}><span>${esc(p.name)}<small>${TX[p.tx]} · ${esc(p.spec)} · ${won(p.now)}</small></span></label>`);
+    });
+    if (choices.length) parts.push(`<h3>${group ? '이 의뢰의 후보' : '사무소 매물'}</h3>` + choices.join(''));
+  }
+  $('#property-results').innerHTML = parts.join('') || '<p class="empty">검색 조건에 맞는 매물이 없습니다.</p>';
+}
+function showPickedProperty(p) {
+  picking.selected = p;
+  const monthly = Array.isArray(p?.now);
+  $('#property-price-label').textContent = monthly ? '당시 보증금' : '소개 당시 가격';
+  for (const [key, visible, value] of [['price', !!p, monthly ? p.now[0] : p?.now], ['rent', monthly, monthly ? p.now[1] : null]]) {
+    const field = propertyForm.elements[key];
+    field.disabled = !visible;
+    field.parentElement.hidden = !visible;
+    field.value = value ?? '';
+  }
+  $('#property-save').disabled = !p;
+}
+$('#property-search').addEventListener('input', () => {
+  showPickedProperty(null);
+  renderPropertyResults();
+});
+propertyForm.addEventListener('change', e => {
+  if (e.target.name === 'property') showPickedProperty(picking.rows[Number(e.target.value)]);
+});
+picker.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); picker.close(); }
+});
+$('#property-cancel').onclick = () => picker.close();
+propertyForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const { selected: p, oid } = picking;
+  if (!p) return;
+  const { day, via, price, rent } = propertyForm.elements;
+  const then = Array.isArray(p.now) ? [price.valueAsNumber, rent.valueAsNumber] : price.valueAsNumber;
+  picker.close();
+  state.focusAfter = 'addintro:' + oid;
+  state.introsClosed.delete(oid);
+  commit('매물 소개 기록을 추가했습니다', () => {
+    introOwner(oid).list.unshift({ id: newId('m'), name: p.name, spec: p.spec, now: clone(p.now), then,
+      d: day.value, via: via.value, rx: 'wait', memo: '' });
+  });
+});
+
+/* ───────── 필터와 검색 ───────── */
+const chipCount = () => ['assignee', 'next', 'status'].filter((k) => state.f[k].size).length;
+// 의뢰를 가르는 필터가 켜져 있나(펼친 자리에서 맞지 않는 의뢰를 흐리게 하는 기준)
+const intakeFiltersOn = () => state.mode === 'demand' || state.mode === 'listing' || state.f.assignee.size || state.f.status.size;
+function intakeMatch(it) {
+  if ((state.mode === 'demand' || state.mode === 'listing') && it.kind !== state.mode) return false;
+  if (state.f.assignee.size && !state.f.assignee.has(it.assignee)) return false;
+  if (state.f.status.size && !state.f.status.has(it.status)) return false;
+  return true;
+}
+function customerMatch(c) {
+  if (state.f.next.size && !state.f.next.has(nextBucket(c))) return false;
+  if (!c.intakes.length) {                         // 의뢰 없는 고객: 의뢰 종류·상태로는 걸리지 않는다
+    if (state.mode === 'demand' || state.mode === 'listing') return false;
+    if (state.f.status.size) return false;
+    return !state.f.assignee.size || state.f.assignee.has(c.assignee);
+  }
+  if (state.mode === 'inquiry') return false;
+  return c.intakes.some(intakeMatch);
+}
+function searchMatch(c) {
+  const tokens = state.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const introText = (m) => [shownName(m), m.spec, m.memo];
+  const hay = [c.name, c.phone, phoneDigits(c.phone), c.next?.note, ...c.notes, ...c.cases.map((k) => k.title),
+    ...(c.intakes.length ? [] : ['의뢰 없음', '문의', c.assignee]), ...c.intros.flatMap(introText),
+    ...c.intakes.flatMap((i) => [i.desc, intakeLabel(i), i.assignee, ...i.intros.flatMap(introText)]),
+    ...c.consultations.map((s) => s.text)].filter(Boolean).join(' ').toLowerCase();
+  return tokens.every((t) => hay.includes(t));
+}
+function visibleCustomers() {
+  const list = state.customers.filter((c) => customerMatch(c) && searchMatch(c));
+  if (!state.sort) return list;
+  const dir = state.sort.dir === 'asc' ? 1 : -1;
+  if (state.sort.key === 'name') return [...list].sort((a, b) => dir * a.name.localeCompare(b.name, 'ko'));
+  return [...list].sort((a, b) => {
+    const x = a.next?.d, y = b.next?.d;
+    if (!x && !y) return 0;
+    if (!x) return 1;            // 미정은 방향과 관계없이 아래
+    if (!y) return -1;
+    return dir * x.localeCompare(y);
+  });
+}
+// 방금 만들거나 바꾼 고객이 지금 조건에서 안 보이면 조건을 풀어 준다. 풀었으면 true.
+function ensureVisible(cid) {
+  if (visibleCustomers().some((c) => c.id === cid)) return false;
+  Object.values(state.f).forEach((s) => s.clear());
+  state.q = ''; $('#q').value = '';
+  state.mode = 'all';
+  return true;
+}
+
+/* ───────── 그리기: 위쪽 ───────── */
+function renderBar() {
+  $('#tabs').innerHTML = [['all', '전체'], ['inquiry', '문의'], ['demand', '구함'], ['listing', '내놓음']].map(([v, l]) =>
+    `<button class="vtab" role="tab" aria-selected="${state.mode === v}" data-act="tab" data-v="${v}" data-fid="tab:${v}"${v === 'inquiry' ? ' title="의뢰가 아직 없는 고객"' : ''}>${l}</button>`).join('');
+  const n = chipCount();
+  const ft = $('#ftoggle');
+  ft.className = 'tool' + (n ? ' has' : '');
+  ft.setAttribute('aria-pressed', String(state.filtersOpen));
+  ft.innerHTML = ico('filter') + (n ? `<span class="num">${n}</span>` : '');
+  $('#searchbox').classList.toggle('has', !!state.q);
+
+  const chips = $('#chips');
+  chips.hidden = !state.filtersOpen;
+  const defs = [
+    ['assignee', '담당', 'badge', (v) => v, '명'],
+    ['next', '다음 연락', 'cal', (v) => NEXT_BUCKETS[v], '개'],
+    ['status', '의뢰 상태', 'flag', (v) => STATUS[v], '개'],
+  ];
+  chips.innerHTML = defs.map(([key, label, icon, name, unit]) => {
+    const set = state.f[key];
+    const open = state.menu?.kind === 'filter' && state.menu.key === key;
+    if (!set.size) {
+      return `<span class="chip${open ? ' open' : ''}"><button class="main" data-act="chip" data-key="${key}" data-fid="chip:${key}" aria-haspopup="menu" aria-expanded="${open}">${ico(icon, 'sm')}${label}${ico('down', 'xs')}</button></span>`;
+    }
+    const value = set.size === 1 ? name([...set][0]) : `${set.size}${unit}`;
+    return `<span class="chip on${open ? ' open' : ''}"><button class="main" data-act="chip" data-key="${key}" data-fid="chip:${key}" aria-haspopup="menu" aria-expanded="${open}">${ico(icon, 'sm')}${label} <b>${esc(value)}</b></button><button class="x" data-act="chipx" data-key="${key}" data-fid="chipx:${key}" aria-label="${label} 필터 지우기">${ico('x', 'xs')}</button></span>`;
+  }).join('') + (n ? `<button class="btn-text f12" data-act="freset" data-fid="freset">필터 지우기</button>` : '');
+
+  const sortBtn = (key, label, icon) => {
+    const on = state.sort?.key === key;
+    const say = on ? (state.sort.dir === 'asc' ? '오름차순' : '내림차순') : '정렬 안 함';
+    return `<button class="hc" data-act="sort" data-key="${key}" data-fid="sort:${key}" aria-label="${label} 정렬, 지금 ${say}">${ico(icon, 'sm')}${label}${on ? ico('sort', 'xs dir ' + state.sort.dir) : ''}</button>`;
+  };
+  $('#head').innerHTML = sortBtn('name', '이름', 'user') + sortBtn('next', '다음 연락', 'cal');
+}
+
+/* ───────── 그리기: 줄 ───────── */
+function nextInner(next) {
+  if (!next) return `<span class="none">미정</span>`;
+  const d = diff(next.d);
+  if (d < 0) return `<span class="num over">${md(next.d)}</span><span class="rel over">${-d}일 지남</span>`;
+  if (d === 0) return `<span class="today">오늘</span><span class="rel num">${md(next.d)}</span>`;
+  if (d === 1) return `<span>내일</span><span class="rel num">${md(next.d)}</span>`;
+  return `<span class="num">${md(next.d)}</span><span class="rel">${d}일 뒤</span>`;
+}
+function nextSay(next) {
+  if (!next) return '미정';
+  const d = diff(next.d);
+  return `${md(next.d)}${d < 0 ? `, ${-d}일 지남` : d === 0 ? ', 오늘' : `, ${d}일 뒤`}`;
+}
+function nextButton(fid, c) {
+  const open = state.menu?.kind === 'next' && state.menu.anchor === fid;
+  return `<button class="cellbtn" data-act="next" data-cid="${c.id}" data-fid="${fid}" aria-haspopup="dialog" aria-expanded="${open}" aria-label="${esc(c.name)} 다음 연락 ${nextSay(c.next)}. 바꾸기">${nextInner(c.next)}</button>`;
+}
+
+function personButton(c) {
+  const preview = c.consultations[0]?.text || c.notes[0] || '상담 기록 없음';
+  return `<button class="person" data-act="person" data-id="${c.id}" data-fid="tog:${c.id}" aria-current="${state.selected === c.id}">
+    <b class="tr">${esc(c.name)}</b><small>${c.next ? nextSay(c.next) : ''}</small>
+    <span class="preview tr">${esc(preview)}</span></button>`;
+}
+
+function consultLine(c, s, idx, full) {
+  const [label, icon] = CTYPE[s.type];
+  const when = s.d === TODAY ? '오늘' : md(s.d);
+  const older = c.consultations.length - 1;
+  let acts = '';
+  if (idx === 0) {
+    acts = `<span class="acts">${older > 0 ? `<button class="btn-text f12" data-act="hist" data-cid="${c.id}" data-fid="hist:${c.id}" aria-expanded="${full}">${full ? '접기' : `이전 ${older}건`}</button>` : ''}${composeButton(c)}</span>`;
+  }
+  return `<div class="kv${full ? ' full' : ''}${idx ? ' old' : ''}">
+    <span class="k">최근 상담</span>
+    <div class="v"><span class="when num">${ico(icon, 'sm')}${label} · ${when} · ${esc(s.by)}</span><span class="txt" ${full ? '' : `title="${esc(s.text)}"`}>${esc(s.text)}</span></div>
+    ${acts}
+  </div>`;
+}
+function composeButton(c) {
+  const draft = state.composer[c.id];
+  if (draft?.open) return '';
+  const resume = draft && draft.text.trim();
+  return `<button class="btn-text f12" data-act="compose" data-cid="${c.id}" data-fid="cadd:${c.id}">${ico('plus', 'xs')}${resume ? '이어서 쓰기' : '상담 추가'}</button>`;
+}
+
+// 상담 입력과 새 고객 입력이 함께 쓰는 조각. cid가 'new'면 새 고객 초안이다.
+const draftOf = (cid) => (cid === 'new' ? state.adding : state.composer[cid]);
+function typesHTML(cid, d) {
+  return `<div class="typeseg" role="group" aria-label="상담 유형">${Object.entries(CTYPE).map(([v, [l, icon]]) =>
+    `<button data-act="ctype" data-cid="${cid}" data-v="${v}" data-fid="ct:${cid}:${v}" aria-pressed="${d.type === v}">${ico(icon, 'xs')}${l}</button>`).join('')}</div>`;
+}
+function followHTML(cid, d, options) {
+  const dated = d.follow !== 'keep' && d.follow !== 'none';
+  return `<span class="k">다음 연락</span>${options.map(([v, l]) =>
+    `<button class="preset" data-act="follow" data-cid="${cid}" data-v="${v}" data-fid="cf:${cid}:${v}" aria-pressed="${d.follow === v}">${l}</button>`).join('')}
+    <input type="date" class="field num${d.follow === 'date' ? ' on' : ''}" data-fdate="${cid}" data-fid="cd:${cid}" value="${esc(d.date)}" min="${TODAY}" aria-label="다음 연락 날짜 직접 고르기">
+    <input type="text" class="field" data-fnote="${cid}" data-fid="cn:${cid}" value="${esc(d.note)}" maxlength="60" placeholder="연락해서 확인할 것" aria-label="다음 연락 때 확인할 것" style="flex:1 1 150px;min-width:120px"${dated ? '' : ' hidden'}>`;
+}
+// 고른 다음 연락을 날짜로. date: undefined = 그대로, null = 없음
+function readFollow(d) {
+  if (d.follow === 'keep') return { date: undefined };
+  if (d.follow === 'none') return { date: null };
+  if (d.follow === 'date') {
+    if (!validISO(d.date)) return { err: '다음 연락 날짜를 골라 주세요.' };
+    if (d.date < TODAY) return { err: '다음 연락은 오늘 이후 날짜로 정해 주세요.' };
+    return { date: d.date };
+  }
+  return { date: addDays(TODAY, Number(d.follow)) };
+}
+
+function composerHTML(c) {
+  const d = state.composer[c.id];
+  if (!d?.open) return '';
+  return `<div class="composer" data-cid="${c.id}">
+    ${typesHTML(c.id, d)}
+    <textarea rows="2" data-cmp="${c.id}" data-fid="cmp:${c.id}" placeholder="상담 내용을 적습니다" aria-label="${esc(c.name)} 상담 내용">${esc(d.text)}</textarea>
+    <div class="cmp-foot">${followHTML(c.id, d, [['keep', '그대로'], ['none', '없음'], ['1', '내일'], ['3', '3일 뒤'], ['7', '다음 주']])}
+      <span class="cmp-btns"><button class="btn-text" data-act="ccancel" data-cid="${c.id}" data-fid="cx:${c.id}">닫기</button>
+      <button class="btn-primary sm" data-act="csave" data-cid="${c.id}" data-fid="cs:${c.id}">기록</button></span>
+    </div>
+    <p class="err" role="alert">${esc(d.err || '')}</p>
+  </div>`;
+}
+
+function newCustomerHTML() {
+  const d = state.adding;
+  if (!d?.open) return '';
+  return `<div class="newcust${state.just === 'new' ? ' just' : ''}" role="group" aria-label="새 고객">
+    <div class="nc-id">
+      <input type="text" class="field" data-nf="name" data-fid="nf:name" value="${esc(d.name)}" maxlength="30" placeholder="이름 또는 별칭" aria-label="이름 또는 별칭" autocomplete="off">
+      <input type="text" class="field num" data-nf="phone" data-fid="nf:phone" value="${esc(d.phone)}" maxlength="20" inputmode="tel" placeholder="연락처 (선택)" aria-label="연락처, 선택" autocomplete="off">
+      <p class="f12">이름을 모르면 ‘잠실 문의 김 사장님’처럼 구별되는 별칭으로 적습니다. 의뢰는 조건이 정해진 뒤에 등록합니다.</p>
+    </div>
+    <div class="nc-main"><div class="composer">
+      ${typesHTML('new', d)}
+      <textarea rows="2" data-cmp="new" data-fid="cmp:new" placeholder="첫 상담 내용 (선택)" aria-label="첫 상담 내용, 선택">${esc(d.text)}</textarea>
+      <div class="cmp-foot">${followHTML('new', d, [['none', '없음'], ['0', '오늘'], ['1', '내일'], ['3', '3일 뒤'], ['7', '다음 주']])}
+        <span class="k" style="margin-left:6px">담당</span>
+        <select class="field" data-nasg data-fid="nf:asg" aria-label="담당">${STAFF.map((s) => `<option${s === d.assignee ? ' selected' : ''}>${s}</option>`).join('')}</select>
+        <span class="cmp-btns"><button class="btn-text" data-act="ncclose" data-fid="ncclose">닫기</button>
+        <button class="btn-primary sm" data-act="ncsave" data-fid="ncsave">고객 추가</button></span>
+      </div>
+      <p class="err" role="alert">${esc(d.err || '')}</p>
+    </div></div>
+  </div>`;
+}
+
+function nextLineHTML(c) {
+  if (!c.next) {
+    return `<div class="kv"><span class="k">다음 연락</span><div class="v"><span class="empty">정해진 연락이 없습니다.</span></div>
+      <span class="acts"><button class="btn-text f12" data-act="next" data-cid="${c.id}" data-fid="next:kv:${c.id}" aria-haspopup="dialog">${ico('plus', 'xs')}정하기</button></span></div>`;
+  }
+  return `<div class="kv"><span class="k">다음 연락</span>
+    <div class="v">${nextButton(`next:kv:${c.id}`, c)}
+      ${c.next.note ? `<span class="note" title="${esc(c.next.note)}">${esc(c.next.note)}</span>` : ''}</div>
+    <span class="acts"><button class="btn-text f12" data-act="done" data-cid="${c.id}" data-fid="done:${c.id}">${ico('check', 'xs')}연락함</button></span>
+  </div>`;
+}
+
+function introHTML(it, m) {
+  const name = shownName(m);
+  const listing = it?.kind === 'listing';
+  const now = listing ? it.price : m.now;
+  let price = `<span class="lb">${listing ? '당시 호가' : '당시'}</span><span class="num then" title="${Array.isArray(m.then) ? '보증금/월세 (만원)' : ''}">${wonShort(m.then)}</span>`;
+  if (m.gone) price += `<span class="gone">· ${esc(m.gone)}</span>`;
+  else if (!sameMoney(now, m.then)) price += `${ico('arrow', 'xs')}<span class="lb">지금</span><span class="num now">${wonShort(now)}</span>`;
+  const editing = state.editMemo?.id === m.id;
+  const memo = editing
+    ? `<input class="memo-in" type="text" data-memoedit="${m.id}" data-fid="memoedit:${m.id}" value="${esc(state.editMemo.value)}" maxlength="80" aria-label="${esc(name)} 반응 메모">`
+    : `<button class="memo-btn${m.memo ? '' : ' ph'}" data-act="memo" data-id="${m.id}" data-fid="memo:${m.id}" title="${esc(m.memo || '')}" aria-label="${esc(name)} 반응 메모${m.memo ? ': ' + esc(m.memo) : ' 없음'}. 고치기">${m.memo ? esc(m.memo) : '메모'}</button>`;
+  const rxOn = state.menu?.kind === 'choice' && state.menu.anchor === `rx:${m.id}`;
+  return `<div class="intro">
+    <div class="in-name"><span class="nm" title="${esc(name)}">${esc(name)}</span><span class="sp">${esc(m.spec)}</span></div>
+    <div class="in-date num">${mdShort(m.d)} ${esc(m.via)}</div>
+    <div class="in-price">${price}</div>
+    <div><button class="pill ${m.rx}" data-act="rx" data-id="${m.id}" data-fid="rx:${m.id}" aria-haspopup="menu" aria-expanded="${rxOn}" aria-label="${esc(name)} 반응 ${RX[m.rx]}. 바꾸기">${RX[m.rx]}</button></div>
+    <div class="in-memo">${memo}</div>
+  </div>`;
+}
+const tallyOf = (list) => ['like', 'think', 'no', 'wait'].map((k) => [k, list.filter((m) => m.rx === k).length]).filter(([, v]) => v).map(([k, v]) => `${RX[k]} ${v}`).join(' · ');
+function addIntroButton(oid, label) {
+  const on = state.menu?.kind === 'choice' && state.menu.anchor === `addintro:${oid}`;
+  return `<button class="btn-text f12" data-act="addintro" data-oid="${oid}" data-fid="addintro:${oid}" aria-haspopup="${label === '매물 소개 기록' ? 'dialog' : 'menu'}" ${label === '매물 소개 기록' ? '' : 'aria-expanded="' + on + '"'}>${ico('plus', 'xs')}${label}</button>`;
+}
+
+// 의뢰 없이 고객에게 소개한 매물. 의뢰가 없는 고객에게는 늘 보이고, 의뢰가 생긴 뒤에는 기록이 남아 있을 때만 보인다.
+function customerIntrosHTML(c) {
+  const n = c.intros.length;
+  if (c.intakes.length && !n) return '';
+  const oid = '@' + c.id;
+  return `<div class="kv"><span class="k">${c.intakes.length ? '의뢰 전 소개' : '소개한 매물'}</span>
+    <div class="v">${n ? `<span class="num">${n}건</span><span class="for">${tallyOf(c.intros)}</span>` : '<span class="empty">아직 없습니다.</span>'}</div>
+    <span class="acts">${addIntroButton(oid, '매물 소개 기록')}</span>
+  </div>${n ? `<div class="cintros"><div class="intro-list">${c.intros.map((m) => introHTML(null, m)).join('')}</div></div>` : ''}`;
+}
+
+function intakeHTML(c, it, stepNo) {
+  const dim = intakeFiltersOn() && !intakeMatch(it);
+  const closed = it.status === 'closed';
+  const who = `${c.name} ${intakeLabel(it)}`;
+  const menuOn = (kind) => state.menu?.kind === 'choice' && state.menu.anchor === `${kind}:${it.id}`;
+  return `<div class="irow${dim ? ' dim' : ''}${closed ? ' is-closed' : ''}">
+    <div class="i-main">
+      <span class="step num${stepNo ? '' : ' none'}" ${stepNo ? `title="진행 계획 ${stepNo}번째"` : 'aria-hidden="true"'}>${stepNo || ''}</span>
+      <button class="intake-link" data-act="openintake" data-id="${it.id}" data-fid="open:${it.id}"><span class="kind ${it.kind}">${KIND[it.kind]}</span><span class="tx">${TX[it.tx]}</span>
+      <span class="desc tr" title="${esc(it.desc)}">${esc(it.desc)}${it.kind === 'listing' ? ` · <span class="num">${won(it.price)}</span>` : ''}</span>${ico('chev','xs')}</button>
+    </div>
+    <div class="cell"><button class="pill ${it.status}" data-act="status" data-id="${it.id}" data-fid="status:${it.id}" aria-haspopup="menu" aria-expanded="${menuOn('status')}" aria-label="${esc(who)} 상태 ${STATUS[it.status]}. 바꾸기"><span class="dot"></span>${STATUS[it.status]}</button>
+    </div>
+    <div class="cell"><button class="cellbtn" data-act="asg" data-id="${it.id}" data-fid="asg:${it.id}" aria-haspopup="menu" aria-expanded="${menuOn('asg')}" aria-label="${esc(who)} 담당 ${esc(it.assignee)}. 바꾸기">${esc(it.assignee)}</button></div>
+  </div>`;
+}
+
+function intakeIntrosHTML(it) {
+  const label = it.kind === 'demand' ? '소개한 매물' : '소개한 손님';
+  const n = it.intros.length;
+  const add = it.status === 'closed' ? '' : addIntroButton(it.id, it.kind === 'demand' ? '매물 소개 기록' : '손님 소개 기록');
+  if (!n) return `<div class="intros"><div class="intros-h"><span class="f12" style="padding-left:2px">${label} 없음</span>${add}</div></div>`;
+  const open = !state.introsClosed.has(it.id);
+  const head = `<div class="intros-h"><button class="intros-tog" data-act="intros" data-id="${it.id}" data-fid="intros:${it.id}" aria-expanded="${open}">${ico('chev', 'xs')}${label} <b class="num">${n}</b></button>${open ? '' : `<span class="f12">${tallyOf(it.intros)}</span>${add}`}</div>`;
+  if (!open) return `<div class="intros">${head}</div>`;
+  return `<div class="intros">${head}<div class="intro-list">${it.intros.map((m) => introHTML(it, m)).join('')}</div><div class="intros-add">${add}</div></div>`;
+}
+
+function intakeFormHTML(c) {
+  const f = state.iform[c.id];
+  if (!f?.open) return '';
+  const seg = (field, map, label) => `<div class="typeseg" role="group" aria-label="${label}">${Object.entries(map).map(([v, l]) =>
+    `<button data-act="iset" data-cid="${c.id}" data-k="${field}" data-v="${v}" data-fid="if:${c.id}:${field}:${v}" aria-pressed="${f[field] === v}">${l}</button>`).join('')}</div>`;
+  const inp = (field, ph, label, w) => `<input type="text" class="field num" data-if="${c.id}:${field}" data-fid="if:${c.id}:${field}" value="${esc(f[field])}" inputmode="numeric" maxlength="9" placeholder="${ph}" aria-label="${label}" style="width:${w}px">`;
+  let price = '';
+  if (f.kind === 'listing') {
+    price = f.tx === 'monthly'
+      ? `<div class="pricerow"><span>보증금</span>${inp('dep', '3000', '보증금, 만원', 96)}<span>월세</span>${inp('rent', '180', '월세, 만원', 80)}<span>만원</span><span class="pv num" data-ipv="${c.id}">${esc(pricePreview(f))}</span></div>`
+      : `<div class="pricerow"><span>호가</span>${inp('price', '165000', '호가, 만원', 110)}<span>만원</span><span class="pv num" data-ipv="${c.id}">${esc(pricePreview(f))}</span></div>`;
+  }
+  const canMove = f.kind === 'demand' && c.intros.length > 0;
+  return `<div class="composer iform" data-cid="${c.id}">
+    <div class="frow">${seg('kind', KIND, '구분')}<span class="vsep"></span>${seg('tx', TX, '거래')}</div>
+    <input type="text" class="line-input" data-if="${c.id}:desc" data-fid="if:${c.id}:desc" value="${esc(f.desc)}" maxlength="60" placeholder="${f.kind === 'demand' ? '찾는 조건 한 줄 · 예: 고덕동 · 34평 · 15억~16억 · 내년 봄 입주' : '내놓는 곳 한 줄 · 예: 고덕그라시움 118동 904호 · 25평'}" aria-label="의뢰 조건">
+    ${price}
+    <div class="cmp-foot"><span class="k">담당</span>
+      <select class="field" data-iasg="${c.id}" data-fid="if:${c.id}:asg" aria-label="의뢰 담당">${STAFF.map((s) => `<option${s === f.assignee ? ' selected' : ''}>${s}</option>`).join('')}</select>
+      ${canMove ? `<label class="chk"><input type="checkbox" data-imove="${c.id}" data-fid="if:${c.id}:move"${f.move ? ' checked' : ''}>의뢰 없이 소개한 매물 ${c.intros.length}건을 이 의뢰 아래로 옮기기</label>` : ''}
+      <span class="cmp-btns"><button class="btn-text" data-act="iclose" data-cid="${c.id}" data-fid="if:${c.id}:close">닫기</button>
+      <button class="btn-primary sm" data-act="isave" data-cid="${c.id}" data-fid="if:${c.id}:save">의뢰 등록</button></span>
+    </div>
+    <p class="err" role="alert">${esc(f.err || '')}</p>
+  </div>`;
+}
+function pricePreview(f) {
+  if (f.tx === 'monthly') { const d = parseMan(f.dep), r = parseMan(f.rent); return d !== null && r ? `= 보증금 ${n4(d)} / 월 ${n4(r)}` : ''; }
+  const p = parseMan(f.price);
+  return p ? `= ${won(p)}` : '';
+}
+
+function expHTML(c) {
+  const full = state.history.has(c.id);
+  const cons = c.consultations;
+  let consult;
+  if (!cons.length) {
+    consult = `<div class="kv"><span class="k">최근 상담</span><div class="v"><span class="empty">기록 없음</span></div><span class="acts">${composeButton(c)}</span></div>`;
+  } else {
+    consult = (full ? cons : cons.slice(0, 1)).map((s, i) => consultLine(c, s, i, full)).join('');
+  }
+  const inCase = new Set();
+  c.cases.forEach((k) => k.steps.forEach((s) => s.intake && inCase.add(s.intake)));
+  const cases = c.cases.map((k) => {
+    const steps = k.steps.map((s, i) => {
+      if (s.intake) { const it = c.intakes.find((x) => x.id === s.intake); return it ? intakeHTML(c, it, i + 1) : ''; }
+      return `<div class="irow"><div class="i-main"><span class="step num" title="진행 계획 ${i + 1}번째">${i + 1}</span><span class="desc" style="color:var(--fg-sub)">${esc(s.title)}</span>${s.target ? `<span class="f12 num">${ymd(s.target)} 목표</span>` : ''}</div><div></div><div></div></div>`;
+    }).join('');
+    return `<div class="case"><div class="case-head">${ico('link', 'sm')}<b>${esc(k.title)}</b><span class="f12">중개 건 · 순서는 직접 정함</span></div><div class="case-body">${steps}</div></div>`;
+  }).join('');
+  const loose = c.intakes.filter((i) => !inCase.has(i.id));
+  const looseHTML = loose.length ? `${c.cases.length ? `<div class="f12 loose-label">묶지 않은 의뢰</div>` : ''}${loose.map((i) => intakeHTML(c, i, 0)).join('')}` : '';
+
+  const formOpen = state.iform[c.id]?.open;
+  const resume = state.iform[c.id] && !formOpen && state.iform[c.id].desc.trim();
+  const addBtn = formOpen ? '' : `<button class="btn-text f12" data-act="iopen" data-cid="${c.id}" data-fid="iadd:${c.id}">${ico('plus', 'xs')}${resume ? '의뢰 등록 이어서' : '의뢰 등록'}</button>`;
+  // 의뢰가 없으면 그 사실을 한 줄로 보여 주고(가짜 의뢰를 만들지 않는다) 여기서 첫 의뢰를 등록한다.
+  const intakes = c.intakes.length
+    ? `<div class="intake-heading"><strong>의뢰 ${c.intakes.length}건</strong>${addBtn}</div><div class="intake-columns"><span>거래 조건 · 소재지</span><span>상태</span><span>담당</span></div><div class="tree">${cases}${looseHTML}</div>`
+    : `<div class="kv"><span class="k">의뢰</span><div class="v"><span class="empty">아직 없습니다. 조건이 정해지면 등록합니다.</span></div><span class="acts">${addBtn}</span></div>`;
+
+  return `<h1>${esc(c.name)}</h1><div class="person-meta">${esc(c.phone || '연락처 없음')} · ${esc(custAssignees(c).join(', '))} ${identityHTML(c)}</div>
+    ${c.notes.length ? `<p class="f12">${c.notes.map(esc).join(' · ')}</p>` : ''}
+    <div class="next-strip">${nextLineHTML(c)}</div>
+    ${consult}${composerHTML(c)}${customerIntrosHTML(c)}
+    <div class="intake-panel">${intakes}${intakeFormHTML(c)}</div>`;
+}
+function intakeDetail(c,it) {
+  const visits = it.visits || [];
+  return `<button class="back-person" data-act="person" data-id="${c.id}" data-fid="back:${c.id}">‹ ${esc(c.name)} 고객 전체</button>
+    <h1>${KIND[it.kind]} · ${TX[it.tx]}</h1><p>${esc(it.desc)}${it.kind === 'listing' ? ' · '+won(it.price) : ''}</p>
+    <p class="person-meta">${esc(it.assignee)} · ${STATUS[it.status]}</p>
+    <h2 class="section-title">소개 기록</h2>${intakeIntrosHTML(it)}
+    <h2 class="section-title">방문 일정</h2>
+    ${visits.map(v=>`<p>${esc(v.time.replace('T',' '))} · ${esc(v.place)}</p>`).join('')}
+    ${it.status === 'closed' ? '' : `<form class="visit-form" data-visit="${it.id}"><input class="field" type="datetime-local" aria-label="방문 일시" name="time" required><input class="field" name="place" aria-label="방문할 매물" placeholder="방문할 매물" maxlength="80" required><button class="btn-text">일정 추가</button></form>`}`;
+
+}
+
+function identityHTML(c) {
+  const e = state.idEdit[c.id];
+  if (!e) return `<button class="btn-text f12 id-open" data-act="ieopen" data-cid="${c.id}" data-fid="ieopen:${c.id}">${ico('note', 'xs')}${c.phone ? '이름·연락처 고치기' : '이름·연락처 넣기'}</button>`;
+  return `<div class="id-edit" role="group" aria-label="${esc(c.name)} 이름과 연락처 고치기">
+    <input type="text" class="field" data-ie="${c.id}:name" data-fid="ie:${c.id}:name" value="${esc(e.name)}" maxlength="30" placeholder="이름 또는 별칭" aria-label="이름 또는 별칭" autocomplete="off">
+    <input type="text" class="field num" data-ie="${c.id}:phone" data-fid="ie:${c.id}:phone" value="${esc(e.phone)}" maxlength="20" inputmode="tel" placeholder="연락처 (선택)" aria-label="연락처, 선택" autocomplete="off">
+    <p class="err" role="alert">${esc(e.err || '')}</p>
+    <div class="id-btns"><button class="btn-text f12" data-act="iecancel" data-cid="${c.id}" data-fid="iecancel:${c.id}">취소</button><button class="btn-primary sm" data-act="iesave" data-cid="${c.id}" data-fid="iesave:${c.id}">저장</button></div>
+  </div>`;
+}
+
+function renderRows() {
+  const list = visibleCustomers();
+  const rows = $('#rows');
+  const blank = `<div class="blank"><p>조건에 맞는 고객이 없습니다.</p><button class="btn-text" data-act="clearall" data-fid="clearall">검색어와 필터 지우기</button></div>`;
+  let customer = list.find(c => c.id === state.selected);
+  if (!customer) { customer = list[0]; state.selected = customer?.id; state.intakeId = null; }
+  rows.innerHTML = list.length ? list.map(personButton).join('') : blank;
+  const it = customer?.intakes.find(i => i.id === state.intakeId);
+  const reader = $('#reader');
+  reader.innerHTML = state.adding?.open ? newCustomerHTML() : !customer ? '' : it ? intakeDetail(customer,it) : expHTML(customer);
+  $('#foot').innerHTML = `고객 ${list.length}명<span class="grow"></span>가상 데이터 · ${ymd(TODAY)}`;
+  reader.querySelectorAll('textarea[data-cmp]').forEach(autosize);
+}
+function autosize(t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 168) + 'px'; }
+
+/* ───────── 떠 있는 판 ───────── */
+function anchorEl() {
+  return state.menu ? document.querySelector(`[data-fid="${CSS.escape(state.menu.anchor)}"]`) : null;
+}
+function renderMenu() {
+  const host = $('#pop');
+  const m = state.menu;
+  if (!m || !anchorEl()) { state.menu = null; host.innerHTML = ''; return; }
+  if (m.kind === 'filter') {
+    const opts = m.key === 'assignee' ? STAFF.map((s) => [s, s]) : m.key === 'next' ? Object.entries(NEXT_BUCKETS) : Object.entries(STATUS);
+    host.innerHTML = `<div class="pop" role="menu" aria-label="필터 값">${opts.map(([v, l]) =>
+      `<button class="mi" role="menuitemcheckbox" aria-checked="${state.f[m.key].has(v)}" data-act="fopt" data-v="${esc(v)}" data-fid="fo:${esc(v)}">${esc(l)}${ico('check', 'sm ck')}</button>`).join('')}</div>`;
+  } else if (m.kind === 'choice') {
+    host.innerHTML = `<div class="pop" role="menu" aria-label="${esc(m.title)}">${m.title ? `<div class="mh">${esc(m.title)}</div>` : ''}${m.options.map((o, i) =>
+      o.disabled
+        ? `<button class="mi" role="menuitem" disabled>${esc(o.label)}</button>`
+        : `<button class="mi" role="menuitemradio" aria-checked="${o.v === m.current}" data-act="pick" data-i="${i}" data-fid="pk:${i}">${o.pill ? `<span class="pill ${o.pill}">${o.dot ? '<span class="dot"></span>' : ''}${esc(o.label)}</span>` : o.sub ? `<span class="two"><span>${esc(o.label)}</span><span class="f12">${esc(o.sub)}</span></span>` : esc(o.label)}${ico('check', 'sm ck')}</button>`).join('')}</div>`;
+  } else if (m.kind === 'next') {
+    const c = findCustomer(m.cid);
+    if (!c) { state.menu = null; host.innerHTML = ''; return; }
+    const presets = [[0, '오늘'], [1, '내일'], [3, '3일 뒤'], [7, '다음 주']].map(([n, l]) =>
+      `<button class="preset" data-act="npreset" data-n="${n}" data-fid="np:${n}" aria-pressed="${m.draft.date === addDays(TODAY, n)}">${l}</button>`).join('');
+    host.innerHTML = `<div class="pop next" role="dialog" aria-label="${esc(c.name)} 다음 연락">
+      <div class="ph-row"><b>다음 연락</b><span class="f12 tr">${esc(c.name)}</span></div>
+      <div class="presets">${presets}</div>
+      <label>날짜<input type="date" class="field num" data-ndate data-fid="nd" value="${esc(m.draft.date)}"></label>
+      <label>확인할 것<input type="text" class="field" data-nnote data-fid="nn" value="${esc(m.draft.note)}" maxlength="60" placeholder="예: 재방문 일정 확정"></label>
+      <p class="err" role="alert" id="nerr">${esc(m.err || '')}</p>
+      <div class="pf">${c.next ? `<button class="btn-text" data-act="nclear" data-fid="nclear">지우기</button><button class="btn-text" data-act="ndone" data-fid="ndone">연락함</button>` : ''}<span class="grow"></span><button class="btn-text" data-act="ncancel" data-fid="ncancel">취소</button><button class="btn-primary sm" data-act="nsave" data-fid="nsave">저장</button></div>
+    </div>`;
+  }
+  placeMenu();
+}
+function placeMenu() {
+  const pop = $('#pop .pop');
+  const a = anchorEl();
+  if (!pop || !a) return;
+  const r = a.getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  const left = Math.max(8, Math.min(r.left, innerWidth - w - 8));
+  let top = r.bottom + 4;
+  if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 4);
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+}
+function openMenu(menu) {
+  state.menu = menu;
+  state.focusAfter = '@menu';
+  render();
+}
+function closeMenu(refocus) {
+  if (!state.menu) return;
+  if (refocus) state.focusAfter = state.menu.anchor;
+  state.menu = null;
+  render();
+}
+
+/* ───────── 그리기 본체: 누르는 동안에는 DOM을 갈지 않는다 ───────── */
+let pointerDown = false, pendingRender = false, rendering = false, swallowClick = false;
+const afterPointer = [];
+function render() {
+  if (pointerDown) { pendingRender = true; return; }
+  doRender();
+}
+function doRender() {
+  rendering = true;
+  const ae = document.activeElement;
+  const fid = ae?.dataset?.fid;
+  let sel = null;
+  if (fid && (ae.tagName === 'TEXTAREA' || (ae.tagName === 'INPUT' && ae.type === 'text'))) sel = [ae.selectionStart, ae.selectionEnd];
+  const sc = $('#scroller');
+  const top = sc.scrollTop, left = sc.scrollLeft;
+  renderBar();
+  renderRows();
+  renderMenu();
+  sc.scrollTop = top; sc.scrollLeft = left;
+  state.just = null;
+
+  const want = state.focusAfter;
+  state.focusAfter = null;
+  let target = null;
+  if (want === '@menu') {
+    target = $('#pop [aria-checked="true"]') || $('#pop .mi:not([disabled]), #pop input');
+  } else if (want) {
+    target = document.querySelector(`[data-fid="${CSS.escape(want)}"]`);
+    if (target) target.scrollIntoView({ block: 'nearest' });
+  } else if (fid) {
+    target = document.querySelector(`[data-fid="${CSS.escape(fid)}"]`);
+  }
+  if (target && target !== document.activeElement) {
+    target.focus({ preventScroll: true });
+    if (sel && !want) { try { target.setSelectionRange(sel[0], sel[1]); } catch (_) {} }
+    else if (want && (target.tagName === 'TEXTAREA' || target.type === 'text')) { const n = target.value.length; try { target.setSelectionRange(n, n); } catch (_) {} }
+  }
+  if (state.menu) placeMenu();
+  rendering = false;
+}
+function releasePointer() {
+  if (!pointerDown) return;
+  pointerDown = false;
+  setTimeout(() => {           // click이 끝난 뒤에 갈아 끼운다
+    if (pointerDown) return;
+    if (pendingRender) { pendingRender = false; doRender(); }
+    while (afterPointer.length) afterPointer.shift()();
+  }, 0);
+}
+
+/* ───────── 알림과 되돌리기 ───────── */
+function toast(msg, undoId) {
+  const paint = () => {
+    clearTimeout(toastTimer);
+    $('#toast').innerHTML = `<div class="toast"><span>${esc(msg)}</span>${undoId ? `<button data-act="undo" data-uid="${undoId}" data-fid="undo">되돌리기</button>` : ''}</div>`;
+    toastTimer = setTimeout(() => { $('#toast').innerHTML = ''; undo = null; }, 7000);
+  };
+  if (pointerDown) afterPointer.push(paint); else paint();
+}
+// 변경은 여기로만. 직전 한 번만 되돌린다. label이 함수면 바꾼 뒤에 문구를 만든다.
+function commit(label, mutate, restore) {
+  const snap = JSON.stringify(state.customers);
+  mutate();
+  undo = { id: ++undoSeq, snap, restore };
+  toast(typeof label === 'function' ? label() : label, undo.id);
+  render();
+}
+
+/* ───────── 동작 ───────── */
+function expand(cid) { state.selected = cid; state.intakeId = null; }
+function selectPerson(cid) {
+  expand(cid);
+  if (state.adding) state.adding.open = false;
+  state.menu = null;
+  render();
+  $('#reader').scrollTop = 0;
+}
+function openComposer(cid) {
+  const c = findCustomer(cid);
+  if (!c) return;
+  const d = state.composer[cid] || { type: 'call', text: '', follow: 'keep', date: '', note: '', err: '' };
+  d.open = true;
+  state.composer[cid] = d;
+  expand(cid);
+  state.focusAfter = `cmp:${cid}`;
+  render();
+}
+function saveComposer(cid) {
+  const c = findCustomer(cid), d = state.composer[cid];
+  if (!c || !d) return;
+  const fail = (msg, fid) => { d.err = msg; state.focusAfter = fid; render(); };
+  const text = d.text.trim();
+  if (!text) return fail('상담 내용을 적어 주세요.', `cmp:${cid}`);
+  const fw = readFollow(d);
+  if (fw.err) return fail(fw.err, `cd:${cid}`);
+  const saved = { ...d, err: '' };
+  const say = fw.date === undefined ? '' : fw.date === null ? ' · 다음 연락 없음' : ` · 다음 연락 ${md(fw.date)}`;
+  delete state.composer[cid];
+  state.focusAfter = `cadd:${cid}`;
+  commit(`상담을 기록했습니다${say}`, () => {
+    c.consultations.unshift({ d: TODAY, type: saved.type, by: ME, text });
+    if (fw.date === null) c.next = null;
+    else if (fw.date) c.next = { d: fw.date, note: saved.note.trim() };
+  }, () => { state.composer[cid] = saved; });   // 되돌리면 쓰던 글도 돌아온다
+}
+
+// 이름(또는 별칭)과 연락처가 다른 고객과 구별되는지 본다. selfId는 고치는 중인 고객(자기 자신은 건너뛴다).
+function checkIdentity(rawName, rawPhone, selfId) {
+  const others = state.customers.filter((c) => c.id !== selfId);
+  const name = rawName.replace(/\s+/g, ' ').trim();
+  if (!name) return { err: '이름이나 구별되는 별칭을 적어 주세요.', field: 'name' };
+  if (!rawPhone.trim()) {
+    // 연락처가 없으면 이름만으로 구별해야 한다
+    if (others.some((c) => normName(c.name) === normName(name))) return { err: '같은 이름의 고객이 있습니다. 연락처를 적거나 ‘○○ 문의 김 사장님’처럼 구별되는 별칭으로 적어 주세요.', field: 'name' };
+    return { name, phone: '' };
+  }
+  const digits = phoneDigits(rawPhone);
+  if (!/^0\d{8,10}$/.test(digits)) return { err: '연락처는 0으로 시작하는 숫자 9~11자리로 적어 주세요. 모르면 비워 둡니다.', field: 'phone' };
+  const dup = others.find((c) => c.phone && phoneDigits(c.phone) === digits);
+  if (dup) return { err: `같은 연락처의 고객이 이미 있습니다: ${dup.name}. 그 고객 줄에 상담을 적어 주세요.`, field: 'phone' };
+  return { name, phone: formatPhone(digits) };
+}
+// 별칭으로 받은 손님의 이름·연락처를 나중에 고친다. 같은 고객 줄 그대로다.
+function saveIdentity(cid) {
+  const c = findCustomer(cid), e = state.idEdit[cid];
+  if (!c || !e) return;
+  const who = checkIdentity(e.name, e.phone, cid);
+  if (who.err) { e.err = who.err; state.focusAfter = `ie:${cid}:${who.field}`; render(); return; }
+  const saved = { ...e, err: '' };
+  delete state.idEdit[cid];
+  state.focusAfter = `ieopen:${cid}`;
+  if (who.name === c.name && who.phone === c.phone) return render();
+  commit(() => `고객 정보를 고쳤습니다 · ${who.name}${who.phone ? ' · ' + who.phone : ''}${ensureVisible(cid) ? ' · 검색어와 필터를 풀었습니다' : ''}`,
+    () => { c.name = who.name; c.phone = who.phone; }, () => { state.idEdit[cid] = saved; });
+}
+
+function openNewCustomer() {
+  if (!state.adding) state.adding = { name: '', phone: '', type: 'call', text: '', follow: 'none', date: '', note: '', assignee: ME, err: '' };
+  if (!state.adding.open) state.just = 'new';
+  state.adding.open = true;
+  $('#scroller').scrollTop = 0;
+  state.focusAfter = 'nf:name';
+  render();
+}
+function saveNewCustomer() {
+  const d = state.adding;
+  if (!d) return;
+  const fail = (msg, fid) => { d.err = msg; state.focusAfter = fid; render(); };
+  const who = checkIdentity(d.name, d.phone, null);
+  if (who.err) return fail(who.err, `nf:${who.field}`);
+  const { name, phone } = who;
+  const fw = readFollow(d);
+  if (fw.err) return fail(fw.err, 'cd:new');
+  const text = d.text.trim();
+  const id = newId('q');
+  const saved = { ...d, err: '', open: true };
+  state.adding = null;
+  expand(id);
+  state.focusAfter = `tog:${id}`;
+  commit(() => `고객을 추가했습니다 · ${name} · 의뢰 없음${ensureVisible(id) ? ' · 검색어와 필터를 풀었습니다' : ''}`, () => {
+    state.customers.unshift({
+      id, name, phone, assignee: saved.assignee, notes: [],
+      next: fw.date ? { d: fw.date, note: saved.note.trim() } : null,
+      intros: [], pool: [], cases: [], intakes: [],            // 의뢰는 만들지 않는다
+      consultations: text ? [{ d: TODAY, type: saved.type, by: ME, text }] : [],
+    });
+  }, () => { state.adding = saved; });
+}
+
+function openIntakeForm(cid) {
+  const c = findCustomer(cid);
+  if (!c) return;
+  const f = state.iform[cid] || { kind: 'demand', tx: 'sale', desc: '', price: '', dep: '', rent: '', assignee: custAssignees(c)[0] || ME, move: true, err: '' };
+  f.open = true;
+  state.iform[cid] = f;
+  expand(cid);
+  state.focusAfter = `if:${cid}:desc`;
+  render();
+}
+function saveIntake(cid) {
+  const c = findCustomer(cid), f = state.iform[cid];
+  if (!c || !f) return;
+  const fail = (msg, field) => { f.err = msg; state.focusAfter = `if:${cid}:${field}`; render(); };
+  const desc = f.desc.replace(/\s+/g, ' ').trim();
+  if (!desc) return fail(f.kind === 'demand' ? '찾는 조건을 한 줄로 적어 주세요.' : '내놓는 곳을 한 줄로 적어 주세요.', 'desc');
+  let price;
+  if (f.kind === 'listing') {
+    if (f.tx === 'monthly') {
+      const dep = parseMan(f.dep), rent = parseMan(f.rent);
+      if (dep === null) return fail('보증금을 만원 단위 숫자로 적어 주세요. 예: 3000', 'dep');
+      if (!rent) return fail('월세를 만원 단위 숫자로 적어 주세요. 예: 180', 'rent');
+      price = [dep, rent];
+    } else {
+      price = parseMan(f.price);
+      if (!price) return fail('호가를 만원 단위 숫자로 적어 주세요. 예: 16억 5,000이면 165000', 'price');
+    }
+  }
+  const first = !c.intakes.length;
+  const moveN = f.kind === 'demand' && f.move ? c.intros.length : 0;
+  const saved = { ...f, err: '', open: true };
+  const id = newId('i');
+  delete state.iform[cid];
+  state.focusAfter = `status:${id}`;
+  commit(() => `${first ? '첫 의뢰' : '의뢰'}를 등록했습니다 · ${KIND[saved.kind]} ${TX[saved.tx]}${moveN ? ` · 소개 기록 ${moveN}건을 이 의뢰로 옮겼습니다` : ''}${ensureVisible(cid) ? ' · 전체 보기로 바꿨습니다' : ''}`, () => {
+    // 같은 고객에 의뢰만 더한다. 상담·다음 연락·소개 기록은 그대로 남는다.
+    const intake = { id, kind: saved.kind, tx: saved.tx, desc, short: desc, status: 'open', assignee: saved.assignee, intros: moveN ? c.intros.splice(0) : [], pool: [] };
+    if (price !== undefined) intake.price = price;
+    c.intakes.push(intake);
+  }, () => { state.iform[cid] = saved; });
+}
+
+function openNext(el, cid) {
+  const c = findCustomer(cid);
+  if (!c) return;
+  const fid = el.dataset.fid;
+  if (state.menu?.kind === 'next' && state.menu.anchor === fid) {
+    if (tryCommitNext()) closeMenu(true);
+    return;
+  }
+  openMenu({ kind: 'next', anchor: fid, cid, draft: { date: c.next?.d || '', note: c.next?.note || '' }, err: '' });
+}
+// 판을 닫아도 되면 true. 바뀐 것이 있으면 저장한다.
+function tryCommitNext() {
+  const m = state.menu;
+  const c = findCustomer(m.cid);
+  if (!c) return true;
+  const date = m.draft.date, note = m.draft.note.trim(), before = c.next;
+  const fail = (msg) => { m.err = msg; render(); return false; };
+  if (!date) {
+    if (note) return fail('날짜를 정해 주세요.');
+    if (before) commit('다음 연락을 지웠습니다', () => { c.next = null; });
+    return true;
+  }
+  if (!validISO(date)) return fail('날짜를 다시 확인해 주세요.');
+  if (date < TODAY && date !== before?.d) return fail('오늘 이후 날짜로 정해 주세요.');
+  if (before && before.d === date && (before.note || '') === note) return true;
+  commit(`다음 연락을 정했습니다 · ${md(date)}`, () => { c.next = { d: date, note }; });
+  return true;
+}
+function markContacted(cid) {
+  const c = findCustomer(cid);
+  if (!c || !c.next) return;
+  state.menu = null;
+  commit('연락한 것으로 표시했습니다. 상담 내용을 적어 두세요', () => { c.next = null; });
+  openComposer(cid);
+}
+function choice(el, title, options, current, pick) {
+  const fid = el.dataset.fid;
+  if (state.menu?.anchor === fid) return closeMenu(true);
+  openMenu({ kind: 'choice', anchor: fid, title, options, current, pick });
+}
+function saveMemo() {
+  const e = state.editMemo;
+  if (!e) return;
+  state.editMemo = null;
+  const found = findIntro(e.id);
+  const value = e.value.trim();
+  if (!found || found.m.memo === value) return render();
+  commit(value ? '반응 메모를 고쳤습니다' : '반응 메모를 지웠습니다', () => { found.m.memo = value; });
+}
+function clearFilters(withSearch) {
+  Object.values(state.f).forEach((s) => s.clear());
+  if (withSearch) { state.q = ''; $('#q').value = ''; state.mode = 'all'; }
+  if (state.menu?.kind === 'filter') state.menu = null;
+  render();
+}
+
+const ACT = {
+  person: d => selectPerson(d.id),
+  openintake: d => {
+    state.intakeId = d.id;
+    state.introsClosed.delete(d.id);
+    state.focusAfter = 'back:' + state.selected;
+    render();
+    $('#reader').scrollTop = 0;
+  },
+  tab: (d) => { state.mode = d.v; render(); },
+  ftoggle: () => { state.filtersOpen = !state.filtersOpen; if (state.menu?.kind === 'filter') state.menu = null; render(); },
+  chip: (d, el) => {
+    if (state.menu?.kind === 'filter' && state.menu.key === d.key) return closeMenu(true);
+    openMenu({ kind: 'filter', key: d.key, anchor: el.dataset.fid });
+  },
+  chipx: (d) => { state.f[d.key].clear(); if (state.menu?.kind === 'filter') state.menu = null; state.focusAfter = `chip:${d.key}`; render(); },
+  fopt: (d) => { const s = state.f[state.menu.key]; s.has(d.v) ? s.delete(d.v) : s.add(d.v); render(); },
+  freset: () => clearFilters(false),
+  clearall: () => { clearFilters(true); $('#q').focus(); },
+  qclear: () => { state.q = ''; $('#q').value = ''; $('#q').focus(); render(); },
+  sort: (d) => {
+    const s = state.sort;
+    state.sort = !s || s.key !== d.key ? { key: d.key, dir: 'asc' } : s.dir === 'asc' ? { key: d.key, dir: 'desc' } : null;
+    render();
+  },
+  // 상담 입력(고객별)과 새 고객 입력이 함께 쓰는 단추
+  ctype: (d) => { draftOf(d.cid).type = d.v; render(); },
+  follow: (d) => { const x = draftOf(d.cid); x.follow = d.v; x.err = ''; render(); },
+  compose: (d) => openComposer(d.cid),
+  ccancel: (d) => { state.composer[d.cid].open = false; state.composer[d.cid].err = ''; state.focusAfter = `cadd:${d.cid}`; render(); },
+  csave: (d) => saveComposer(d.cid),
+  hist: (d) => { state.history.has(d.cid) ? state.history.delete(d.cid) : state.history.add(d.cid); render(); },
+  newcust: () => openNewCustomer(),
+  ncclose: () => { state.adding.open = false; state.adding.err = ''; state.focusAfter = 'newcust'; render(); },   // 쓰던 내용은 남긴다
+  ncsave: () => saveNewCustomer(),
+  iopen: (d) => openIntakeForm(d.cid),
+  iset: (d) => { const f = state.iform[d.cid]; f[d.k] = d.v; f.err = ''; render(); },
+  iclose: (d) => { state.iform[d.cid].open = false; state.iform[d.cid].err = ''; state.focusAfter = `iadd:${d.cid}`; render(); },
+  isave: (d) => saveIntake(d.cid),
+  ieopen: (d) => { const c = findCustomer(d.cid); state.idEdit[d.cid] = { name: c.name, phone: c.phone, err: '' }; state.focusAfter = `ie:${d.cid}:${c.phone ? 'name' : 'phone'}`; render(); },
+  iecancel: (d) => { delete state.idEdit[d.cid]; state.focusAfter = `ieopen:${d.cid}`; render(); },
+  iesave: (d) => saveIdentity(d.cid),
+  next: (d, el) => openNext(el, d.cid),
+  done: (d) => markContacted(d.cid),
+  npreset: (d) => { const m = state.menu; m.draft.date = addDays(TODAY, Number(d.n)); m.err = ''; render(); },
+  nsave: () => { if (tryCommitNext()) closeMenu(true); },
+  ncancel: () => closeMenu(true),
+  nclear: () => { const m = state.menu; const c = findCustomer(m.cid); state.focusAfter = m.anchor; state.menu = null; commit('다음 연락을 지웠습니다', () => { c.next = null; }); },
+  ndone: () => markContacted(state.menu.cid),
+  casg: (d, el) => {
+    const c = findCustomer(d.cid);
+    choice(el, '담당', STAFF.map((s) => ({ v: s, label: s })), c.assignee, (v) => {
+      if (v !== c.assignee) commit(`담당을 바꿨습니다 · ${v}`, () => { findCustomer(d.cid).assignee = v; });
+    });
+  },
+  asg: (d, el) => {
+    const { it } = findIntake(d.id);
+    choice(el, '의뢰 담당', STAFF.map((s) => ({ v: s, label: s })), it.assignee, (v) => {
+      if (v !== it.assignee) commit(`담당을 바꿨습니다 · ${v}`, () => { findIntake(d.id).it.assignee = v; });
+    });
+  },
+  status: (d, el) => {
+    const { it } = findIntake(d.id);
+    choice(el, '의뢰 상태', Object.entries(STATUS).map(([v, label]) => ({ v, label, pill: v, dot: true })), it.status, (v) => {
+      if (v !== it.status) commit(`의뢰 상태를 바꿨습니다 · ${STATUS[v]}`, () => { findIntake(d.id).it.status = v; });
+    });
+  },
+  rx: (d, el) => {
+    const { m } = findIntro(d.id);
+    choice(el, '반응', Object.entries(RX).map(([v, label]) => ({ v, label, pill: v })), m.rx, (v) => {
+      if (v !== m.rx) commit(`반응을 바꿨습니다 · ${RX[v]}`, () => { findIntro(d.id).m.rx = v; });
+    });
+  },
+  addintro: (d, el) => {
+    const owner = introOwner(d.oid);
+    if (!owner) return;
+    const listing = owner.it?.kind === 'listing';
+    if (!listing) { openPropertyPicker(d.oid, owner); return; }
+    const list = buyerCandidates(owner.c, owner.it);
+    const options = list.length
+      ? list.map((p, i) => ({ v: i, label: shownName(p), sub: p.spec }))
+      : [{ disabled: true, label: '이 시안에는 더 고를 후보가 없습니다' }];
+    choice(el, '오늘 소개한 손님', options, null, (v) => {
+      const p = list[v];
+      commit('소개 기록을 추가했습니다. 가격은 오늘 기준으로 남깁니다', () => {
+        const o = introOwner(d.oid);
+        const id = newId('m');
+        const who = p.cid ? { cid: p.cid, name: shownName(p) } : { name: p.name };
+        o.list.unshift({ id, ...who, spec: p.spec, d: TODAY, via: '문자', then: clone(o.it.price), rx: 'wait', memo: '' });
+      });
+      state.introsClosed.delete(d.oid);
+    });
+  },
+  pick: (d) => {
+    const m = state.menu;
+    const o = m.options[Number(d.i)];
+    state.focusAfter = m.anchor;
+    state.menu = null;
+    m.pick(o.v);
+    render();
+  },
+  memo: (d) => { const f = findIntro(d.id); state.editMemo = { id: d.id, value: f.m.memo }; state.focusAfter = `memoedit:${d.id}`; render(); },
+  intros: (d) => { state.introsClosed.has(d.id) ? state.introsClosed.delete(d.id) : state.introsClosed.add(d.id); render(); },
+  undo: (d) => {
+    if (!undo || String(undo.id) !== d.uid) return;   // 누르는 사이 다른 변경이 저장됐으면 옛 단추는 버린다
+    state.customers = JSON.parse(undo.snap);
+    undo.restore?.();
+    undo = null;
+    state.menu = null; state.editMemo = null;
+    toast('되돌렸습니다', 0);
+    render();
+  },
+  reset: () => {
+    state.menu = null; state.editMemo = null;
+    commit('가상 데이터를 처음 상태로 돌렸습니다', () => { state.customers = clone(INITIAL); });
+  },
+};
+
+/* ───────── 이벤트 ───────── */
+document.addEventListener('pointerdown', (e) => {
+  pointerDown = true;
+  swallowClick = false;
+  const m = state.menu;
+  if (!m || e.target.closest('#pop')) return;
+  const a = anchorEl();
+  if (a && a.contains(e.target)) return;          // 같은 단추는 click에서 여닫는다
+  if (m.kind === 'next' && !tryCommitNext()) { swallowClick = true; return; }   // 잘못된 값이면 닫지 않는다
+  state.menu = null;
+  render();
+}, true);
+document.addEventListener('pointerup', releasePointer, true);
+document.addEventListener('pointercancel', releasePointer, true);
+window.addEventListener('blur', releasePointer);
+
+document.addEventListener('click', (e) => {
+  if (swallowClick) { swallowClick = false; e.preventDefault(); e.stopPropagation(); return; }
+  const el = e.target.closest('[data-act]');
+  if (el) { if (!el.disabled) ACT[el.dataset.act]?.(el.dataset, el, e); return; }
+
+});
+
+// 글자를 치는 동안에는 다시 그리지 않고 초안만 고친다. 오류 문구는 그 자리에서 지운다.
+function clearErr(draft, box) {
+  if (!draft.err) return;
+  draft.err = '';
+  const p = box?.querySelector('.err');
+  if (p) p.textContent = '';
+}
+document.addEventListener('input', (e) => {
+  const t = e.target, d = t.dataset;
+  if (t.id === 'q') { state.q = t.value; render(); return; }
+  if (d.cmp) { const x = draftOf(d.cmp); x.text = t.value; clearErr(x, t.closest('.composer')); autosize(t); return; }
+  if (d.fnote) { draftOf(d.fnote).note = t.value; return; }
+  if (d.fdate) {                                    // 날짜 칸은 치는 중에 갈지 않고 제자리에서 맞춘다
+    const x = draftOf(d.fdate);
+    const off = d.fdate === 'new' ? 'none' : 'keep';
+    x.date = t.value;
+    x.follow = t.value ? 'date' : off;
+    const box = t.closest('.composer');
+    box.querySelectorAll('[data-act="follow"]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === x.follow)));
+    t.classList.toggle('on', x.follow === 'date');
+    const note = box.querySelector('[data-fnote]'); if (note) note.hidden = x.follow !== 'date';
+    clearErr(x, box);
+    return;
+  }
+  if (d.nf) { state.adding[d.nf] = t.value; clearErr(state.adding, t.closest('.newcust')); return; }
+  if (d.ie) { const [cid, field] = d.ie.split(':'); const x = state.idEdit[cid]; x[field] = t.value; clearErr(x, t.closest('.id-edit')); return; }
+  if (d.if) {
+    const [cid, field] = d.if.split(':');
+    const f = state.iform[cid];
+    f[field] = t.value;
+    const box = t.closest('.iform');
+    const pv = box.querySelector('[data-ipv]'); if (pv) pv.textContent = pricePreview(f);
+    clearErr(f, box);
+    return;
+  }
+  if (t.matches('[data-ndate]')) {
+    const m = state.menu; m.draft.date = t.value; m.err = '';
+    $('#nerr').textContent = '';
+    document.querySelectorAll('#pop [data-act="npreset"]').forEach((b) => b.setAttribute('aria-pressed', String(t.value === addDays(TODAY, Number(b.dataset.n)))));
+    return;
+  }
+  if (t.matches('[data-nnote]')) { state.menu.draft.note = t.value; return; }
+  if (d.memoedit && state.editMemo) { state.editMemo.value = t.value; }
+});
+document.addEventListener('change', (e) => {
+  const t = e.target, d = t.dataset;
+  if ('nasg' in d) { state.adding.assignee = t.value; return; }
+  if (d.iasg) { state.iform[d.iasg].assignee = t.value; return; }
+  if (d.imove) { state.iform[d.imove].move = t.checked; }
+});
+document.addEventListener('focusout', (e) => {
+  if (rendering) return;
+  if (e.target.dataset?.memoedit && state.editMemo?.id === e.target.dataset.memoedit) saveMemo();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  const t = e.target, d = t.dataset || {};
+  if (d.memoedit) {
+    if (e.key === 'Enter') { e.preventDefault(); state.focusAfter = `memo:${d.memoedit}`; saveMemo(); }
+    else if (e.key === 'Escape') { e.preventDefault(); state.editMemo = null; state.focusAfter = `memo:${d.memoedit}`; render(); }
+    return;
+  }
+  if (d.cmp && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); d.cmp === 'new' ? saveNewCustomer() : saveComposer(d.cmp); return; }
+  if (d.nf && e.key === 'Enter') { e.preventDefault(); saveNewCustomer(); return; }
+  if (d.ie) {
+    const cid = d.ie.split(':')[0];
+    if (e.key === 'Enter') { e.preventDefault(); saveIdentity(cid); return; }
+    if (e.key === 'Escape') { e.preventDefault(); ACT.iecancel({ cid }); return; }
+  }
+  if (d.if && e.key === 'Enter') { e.preventDefault(); saveIntake(d.if.split(':')[0]); return; }
+  if (t.id === 'q' && e.key === 'Escape' && state.q) { e.preventDefault(); ACT.qclear(); return; }
+
+  const pop = $('#pop .pop');
+  if (!pop || !state.menu) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); return; }
+  if (!pop.contains(t)) return;
+  if (state.menu.kind === 'next') {
+    if (e.key === 'Enter' && t.tagName === 'INPUT') { e.preventDefault(); ACT.nsave(); return; }
+    if (e.key === 'Tab') {                          // 판 안에서 돈다
+      const items = [...pop.querySelectorAll('button, input')];
+      const first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && t === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && t === last) { e.preventDefault(); first.focus(); }
+    }
+    return;
+  }
+  const items = [...pop.querySelectorAll('.mi:not([disabled])')];
+  const i = items.indexOf(t);
+  if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+  else if (e.key === 'Home') { e.preventDefault(); items[0]?.focus(); }
+  else if (e.key === 'End') { e.preventDefault(); items[items.length - 1]?.focus(); }
+  else if (e.key === 'Tab') { e.preventDefault(); closeMenu(true); }
+});
+
+$('#scroller').addEventListener('scroll', () => {
+  if (!state.menu) return;
+  const a = anchorEl(), box = $('#scroller').getBoundingClientRect();
+  const r = a?.getBoundingClientRect();
+  if (!r || (a.closest('#scroller') && (r.bottom < box.top + 34 || r.top > box.bottom))) { if (state.menu.kind !== 'next' || tryCommitNext()) closeMenu(false); return; }
+  placeMenu();
+}, { passive: true });
+$('#reader').addEventListener('scroll', placeMenu, {passive:true});
+$('#reader').addEventListener('submit', e => {
+  const form = e.target;
+  if (!form.dataset.visit) return;
+  e.preventDefault();
+  const place = form.elements.place.value.trim();
+  if (!place) {form.elements.place.focus(); return;}
+  const it = findIntake(form.dataset.visit).it;
+  commit('방문 일정을 추가했습니다', () => {
+    (it.visits ||= []).push({time:form.elements.time.value, place});
+    it.visits.sort((a,b)=>a.time.localeCompare(b.time));
+  });
+});
+window.addEventListener('resize', placeMenu);
+
+doRender();
+})();
+</script>
+</body>
+</html>

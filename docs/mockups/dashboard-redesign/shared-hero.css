@@ -1,0 +1,1169 @@
+/*
+ * 대시보드 상단 애니메이션 날씨판 히어로 (.dash-hero)
+ * docs/mockups/dashboard-board/hero-weather.html 의 시각·애니메이션·인터랙션을 100% 보존하며
+ * 모든 셀렉터를 .dash-hero 스코프로 한정해 본문과 스타일 충돌이 없게 한다.
+ */
+
+@property --sky-a {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #c4e3fa;
+}
+@property --sky-b {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #eff8fe;
+}
+@property --glow {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 225, 163, 0);
+}
+@property --wash {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(255, 255, 255, 0.66);
+}
+@property --gx {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+@property --gy {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+.dash-hero {
+  --h-bg: #ffffff;
+  --h-fg: #2c2c2b;
+  --h-fg2: #5f5e59;
+  --h-fg3: #79766f;
+  --h-icon: #8e8b86;
+  --h-red: #bb3430;
+  --h-orange: #d9730d;
+  --h-blue: #2383e2;
+  --h-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --h-ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  position: relative;
+  container-type: inline-size;
+  flex: none;
+  min-height: 176px;
+  padding: 18px 20px 16px 22px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  border-radius: 14px;
+  isolation: isolate;
+  transition:
+    --sky-a 900ms ease,
+    --sky-b 900ms ease,
+    --glow 900ms ease,
+    --wash 900ms ease,
+    --gx 900ms ease,
+    --gy 900ms ease;
+  box-shadow: inset 0 0 0 1px rgba(42, 28, 0, 0.08);
+}
+
+.dash-hero.scrub {
+  transition-duration: 160ms;
+}
+
+.dash-hero .dash-sky {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  background:
+    radial-gradient(circle at var(--gx) var(--gy), var(--glow), transparent 150px),
+    linear-gradient(180deg, var(--sky-a), var(--sky-b));
+}
+
+.dash-hero .dash-sky::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--wash) 0%, var(--wash) 24%, transparent 62%);
+}
+
+.dash-hero .dash-flash {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dash-hero .dash-vista {
+  --sw: min(440px, 60cqw);
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  top: 0;
+  z-index: -2;
+  width: calc(var(--sw) * 1.32);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 27%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 27%);
+}
+
+.dash-hero .dash-scene,
+.dash-hero .dash-fx {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: var(--sw);
+  aspect-ratio: 440 / 132;
+}
+
+.dash-hero .dash-scene {
+  overflow: visible;
+}
+
+.dash-hero .dash-fx {
+  pointer-events: none;
+}
+
+/* ── 글자 쪽 ── */
+.dash-hero .dash-copy {
+  position: relative;
+  min-width: 0;
+  max-width: calc(100cqw - min(440px, 60cqw) * 0.92);
+}
+
+.dash-hero .dash-dateline {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--h-fg3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+  transition: color 600ms ease;
+}
+
+.dash-hero .dash-wxchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--h-fg2);
+  transition: color 600ms ease;
+}
+
+.dash-hero .dash-wxchip svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dash-hero .dash-wxchip .dash-wx-tip {
+  color: var(--h-orange);
+  font-weight: 600;
+}
+
+.dash-hero .dash-sep {
+  opacity: 0.5;
+}
+
+.dash-hero .dash-title {
+  margin: 2px 0 12px;
+  font-size: 26px;
+  line-height: 34px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--h-fg);
+  transition: color 600ms ease;
+}
+
+.dash-hero .dash-pins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 30px;
+}
+
+.dash-hero .dash-pin {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px 0 9px;
+  border-radius: 999px;
+  background: var(--h-bg);
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--h-fg2);
+  box-shadow:
+    0 0 0 1px rgba(42, 28, 0, 0.08),
+    0 1px 2px rgba(42, 28, 0, 0.04);
+  transition:
+    box-shadow 200ms ease,
+    transform 200ms var(--h-ease-out);
+}
+
+.dash-hero .dash-pin:active {
+  transform: scale(0.97);
+}
+
+.dash-hero .dash-pin svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--h-icon);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dash-hero .dash-pin b {
+  font-weight: 600;
+  color: var(--h-fg);
+  font-variant-numeric: tabular-nums;
+  display: inline-block;
+}
+
+.dash-hero .dash-pin b.bad {
+  color: var(--h-red);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dash-hero .dash-pin:hover {
+    box-shadow:
+      0 0 0 1px rgba(42, 28, 0, 0.13),
+      0 6px 16px -8px rgba(42, 28, 0, 0.16);
+    transform: translateY(-1px);
+  }
+}
+
+.dash-hero .dash-tools {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dash-hero .dash-scope {
+  display: inline-flex;
+  height: 32px;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgba(44, 44, 43, 0.06);
+  transition: background-color 600ms ease;
+}
+
+.dash-hero .dash-scope button {
+  display: grid;
+  place-items: center;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: rgba(44, 44, 43, 0.62);
+  transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.dash-hero .dash-scope button:active {
+  transform: scale(0.97);
+}
+
+.dash-hero .dash-scope button[aria-pressed='true'] {
+  background: #ffffff;
+  color: var(--h-fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.dash-hero .dash-quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--h-fg);
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: opacity 150ms ease, transform 150ms var(--h-ease-out), background-color 600ms ease, color 600ms ease;
+}
+
+.dash-hero .dash-quick:hover {
+  opacity: 0.92;
+}
+
+.dash-hero .dash-quick:active {
+  transform: scale(0.97);
+}
+
+.dash-hero .dash-quick svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* 밤: 판이 어두워지면 글자가 밝아진다 */
+.dash-hero[data-tone='dark'] {
+  box-shadow: none;
+}
+.dash-hero[data-tone='dark'] .dash-title {
+  color: #ffffff;
+}
+.dash-hero[data-tone='dark'] .dash-dateline {
+  color: rgba(255, 255, 255, 0.66);
+}
+.dash-hero[data-tone='dark'] .dash-wxchip {
+  color: rgba(255, 255, 255, 0.86);
+}
+.dash-hero[data-tone='dark'] .dash-wxchip .dash-wx-tip {
+  color: #ffc27a;
+}
+.dash-hero[data-tone='dark'] .dash-scope {
+  background: rgba(255, 255, 255, 0.14);
+}
+.dash-hero[data-tone='dark'] .dash-scope button[aria-pressed='false'] {
+  color: rgba(255, 255, 255, 0.72);
+}
+.dash-hero[data-tone='dark'] .dash-quick {
+  background: #ffffff;
+  color: var(--h-fg);
+}
+
+/* ───────── 그림 (.dash-scene) ───────── */
+.dash-hero .dash-scene {
+  --ol: rgba(64, 48, 40, 0.5);
+  --glass: #9cc3e6;
+  --axis: rgba(44, 44, 43, 0.5);
+  --hot: #d9730d;
+}
+.dash-hero .dash-scene [data-c] {
+  transition: fill 800ms ease;
+}
+.dash-hero .dash-scene .o {
+  stroke: var(--ol);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.dash-hero .dash-scene .ln {
+  fill: none;
+  stroke: var(--ol);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dash-hero .dash-scene .wn {
+  fill: var(--glass);
+  transition: fill 500ms ease;
+}
+.dash-hero .dash-scene .wn.lit {
+  fill: #ffd45c;
+}
+.dash-hero .dash-scene .axisline {
+  stroke: var(--axis);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.dash-hero .dash-scene .tick {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+.dash-hero .dash-scene text {
+  font-size: 9.5px;
+  font-weight: 500;
+  fill: var(--axis);
+  font-variant-numeric: tabular-nums;
+  transition: fill 600ms ease;
+}
+.dash-hero .dash-scene .nowtxt {
+  fill: var(--hot);
+  font-weight: 700;
+}
+.dash-hero .dash-scene .nowline {
+  stroke: var(--hot);
+  stroke-width: 1.1;
+  stroke-dasharray: 2 3;
+  opacity: 0.75;
+}
+.dash-hero .dash-scene[data-off='1'] .nowline,
+.dash-hero .dash-scene[data-off='1'] .nowtxt {
+  opacity: 0;
+}
+.dash-hero .dash-scene .pole {
+  stroke: var(--hot);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.dash-hero .dash-scene .flag {
+  fill: var(--hot);
+}
+.dash-hero .dash-scene .ev {
+  fill: var(--hot);
+  stroke: #ffffff;
+  stroke-width: 1.6;
+}
+.dash-hero .dash-scene .fumb {
+  opacity: 0;
+  transition: opacity 400ms ease;
+}
+.dash-hero .dash-scene .fumb.on {
+  opacity: 1;
+}
+.dash-hero .dash-scene .star {
+  fill: #fff3c4;
+  opacity: 0;
+  transition: opacity 800ms ease;
+}
+.dash-hero .dash-scene[data-night='1'] .star {
+  opacity: 0.9;
+}
+.dash-hero .dash-scene[data-night='1']:is([data-wx='cloudy'], [data-wx='rain'], [data-wx='snow'], [data-wx='thunder'], [data-wx='fog']) .star {
+  opacity: 0.12;
+}
+
+/* 해 · 달 · 지금 자리의 구름 */
+.dash-hero .dash-scene .lum {
+  transition: transform 900ms cubic-bezier(0.77, 0, 0.175, 1);
+}
+.dash-hero.scrub .dash-scene .lum {
+  transition-duration: 160ms;
+  transition-timing-function: linear;
+}
+.dash-hero .dash-scene .sun,
+.dash-hero .dash-scene .moon,
+.dash-hero .dash-scene .bigcloud {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 500ms ease, transform 600ms var(--h-ease-out);
+}
+.dash-hero .dash-scene .sun,
+.dash-hero .dash-scene .bigcloud,
+.dash-hero .dash-scene .cat,
+.dash-hero .dash-scene .slot {
+  cursor: pointer;
+}
+.dash-hero .dash-scene .sunc {
+  fill: #ffd15c;
+  stroke: #ef9b2d;
+  stroke-width: 1.4;
+}
+.dash-hero .dash-scene .ray {
+  stroke: #f6a93a;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.dash-hero .dash-scene .moonc {
+  fill: #fff1c4;
+  stroke: #e3c36f;
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+}
+.dash-hero .dash-scene .cloud {
+  stroke: #9fb0c4;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+.dash-hero .dash-scene[data-night='1'] .sun,
+.dash-hero .dash-scene[data-night='0'] .moon {
+  opacity: 0;
+  transform: scale(0.6);
+  pointer-events: none;
+}
+.dash-hero .dash-scene .bigcloud {
+  opacity: 0;
+  transform: translateY(6px) scale(0.7);
+  pointer-events: none;
+}
+.dash-hero .dash-scene[data-wx='partly'] .bigcloud {
+  opacity: 1;
+  transform: translate(10px, 8px) scale(0.6);
+  pointer-events: auto;
+}
+.dash-hero .dash-scene:is([data-wx='cloudy'], [data-wx='rain'], [data-wx='snow'], [data-wx='thunder']) :is(.sun, .moon) {
+  opacity: 0;
+  transform: scale(0.7);
+  pointer-events: none;
+}
+.dash-hero .dash-scene[data-wx='fog'] .sun {
+  opacity: 0.62;
+}
+
+/* 예보 구름 */
+.dash-hero .dash-scene .slot {
+  opacity: 0;
+  transform: translateY(-7px);
+  pointer-events: none;
+  transition: opacity 500ms ease, transform 600ms var(--h-ease-out);
+  transition-delay: calc(var(--i) * 40ms);
+}
+.dash-hero .dash-scene .slot.on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.dash-hero .dash-scene .deck {
+  opacity: 0;
+  transform: translateY(-9px);
+  pointer-events: none;
+  transition: opacity 600ms ease, transform 700ms var(--h-ease-out);
+}
+.dash-hero .dash-scene .deck.on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.dash-hero .dash-scene .deck.back .cloud {
+  stroke: #b7c5d5;
+  stroke-width: 0.9;
+}
+.dash-hero .dash-scene .wisp {
+  fill: #ffffff;
+  opacity: 0;
+  transition: opacity 800ms ease;
+}
+.dash-hero .dash-scene:is([data-wx='clear'], [data-wx='partly']) .wisp {
+  opacity: 0.75;
+}
+.dash-hero .dash-scene[data-night='1'] .wisp {
+  opacity: 0.12;
+}
+.dash-hero .dash-scene .fogband {
+  fill: url(#fogG);
+  opacity: 0;
+  transition: opacity 900ms ease;
+  pointer-events: none;
+}
+.dash-hero .dash-scene[data-wx='fog'] .fogband {
+  opacity: 0.6;
+}
+.dash-hero .dash-scene .haze {
+  fill: url(#hazeG);
+  opacity: 0;
+  transition: opacity 900ms ease;
+  pointer-events: none;
+}
+.dash-hero .dash-scene[data-wx='fog'] .haze {
+  opacity: 1;
+}
+.dash-hero .dash-scene .bolt {
+  fill: #ffe066;
+  stroke: #f2a900;
+  stroke-width: 0.8;
+  stroke-linejoin: round;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 건물 */
+.dash-hero .dash-scene .bld {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transition: transform 240ms var(--h-ease-pop);
+}
+@media (hover: hover) and (pointer: fine) {
+  .dash-hero .dash-scene .bld:hover {
+    transform: scaleY(1.05);
+  }
+  .dash-hero .dash-scene .bld:hover .wn {
+    fill: #ffd45c;
+  }
+}
+.dash-hero .dash-scene .bld.visit .wn {
+  fill: #ffd45c;
+}
+.dash-hero .dash-scene .cap {
+  fill: #ffffff;
+  stroke: #c3d2e4;
+  stroke-width: 1;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scaleY(0);
+  opacity: 0;
+  transition: transform 700ms var(--h-ease-out), opacity 400ms ease;
+}
+.dash-hero .dash-scene[data-wx='snow'] .cap {
+  transform: none;
+  opacity: 1;
+}
+.dash-hero .dash-scene .puff {
+  fill: #ffffff;
+  stroke: var(--ol);
+  stroke-width: 0.9;
+  opacity: 0;
+}
+.dash-hero .dash-scene .lamp,
+.dash-hero .dash-scene .lampglow {
+  opacity: 0;
+  transition: opacity 600ms ease;
+}
+.dash-hero .dash-scene[data-night='1'] .lamp {
+  opacity: 1;
+}
+.dash-hero .dash-scene[data-night='1'] .lampglow {
+  opacity: 0.35;
+}
+
+/* 고양이 */
+.dash-hero .dash-scene .catfur {
+  fill: #f7c58c;
+}
+.dash-hero .dash-scene .catumb,
+.dash-hero .dash-scene .catscarf,
+.dash-hero .dash-scene .cateyes-shut,
+.dash-hero .dash-scene .heart {
+  opacity: 0;
+  transition: opacity 400ms ease, transform 500ms var(--h-ease-pop);
+}
+.dash-hero .dash-scene .catumb {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scale(0.5);
+}
+.dash-hero .dash-scene:is([data-wx='rain'], [data-wx='thunder']) .catumb {
+  opacity: 1;
+  transform: none;
+}
+.dash-hero .dash-scene[data-wx='snow'] .catscarf {
+  opacity: 1;
+}
+.dash-hero .dash-scene[data-night='1'] .cateyes-shut {
+  opacity: 1;
+}
+.dash-hero .dash-scene[data-night='1'] .cateyes {
+  opacity: 0;
+}
+.dash-hero .dash-scene .heart {
+  fill: #ff6f91;
+  font-size: 9px;
+}
+
+/* 걷는 사람 */
+.dash-hero .dash-scene .w-leg {
+  fill: none;
+  stroke: #34406a;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.dash-hero .dash-scene .far .w-leg {
+  stroke: #252e4a;
+}
+.dash-hero .dash-scene .w-arm {
+  fill: none;
+  stroke: #5d83cc;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dash-hero .dash-scene .far .w-arm {
+  stroke: #3c5896;
+}
+.dash-hero .dash-scene .w-shoe {
+  fill: #6e4a33;
+  stroke: rgba(48, 30, 20, 0.6);
+  stroke-width: 0.45;
+  stroke-linejoin: round;
+}
+.dash-hero .dash-scene .far .w-shoe {
+  fill: #563a28;
+}
+.dash-hero .dash-scene .w-skin {
+  fill: #ffdcc0;
+  stroke: rgba(120, 78, 52, 0.6);
+  stroke-width: 0.55;
+  stroke-linejoin: round;
+}
+.dash-hero .dash-scene .w-coat {
+  fill: #4f72b8;
+  stroke: rgba(30, 40, 80, 0.55);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+}
+.dash-hero .dash-scene .w-shirt {
+  fill: #ffffff;
+}
+.dash-hero .dash-scene .w-tie {
+  fill: none;
+  stroke: #e2574c;
+  stroke-width: 0.9;
+  stroke-linecap: round;
+}
+.dash-hero .dash-scene .w-hair {
+  fill: #4a3528;
+}
+.dash-hero .dash-scene .w-eye {
+  fill: #33261d;
+}
+.dash-hero .dash-scene .w-brow {
+  fill: none;
+  stroke: #4a3528;
+  stroke-width: 0.6;
+  stroke-linecap: round;
+}
+.dash-hero .dash-scene .w-case {
+  fill: #b9825a;
+  stroke: rgba(64, 48, 40, 0.6);
+  stroke-width: 0.6;
+}
+.dash-hero .dash-scene .w-handle {
+  fill: none;
+  stroke: rgba(64, 48, 40, 0.6);
+  stroke-width: 0.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dash-hero .dash-scene .thigh,
+.dash-hero .dash-scene .shin,
+.dash-hero .dash-scene .armswing,
+.dash-hero .dash-scene .forearm,
+.dash-hero .dash-scene .armcarry {
+  transform-origin: 0 0;
+}
+.dash-hero .dash-scene .whead {
+  transform-origin: 0.6px -14px;
+}
+.dash-hero .dash-scene .forearm {
+  transform: rotate(-22deg);
+}
+.dash-hero .dash-scene .armfree {
+  transition: opacity 400ms ease;
+}
+.dash-hero .dash-scene:is([data-wx='rain'], [data-wx='thunder']) .armfree {
+  opacity: 0;
+}
+
+/* 지나가는 것들 */
+.dash-hero .dash-scene .bird,
+.dash-hero .dash-scene .walker,
+.dash-hero .dash-scene .snowman,
+.dash-hero .dash-scene .walkumb,
+.dash-hero .dash-scene .leaf {
+  transition: opacity 600ms ease;
+}
+.dash-hero .dash-scene .bird {
+  opacity: 0;
+}
+.dash-hero .dash-scene[data-night='0']:is([data-wx='clear'], [data-wx='partly']) .bird {
+  opacity: 1;
+}
+.dash-hero .dash-scene[data-night='1'] .walker,
+.dash-hero .dash-scene[data-wx='snow'] .walker {
+  opacity: 0;
+}
+.dash-hero .dash-scene .walkumb {
+  opacity: 0;
+}
+.dash-hero .dash-scene:is([data-wx='rain'], [data-wx='thunder']) .walkumb {
+  opacity: 1;
+}
+.dash-hero .dash-scene .snowman {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scale(0.6);
+  transition: opacity 600ms ease, transform 700ms var(--h-ease-pop);
+}
+.dash-hero .dash-scene[data-wx='snow'] .snowman {
+  opacity: 1;
+  transform: none;
+}
+.dash-hero .dash-scene .leaf {
+  opacity: 0;
+}
+.dash-hero .dash-scene:is([data-season='spring'], [data-season='autumn']):is([data-wx='clear'], [data-wx='partly'], [data-wx='cloudy']) .leaf {
+  opacity: 1;
+}
+.dash-hero .dash-brolly {
+  opacity: 0;
+  transition: opacity 220ms ease;
+  pointer-events: none;
+}
+.dash-hero .dash-brolly.on {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes dash-k-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes dash-k-rise {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scaleY(0.8);
+    }
+  }
+  @keyframes dash-k-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  .dash-hero.play .dash-up {
+    animation: dash-k-up 520ms var(--h-ease-out) both;
+    animation-delay: calc(var(--d, 0) * 60ms);
+  }
+  .dash-hero.play .dash-scene .bld {
+    animation: dash-k-rise 560ms var(--h-ease-out) both;
+    animation-delay: calc(140ms + var(--i) * 55ms);
+  }
+  .dash-hero.play .dash-scene .far {
+    animation: dash-k-fade 700ms ease both;
+  }
+  .dash-hero.play .dash-scene .late {
+    animation: dash-k-fade 600ms ease both;
+    animation-delay: 820ms;
+  }
+
+  @keyframes dash-k-bob {
+    50% {
+      transform: translateY(-2.4px);
+    }
+  }
+  @keyframes dash-k-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes dash-k-blink {
+    0%,
+    92%,
+    100% {
+      transform: scaleY(1);
+    }
+    96% {
+      transform: scaleY(0.1);
+    }
+  }
+  @keyframes dash-k-wag {
+    0%,
+    60%,
+    100% {
+      transform: rotate(0);
+    }
+    70% {
+      transform: rotate(16deg);
+    }
+    85% {
+      transform: rotate(-8deg);
+    }
+  }
+  @keyframes dash-k-sway {
+    50% {
+      transform: rotate(var(--sway, 2.4deg));
+    }
+  }
+  @keyframes dash-k-drift {
+    from {
+      transform: translateX(-190px);
+    }
+    to {
+      transform: translateX(470px);
+    }
+  }
+  @keyframes dash-k-fly {
+    from {
+      transform: translate(-30px, 0);
+    }
+    50% {
+      transform: translate(220px, -10px);
+    }
+    to {
+      transform: translate(470px, 2px);
+    }
+  }
+  @keyframes dash-k-flap {
+    50% {
+      transform: scaleY(0.35);
+    }
+  }
+  @keyframes dash-k-nod {
+    50% {
+      transform: rotate(2.5deg);
+    }
+  }
+  @keyframes dash-k-thigh {
+    0%,
+    100% {
+      transform: rotate(-24deg);
+    }
+    50% {
+      transform: rotate(22deg);
+    }
+  }
+  @keyframes dash-k-shin {
+    0% {
+      transform: rotate(3deg);
+    }
+    12% {
+      transform: rotate(9deg);
+    }
+    35% {
+      transform: rotate(2deg);
+    }
+    50% {
+      transform: rotate(14deg);
+    }
+    62% {
+      transform: rotate(34deg);
+    }
+    74% {
+      transform: rotate(44deg);
+    }
+    86% {
+      transform: rotate(18deg);
+    }
+    95%,
+    100% {
+      transform: rotate(3deg);
+    }
+  }
+  @keyframes dash-k-armswing {
+    0%,
+    100% {
+      transform: rotate(22deg);
+    }
+    50% {
+      transform: rotate(-20deg);
+    }
+  }
+  @keyframes dash-k-forearm {
+    0%,
+    100% {
+      transform: rotate(-10deg);
+    }
+    50% {
+      transform: rotate(-34deg);
+    }
+  }
+  @keyframes dash-k-armcarry {
+    0%,
+    100% {
+      transform: rotate(-6deg);
+    }
+    50% {
+      transform: rotate(7deg);
+    }
+  }
+  @keyframes dash-k-tread {
+    50% {
+      transform: translateY(-0.9px);
+    }
+  }
+  @keyframes dash-k-puff {
+    0% {
+      opacity: 0;
+      transform: translate(0, 0) scale(0.5);
+    }
+    25% {
+      opacity: 0.8;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(6px, -20px) scale(1.5);
+    }
+  }
+  @keyframes dash-k-wave {
+    50% {
+      transform: skewY(-10deg) scaleX(0.9);
+    }
+  }
+  @keyframes dash-k-twinkle {
+    0%,
+    86%,
+    100% {
+      transform: scale(1);
+    }
+    93% {
+      transform: scale(0.3);
+    }
+  }
+  @keyframes dash-k-fog {
+    from {
+      transform: translateX(-22px);
+    }
+    to {
+      transform: translateX(22px);
+    }
+  }
+  @keyframes dash-k-leaf {
+    0% {
+      transform: translate(0, 0) rotate(0);
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+    50% {
+      transform: translate(-9px, 12px) rotate(160deg);
+    }
+    90% {
+      opacity: 1;
+    }
+    100% {
+      transform: translate(4px, 25px) rotate(320deg);
+      opacity: 0;
+    }
+  }
+  @keyframes dash-k-deck {
+    from {
+      transform: translateX(-5px);
+    }
+    to {
+      transform: translateX(5px);
+    }
+  }
+  @keyframes dash-k-sparkle {
+    from {
+      opacity: 1;
+      transform: rotate(var(--a)) translateY(-4px) scaleY(1);
+    }
+    to {
+      opacity: 0;
+      transform: rotate(var(--a)) translateY(-15px) scaleY(0.3);
+    }
+  }
+  @keyframes dash-k-numpop {
+    40% {
+      transform: scale(1.35);
+    }
+  }
+
+  .dash-hero .dash-scene .bobber {
+    animation: dash-k-bob 6s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .rays {
+    animation: dash-k-spin 28s linear infinite;
+  }
+  .dash-hero .dash-scene .eyes {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dash-k-blink 5.5s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .cbob {
+    animation: dash-k-bob 7s ease-in-out infinite;
+    animation-delay: calc(var(--i, 0) * -0.9s);
+  }
+  .dash-hero .dash-scene .deckdrift {
+    animation: dash-k-deck 19s ease-in-out infinite alternate;
+  }
+  .dash-hero .dash-scene .deck.back .deckdrift {
+    animation-duration: 27s;
+    animation-direction: alternate-reverse;
+  }
+  .dash-hero .dash-scene .tail {
+    transform-box: fill-box;
+    transform-origin: 0% 100%;
+    animation: dash-k-wag 4.5s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .sway {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: dash-k-sway 5s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .sway.b {
+    animation-duration: 6.5s;
+    animation-delay: -2s;
+  }
+  .dash-hero .dash-scene:is([data-wx='rain'], [data-wx='thunder']) .sway {
+    --sway: 6deg;
+    animation-duration: 2.2s;
+  }
+  .dash-hero .dash-scene .drifter {
+    animation: dash-k-drift 90s linear infinite;
+    animation-delay: -30s;
+  }
+  .dash-hero .dash-scene .drifter.b {
+    animation-duration: 130s;
+    animation-delay: -84s;
+  }
+  .dash-hero .dash-scene .birdfly {
+    animation: dash-k-fly 24s linear infinite;
+    animation-delay: -6s;
+  }
+  .dash-hero .dash-scene .birdfly path {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dash-k-flap 0.5s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .walkgo .body {
+    animation: dash-k-tread 0.55s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .thigh {
+    animation: dash-k-thigh 1.1s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .shin {
+    animation: dash-k-shin 1.1s linear infinite;
+  }
+  .dash-hero .dash-scene .walker .far .thigh,
+  .dash-hero .dash-scene .walker .far .shin {
+    animation-delay: -0.55s;
+  }
+  .dash-hero .dash-scene .whead {
+    animation: dash-k-nod 0.55s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .armswing {
+    animation: dash-k-armswing 1.1s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .forearm {
+    animation: dash-k-forearm 1.1s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .armcarry {
+    animation: dash-k-armcarry 1.1s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .puff {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dash-k-puff 4.2s ease-out infinite;
+    animation-delay: calc(var(--i) * 1.4s);
+  }
+  .dash-hero .dash-scene .flagwave {
+    transform-box: fill-box;
+    transform-origin: 0% 50%;
+    animation: dash-k-wave 1.8s ease-in-out infinite;
+  }
+  .dash-hero .dash-scene .star {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dash-k-twinkle 6s ease-in-out infinite;
+    animation-delay: calc(var(--i) * 700ms);
+  }
+  .dash-hero .dash-scene .fogband {
+    animation: dash-k-fog 16s ease-in-out infinite alternate;
+    animation-delay: calc(var(--i) * -5s);
+  }
+  .dash-hero .dash-scene .leaf {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dash-k-leaf 7s ease-in-out infinite;
+    animation-delay: calc(var(--i) * -2.4s);
+  }
+  .dash-hero .dash-spark {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 7px;
+    margin: -3px 0 0 -1px;
+    border-radius: 1px;
+    background: var(--h-orange);
+    pointer-events: none;
+    animation: dash-k-sparkle 560ms var(--h-ease-out) both;
+  }
+  .dash-hero .dash-numpop {
+    animation: dash-k-numpop 360ms var(--h-ease-pop);
+  }
+}
