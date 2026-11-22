@@ -154,7 +154,7 @@ export function PropertyMatchConnectDialog({
       queryClient.invalidateQueries({ queryKey: ['listings'] });
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
       queryClient.invalidateQueries({ queryKey: ['buyer-requirements'] });
-      queryClient.invalidateQueries({ queryKey: ['brokerage-cases'] });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
       toast.success(
         `${buyer.contact?.name ?? '구매고객'} 고객을 연결했습니다. 내부 후보로 시작합니다.`,
       );

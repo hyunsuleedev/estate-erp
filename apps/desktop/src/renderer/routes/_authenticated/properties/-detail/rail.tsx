@@ -103,7 +103,7 @@ export function TodosCallout({
 
 // ── 연락처 ─────────────────────────────────────────────────────────
 
-function PersonLine({
+export function PersonLine({
   contactId,
   name,
   role,

@@ -1,6 +1,6 @@
 import type {
-  BrokerageCaseLedgerFilter,
-  BrokerageCaseLedgerSortField,
+  CustomerLedgerFilter,
+  CustomerLedgerSortField,
 } from "@estate-erp/api-client";
 import { pyeongToSqm } from "@estate-erp/shared";
 import type { ActiveFilter, FilterDefinition } from "@/components/data-table";
@@ -12,7 +12,7 @@ export const customerLedgerFilterDefinitions: FilterDefinition[] = [
 ];
 
 export const customerLedgerSortDefinitions: Array<{
-  field: BrokerageCaseLedgerSortField;
+  field: CustomerLedgerSortField;
   label: string;
 }> = [
   { field: "customer", label: "고객명" },
@@ -29,13 +29,13 @@ export const customerLedgerSortDefinitions: Array<{
 export type CustomerLedgerSortOrder = "asc" | "desc";
 
 export interface CustomerLedgerSortState {
-  sortBy: BrokerageCaseLedgerSortField | null;
+  sortBy: CustomerLedgerSortField | null;
   sortOrder: CustomerLedgerSortOrder;
 }
 
 export function getNextCustomerLedgerSort(
   current: CustomerLedgerSortState,
-  field: BrokerageCaseLedgerSortField,
+  field: CustomerLedgerSortField,
 ): CustomerLedgerSortState {
   const initialOrder: CustomerLedgerSortOrder =
     field === "customer" ? "asc" : "desc";
@@ -66,8 +66,8 @@ function numberBoundary(value: string | undefined) {
  */
 export function customerLedgerFiltersToApiParams(
   activeFilters: ActiveFilter[],
-): BrokerageCaseLedgerFilter {
-  const params: BrokerageCaseLedgerFilter = {};
+): CustomerLedgerFilter {
+  const params: CustomerLedgerFilter = {};
 
   for (const filter of activeFilters) {
     if (filter.field === "preferredSites" && filter.values?.length) {

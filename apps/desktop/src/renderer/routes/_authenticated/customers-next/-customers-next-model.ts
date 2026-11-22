@@ -1,17 +1,17 @@
 import type {
-  BrokerageCase,
-  BrokerageCaseDemandIntent,
-  BrokerageCaseListingIntent,
+  CustomerLedgerRow,
+  CustomerLedgerDemandIntent,
+  CustomerLedgerListingIntent,
 } from "@estate-erp/api-client";
 
 export interface CustomerDemandGroup {
   intakeId: string;
-  lines: BrokerageCaseDemandIntent[];
+  lines: CustomerLedgerDemandIntent[];
 }
 
 export interface CustomerListingGroup {
   intakeId: string;
-  lines: BrokerageCaseListingIntent[];
+  lines: CustomerLedgerListingIntent[];
 }
 
 export interface CustomerCaseSummary {
@@ -32,13 +32,13 @@ export function getListingSelectionKey(listingId: string): string {
 }
 
 export function getCustomerCaseSelectionKeys(
-  brokerageCase: BrokerageCase,
+  project: CustomerLedgerRow,
 ): string[] {
   return [
-    ...brokerageCase.demandIntents.map((intent) =>
+    ...project.demandIntents.map((intent) =>
       getDemandSelectionKey(intent.requirementId),
     ),
-    ...brokerageCase.listingIntents.map((intent) =>
+    ...project.listingIntents.map((intent) =>
       getListingSelectionKey(intent.listingId),
     ),
   ];
@@ -106,7 +106,7 @@ export function toggleCustomerIntakeCollapsed(
 }
 
 export function groupCustomerListingIntents(
-  lines: BrokerageCaseListingIntent[],
+  lines: CustomerLedgerListingIntent[],
 ): CustomerListingGroup[] {
   const groups = new Map<string, CustomerListingGroup>();
 
@@ -126,7 +126,7 @@ export function groupCustomerListingIntents(
 }
 
 export function groupCustomerDemandIntents(
-  lines: BrokerageCaseDemandIntent[],
+  lines: CustomerLedgerDemandIntent[],
 ): CustomerDemandGroup[] {
   const groups = new Map<string, CustomerDemandGroup>();
 
@@ -146,28 +146,28 @@ export function groupCustomerDemandIntents(
 }
 
 export function getCustomerListingOptionMemo(
-  line: BrokerageCaseListingIntent,
+  line: CustomerLedgerListingIntent,
 ): string | null {
   if (!line.memo || line.memo === line.intakeMemo) return null;
   return line.memo;
 }
 
 export function summarizeCustomerCase(
-  brokerageCase: BrokerageCase,
+  project: CustomerLedgerRow,
 ): CustomerCaseSummary {
-  const demandGroups = groupCustomerDemandIntents(brokerageCase.demandIntents);
+  const demandGroups = groupCustomerDemandIntents(project.demandIntents);
   const listingGroups = groupCustomerListingIntents(
-    brokerageCase.listingIntents,
+    project.listingIntents,
   );
 
   return {
     demandCount: demandGroups.length,
     listingCount: listingGroups.length,
-    demandMatchCount: brokerageCase.demandIntents.reduce(
+    demandMatchCount: project.demandIntents.reduce(
       (total, intent) => total + intent.matchCount,
       0,
     ),
-    listingMatchCount: brokerageCase.listingIntents.reduce(
+    listingMatchCount: project.listingIntents.reduce(
       (total, intent) => total + intent.matchCount,
       0,
     ),

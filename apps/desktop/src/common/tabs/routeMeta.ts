@@ -52,6 +52,7 @@ const STATIC_ROUTES: Record<string, RouteMetaCore> = {
   '/contacts': { title: '연락처', kind: 'contact', iconKey: 'book-user' },
   '/customers': { title: '고객 중심 보기', kind: 'contact', iconKey: 'users' },
   '/customers-table': { title: '고객 원장', kind: 'contact', iconKey: 'users' },
+  '/projects': { title: '프로젝트', kind: 'contact', iconKey: 'users' },
   '/contacts/new': { title: '연락처 추가', kind: 'contact', iconKey: 'book-user' },
   '/partner-brokers': { title: '파트너 중개사', kind: 'contact', iconKey: 'handshake' },
   '/service-vendors': { title: '서비스 업체', kind: 'contact', iconKey: 'wrench' },
@@ -106,6 +107,10 @@ const DYNAMIC_ROUTE_META: Array<{
   {
     match: /^\/contacts\/([^/]+)$/,
     meta: () => ({ title: '연락처 상세', kind: 'contact', iconKey: 'book-user' }),
+  },
+  {
+    match: /^\/projects\/([^/]+)$/,
+    meta: () => ({ title: '프로젝트 상세', kind: 'contact', iconKey: 'users' }),
   },
   {
     match: /^\/consultations\/([^/]+)$/,

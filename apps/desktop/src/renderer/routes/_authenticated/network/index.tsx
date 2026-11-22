@@ -1,11 +1,8 @@
 import { useState } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { MailQuestionIcon, PlusIcon, UsersRoundIcon } from 'lucide-react';
 
 import { api } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { EmptyState, PageHeader } from '@/components/domain';
 import { networkKeys } from './-network-shared';
 import { RoomListPanel } from './-room-list';
 import { RoomDetail } from './-room-detail';
@@ -23,6 +20,10 @@ export const Route = createFileRoute('/_authenticated/network/')({
   component: NetworkPage,
 });
 
+/**
+ * 중개방 — 왼쪽에 방 목록, 오른쪽에 고른 방(공유 매물 · 대화 · 멤버) 또는 문의함.
+ * 다른 목록 화면처럼 제목 줄 없이 바로 시작한다.
+ */
 function NetworkPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const { roomId: selectedRoomId = null, view } = Route.useSearch();
@@ -30,7 +31,7 @@ function NetworkPage() {
 
   const showInquiries = view === 'inquiries';
 
-  // 받은 문의 중 응답 대기 건수 — 문의함 버튼 뱃지
+  // 받은 문의 중 응답 대기 건수 — 목록의 문의함 줄에 표시
   const pendingQuery = useQuery({
     queryKey: networkKeys.inquiries({ scope: 'received', status: 'pending' }),
     queryFn: () => api.network.listInquiries({ scope: 'received', status: 'pending' }),
@@ -41,81 +42,47 @@ function NetworkPage() {
   const selectRoom = (roomId: string) => {
     void navigate({ search: { roomId }, replace: true });
   };
-
   const clearRoom = () => {
     void navigate({ search: {}, replace: true });
   };
-
-  const toggleInquiries = () => {
+  const openInquiries = () => {
     void navigate({
-      search: showInquiries
-        ? selectedRoomId
-          ? { roomId: selectedRoomId }
-          : {}
-        : { roomId: selectedRoomId ?? undefined, view: 'inquiries' },
+      search: { roomId: selectedRoomId ?? undefined, view: 'inquiries' },
       replace: true,
     });
   };
 
   return (
-    <div className="flex h-[calc(100svh-5.5rem)] min-h-0 flex-col pt-4">
-      <PageHeader
-        title="중개방"
-        description="사무소 간 매물 공유 · 문의 · 채팅으로 공동중개를 진행합니다."
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant={showInquiries ? 'secondary' : 'outline'}
-              onClick={toggleInquiries}
-            >
-              <MailQuestionIcon className="size-4" />
-              문의함
-              {pendingCount > 0 && (
-                <span className="rounded-full bg-warning-soft px-1.5 text-[11px] font-medium text-warning tabular-nums">
-                  {pendingCount}
-                </span>
-              )}
-            </Button>
-            <Button onClick={() => setCreateOpen(true)}>
-              <PlusIcon className="size-4" />
-              방 만들기
-            </Button>
+    <div data-network-page className="-m-4 flex min-h-0 min-w-0 flex-1 bg-white">
+      <aside
+        aria-label="중개방 목록"
+        className="flex w-[280px] shrink-0 flex-col border-r border-border bg-[#fbfbfa]"
+      >
+        <RoomListPanel
+          selectedRoomId={showInquiries ? null : selectedRoomId}
+          inquiriesSelected={showInquiries}
+          pendingInquiryCount={pendingCount}
+          onSelect={selectRoom}
+          onOpenInquiries={openInquiries}
+          onCreateRoom={() => setCreateOpen(true)}
+        />
+      </aside>
+
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {showInquiries ? (
+          <InquiryBox />
+        ) : selectedRoomId ? (
+          <RoomDetail key={selectedRoomId} roomId={selectedRoomId} onLeft={clearRoom} />
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-8 text-center">
+            <p className="text-[14px] font-medium text-foreground">중개방을 선택하세요</p>
+            <p className="max-w-[360px] text-[13px] leading-[1.6] text-muted-foreground">
+              왼쪽에서 방을 고르면 그 방에 공유된 매물과 대화가 열립니다. 찾기에서 공개방에
+              참여하거나 새 방을 만들 수 있습니다.
+            </p>
           </div>
-        }
-      />
-
-      <div className="flex min-h-0 flex-1 overflow-hidden rounded-lg border bg-background">
-        {/* 좌측: 방 목록 */}
-        <aside className="flex w-64 shrink-0 flex-col border-r md:w-72">
-          <RoomListPanel
-            selectedRoomId={selectedRoomId}
-            onSelect={selectRoom}
-            onCreateRoom={() => setCreateOpen(true)}
-          />
-        </aside>
-
-        {/* 우측: 방 작업공간 또는 문의함 */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {showInquiries ? (
-            <InquiryBox />
-          ) : selectedRoomId ? (
-            <RoomDetail key={selectedRoomId} roomId={selectedRoomId} onLeft={clearRoom} />
-          ) : (
-            <div className="flex flex-1 items-center justify-center p-6">
-              <EmptyState
-                icon={UsersRoundIcon}
-                title="중개방을 선택하세요"
-                description="왼쪽 목록에서 방을 선택하면 공유 매물 피드와 채팅이 열립니다. 공개방 탭에서 새로운 방을 찾아 참여할 수도 있습니다."
-                action={
-                  <Button size="sm" onClick={() => setCreateOpen(true)}>
-                    <PlusIcon className="size-4" /> 방 만들기
-                  </Button>
-                }
-              />
-            </div>
-          )}
-        </main>
-      </div>
+        )}
+      </main>
 
       <CreateRoomDialog
         open={createOpen}

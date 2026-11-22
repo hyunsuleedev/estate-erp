@@ -1,24 +1,24 @@
 import type {
-  BrokerageCase,
-  BrokerageCaseLedgerResponse,
+  CustomerLedgerRow,
+  CustomerLedgerResponse,
 } from "@estate-erp/api-client";
 
-export function getNextLedgerCursor(lastPage: BrokerageCaseLedgerResponse) {
+export function getNextLedgerCursor(lastPage: CustomerLedgerResponse) {
   return lastPage.pagination.nextCursor ?? undefined;
 }
 
 export function mergeLedgerPages(
-  pages: BrokerageCaseLedgerResponse[] | undefined,
-): BrokerageCase[] {
+  pages: CustomerLedgerResponse[] | undefined,
+): CustomerLedgerRow[] {
   if (!pages) return [];
 
-  const merged: BrokerageCase[] = [];
+  const merged: CustomerLedgerRow[] = [];
   const seenCaseIds = new Set<string>();
   for (const page of pages) {
-    for (const brokerageCase of page.items) {
-      if (seenCaseIds.has(brokerageCase.id)) continue;
-      seenCaseIds.add(brokerageCase.id);
-      merged.push(brokerageCase);
+    for (const project of page.items) {
+      if (seenCaseIds.has(project.id)) continue;
+      seenCaseIds.add(project.id);
+      merged.push(project);
     }
   }
   return merged;

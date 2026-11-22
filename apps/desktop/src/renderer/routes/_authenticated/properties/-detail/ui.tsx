@@ -98,3 +98,50 @@ export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md'
 export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
   return <kbd className={cn('ml-0.5 font-sans text-[11px] text-current opacity-60', className)}>{children}</kbd>;
 }
+
+/**
+ * 문서형 상세(프로젝트 · 연락처)의 속성 한 줄. Notion 문서의 속성 줄처럼 왼쪽에 아이콘과 이름, 오른쪽에 값.
+ * 고칠 수 있는 값은 값 자리가 곧 고르는 단추다.
+ */
+export function DocProp({
+  icon,
+  label,
+  children,
+  align = 'center',
+}: {
+  icon: ReactNode;
+  label: string;
+  children: ReactNode;
+  /** 값이 여러 줄이면 start: 이름을 첫 줄에 맞춘다 */
+  align?: 'center' | 'start';
+}) {
+  return (
+    <div
+      className={cn(
+        'grid min-h-[34px] grid-cols-[150px_minmax(0,1fr)]',
+        align === 'start' ? 'items-start' : 'items-center',
+      )}
+    >
+      <dt
+        className={cn(
+          'flex items-center gap-2 text-[14px] text-[#37352f]/65 [&_svg]:size-[15px] [&_svg]:shrink-0 [&_svg]:text-[#37352f]/45',
+          align === 'start' && 'h-[34px]',
+        )}
+      >
+        {icon}
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          '-ml-1.5 flex min-w-0 gap-1.5 text-[14px] leading-[22px] text-[#37352f]',
+          align === 'start' ? 'flex-col py-1.5' : 'items-center',
+        )}
+      >
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+/** 문서형 상세에서 화면이 이보다 넓으면 옆 열을 둔다 (매물 상세와 같은 기준). */
+export const DOC_WIDE_LAYOUT = 1080;

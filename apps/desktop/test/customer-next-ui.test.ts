@@ -4,9 +4,9 @@ import { dirname, resolve } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import type {
-  BrokerageCase,
-  BrokerageCaseDemandIntent,
-  BrokerageCaseListingIntent,
+  CustomerLedgerRow,
+  CustomerLedgerDemandIntent,
+  CustomerLedgerListingIntent,
 } from "@estate-erp/api-client";
 import {
   getCustomerCaseSelectionKeys,
@@ -95,13 +95,13 @@ function listingIntent(
   listingId: string,
   contextLabel: string,
   matchCount: number,
-): BrokerageCaseListingIntent {
+): CustomerLedgerListingIntent {
   return {
     listingIntakeId: intakeId,
     listingId,
     contextLabel,
     matchCount,
-  } as BrokerageCaseListingIntent;
+  } as CustomerLedgerListingIntent;
 }
 
 function demandIntent(
@@ -109,13 +109,13 @@ function demandIntent(
   contextLabel: string,
   matchCount: number,
   buyerIntakeId = "buyer-intake-a",
-): BrokerageCaseDemandIntent {
+): CustomerLedgerDemandIntent {
   return {
     buyerIntakeId,
     requirementId,
     contextLabel,
     matchCount,
-  } as BrokerageCaseDemandIntent;
+  } as CustomerLedgerDemandIntent;
 }
 
 describe("customer next workspace", () => {
@@ -154,7 +154,7 @@ describe("customer next workspace", () => {
     );
     assert.match(
       newDemandIntakePageSource,
-      /queryKey: \[['"]brokerage-cases['"]\]/,
+      /queryKey: \[['"]projects['"]\]/,
     );
     assert.match(newDemandIntakePageSource, /title="구함 의뢰 추가"/);
     // 취소하면 연 화면으로 돌아간다: 희망매물에서 열었으면 희망매물, 그 밖에는 고객 원장
@@ -182,7 +182,7 @@ describe("customer next workspace", () => {
     );
     assert.match(
       pageSource,
-      /const expanded = !collapsedCaseIds\.has\(brokerageCase\.id\)/,
+      /const expanded = !collapsedCaseIds\.has\(project\.id\)/,
     );
     assert.doesNotMatch(pageSource, /expandedCaseId/);
     assert.match(pageSource, /data-customer-intent-list/);
@@ -213,7 +213,7 @@ describe("customer next workspace", () => {
   });
 
   it("selects customer, demand intake and leaf branches hierarchically", () => {
-    const brokerageCase = {
+    const project = {
       id: "case-selection",
       demandIntents: [
         demandIntent("requirement-1", "강동구", 2, "buyer-intake-a"),
@@ -222,8 +222,8 @@ describe("customer next workspace", () => {
       listingIntents: [
         listingIntent("listing-intake-a", "listing-1", "고덕 101동", 1),
       ],
-    } as BrokerageCase;
-    const caseKeys = getCustomerCaseSelectionKeys(brokerageCase);
+    } as CustomerLedgerRow;
+    const caseKeys = getCustomerCaseSelectionKeys(project);
     const demandKeys = [
       getDemandSelectionKey("requirement-1"),
       getDemandSelectionKey("requirement-2"),
@@ -274,7 +274,7 @@ describe("customer next workspace", () => {
     assert.doesNotMatch(pageSource, /customers-next-case-date/);
     assert.doesNotMatch(
       pageSource,
-      /등록 \{formatDateShortYear\(brokerageCase\.createdAt\)\}/,
+      /등록 \{formatDateShortYear\(project\.createdAt\)\}/,
     );
     assert.doesNotMatch(styles, /\.customers-next-branch-selection/);
   });
@@ -317,7 +317,7 @@ describe("customer next workspace", () => {
     assert.match(pageSource, /useInfiniteQuery/);
     assert.match(
       pageSource,
-      /queryKey: \["brokerage-cases", "ledger", "customers", filters\]/,
+      /queryKey: \["projects", "ledger", "customers", filters\]/,
     );
     assert.match(
       pageSource,
@@ -334,7 +334,7 @@ describe("customer next workspace", () => {
   it("mirrors the production customer-ledger filter hierarchy", () => {
     assert.match(
       pageSource,
-      /type CustomerLedgerMode = Exclude<BrokerageCaseLedgerMode, "both">/,
+      /type LedgerModeFilter = Exclude<CustomerLedgerMode, "both">/,
     );
     assert.doesNotMatch(pageSource, /\{ value: "both", label: "양쪽" \}/);
     assert.match(pageSource, /<ViewBar/);
@@ -398,7 +398,7 @@ describe("customer next workspace", () => {
   it("offers the shared case action menu from every customer header", () => {
     assert.match(
       pageSource,
-      /<CustomerCaseActionMenu[\s\S]*?brokerageCase=\{brokerageCase\}[\s\S]*?customerName=\{customerName\}/,
+      /<CustomerCaseActionMenu[\s\S]*?project=\{project\}[\s\S]*?customerName=\{customerName\}/,
     );
     assert.match(
       customerCaseActionMenuSource,
@@ -424,7 +424,7 @@ describe("customer next workspace", () => {
     );
     assert.match(
       pageSource,
-      /caseIds\.set\(`listing:\$\{intent\.listingIntakeId\}`, brokerageCase\.id\)/,
+      /caseIds\.set\(`listing:\$\{intent\.listingIntakeId\}`, project\.id\)/,
     );
     assert.doesNotMatch(
       pageSource,
@@ -554,7 +554,7 @@ describe("customer next workspace", () => {
     );
     assert.match(
       customerDemandIntakeActionMenuSource,
-      /queryKey: \["brokerage-cases", "ledger"\]/,
+      /queryKey: \["projects", "ledger"\]/,
     );
     assert.match(
       customerDemandIntakeActionMenuSource,
@@ -692,7 +692,7 @@ describe("customer next workspace", () => {
     );
     assert.match(
       customerDemandIntentActionMenuSource,
-      /queryKey: \["brokerage-cases", "ledger"\]/,
+      /queryKey: \["projects", "ledger"\]/,
     );
   });
 
@@ -862,11 +862,11 @@ describe("customer next workspace", () => {
       ...listingIntent("intake-a", "listing-a", "고덕 101동", 0),
       intakeMemo: "가격 협의 가능",
       memo: "가격 협의 가능",
-    } as BrokerageCaseListingIntent;
+    } as CustomerLedgerListingIntent;
     const listingMemo = {
       ...fallbackMemo,
       memo: "전세 옵션만 입주일 협의",
-    } as BrokerageCaseListingIntent;
+    } as CustomerLedgerListingIntent;
 
     assert.equal(getCustomerListingOptionMemo(fallbackMemo), null);
     assert.equal(
@@ -875,8 +875,8 @@ describe("customer next workspace", () => {
     );
   });
 
-  it("summarizes each brokerage case without merging contacts across pages", () => {
-    const brokerageCase = {
+  it("summarizes each customer case without merging contacts across pages", () => {
+    const project = {
       id: "case-1",
       title: null,
       demandIntents: [
@@ -887,9 +887,9 @@ describe("customer next workspace", () => {
         listingIntent("intake-a", "listing-sale", "고덕 101동 101호", 1),
         listingIntent("intake-a", "listing-jeonse", "고덕 101동 101호", 2),
       ],
-    } as BrokerageCase;
+    } as CustomerLedgerRow;
 
-    assert.deepEqual(summarizeCustomerCase(brokerageCase), {
+    assert.deepEqual(summarizeCustomerCase(project), {
       demandCount: 1,
       listingCount: 1,
       demandMatchCount: 3,
@@ -898,7 +898,7 @@ describe("customer next workspace", () => {
   });
 
   it("shows a concise latest-consultation summary without hiding the empty state", () => {
-    assert.match(pageSource, /brokerageCase\.latestConsultation/);
+    assert.match(pageSource, /project\.latestConsultation/);
     assert.match(
       pageSource,
       /to="\/consultations"[\s\S]*?consultationId: latestConsultation\.id/,

@@ -373,7 +373,7 @@ function WantedPropertiesPage() {
     }
     // 저장 전에 받기 시작한 목록이 있어도 여기서 멈추고 다시 받으므로(invalidateQueries의 기본 동작),
     // 저장 전 값이 뒤늦게 도착해 고친 칸을 덮지 않는다.
-    for (const queryKey of [['buyer-requirements'], ['matches'], ['brokerage-cases']]) {
+    for (const queryKey of [['buyer-requirements'], ['matches'], ['projects']]) {
       void queryClient.invalidateQueries({ queryKey });
     }
 

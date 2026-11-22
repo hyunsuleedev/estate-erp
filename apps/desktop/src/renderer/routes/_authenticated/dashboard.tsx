@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlarmClock,
   ArrowRight,
-  Building2,
+  BookOpen,
   CalendarDays,
+  ChevronLeft,
   ChevronRight,
   Cloud,
   CloudFog,
@@ -16,17 +17,26 @@ import {
   Handshake,
   ListTodo,
   Megaphone,
+  MessageSquareText,
+  Monitor,
   Moon,
   Newspaper,
+  Phone,
+  PhoneIncoming,
+  PhoneOutgoing,
   Plus,
+  Sparkles as SparklesIcon,
   Sun,
   Tag,
   Type,
+  Users,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import type { CalendarEvent, Deal, Notice, Task } from '@estate-erp/api-client';
+import { formatFloorRange } from '@estate-erp/shared';
+import type { CalendarEvent, Consultation, Deal, Notice, Task } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
@@ -44,6 +54,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -55,7 +66,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/providers/auth-provider';
-import { formatDate } from '@/lib/format';
+import { formatDate, formatMoney, formatPhone } from '@/lib/format';
+import { collectPercent } from './cashflow/-cashflow-utils';
+import {
+  formatConsultationWhen,
+  getConsultationChannel,
+  getConsultationRowStatus,
+  getConsultationSummaryLine,
+  type ConsultationChannelKind,
+  type ConsultationRowStatus,
+} from './consultations/-consultation-list-model';
 import {
   formatDealAmount,
   formatNextPaymentName,
@@ -85,20 +105,13 @@ export const Route = createFileRoute('/_authenticated/dashboard')({
 });
 
 /*
- * 디자인 메모 — 오늘의 보드와 한 장의 문서
+ * 디자인 메모 — 오늘의 보드와 3단 풀화면 카드 워크벤치
  * 맨 위는 인사 영역이다. 판 전체가 하늘이고 오른쪽에 색이 있는 작은 동네가 있다(-dashboard-scene.tsx).
- * 땅이 오늘의 시간 축이라 해가 지금 시각 위에 뜨고 오늘 일정이 깃발로 꽂힌다. 하늘은 시각과 사무소 위치의 날씨를 따른다 —
- * 밤이면 판이 어두워지고 글자가 밝아진다. 색을 쓰는 곳은 그림뿐이고 글자·알약·도구 단추는 그대로다. 숫자 셋은 알약 단추다.
- * 그 아래는 카드가 아니라 Notion 문서 한 장이다. 테두리와 그림자 없이 제목·여백·가는 선이 구획을 나눈다.
- *   왼쪽 단: 오늘 요약 한 문단(문장 안의 알약이 바로가기) · 이번 주 띠와 고른 날의 일정 · 할 일(지남/오늘/다가옴 접는 묶음)
- *   오른쪽 단: 진행 거래 표 · 공지사항 · 부동산 뉴스 · 관리단지
- * 지표 타일과 수금·'확인할 것' 요약은 두지 않는다. 대시보드는 숫자판이 아니라 오늘의 일정과 일이 보이는 곳이다.
- *
- * 한 화면 원칙 — 두 단이 탭 높이의 나머지를 받고, 길면 단 안에서 굴린다.
- * 부동산 뉴스·관리단지는 서버에 데이터가 없어 자리만 둔다(SoonSection).
- * 공지사항은 사무소 공지가 아니라 에스테잇플로우가 모든 사용자에게 알리는 공지다. 앱에서는 보고 읽음 표시만 한다
- * (올리는 화면은 앱에 두지 않는다. 운영자가 서버 API로 올린다).
- * 움직임과 표의 subgrid처럼 유틸리티로 쓰기 번거로운 것은 -dashboard.css에 있다.
+ * 땅이 오늘의 시간 축이라 해가 지금 시각 위에 뜨고 오늘 일정이 깃발로 꽂힌다. 하늘은 시각과 사무소 위치의 날씨를 따른다.
+ * 아래는 순백(#ffffff) 바탕 위에 둥근 흰 카드(14px) 3단으로 나눈다:
+ *   왼쪽 단(308px, sticky): 월간 달력 · 선택한 날의 타임라인 + 다가오는 일정
+ *   가운데 단(유동): 내 할 일(지남/오늘/다가옴 접는 묶음) · 진행 중인 거래 표 · 최근 상담 내역
+ *   오른쪽 단(276px, sticky, 1260px 미만에서 자동 숨김): 이달 수금(대표·실장) · 공지사항 · 앱 사용법 가이드 · 부동산 뉴스(준비 중)
  */
 
 /* --------------------------------- 공통 --------------------------------- */
@@ -128,6 +141,7 @@ function greetingByHour(hour: number): string {
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const WEEKDAYS_MON = ['월', '화', '수', '목', '금', '토', '일'];
 
 function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -140,6 +154,11 @@ function addDays(date: Date, days: number): Date {
 /** 이번 주 월요일 0시 */
 function startOfWeek(date: Date): Date {
   return addDays(startOfDay(date), -((date.getDay() + 6) % 7));
+}
+
+function parseDateKey(key: string): Date {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
 }
 
 function shortDate(value: string | Date): string {
@@ -236,39 +255,35 @@ function statusBody(view: QueryView, onRetry: () => void, rows = 4): ReactNode {
   return null;
 }
 
-/* --------------------------------- 문서 구획 --------------------------------- */
+/* --------------------------------- 카드 머리 --------------------------------- */
 
-/** 구획 제목 줄: 회색 아이콘 + 제목 + 회색 건수, 오른쪽에 바로가기 */
 function SectionHead({
   icon: Icon,
   title,
   count,
   meta,
   action,
+  divided = false,
 }: {
   icon: LucideIcon;
   title: string;
   count?: number;
   meta?: ReactNode;
   action?: ReactNode;
+  divided?: boolean;
 }) {
   return (
-    <header className="flex min-h-8 items-center gap-2">
+    <header className={cn('flex min-h-8 items-center gap-2', divided && 'mb-2 border-b border-border pb-2')}>
       <Icon className="size-4 shrink-0 text-sidebar-icon" strokeWidth={1.6} aria-hidden="true" />
-      <h2 className="shrink-0 text-[15px] leading-6 font-semibold tracking-[-0.01em]">{title}</h2>
-      {count != null && <span className="text-[13px] text-muted-foreground/70 tabular-nums">{count}</span>}
+      <h2 className="min-w-0 truncate text-[15.5px] leading-6 font-bold tracking-[-0.02em] text-foreground">{title}</h2>
+      {count != null && <span className="shrink-0 text-[13px] text-muted-foreground/75 tabular-nums">{count}</span>}
       {meta != null && (
         <span className="min-w-0 truncate text-xs text-muted-foreground/80 tabular-nums">{meta}</span>
       )}
-      {action && <div className="ml-auto flex shrink-0 items-center gap-0.5">{action}</div>}
+      {action && <div className="ml-auto flex shrink-0 items-center gap-1.5">{action}</div>}
     </header>
   );
 }
-
-/** 줄에 올렸을 때의 바탕 (Notion의 옅은 먹색) */
-const ROW_HOVER = 'hover:bg-foreground/[0.045] focus-within:bg-foreground/[0.045]';
-/** 문서의 한 단. 구획 사이는 여백으로만 나누고, 길면 단 안에서 굴린다. */
-const DOC_COLUMN = 'flex min-h-0 min-w-0 flex-col gap-4 overflow-auto px-1.5 pb-4';
 
 function MoreLink({ to, children }: { to: LinkProps['to']; children: ReactNode }) {
   return (
@@ -288,34 +303,6 @@ function MoreLink({ to, children }: { to: LinkProps['to']; children: ReactNode }
 function EmptyNote({ children }: { children: ReactNode }) {
   return <p className="px-1.5 py-2 text-[13px] text-muted-foreground/80">{children}</p>;
 }
-
-/** 서버에 아직 데이터가 없는 구획. 제목과 한 줄 설명, '준비 중'만 둔다. */
-function SoonSection({
-  icon,
-  title,
-  description,
-  order,
-}: {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  order: number;
-}) {
-  return (
-    <section className="dash-sec min-w-0" style={stagger(order)}>
-      <SectionHead
-        icon={icon}
-        title={title}
-        action={<span className="px-1.5 text-xs text-muted-foreground/70">준비 중</span>}
-      />
-      <p className="py-1.5 pl-6 text-[13px] leading-5 break-keep text-muted-foreground/80">{description}</p>
-    </section>
-  );
-}
-
-/** 요약 문단 안의 알약. 문장 속 낱말이 곧 바로가기다. */
-const MENTION =
-  'mx-px inline-flex h-6 max-w-full items-center gap-[5px] rounded-[5px] bg-foreground/[0.06] px-[7px] align-[1px] text-sm font-medium whitespace-nowrap text-foreground transition-colors hover:bg-foreground/[0.11] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
 
 /* -------------------------------- 인사 헤더 -------------------------------- */
 
@@ -363,14 +350,6 @@ const WEATHER_ICON: Record<WeatherKind, LucideIcon> = {
   fog: CloudFog,
 };
 
-/**
- * 개발 중 미리보기 — 서버가 사무소 날씨를 주기 전까지 그림의 날씨와 시각을 바꿔 볼 수 있게 한다.
- * 개발 빌드에서만 동작한다. 개발자 도구 콘솔에서:
- *   dashWeather('rain')        비 (clear · partly · cloudy · rain · snow · thunder · fog · mixed)
- *   dashWeather('mixed', 12.5) 오후부터 비, 그림의 시각은 12시 30분
- *   dashWeather(null)          끄기
- * 고른 값은 이 기기에 남아 다시 열어도 유지된다.
- */
 const PREVIEW_KEY = 'dashboard-weather-preview';
 const PREVIEW_TEMP: Record<WeatherKind, number> = { clear: 14, partly: 13, cloudy: 11, rain: 9, snow: -2, thunder: 10, fog: 7 };
 
@@ -410,7 +389,6 @@ function useWeatherPreview(realHour: number): WeatherPreview | null {
       delete target.dashWeather;
     };
   }, []);
-  // version은 다시 읽게 하려고만 쓴다
   void version;
   return import.meta.env.DEV ? readWeatherPreview(realHour) : null;
 }
@@ -470,21 +448,15 @@ function Briefing({
   events: number;
   openTasks: number;
   overdueCount: number;
-  /** unavailable: 업무·일정을 불러오지 못했거나 오프라인 — 숫자를 단정하지 않고 비워 둔다 */
   status: 'pending' | 'ready' | 'unavailable';
-  /** 그림의 시간 축에 꽂을 오늘 일정 */
   flags: SceneFlag[];
-  /** 업무를 완료할 때마다 늘어나는 수 (해가 뛰고 반짝이가 튄다) */
   cheer: number;
-  /** 사무소 위치의 날씨. 없으면 그림은 맑은 날로 그리고 날씨 글자는 내지 않는다. */
   weather?: SceneWeather;
-  /** 그림과 인사말의 시각 (0~24의 소수) */
   hour: number;
   onPin: (target: PinTarget) => void;
   tools: ReactNode;
 }) {
   const greeting = `${greetingByHour(Math.floor(hour))}${userName ? `, ${userName}님` : ''}`;
-  // 판의 밝기는 시각과 날씨가 정한다. 어두우면(밤) 글자가 밝아진다.
   const tone = sceneState(hour, now, weather).amb.tone;
   const pins: Array<{ key: PinTarget; icon: LucideIcon; label: string; value: number; bad?: boolean }> = [
     { key: 'schedule', icon: CalendarDays, label: '오늘 일정', value: events },
@@ -579,126 +551,195 @@ function eventTimeLabel(event: CalendarEvent, day: Date): string {
   return end && end.getTime() < addDays(day, 1).getTime() ? `~${clockLabel(end)}` : '종일';
 }
 
-function WeekSection({
-  scope,
-  userId,
-  events,
-  weekEvents,
-  taskCountByDay,
-  weekStart,
+function eventDotTone(type: string | null | undefined): 'contract' | 'meeting' | 'default' {
+  const normalized = (type ?? '').toLowerCase();
+  if (normalized.includes('contract') || normalized.includes('closing') || normalized.includes('payment')) {
+    return 'contract';
+  }
+  if (normalized.includes('meeting') || normalized.includes('visit') || normalized.includes('consult')) {
+    return 'meeting';
+  }
+  return 'default';
+}
+
+function upcomingDayLabel(startIso: string, now: Date): string {
+  const start = new Date(startIso);
+  const diffDays = Math.round((startOfDay(start).getTime() - startOfDay(now).getTime()) / 86_400_000);
+  if (diffDays === 1) return '내일';
+  return `${start.getMonth() + 1}.${start.getDate()} (${WEEKDAYS[start.getDay()]})`;
+}
+
+function MiniCalendarCard({
+  viewMonth,
+  calendarDays,
+  monthEvents,
   selectedKey,
+  todayKey,
   onSelectDay,
-  now,
+  onPrevMonth,
+  onNextMonth,
+  onGoToday,
   focusDay,
 }: {
-  scope: Scope;
-  userId: string | undefined;
-  events: ReturnType<typeof useWeekEventsQuery>;
-  /** 범위를 적용한 이번 주 일정 */
-  weekEvents: CalendarEvent[];
-  /** 날짜별 남은 할 일 수 (기한이 그 날인 것) */
-  taskCountByDay: Map<string, number>;
-  weekStart: Date;
+  viewMonth: { year: number; month: number };
+  calendarDays: Date[];
+  monthEvents: CalendarEvent[];
   selectedKey: string;
-  onSelectDay: (key: string) => void;
-  now: Date;
-  /** 바뀔 때마다 고른 날의 단추로 포커스를 옮긴다 (인사 영역과 요약 문단의 알약) */
+  todayKey: string;
+  onSelectDay: (day: Date) => void;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
+  onGoToday: () => void;
   focusDay: number;
 }) {
   const selectedRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (focusDay > 0) selectedRef.current?.focus();
   }, [focusDay]);
-  const view = queryView(events);
-  const todayKey = localDateKey(now);
-  const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+
   const countByDay = new Map<string, number>();
-  for (const day of days) {
-    countByDay.set(localDateKey(day), weekEvents.filter((event) => eventCoversDay(event, day)).length);
+  for (const day of calendarDays) {
+    countByDay.set(localDateKey(day), monthEvents.filter((event) => eventCoversDay(event, day)).length);
   }
-  const selectedDate = days.find((day) => localDateKey(day) === selectedKey) ?? now;
-  // 종일이거나 전날부터 이어지는 일정이 먼저, 그다음 시작 시각 순
+
+  return (
+    <section className="dash-sec dash-bento-card dash-cal-card min-w-0" style={stagger(0)}>
+      <div className="mb-2.5 flex items-center justify-between gap-2">
+        <h2 className="text-[13.5px] font-bold tracking-[-0.015em] text-foreground tabular-nums">
+          {viewMonth.year}년 {viewMonth.month + 1}월
+        </h2>
+        <div className="inline-flex items-center gap-0.5">
+          <button
+            type="button"
+            className="dash-cal-btn focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            onClick={onPrevMonth}
+            aria-label="이전 달"
+          >
+            <ChevronLeft className="size-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="dash-cal-btn focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            onClick={onGoToday}
+          >
+            오늘
+          </button>
+          <button
+            type="button"
+            className="dash-cal-btn focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            onClick={onNextMonth}
+            aria-label="다음 달"
+          >
+            <ChevronRight className="size-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      <div className="dash-cal-weekdays" aria-hidden="true">
+        {WEEKDAYS_MON.map((day) => (
+          <span key={day}>{day}</span>
+        ))}
+      </div>
+
+      <div className="dash-cal-grid" role="group" aria-label="월간 달력">
+        {calendarDays.map((day) => {
+          const key = localDateKey(day);
+          const count = countByDay.get(key) ?? 0;
+          const isOut = day.getMonth() !== viewMonth.month;
+          const isToday = key === todayKey;
+          const isSelected = key === selectedKey;
+          return (
+            <button
+              key={key}
+              type="button"
+              ref={isSelected ? selectedRef : undefined}
+              aria-pressed={isSelected}
+              aria-label={`${shortDate(day)} 일정 ${count}건`}
+              onClick={() => onSelectDay(day)}
+              className={cn(
+                'dash-cal-day focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                isOut && 'is-out',
+                isToday && 'is-today',
+                isSelected && 'is-selected',
+              )}
+            >
+              <span className="dash-cal-num">{day.getDate()}</span>
+              <span className={cn('dash-cal-dot', count > 0 && 'has')} aria-hidden="true" />
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ScheduleCard({
+  scope,
+  userId,
+  eventsQuery,
+  monthEvents,
+  selectedDate,
+  selectedKey,
+  todayKey,
+  now,
+}: {
+  scope: Scope;
+  userId: string | undefined;
+  eventsQuery: ReturnType<typeof useMonthEventsQuery>;
+  monthEvents: CalendarEvent[];
+  selectedDate: Date;
+  selectedKey: string;
+  todayKey: string;
+  now: Date;
+}) {
+  const view = queryView(eventsQuery);
   const spansDay = (event: CalendarEvent) => event.allDay || startedBefore(event, selectedDate);
-  const dayEvents = weekEvents
+  const dayEvents = monthEvents
     .filter((event) => eventCoversDay(event, selectedDate))
     .sort((a, b) => Number(spansDay(b)) - Number(spansDay(a)) || byDateAsc(a.start, b.start));
+
+  const afterSelectedMs = addDays(selectedDate, 1).getTime();
+  const upcomingEvents = monthEvents
+    .filter((event) => new Date(event.start).getTime() >= afterSelectedMs)
+    .sort((a, b) => byDateAsc(a.start, b.start))
+    .slice(0, 4);
+
   const isToday = selectedKey === todayKey;
-  // '지금' 선은 오늘을 볼 때만, 아직 시작하지 않은 첫 일정 앞에 둔다. 남은 일정이 없으면 맨 끝.
   const nowIndex = isToday
     ? dayEvents.findIndex((event) => !spansDay(event) && new Date(event.start).getTime() > now.getTime())
     : -2;
+
   const nowLine = (
-    <li className="flex h-4 items-center gap-2 px-1.5" aria-hidden="true">
+    <li className="flex h-4 items-center gap-2 py-0.5 pl-1" aria-hidden="true">
       <span className="text-[11px] leading-4 font-semibold text-destructive tabular-nums">
         {clockLabel(now)}
       </span>
       <span className="flex-1 border-t border-destructive/55" />
     </li>
   );
+
   const personLabel = (id: string | null, name: string | null | undefined) =>
     id && id === userId ? '나' : (name ?? '미배정');
-  const status = statusBody(view, () => void events.refetch(), 2);
+
+  const status = statusBody(view, () => void eventsQuery.refetch(), 3);
 
   return (
-    <section className="dash-sec min-w-0" style={stagger(1)}>
-      <SectionHead
-        icon={CalendarDays}
-        title="이번 주"
-        meta={`${shortDate(selectedDate)}${isToday ? ' · 오늘' : ''}`}
-        action={<MoreLink to="/calendar">캘린더</MoreLink>}
-      />
-      <div className="grid grid-cols-7 gap-0.5 pt-0.5" role="group" aria-label="이번 주">
-        {days.map((day) => {
-          const key = localDateKey(day);
-          const count = countByDay.get(key) ?? 0;
-          const taskCount = taskCountByDay.get(key) ?? 0;
-          return (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={key === selectedKey}
-              aria-label={`${shortDate(day)} 일정 ${count}건, 할 일 ${taskCount}건`}
-              onClick={() => onSelectDay(key)}
-              ref={key === selectedKey ? selectedRef : undefined}
-              className={cn(
-                'flex flex-col items-center gap-[3px] rounded-lg pt-1.5 pb-[7px] text-xs leading-4 text-muted-foreground/80 transition-[background-color,transform] duration-150 hover:bg-foreground/[0.045] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none active:scale-[0.96]',
-                key === selectedKey && 'bg-foreground/[0.07] hover:bg-foreground/[0.07]',
-              )}
-            >
-              <span>{WEEKDAYS[day.getDay()]}</span>
-              <span
-                className={cn(
-                  'grid size-[26px] place-items-center rounded-full text-sm font-medium tabular-nums',
-                  // 오늘은 Notion 달력처럼 빨간 원, 지난 날은 흐리게
-                  key === todayKey
-                    ? 'bg-destructive text-white'
-                    : key < todayKey
-                      ? 'text-muted-foreground/70'
-                      : 'text-foreground',
-                )}
-              >
-                {day.getDate()}
-              </span>
-              <span className="flex h-1.5 gap-[3px]" aria-hidden="true">
-                {Array.from({ length: Math.min(count, 3) }, (_, index) => (
-                  <span key={index} className="size-1.5 rounded-full bg-muted-foreground/50" />
-                ))}
-              </span>
-              <span className="h-3.5 text-[11px] leading-[14px] text-muted-foreground/70 tabular-nums" aria-hidden="true">
-                {taskCount > 0 ? `할 일 ${taskCount}` : ''}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      <div className="pt-1">
+    <section className="dash-sec dash-bento-card dash-sched-card min-w-0" style={stagger(1)}>
+      <div>
+        <SectionHead
+          icon={CalendarDays}
+          title={`${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일 (${WEEKDAYS[selectedDate.getDay()]})${isToday ? ' · 오늘' : ''}`}
+          count={view === 'ready' ? dayEvents.length : undefined}
+          action={<MoreLink to="/calendar">캘린더</MoreLink>}
+          divided
+        />
         {status ??
           (dayEvents.length === 0 ? (
             <EmptyNote>
               {isToday ? '오늘 잡힌 일정이 없습니다.' : '이 날 잡힌 일정이 없습니다.'}
             </EmptyNote>
           ) : (
-            <ol>
+            <ol className="dash-timeline">
               {dayEvents.map((event, index) => {
                 const meta = [
                   event.property?.site?.name,
@@ -709,19 +750,37 @@ function WeekSection({
                 ]
                   .filter(Boolean)
                   .join(' · ');
+                const dotTone = eventDotTone(event.type);
                 return (
                   <Fragment key={event.id}>
                     {index === nowIndex && nowLine}
-                    <li className={cn('grid min-h-[30px] grid-cols-[48px_minmax(0,1fr)_auto] items-baseline gap-x-2 rounded px-1.5 py-[5px]', ROW_HOVER)}>
-                      <span className="text-sm leading-5 font-semibold tabular-nums">
-                        {eventTimeLabel(event, selectedDate)}
-                      </span>
-                      <Link to="/calendar" className="truncate text-sm leading-5 font-medium hover:underline">
-                        {event.title}
+                    <li className="relative">
+                      <span
+                        className={cn(
+                          'dash-tl-dot',
+                          dotTone === 'contract' && 'is-contract',
+                          dotTone === 'meeting' && 'is-meeting',
+                        )}
+                        aria-hidden="true"
+                      />
+                      <Link
+                        to="/calendar"
+                        className="dash-tl-item focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                      >
+                        <span className="w-[46px] shrink-0 pt-px text-xs leading-5 font-semibold text-foreground tabular-nums">
+                          {eventTimeLabel(event, selectedDate)}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] leading-5 font-medium text-foreground">
+                            {event.title}
+                          </span>
+                          {meta && (
+                            <span className="block truncate text-[11.5px] leading-4 text-muted-foreground">
+                              {meta}
+                            </span>
+                          )}
+                        </span>
                       </Link>
-                      {meta && (
-                        <span className="max-w-[12rem] truncate text-xs leading-4 text-muted-foreground">{meta}</span>
-                      )}
                     </li>
                   </Fragment>
                 );
@@ -729,6 +788,64 @@ function WeekSection({
               {isToday && nowIndex === -1 && nowLine}
             </ol>
           ))}
+      </div>
+
+      <div className="border-t border-border pt-3.5">
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <h3 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">다가오는 일정</h3>
+          {view === 'ready' && upcomingEvents.length > 0 && (
+            <span className="text-[11.5px] text-muted-foreground/80 tabular-nums">{upcomingEvents.length}건</span>
+          )}
+        </div>
+        {view !== 'ready' ? (
+          <p className="px-1 py-1 text-xs text-muted-foreground/75">
+            {view === 'pending' ? '불러오는 중입니다.' : '일정을 불러오면 여기에 표시됩니다.'}
+          </p>
+        ) : upcomingEvents.length === 0 ? (
+          <EmptyNote>예정된 다가오는 일정이 없습니다.</EmptyNote>
+        ) : (
+          <ul className="flex flex-col gap-0.5">
+            {upcomingEvents.map((event) => {
+              const dotTone = eventDotTone(event.type);
+              const meta = [
+                event.allDay ? '종일' : clockLabel(new Date(event.start)),
+                event.property?.site?.name ?? event.contact?.name,
+              ]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <li key={event.id}>
+                  <Link
+                    to="/calendar"
+                    className="flex items-start gap-2 rounded-md px-1.5 py-1.5 transition-colors hover:bg-foreground/[0.045] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                  >
+                    <span className="w-[52px] shrink-0 pt-0.5 text-[11.5px] font-semibold text-muted-foreground tabular-nums">
+                      {upcomingDayLabel(event.start, now)}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'mt-[6px] size-1.5 shrink-0 rounded-full bg-orange',
+                        dotTone === 'contract' && 'bg-violet',
+                        dotTone === 'meeting' && 'bg-info',
+                      )}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] leading-[1.35] font-medium text-foreground">
+                        {event.title}
+                      </span>
+                      {meta && (
+                        <span className="block truncate text-[11px] leading-4 text-muted-foreground tabular-nums">
+                          {meta}
+                        </span>
+                      )}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </section>
   );
@@ -748,9 +865,9 @@ function taskBucket(task: Task): TaskBucket {
 }
 
 const TASK_TABS: Array<{ key: TaskBucket; label: string }> = [
-  { key: 'overdue', label: '지남' },
+  { key: 'overdue', label: '기한 지남' },
   { key: 'today', label: '오늘' },
-  { key: 'upcoming', label: '다가옴' },
+  { key: 'upcoming', label: '다가오는 할 일' },
 ];
 
 /** 미룰 날짜 후보. 지금 기한(없으면 오늘)보다 뒤인 날만 남긴다. */
@@ -785,16 +902,26 @@ function TaskSection({
   now,
   reveal,
   onCheer,
+  canViewCashflow,
+  ledgerPercentLabel,
+  unreadNotices,
+  onOpenDigest,
+  digestTriggerRef,
 }: {
   scope: Scope;
   userId: string | undefined;
   tasks: ReturnType<typeof useTasksQuery>;
   openTasks: Task[];
   now: Date;
-  /** 바뀔 때마다 그 묶음을 펴고 묶음 머리로 포커스를 옮긴다 (인사 영역과 요약 문단의 알약) */
+  /** 바뀔 때마다 그 묶음을 펴고 묶음 머리로 포커스를 옮긴다 (인사 영역의 알약) */
   reveal: { bucket: TaskBucket; n: number } | null;
   /** 완료가 저장됐을 때 불린다 (해가 뛰고 반짝이가 튄다) */
   onCheer: () => void;
+  canViewCashflow: boolean;
+  ledgerPercentLabel: string;
+  unreadNotices: number;
+  onOpenDigest: () => void;
+  digestTriggerRef: React.RefObject<HTMLButtonElement | null>;
 }) {
   const queryClient = useQueryClient();
   // 방금 완료를 누른 줄. 체크 상자에서 반짝이가 한 번 튄다.
@@ -871,6 +998,7 @@ function TaskSection({
   const mine = scope === 'mine' && Boolean(userId);
   const groups: Record<TaskBucket, Task[]> = { overdue: [], today: [], upcoming: [] };
   for (const task of openTasks) groups[taskBucket(task)].push(task);
+  const visibleGroups = TASK_TABS.filter((item) => groups[item.key].length > 0 || reveal?.bucket === item.key);
   const emptyText: Record<TaskBucket, string> = {
     overdue: '기한이 지난 업무가 없습니다.',
     today: mine ? '오늘 안에 할 내 업무가 없습니다.' : '오늘 안에 할 업무가 없습니다.',
@@ -893,14 +1021,19 @@ function TaskSection({
     ]
       .filter(Boolean)
       .join(' · ');
+    const dueLabel = !task.dueDate
+      ? '기한 없음'
+      : bucket === 'overdue' && days != null
+        ? `${Math.abs(days)}일 지남`
+        : days === 0
+          ? '오늘'
+          : days === 1
+            ? '내일'
+            : shortDate(task.dueDate);
     return (
       <li
         key={task.id}
-        className={cn(
-          'group/task flex min-h-[30px] items-center gap-[9px] rounded px-1.5 py-[3px] transition-[background-color,opacity]',
-          ROW_HOVER,
-          busy && 'opacity-45',
-        )}
+        className={cn('group/task dash-todo', busy && 'opacity-45')}
       >
         {/* Notion의 네모 체크 상자. 누르면 파랗게 차며 체크가 그려진다. */}
         <button
@@ -920,26 +1053,28 @@ function TaskSection({
           </svg>
           {burst?.id === task.id && <Sparkles key={burst.n} count={6} />}
         </button>
-        <span className="flex min-w-0 flex-1 items-baseline gap-2">
-          <Link to="/tasks" className="truncate text-sm leading-5 hover:underline">
+        <div className="min-w-0 flex-1">
+          <Link to="/tasks" className="block truncate text-[13.5px] leading-[1.4] text-foreground hover:underline">
             {task.title}
           </Link>
-          {meta && <span className="min-w-0 shrink-[3] truncate text-xs leading-4 text-muted-foreground/80">{meta}</span>}
-        </span>
+          {meta && (
+            <div className="truncate text-[11.5px] leading-[1.4] text-muted-foreground">
+              {meta}
+            </div>
+          )}
+        </div>
         {options.length > 0 && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
+              <button
+                type="button"
                 disabled={busy}
                 aria-label={`${task.title} 미루기`}
-                title="미루기"
                 // 안 보일 때도 Tab으로 닿는다. 닿으면 드러난다.
-                className="text-muted-foreground opacity-0 group-hover/task:opacity-100 group-focus-within/task:opacity-100 data-[state=open]:opacity-100"
+                className="dash-todo-act opacity-0 group-hover/task:opacity-100 group-focus-within/task:opacity-100 data-[state=open]:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
-                <AlarmClock />
-              </Button>
+                미루기
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               {options.map((option) => (
@@ -956,98 +1091,122 @@ function TaskSection({
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        {bucket !== 'today' && (
-          <span
-            title={task.dueDate ? formatDate(task.dueDate) : undefined}
-            className={cn(
-              'shrink-0 text-xs leading-5 tabular-nums',
-              bucket === 'overdue' ? 'font-medium text-destructive-strong' : 'text-muted-foreground',
-            )}
-          >
-            {!task.dueDate
-              ? '기한 없음'
-              : bucket === 'overdue' && days != null
-                ? `${Math.abs(days)}일 지남`
-                : shortDate(task.dueDate)}
-          </span>
-        )}
+        <span
+          title={task.dueDate ? formatDate(task.dueDate) : undefined}
+          className={cn(
+            'shrink-0 text-xs leading-5 whitespace-nowrap tabular-nums',
+            bucket === 'overdue' ? 'font-medium text-destructive-strong' : 'text-muted-foreground',
+          )}
+        >
+          {dueLabel}
+        </span>
       </li>
     );
   };
 
   return (
-    <section className="dash-sec min-w-0" style={stagger(2)}>
-      <SectionHead
-        icon={ListTodo}
-        title="할 일"
-        count={view === 'ready' ? openTasks.length : undefined}
-        action={<MoreLink to="/tasks">업무</MoreLink>}
-      />
-      {status ??
-        TASK_TABS.map((item) => {
-          const list = groups[item.key];
-          const isOpen = opened[item.key];
-          return (
-            <div key={item.key}>
-              {/* Notion의 접는 묶음(toggle) */}
-              <button
-                type="button"
-                aria-expanded={isOpen}
-                ref={(element) => {
-                  headRefs.current[item.key] = element;
-                }}
-                onClick={() => setOpened((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
-                className="flex w-full items-center gap-1.5 rounded py-1 pr-1.5 pl-0.5 text-left text-sm font-medium transition-colors hover:bg-foreground/[0.045] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+    <section className="dash-sec dash-bento-card dash-center-card min-w-0" style={stagger(1)}>
+      <header className="mb-2 flex min-h-8 items-center justify-between gap-2.5 border-b border-border pb-2">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <ListTodo className="size-4 shrink-0 translate-y-[2px] text-sidebar-icon" strokeWidth={1.6} aria-hidden="true" />
+          <h2 className="truncate text-[16px] leading-6 font-bold tracking-[-0.02em] text-foreground">
+            내 할 일
+          </h2>
+          {view === 'ready' && (
+            <span className="shrink-0 text-xs font-normal text-muted-foreground tabular-nums">
+              남은 업무 {openTasks.length}건
+            </span>
+          )}
+        </span>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <span className="dash-scope-caption">{mine ? '내 담당 기준' : '사무소 전체 기준'}</span>
+          <div className="dash-compact-actions">
+            {canViewCashflow && (
+              <Link
+                to="/cashflow"
+                className="dash-compact-pill focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
-                <ChevronRight
-                  className={cn('size-[18px] text-muted-foreground transition-transform duration-200', isOpen && 'rotate-90')}
-                  strokeWidth={1.8}
-                  aria-hidden="true"
-                />
-                {item.label}
-                <span
-                  className={cn(
-                    'tabular-nums',
-                    item.key === 'overdue' && list.length > 0
-                      ? 'font-medium text-destructive-strong'
-                      : 'font-normal text-muted-foreground/70',
-                  )}
-                >
-                  {list.length}
-                </span>
-              </button>
-              {isOpen && (
-                <div className="pb-1 pl-[22px]">
-                  {list.length > 0 ? (
-                    <ul>{list.map(row)}</ul>
-                  ) : (
-                    item.key !== 'today' && <EmptyNote>{emptyText[item.key]}</EmptyNote>
-                  )}
-                  {item.key === 'today' && (
-                    <form
-                      className="flex min-h-[30px] items-center gap-[9px] rounded px-1.5 text-muted-foreground/70 focus-within:bg-foreground/[0.045]"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const title = draft.trim();
-                        if (title && !create.isPending) create.mutate(title);
-                      }}
-                    >
-                      <Plus className="size-4 shrink-0" aria-hidden="true" />
-                      <input
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
-                        placeholder={list.length === 0 ? `${emptyText.today} 새 할 일을 적고 Enter` : '새 할 일을 적고 Enter'}
-                        aria-label="오늘 할 일 추가"
-                        autoComplete="off"
-                        className="h-6 min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
-                      />
-                    </form>
-                  )}
-                </div>
+                이달 수금
+                <b className="font-semibold text-foreground tabular-nums">{ledgerPercentLabel}</b>
+              </Link>
+            )}
+            <button
+              ref={digestTriggerRef}
+              type="button"
+              onClick={onOpenDigest}
+              className="dash-compact-pill focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              공지
+              {unreadNotices > 0 && (
+                <b className="font-semibold text-info tabular-nums">{unreadNotices}</b>
               )}
-            </div>
-          );
-        })}
+              {' · 가이드'}
+            </button>
+          </div>
+          <MoreLink to="/tasks">업무</MoreLink>
+        </div>
+      </header>
+      {status ?? (
+        <>
+          {visibleGroups.length === 0 ? (
+            <EmptyNote>{mine ? '남은 내 할 일이 없습니다.' : '남은 할 일이 없습니다.'}</EmptyNote>
+          ) : (
+            visibleGroups.map((item) => {
+              const list = groups[item.key];
+              const isOpen = opened[item.key];
+              return (
+                <div key={item.key}>
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    ref={(element) => {
+                      headRefs.current[item.key] = element;
+                    }}
+                    onClick={() => setOpened((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
+                    className="dash-group-btn focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                  >
+                    <ChevronRight
+                      className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', isOpen && 'rotate-90')}
+                      strokeWidth={2}
+                      aria-hidden="true"
+                    />
+                    <span className={cn(item.key === 'overdue' && list.length > 0 && 'text-destructive-strong')}>
+                      {item.label}
+                    </span>
+                    <span className="font-normal text-muted-foreground tabular-nums">
+                      {list.length}
+                    </span>
+                  </button>
+                  {isOpen &&
+                    (list.length > 0 ? (
+                      <ul className="mb-1 flex flex-col gap-0.5">{list.map(row)}</ul>
+                    ) : (
+                      <EmptyNote>{emptyText[item.key]}</EmptyNote>
+                    ))}
+                </div>
+              );
+            })
+          )}
+          <form
+            className="dash-todo-add"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const title = draft.trim();
+              if (title && !create.isPending) create.mutate(title);
+            }}
+          >
+            <Plus className="size-4 shrink-0" aria-hidden="true" />
+            <input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="새 할 일 추가 후 Enter..."
+              aria-label="오늘 할 일 추가"
+              autoComplete="off"
+              className="h-6 min-w-0 flex-1 bg-transparent text-[13.5px] text-foreground outline-none placeholder:text-muted-foreground/75"
+            />
+          </form>
+        </>
+      )}
     </section>
   );
 }
@@ -1069,20 +1228,20 @@ function DealsSection({ deals }: { deals: ReturnType<typeof useDealsQuery> }) {
   const headIcon = 'size-[13px] shrink-0';
 
   return (
-    <section className="dash-sec min-w-0" style={stagger(3)}>
+    <section className="dash-sec dash-bento-card dash-center-card min-w-0" style={stagger(2)}>
       <SectionHead
         icon={Handshake}
-        title="진행 거래"
+        title="진행 중인 거래"
         count={view === 'ready' ? inProgress.length : undefined}
         action={<MoreLink to="/deals">거래관리</MoreLink>}
+        divided={active.length === 0}
       />
       {status ??
         (active.length === 0 ? (
           <EmptyNote>진행 중인 거래가 없습니다.</EmptyNote>
         ) : (
-          // Notion 표 모양: 머리 글자는 흐리게, 가로선과 옅은 세로선.
           // 줄 하나가 통째로 링크라서 표 역할(role=row)은 쓰지 않는다 — 씌우면 보조 기술에서 링크가 사라진다.
-          <div className="dash-table mt-0.5 border-t border-border">
+          <div className="dash-table mt-1 border-t border-border">
             <div className="dash-tr" aria-hidden="true">
               <span className="dash-th">
                 <Type className={headIcon} /> 거래
@@ -1156,10 +1315,370 @@ function DealRow({ deal }: { deal: Deal }) {
   );
 }
 
+/* ----------------------------- 최근 상담 내역 ----------------------------- */
+
+const CHANNEL_ICON: Record<ConsultationChannelKind, LucideIcon> = {
+  inbound: PhoneIncoming,
+  outbound: PhoneOutgoing,
+  phone: Phone,
+  visit: Users,
+  online: Monitor,
+  other: MessageSquareText,
+};
+
+const CHANNEL_TONE_CLASS: Record<ConsultationChannelKind, string> = {
+  inbound: 'bg-violet-soft text-violet',
+  outbound: 'bg-violet-soft text-violet',
+  phone: 'bg-violet-soft text-violet',
+  visit: 'bg-info-soft text-info-strong',
+  online: 'bg-success-soft text-success',
+  other: 'bg-neutral-soft text-muted-foreground-strong',
+};
+
+const CONSULT_STATUS_CLASS: Record<Exclude<ConsultationRowStatus['tone'], 'none'>, string> = {
+  todo: 'bg-destructive-soft text-destructive-strong',
+  busy: 'bg-info-soft text-info-strong',
+  failed: 'bg-destructive-soft text-destructive-strong',
+  done: 'bg-neutral-soft text-muted-foreground-strong',
+  quiet: 'bg-neutral-soft text-muted-foreground',
+};
+
+function getConsultationPropertyLabel(consultation: Consultation): string | null {
+  const siteName = consultation.property?.site?.name?.trim();
+  const unit = consultation.property?.unit;
+  if (!siteName && !unit) return null;
+  const dongName = unit?.dong?.name?.trim();
+  const dongLabel =
+    dongName && dongName !== '-' && !unit?.dong?.isPlaceholder
+      ? dongName.endsWith('동') ? dongName : `${dongName}동`
+      : null;
+  const unitName = unit?.name?.trim();
+  const unitLabel =
+    unitName && unitName !== '-'
+      ? unitName.endsWith('호') ? unitName : `${unitName}호`
+      : unit
+        ? formatFloorRange(unit) || null
+        : null;
+  return [siteName, dongLabel, unitLabel].filter(Boolean).join(' ') || null;
+}
+
+function ConsultationsSection({
+  scope,
+  userId,
+  consultations,
+  now,
+}: {
+  scope: Scope;
+  userId: string | undefined;
+  consultations: ReturnType<typeof useRecentConsultationsQuery>;
+  now: Date;
+}) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<Consultation | null>(null);
+  const openerRef = useRef<HTMLButtonElement | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+
+  const createFollowUp = useMutation({
+    mutationFn: (consultation: Consultation) => {
+      const due = startOfDay(new Date());
+      due.setHours(9);
+      const who = consultation.contact?.name ?? '고객';
+      return api.tasks.create({
+        title: `[상담 후속] ${who} 확인`,
+        dueDate: due.toISOString(),
+        assignedToId: userId,
+        contactId: consultation.contactId,
+        propertyId: consultation.propertyId ?? undefined,
+        consultationId: consultation.id,
+      });
+    },
+    onSuccess: (_result, consultation) => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast.success('후속 할 일을 추가했습니다', {
+        description: `${consultation.contact?.name ?? '고객'} 상담 후속`,
+      });
+      setSelected(null);
+    },
+    onError: (error) => toast.error(getErrorMessage(error)),
+  });
+
+  const view = queryView(consultations);
+  const items = consultations.data?.items ?? [];
+  const totalCount = consultations.data?.pagination?.total;
+  const status = statusBody(view, () => void consultations.refetch(), 3);
+
+  const selectedChannel = selected ? getConsultationChannel(selected) : null;
+  const selectedProperty = selected ? getConsultationPropertyLabel(selected) : null;
+  const selectedPhone = selected?.contact?.phone ? formatPhone(selected.contact.phone) : null;
+  const selectedAiSummary = selected?.callRecording?.summary?.trim();
+
+  return (
+    <section ref={sectionRef} className="dash-sec dash-bento-card dash-center-card min-w-0" style={stagger(3)}>
+      <SectionHead
+        icon={MessageSquareText}
+        title="최근 상담 내역"
+        count={view === 'ready' ? (totalCount ?? items.length) : undefined}
+        action={<MoreLink to="/consultations">상담분석</MoreLink>}
+        divided
+      />
+      {status ??
+        (items.length === 0 ? (
+          <EmptyNote>
+            {scope === 'mine' ? '내가 기록한 최근 상담이 없습니다.' : '최근 상담 내역이 없습니다.'}
+          </EmptyNote>
+        ) : (
+          <div>
+            {items.map((item) => {
+              const channel = getConsultationChannel(item);
+              const ChannelIcon = CHANNEL_ICON[channel.kind];
+              const rowStatus = getConsultationRowStatus(item);
+              const summaryLine = getConsultationSummaryLine(item);
+              const propertyLabel = getConsultationPropertyLabel(item);
+              const metaTail = [
+                propertyLabel,
+                scope === 'all' && item.createdBy?.name
+                  ? item.createdById === userId
+                    ? '나'
+                    : item.createdBy.name
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ');
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={(event) => {
+                    openerRef.current = event.currentTarget;
+                    setSelected(item);
+                  }}
+                  className="dash-consult-row focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                >
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span
+                        className={cn(
+                          'inline-flex h-[18px] shrink-0 items-center gap-1 rounded px-1.5 text-[11px] font-medium',
+                          CHANNEL_TONE_CLASS[channel.kind],
+                        )}
+                      >
+                        <ChannelIcon className="size-3" aria-hidden="true" />
+                        {channel.label}
+                      </span>
+                      <span className="truncate text-[13px] font-semibold text-foreground">
+                        {item.contact?.name ?? '미연결 고객'}
+                      </span>
+                      {metaTail && (
+                        <span className="min-w-0 truncate text-[11.5px] text-muted-foreground">
+                          · {metaTail}
+                        </span>
+                      )}
+                    </div>
+                    <p className="flex items-center gap-1 truncate text-[12.5px] leading-5 text-muted-foreground-strong">
+                      {summaryLine.fromAi && (
+                        <SparklesIcon className="size-3 shrink-0 text-info" aria-label="AI 요약" />
+                      )}
+                      <span className="truncate">
+                        {summaryLine.text || '기록된 상담 메모가 없습니다.'}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="text-[11px] text-muted-foreground tabular-nums">
+                      {formatConsultationWhen(item.createdAt, now)}
+                    </span>
+                    {rowStatus.tone !== 'none' && (
+                      <span
+                        title={rowStatus.hint}
+                        className={cn(
+                          'inline-flex h-[18px] items-center rounded px-1.5 text-[10.5px] font-semibold',
+                          CONSULT_STATUS_CLASS[rowStatus.tone],
+                        )}
+                      >
+                        {rowStatus.label}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ))}
+
+      <Dialog open={selected !== null} onOpenChange={(next) => !next && setSelected(null)}>
+        {selected && selectedChannel && (
+          <DialogContent
+            className="sm:max-w-lg"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              const opener = openerRef.current;
+              (opener?.isConnected ? opener : sectionRef.current?.querySelector<HTMLButtonElement>('button.dash-consult-row'))?.focus();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle className="flex flex-wrap items-center gap-2 leading-7">
+                <span>{selected.contact?.name ?? '미연결 고객'}</span>
+                <span
+                  className={cn(
+                    'inline-flex h-5 items-center gap-1 rounded px-1.5 text-xs font-medium',
+                    CHANNEL_TONE_CLASS[selectedChannel.kind],
+                  )}
+                >
+                  {selectedChannel.label}
+                </span>
+              </DialogTitle>
+              <DialogDescription>
+                {[
+                  formatConsultationWhen(selected.createdAt, now),
+                  selectedPhone,
+                  selectedProperty,
+                  selected.createdBy?.name ? `담당 ${selected.createdBy.name}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              {selectedAiSummary && selectedAiSummary !== selected.content.trim() && (
+                <div className="rounded-lg border border-border bg-muted px-3 py-2.5 text-xs leading-5 text-muted-foreground-strong">
+                  <div className="mb-1 inline-flex items-center gap-1 font-semibold text-info-strong">
+                    <SparklesIcon className="size-3" aria-hidden="true" />
+                    통화 AI 요약
+                  </div>
+                  <p className="whitespace-pre-wrap">{selectedAiSummary}</p>
+                </div>
+              )}
+              <div className="max-h-[45vh] overflow-auto rounded-lg border border-border bg-background px-3.5 py-3 text-sm leading-6 break-words whitespace-pre-wrap text-foreground">
+                {selected.content.trim() || '기록된 상담 내용이 없습니다.'}
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link to="/consultations" search={{ consultationId: selected.id }}>
+                  상담분석에서 열기
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={createFollowUp.isPending}
+                onClick={() => createFollowUp.mutate(selected)}
+              >
+                {createFollowUp.isPending ? '추가 중...' : '후속 할 일 추가'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        )}
+      </Dialog>
+    </section>
+  );
+}
+
+/* ----------------------------- 오른쪽 레일 카드 ----------------------------- */
+
+function CollectionCard({
+  ledger,
+}: {
+  ledger: ReturnType<typeof useMonthlyLedgerQuery>;
+}) {
+  const paused = isQueryPaused(ledger);
+  const summary = ledger.data?.summary;
+  const pct = summary ? collectPercent(summary.collectedTotal, summary.billedTotal) : 0;
+  const radius = 17;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - pct / 100);
+
+  return (
+    <Link
+      to="/cashflow"
+      className="dash-sec dash-bento-card dash-cash-card min-w-0 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+      style={stagger(2)}
+    >
+      {paused || ledger.isError ? (
+        <div className="flex w-full items-center gap-2.5 text-xs text-muted-foreground">
+          <Wallet className="size-4 shrink-0 text-sidebar-icon" aria-hidden="true" />
+          <span className="truncate">
+            {paused ? '오프라인 상태라 이달 수금을 불러올 수 없습니다.' : '이달 수금 정보를 불러오지 못했습니다.'}
+          </span>
+        </div>
+      ) : ledger.isPending ? (
+        <div className="flex w-full items-center gap-3">
+          <Skeleton className="size-[42px] shrink-0 rounded-full" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-4 w-28" />
+          </div>
+        </div>
+      ) : summary ? (
+        <>
+          <div className="relative size-[42px] shrink-0" aria-hidden="true">
+            <svg viewBox="0 0 42 42" className="size-[42px] -rotate-90">
+              <circle
+                cx="21"
+                cy="21"
+                r={radius}
+                fill="none"
+                stroke="rgb(55 53 47 / 0.09)"
+                strokeWidth="3.8"
+              />
+              <circle
+                cx="21"
+                cy="21"
+                r={radius}
+                fill="none"
+                stroke="var(--color-success)"
+                strokeWidth="3.8"
+                strokeLinecap="round"
+                strokeDasharray={circumference.toFixed(2)}
+                strokeDashoffset={dashOffset.toFixed(2)}
+              />
+            </svg>
+            <span className="absolute inset-0 grid place-items-center text-[10.5px] font-bold text-foreground tabular-nums">
+              {pct}%
+            </span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-1.5">
+              <span className="text-[11px] font-semibold text-muted-foreground">이달 수금</span>
+              {summary.overdueCount > 0 && (
+                <span className="rounded bg-destructive-soft px-1.5 py-px text-[10px] font-semibold text-destructive-strong tabular-nums">
+                  미수 {summary.overdueCount}건
+                </span>
+              )}
+            </div>
+            <div className="truncate text-[14.5px] leading-tight font-bold text-foreground tabular-nums">
+              {summary.billedTotal <= 0 ? (
+                '이번 달 청구 없음'
+              ) : (
+                <>
+                  {summary.collectedTotal > 0 ? formatMoney(summary.collectedTotal) : '0원'}
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    {' '}
+                    / {formatMoney(summary.billedTotal)}
+                  </span>
+                </>
+              )}
+            </div>
+            <div className="mt-0.5 truncate text-[11px] text-muted-foreground tabular-nums">
+              {summary.paymentCount > 0
+                ? `완료 ${summary.collectedCount}/${summary.paymentCount}건`
+                : ledger.data?.periodLabel ?? '이번 달'}
+            </div>
+          </div>
+        </>
+      ) : null}
+    </Link>
+  );
+}
+
 /* -------------------------------- 공지사항 -------------------------------- */
 
 /** 접힌 상태에서 보이는 공지 수 */
-const NOTICE_PREVIEW = 5;
+const NOTICE_PREVIEW = 4;
 
 function noticeDate(value: string): string {
   const date = new Date(value);
@@ -1168,20 +1687,19 @@ function noticeDate(value: string): string {
 
 function RequiredBadge() {
   return (
-    <span className="shrink-0 rounded px-[5px] py-px text-[11px] leading-4 font-semibold text-destructive-strong bg-destructive/10">
+    <span className="shrink-0 rounded px-[5px] py-px text-[10.5px] leading-4 font-semibold text-destructive-strong bg-destructive/10">
       필독
     </span>
   );
 }
 
 /**
- * 에스테잇플로우가 모든 사용자에게 알리는 공지. 안 읽은 것은 점과 굵은 글씨로 보이고,
- * 누르면 본문이 열리면서 읽은 것으로 표시된다. 서버가 안 읽은 필독을 맨 앞에 준다.
+ * 에스테잇플로우가 모든 사용자에게 알리는 공지 상태 및 읽음 동기화.
+ * 오른쪽 레일과 좁은 화면 요약 창이 같은 상태·열기 규칙을 공유한다.
  */
-function NoticeSection({ notices }: { notices: ReturnType<typeof useNoticesQuery> }) {
+function useNoticeReader(notices: ReturnType<typeof useNoticesQuery>) {
   const queryClient = useQueryClient();
   const [openId, setOpenId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
   const view = queryView(notices);
   // 읽은 공지의 기록을 목록 위에 얹는다. 대시보드에서 읽은 것뿐 아니라 필독 팝업이나 다른 탭에서 읽은 것도 들어 있다.
   // 읽기 전에 떠난 목록 응답이 늦게 도착해 캐시를 덮어도 다시 '안 읽음'으로 돌아가지 않는다.
@@ -1201,9 +1719,7 @@ function NoticeSection({ notices }: { notices: ReturnType<typeof useNoticesQuery
   // 최근 목록에 없다) 닫지 않는다 — 읽자마자 창이 사라지면 안 된다. 그래서 연 공지를 따로 기억해 둔다.
   const [lastOpened, setLastOpened] = useState<Notice | null>(null);
   const shownNotice = items.find((item) => item.id === openId) ?? lastOpened;
-  // 창을 닫으면 눌렀던 줄로 포커스를 돌려준다. 그 줄이 목록에서 빠졌으면 첫 줄로 보낸다.
   const openerRef = useRef<HTMLButtonElement | null>(null);
-  const sectionRef = useRef<HTMLElement>(null);
 
   const markRead = useMutation({
     mutationFn: (notice: Notice) => api.notices.markRead(notice.id),
@@ -1213,58 +1729,80 @@ function NoticeSection({ notices }: { notices: ReturnType<typeof useNoticesQuery
       // 다른 탭에도 알린다 (필독 팝업이 다른 탭에서 다시 뜨지 않게)
       announceNotice({ type: 'read', noticeId, readAt });
     },
-    // 읽음 표시가 실패해도 본문은 읽을 수 있다. 다음에 열 때 다시 시도한다.
   });
-  const open = (notice: Notice, opener: HTMLButtonElement) => {
+
+  const openNotice = (notice: Notice, opener: HTMLButtonElement | null) => {
     openerRef.current = opener;
     setLastOpened(notice);
     setOpenId(notice.id);
     if (!notice.readAt) markRead.mutate(notice);
   };
 
+  return { view, items, unread, openId, setOpenId, shownNotice, openNotice, openerRef };
+}
+
+function NoticeSection({
+  notices,
+  reader,
+  sectionRef,
+}: {
+  notices: ReturnType<typeof useNoticesQuery>;
+  reader: ReturnType<typeof useNoticeReader>;
+  sectionRef: React.RefObject<HTMLElement | null>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { view, items, unread, openNotice } = reader;
   const status = statusBody(view, () => void notices.refetch(), 3);
   const shown = expanded ? items : items.slice(0, NOTICE_PREVIEW);
   const hidden = items.length - shown.length;
 
   return (
-    <section ref={sectionRef} className="dash-sec min-w-0" style={stagger(4)}>
-      <SectionHead
-        icon={Megaphone}
-        title="공지사항"
-        meta={view === 'ready' && items.length > 0 ? (unread > 0 ? `안 읽음 ${unread}` : '모두 읽음') : undefined}
-      />
+    <section ref={sectionRef} className="dash-sec dash-bento-card dash-side-card min-w-0" style={stagger(3)}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
+          <Megaphone className="size-3.5 text-sidebar-icon" strokeWidth={1.7} aria-hidden="true" />
+          공지사항
+        </span>
+        {view === 'ready' && items.length > 0 && (
+          <span className={cn('text-[11px] tabular-nums', unread > 0 ? 'font-semibold text-info-strong' : 'text-muted-foreground')}>
+            {unread > 0 ? `안 읽음 ${unread}` : '모두 읽음'}
+          </span>
+        )}
+      </div>
+
       {status ??
         (items.length === 0 ? (
           <EmptyNote>새 공지가 없습니다.</EmptyNote>
         ) : (
           <>
-            <ul>
+            <ul className="dash-tl-feed">
               {shown.map((notice) => {
                 const isUnread = !notice.readAt;
                 return (
                   <li key={notice.id}>
                     <button
                       type="button"
-                      onClick={(event) => open(notice, event.currentTarget)}
+                      onClick={(event) => openNotice(notice, event.currentTarget)}
                       aria-label={`${notice.isRequired ? '필독 ' : ''}${notice.title}${isUnread ? ' (안 읽음)' : ''}`}
-                      className="grid min-h-[30px] w-full grid-cols-[8px_minmax(0,1fr)_auto] items-center gap-x-2 rounded px-1.5 py-[3px] text-left transition-colors hover:bg-foreground/[0.045] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                      className={cn(
+                        'dash-tl-entry group focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                        isUnread && 'is-unread',
+                      )}
                     >
-                      <span
-                        aria-hidden="true"
-                        className={cn('size-1.5 justify-self-center rounded-full', isUnread && 'bg-info')}
-                      />
                       <span className="flex min-w-0 items-center gap-1.5">
                         {notice.isRequired && <RequiredBadge />}
                         <span
                           className={cn(
-                            'truncate text-sm leading-5',
+                            'line-clamp-2 text-[12.5px] leading-[1.38] transition-colors group-hover:text-foreground',
                             isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground-strong',
                           )}
                         >
                           {notice.title}
                         </span>
                       </span>
-                      <span className="text-xs text-muted-foreground/80 tabular-nums">{noticeDate(notice.publishedAt)}</span>
+                      <span className="text-[11px] text-muted-foreground/80 tabular-nums">
+                        {noticeDate(notice.publishedAt)}
+                      </span>
                     </button>
                   </li>
                 );
@@ -1275,41 +1813,146 @@ function NoticeSection({ notices }: { notices: ReturnType<typeof useNoticesQuery
                 type="button"
                 aria-expanded={expanded}
                 onClick={() => setExpanded((value) => !value)}
-                className="mt-0.5 ml-[22px] inline-flex h-[26px] items-center rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                className="self-start rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 {expanded ? '접기' : `${hidden}건 더 보기`}
               </button>
             )}
           </>
         ))}
+    </section>
+  );
+}
 
-      <Dialog open={openId !== null} onOpenChange={(next) => !next && setOpenId(null)}>
-        {shownNotice && (
-          <DialogContent
-            className="sm:max-w-lg"
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              const opener = openerRef.current;
-              (opener?.isConnected ? opener : sectionRef.current?.querySelector<HTMLButtonElement>('li button'))?.focus();
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle className="flex items-start gap-2 leading-7 break-keep">
-                {shownNotice.isRequired && (
-                  <span className="mt-1.5">
-                    <RequiredBadge />
-                  </span>
-                )}
-                {shownNotice.title}
-              </DialogTitle>
-              <DialogDescription>에스테잇플로우 공지 · {formatDate(shownNotice.publishedAt)}</DialogDescription>
-            </DialogHeader>
-            <div className="max-h-[60vh] overflow-auto text-sm leading-6 break-words whitespace-pre-wrap text-foreground">
-              {shownNotice.body}
-            </div>
-          </DialogContent>
-        )}
-      </Dialog>
+/* --------------------------- 앱 사용법 가이드 배너 --------------------------- */
+
+interface AppGuide {
+  id: string;
+  theme: 'is-slate' | 'is-forest' | 'is-stone';
+  badge: string;
+  title: string;
+  sub: string;
+  tip: string;
+  steps: Array<{ title: string; desc: string }>;
+}
+
+const APP_GUIDES: AppGuide[] = [
+  {
+    id: 'guide-start',
+    theme: 'is-slate',
+    badge: 'GUIDE · 3분 시작',
+    title: '에스테잇플로우 빠른 시작 가이드',
+    sub: '매물 접수부터 프로젝트·계약까지 핵심 흐름 한눈에',
+    tip: '⌘K로 거래·고객·메뉴를 즉시 열고, 사이드바 접기/펼치기로 넓은 화면을 확보할 수 있습니다.',
+    steps: [
+      { title: '1. 매물·의뢰 등록', desc: '단지와 동·호수를 고르고 매매·전세·월세 의뢰 조건을 차곡차곡 쌓습니다.' },
+      { title: '2. 프로젝트로 손님별 진행 묶기', desc: '계속 주고받을 손님이나 공동중개 건은 프로젝트로 열어 상담·단계·코멘트를 한곳에서 봅니다.' },
+      { title: '3. 거래·계약·수금 자동 추적', desc: '가계약·본계약·중도금·잔금 일정과 중개보수 수금 현황을 대시보드에서 바로 확인합니다.' },
+    ],
+  },
+  {
+    id: 'guide-mcp',
+    theme: 'is-forest',
+    badge: 'MCP · AI 연동',
+    title: 'Claude로 네이버 내광고 비교하기',
+    sub: '내 광고 순위·층 노출 분석을 MCP로 바로 확인하세요',
+    tip: '로컬 PC에서 수집한 스냅샷만 서버에 반영되므로 네이버 계정이나 차단 걱정 없이 비교할 수 있습니다.',
+    steps: [
+      { title: '1. 로컬 Skill로 이실장·네이버 스냅샷 수집', desc: '이실장 내 광고와 네이버 동일 매물 묶음 스냅샷을 내 PC에서 안전하게 읽습니다.' },
+      { title: '2. 순위·대표광고·층 노출 차이 비교', desc: '더 저렴한 경쟁 광고나 정확한 층수가 공개된 타사 매물을 자동으로 짚어냅니다.' },
+      { title: '3. 수정 요청 정리 및 ERP 태스크 연계', desc: '가격·층 노출 조정과 재전송 요청을 ERP 광고 업무 태스크로 이어서 관리합니다.' },
+    ],
+  },
+  {
+    id: 'guide-tabs',
+    theme: 'is-stone',
+    badge: 'TIP · 멀티탭',
+    title: '멀티탭 & 단축키로 빠르게 일하기',
+    sub: '여러 거래·고객을 탭으로 열어두고 오가며 상담하세요',
+    tip: '상단 전역 검색(⌘K)이나 왼쪽 메뉴에서 여러 업무 화면을 탭으로 열어두고 빠르게 오갈 수 있습니다.',
+    steps: [
+      { title: '1. 상단 탭으로 여러 업무 동시에 열기', desc: '상담 중인 매물과 계약서 화면 여러 개를 상단 탭에 나란히 열어두고 전환할 수 있습니다.' },
+      { title: '2. 상단 ⌘K로 거래·고객·메뉴 즉시 이동', desc: '마우스 이동 없이 검색창에서 단지명·고객명·정산 화면으로 한 번에 점프합니다.' },
+      { title: '3. 대시보드에서 바로 후속 할 일 연결', desc: '최근 상담 내역을 열어 통화·방문 메모를 확인하고 오늘 후속 할 일을 바로 추가합니다.' },
+    ],
+  },
+];
+
+function GuideBannerCard({
+  bannerIdx,
+  onSelectBanner,
+  onOpenGuide,
+}: {
+  bannerIdx: number;
+  onSelectBanner: (index: number) => void;
+  onOpenGuide: (guideId: string) => void;
+}) {
+  const guide = APP_GUIDES[bannerIdx] ?? APP_GUIDES[0];
+  return (
+    <section
+      className={cn('dash-sec dash-guide-banner min-w-0', guide.theme)}
+      style={stagger(4)}
+      aria-label="앱 사용법 가이드"
+    >
+      <svg className="dash-banner-svg" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+        <path d="M12 68V30l18-12 18 12v38H12z" stroke="#ffffff" strokeWidth="2.4" />
+        <path d="M48 68V20l20-10v58H48z" stroke="#ffffff" strokeWidth="2.4" />
+        <path d="M22 40h6M22 49h6M56 32h6M56 41h6M56 50h6" stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" />
+      </svg>
+
+      <div className="relative z-[1] flex items-center justify-between gap-2">
+        <span className="inline-flex h-[18px] items-center rounded bg-white/15 px-1.5 text-[10px] font-semibold tracking-[0.02em] text-white/95">
+          {guide.badge}
+        </span>
+        <div className="inline-flex items-center gap-1" role="tablist" aria-label="가이드 슬라이드">
+          {APP_GUIDES.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={index === bannerIdx}
+              aria-label={`가이드 ${index + 1}: ${item.title}`}
+              onClick={() => onSelectBanner(index)}
+              className={cn(
+                'dash-banner-dot focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:outline-none',
+                index === bannerIdx && 'is-active',
+              )}
+            />
+          ))}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onOpenGuide(guide.id)}
+        className="relative z-[1] flex flex-col gap-1 rounded-md text-left focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:outline-none"
+      >
+        <div className="text-[13.5px] leading-[1.35] font-bold tracking-[-0.015em] text-white">
+          {guide.title}
+        </div>
+        <div className="text-[11.5px] leading-[1.4] text-white/80">{guide.sub}</div>
+        <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-white/95">
+          가이드 보기
+          <ArrowRight className="size-3" aria-hidden="true" />
+        </div>
+      </button>
+    </section>
+  );
+}
+
+function NewsCard() {
+  return (
+    <section className="dash-sec dash-bento-card dash-side-card min-w-0" style={stagger(5)}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
+          <Newspaper className="size-3.5 text-sidebar-icon" strokeWidth={1.7} aria-hidden="true" />
+          부동산 · 시장 뉴스
+        </span>
+        <span className="text-[11px] font-medium text-muted-foreground/75">준비 중</span>
+      </div>
+      <p className="text-xs leading-[1.55] break-keep text-muted-foreground/85">
+        정책, 시장, 우리 지역 소식이 여기에 나옵니다.
+      </p>
     </section>
   );
 }
@@ -1329,97 +1972,51 @@ function useDealsQuery() {
   return useQuery({ queryKey: ['deals'], queryFn: () => api.deals.findAll() });
 }
 
-/** 이번 주(월~일) 일정. 주간 띠의 점과 고른 날의 목록이 같은 응답을 쓴다. */
-function useWeekEventsQuery(weekStart: Date) {
+/** 오늘(0시~다음 날 0시) 일정. 달력을 다른 달로 넘겨도 인사 영역 숫자·그림 깃발이 유지된다. */
+function useTodayEventsQuery(todayKey: string, todayStart: Date) {
   return useQuery({
-    queryKey: ['calendar-events', 'week', localDateKey(weekStart)],
+    queryKey: ['calendar-events', 'day', todayKey],
     queryFn: () =>
       api.calendarEvents.findAll({
-        start: weekStart.toISOString(),
-        end: addDays(weekStart, 7).toISOString(),
+        start: todayStart.toISOString(),
+        end: addDays(todayStart, 1).toISOString(),
       }),
   });
 }
 
-/* --------------------------------- 요약 문단 --------------------------------- */
+/** 보고 있는 월간 달력과 선택한 날·다가오는 일정을 한 번에 불러온다. */
+function useMonthEventsQuery(rangeStart: Date, rangeEnd: Date) {
+  return useQuery({
+    queryKey: ['calendar-events', 'month', localDateKey(rangeStart), localDateKey(rangeEnd)],
+    queryFn: () =>
+      api.calendarEvents.findAll({
+        start: rangeStart.toISOString(),
+        end: rangeEnd.toISOString(),
+      }),
+  });
+}
 
-/** 오늘을 한 문단으로. 숫자 타일 대신 문장으로 읽고, 문장 안의 알약으로 그 자리에 간다. */
-function Lead({
-  status,
-  todayEvents,
-  nextEvent,
-  overdueCount,
-  oldestOverdue,
-  now,
-  onShowDay,
-  onShowOverdue,
-}: {
-  status: 'pending' | 'ready' | 'unavailable';
-  todayEvents: number;
-  nextEvent: CalendarEvent | undefined;
-  overdueCount: number;
-  oldestOverdue: Task | undefined;
-  now: Date;
-  onShowDay: (key: string) => void;
-  onShowOverdue: () => void;
-}) {
-  if (status === 'unavailable') return null;
-  if (status === 'pending') return <Skeleton className="mt-1 h-6 w-3/4 shrink-0" />;
-  const nextStart = nextEvent ? new Date(nextEvent.start) : null;
-  const nextDay = nextStart
-    ? localDateKey(nextStart) === localDateKey(now)
-      ? '오늘'
-      : `${WEEKDAYS[nextStart.getDay()]}요일`
-    : '';
-  return (
-    <p className="dash-sec text-[15px] leading-[30px] break-keep text-muted-foreground-strong" style={stagger(0)}>
-      {todayEvents > 0 ? (
-        <>
-          오늘 일정은 <b className="font-semibold text-foreground tabular-nums">{todayEvents}건</b>입니다.{' '}
-        </>
-      ) : (
-        '오늘은 잡힌 일정이 없습니다. '
-      )}
-      {nextEvent && nextStart && (
-        <>
-          다음 일정은{' '}
-          <button type="button" className={MENTION} onClick={() => onShowDay(localDateKey(nextStart))}>
-            <CalendarDays className="size-[13px] shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span className="truncate">
-              {nextDay} {clockLabel(nextStart)} {nextEvent.title}
-            </span>
-          </button>
-          입니다.{' '}
-        </>
-      )}
-      {overdueCount > 0 ? (
-        <>
-          밀린 업무가{' '}
-          <button
-            type="button"
-            className={cn(MENTION, 'bg-destructive/10 text-destructive-strong hover:bg-destructive/15')}
-            onClick={onShowOverdue}
-          >
-            {overdueCount}건
-          </button>{' '}
-          있습니다.
-          {oldestOverdue && (
-            <>
-              {' '}
-              가장 오래된 것은{' '}
-              <Link to="/tasks" className={MENTION}>
-                <ListTodo className="size-[13px] shrink-0 text-muted-foreground" aria-hidden="true" />
-                <span className="truncate">{oldestOverdue.title}</span>
-              </Link>
-              입니다.
-            </>
-          )}
-        </>
-      ) : (
-        '밀린 업무는 없습니다.'
-      )}
-    </p>
-  );
+function useRecentConsultationsQuery(scope: Scope, userId: string | undefined) {
+  return useQuery({
+    queryKey: ['consultations', 'dashboard', scope, scope === 'mine' ? (userId ?? 'none') : 'all'],
+    queryFn: () =>
+      api.consultations.findAll({
+        limit: 6,
+        sortOrder: 'desc',
+        createdById: scope === 'mine' && userId ? userId : undefined,
+      }),
+    enabled: scope === 'all' || Boolean(userId),
+  });
+}
+
+/** 이달 수금은 대표·실장 권한 전용(/finance/ledger @Roles('owner', 'manager')). */
+function useMonthlyLedgerQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['finance', 'ledger', 'this-month'],
+    queryFn: () => api.finance.ledger.get({ preset: 'this-month' }),
+    enabled,
+    staleTime: 60_000,
+  });
 }
 
 /* --------------------------------- 페이지 --------------------------------- */
@@ -1433,148 +2030,374 @@ function DashboardPage() {
     const timer = window.setTimeout(() => setPlaying(false), 2600);
     return () => window.clearTimeout(timer);
   }, []);
+
   const [reveal, setReveal] = useState<{ bucket: TaskBucket; n: number } | null>(null);
   const [cheer, setCheer] = useState(0);
   // 사무소 위치의 날씨는 서버가 아직 주지 않는다. 주게 되면 여기에 잇는다. 그때까지 그림은 맑은 날이고 날씨 글자는 없다.
   const preview = useWeatherPreview(now.getHours() + now.getMinutes() / 60);
   const weather: SceneWeather | undefined = preview?.weather;
   const [focusDay, setFocusDay] = useState(0);
+  const todayStart = startOfDay(now);
   const todayKey = localDateKey(now);
-  const weekStart = startOfWeek(now);
+
   const [scope, setScope] = useState<Scope>(user?.role === 'agent' ? 'mine' : 'all');
-  // 고른 날은 그 주 안에서만 뜻이 있다. 주가 바뀌면(자정을 넘겨 월요일이 되면) 오늘로 돌아간다.
-  const [picked, setPicked] = useState<{ week: string; day: string } | null>(null);
-  const weekKey = localDateKey(weekStart);
-  const selectedKey = picked?.week === weekKey ? picked.day : todayKey;
+  const [viewMonth, setViewMonth] = useState(() => ({ year: now.getFullYear(), month: now.getMonth() }));
+  const [pickedKey, setPickedKey] = useState<string | null>(null);
+  const selectedKey = pickedKey ?? todayKey;
+  const selectedDate = parseDateKey(selectedKey);
+
+  const [bannerIdx, setBannerIdx] = useState(0);
+  const [openGuideId, setOpenGuideId] = useState<string | null>(null);
+  const [digestOpen, setDigestOpen] = useState(false);
+
+  const digestTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const noticeSectionRef = useRef<HTMLElement | null>(null);
+  const scheduleAsideRef = useRef<HTMLElement | null>(null);
+
+  // 월간 캘린더 5~6주 격자 계산 (월요일 시작)
+  const monthFirst = new Date(viewMonth.year, viewMonth.month, 1);
+  const gridStart = startOfWeek(monthFirst);
+  const all42 = Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
+  const calendarDays = all42[35].getMonth() === viewMonth.month ? all42 : all42.slice(0, 35);
+  const gridEnd = addDays(gridStart, calendarDays.length);
+  const rangeStart = new Date(Math.min(gridStart.getTime(), startOfDay(selectedDate).getTime()));
+  const rangeEnd = new Date(Math.max(addDays(gridEnd, 14).getTime(), addDays(selectedDate, 15).getTime()));
+
+  const canViewCashflow = user?.role === 'owner' || user?.role === 'manager';
 
   const tasks = useTasksQuery();
   const deals = useDealsQuery();
   const notices = useNoticesQuery();
-  const events = useWeekEventsQuery(weekStart);
+  const todayEventsQuery = useTodayEventsQuery(todayKey, todayStart);
+  const monthEventsQuery = useMonthEventsQuery(rangeStart, rangeEnd);
+  const consultations = useRecentConsultationsQuery(scope, user?.id);
+  const ledger = useMonthlyLedgerQuery(canViewCashflow);
+
+  const noticeReader = useNoticeReader(notices);
+  const {
+    items: noticeItems,
+    unread: unreadNotices,
+    openId,
+    setOpenId,
+    shownNotice,
+    openNotice,
+    openerRef: noticeOpenerRef,
+  } = noticeReader;
 
   const mine = scope === 'mine' && Boolean(user?.id);
   const scopedOpenTasks = (tasks.data ?? [])
     .filter(isOpenTask)
     .filter((task) => !mine || task.assignedToId === user?.id)
     .sort((a, b) => byDateAsc(a.dueDate, b.dueDate));
-  const scopedWeekEvents = (events.data ?? []).filter((event) => !mine || event.userId === user?.id);
-  const todayEventCount = scopedWeekEvents.filter((event) => eventCoversDay(event, now)).length;
+  const scopedTodayEvents = (todayEventsQuery.data ?? []).filter((event) => !mine || event.userId === user?.id);
+  const scopedMonthEvents = (monthEventsQuery.data ?? []).filter((event) => !mine || event.userId === user?.id);
+  const todayEventCount = scopedTodayEvents.filter((event) => eventCoversDay(event, now)).length;
   const overdueTasks = scopedOpenTasks.filter((task) => taskBucket(task) === 'overdue');
-  // 주간 띠의 '할 일 n': 기한이 그 날인 남은 업무
-  const taskCountByDay = new Map<string, number>();
-  for (const task of scopedOpenTasks) {
-    if (!task.dueDate) continue;
-    const key = localDateKey(new Date(task.dueDate));
-    taskCountByDay.set(key, (taskCountByDay.get(key) ?? 0) + 1);
-  }
-  // 이번 주에 남은, 시각이 있는 가장 가까운 일정
-  const nextEvent = scopedWeekEvents
-    .filter((event) => !event.allDay && new Date(event.start).getTime() > now.getTime())
-    .sort((a, b) => byDateAsc(a.start, b.start))[0];
+
   // 그림의 시간 축에는 오늘 시작하는, 시각이 있는 일정만 꽂는다.
-  const flags: SceneFlag[] = scopedWeekEvents
+  const flags: SceneFlag[] = scopedTodayEvents
     .filter((event) => !event.allDay && eventCoversDay(event, now) && !startedBefore(event, now))
     .map((event) => {
       const start = new Date(event.start);
       return { hour: start.getHours() + start.getMinutes() / 60, label: event.title };
     });
-  const showDay = (day: string | null) => {
-    setPicked(day ? { week: weekKey, day } : null); // null이면 오늘로 돌아간다
+
+  const stepMonth = (delta: number) => {
+    setViewMonth((prev) => {
+      const next = new Date(prev.year, prev.month + delta, 1);
+      return { year: next.getFullYear(), month: next.getMonth() };
+    });
+  };
+
+  const goToday = () => {
+    setViewMonth({ year: now.getFullYear(), month: now.getMonth() });
+    setPickedKey(null);
     setFocusDay((count) => count + 1);
   };
+
+  const selectCalendarDay = (day: Date) => {
+    const key = localDateKey(day);
+    setPickedKey(key === todayKey ? null : key);
+    if (day.getFullYear() !== viewMonth.year || day.getMonth() !== viewMonth.month) {
+      setViewMonth({ year: day.getFullYear(), month: day.getMonth() });
+    }
+  };
+
   const showBucket = (bucket: TaskBucket) => setReveal((prev) => ({ bucket, n: (prev?.n ?? 0) + 1 }));
   const onPin = (target: PinTarget) => {
-    if (target === 'schedule') showDay(null);
-    else showBucket(target);
+    if (target === 'schedule') {
+      goToday();
+      scheduleAsideRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+      showBucket(target);
+    }
   };
-  const status =
-    tasks.isError || events.isError || isQueryPaused(tasks) || isQueryPaused(events)
+
+  const heroStatus =
+    tasks.isError || todayEventsQuery.isError || isQueryPaused(tasks) || isQueryPaused(todayEventsQuery)
       ? 'unavailable'
-      : tasks.isPending || events.isPending
+      : tasks.isPending || todayEventsQuery.isPending
         ? 'pending'
         : 'ready';
 
-  return (
-    // flex-1 min-h-0: 탭 영역 높이를 그대로 받는다. 창이 아주 낮으면 문서의 min-h 만큼만 넘쳐 스크롤된다.
-    // 너비는 제한하지 않는다. 창을 키우면 인사 영역과 두 단이 함께 넓어진다(너비를 묶으면 큰 창에서 오른쪽이 빈다).
-    <div className={cn('flex min-h-0 w-full flex-1 flex-col gap-3.5 px-1', playing && 'dash-play')}>
-      <Briefing
-        now={now}
-        officeName={user?.office?.name}
-        userName={user?.name}
-        events={todayEventCount}
-        openTasks={scopedOpenTasks.length}
-        overdueCount={overdueTasks.length}
-        status={status}
-        flags={flags}
-        cheer={cheer}
-        weather={weather}
-        hour={preview?.hour ?? now.getHours() + now.getMinutes() / 60}
-        onPin={onPin}
-        tools={
-          <>
-            <ScopeToggle value={scope} onChange={setScope} />
-            <QuickCreate />
-          </>
-        }
-      />
+  const ledgerPercentLabel = ledger.data
+    ? `${collectPercent(ledger.data.summary.collectedTotal, ledger.data.summary.billedTotal)}%`
+    : '—';
 
-      {/* 문서 한 장, 두 단. 단마다 따로 굴린다. */}
-      <div className="grid min-h-[420px] flex-[1_1_0] grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)] gap-x-11 px-2">
-        <div className={DOC_COLUMN}>
-          <Lead
-            status={status}
-            todayEvents={todayEventCount}
-            nextEvent={nextEvent}
-            overdueCount={overdueTasks.length}
-            oldestOverdue={overdueTasks[0]}
-            now={now}
-            onShowDay={showDay}
-            onShowOverdue={() => showBucket('overdue')}
-          />
-          <WeekSection
-            scope={scope}
-            userId={user?.id}
-            events={events}
-            weekEvents={scopedWeekEvents}
-            taskCountByDay={taskCountByDay}
-            weekStart={weekStart}
-            selectedKey={selectedKey}
-            onSelectDay={(day) => setPicked({ week: weekKey, day })}
-            now={now}
-            focusDay={focusDay}
-          />
-          <TaskSection
-            scope={scope}
-            userId={user?.id}
-            tasks={tasks}
-            openTasks={scopedOpenTasks}
-            now={now}
-            reveal={reveal}
-            onCheer={() => setCheer((count) => count + 1)}
-          />
-        </div>
-        <div className={DOC_COLUMN}>
-          <DealsSection deals={deals} />
-          <div className="grid grid-cols-2 gap-x-6">
-            <NoticeSection notices={notices} />
-            <SoonSection
-              order={5}
-              icon={Newspaper}
-              title="부동산 뉴스"
-              description="정책, 시장, 우리 지역 소식이 여기에 나옵니다."
+  const activeGuide = APP_GUIDES.find((g) => g.id === openGuideId) ?? null;
+
+  return (
+    <div className={cn('dash-canvas flex-1', playing && 'dash-play')}>
+      <div className="dash-wrap">
+        <Briefing
+          now={now}
+          officeName={user?.office?.name}
+          userName={user?.name}
+          events={todayEventCount}
+          openTasks={scopedOpenTasks.length}
+          overdueCount={overdueTasks.length}
+          status={heroStatus}
+          flags={flags}
+          cheer={cheer}
+          weather={weather}
+          hour={preview?.hour ?? now.getHours() + now.getMinutes() / 60}
+          onPin={onPin}
+          tools={
+            <>
+              <ScopeToggle value={scope} onChange={setScope} />
+              <QuickCreate />
+            </>
+          }
+        />
+
+        <div className="dash-bento-grid">
+          <aside ref={scheduleAsideRef} className="dash-left">
+            <MiniCalendarCard
+              viewMonth={viewMonth}
+              calendarDays={calendarDays}
+              monthEvents={scopedMonthEvents}
+              selectedKey={selectedKey}
+              todayKey={todayKey}
+              onSelectDay={selectCalendarDay}
+              onPrevMonth={() => stepMonth(-1)}
+              onNextMonth={() => stepMonth(1)}
+              onGoToday={goToday}
+              focusDay={focusDay}
+            />
+            <ScheduleCard
+              scope={scope}
+              userId={user?.id}
+              eventsQuery={monthEventsQuery}
+              monthEvents={scopedMonthEvents}
+              selectedDate={selectedDate}
+              selectedKey={selectedKey}
+              todayKey={todayKey}
+              now={now}
+            />
+          </aside>
+
+          <div className="dash-center">
+            <TaskSection
+              scope={scope}
+              userId={user?.id}
+              tasks={tasks}
+              openTasks={scopedOpenTasks}
+              now={now}
+              reveal={reveal}
+              onCheer={() => setCheer((count) => count + 1)}
+              canViewCashflow={canViewCashflow}
+              ledgerPercentLabel={ledgerPercentLabel}
+              unreadNotices={unreadNotices}
+              onOpenDigest={() => setDigestOpen(true)}
+              digestTriggerRef={digestTriggerRef}
+            />
+            <DealsSection deals={deals} />
+            <ConsultationsSection
+              scope={scope}
+              userId={user?.id}
+              consultations={consultations}
+              now={now}
             />
           </div>
-          <div className="border-t border-border pt-3">
-            <SoonSection
-              order={6}
-              icon={Building2}
-              title="관리단지"
-              description="관리하는 단지의 매물 수와 시세 변동이 여기에 나옵니다."
+
+          <aside className="dash-rail">
+            {canViewCashflow && <CollectionCard ledger={ledger} />}
+            <NoticeSection notices={notices} reader={noticeReader} sectionRef={noticeSectionRef} />
+            <GuideBannerCard
+              bannerIdx={bannerIdx}
+              onSelectBanner={setBannerIdx}
+              onOpenGuide={(id) => setOpenGuideId(id)}
             />
-          </div>
+            <NewsCard />
+          </aside>
         </div>
       </div>
+
+      {/* 공지 본문 창 — 3단 오른쪽 레일과 좁은 화면 요약 창이 함께 쓴다 */}
+      <Dialog open={openId !== null} onOpenChange={(next) => !next && setOpenId(null)}>
+        {shownNotice && (
+          <DialogContent
+            className="sm:max-w-lg"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              const opener = noticeOpenerRef.current;
+              const fallback =
+                noticeSectionRef.current?.querySelector<HTMLButtonElement>('li button') ??
+                digestTriggerRef.current;
+              (opener?.isConnected && opener.offsetParent !== null ? opener : fallback)?.focus();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle className="flex items-start gap-2 leading-7 break-keep">
+                {shownNotice.isRequired && (
+                  <span className="mt-1.5">
+                    <RequiredBadge />
+                  </span>
+                )}
+                {shownNotice.title}
+              </DialogTitle>
+              <DialogDescription>에스테잇플로우 공지 · {formatDate(shownNotice.publishedAt)}</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[60vh] overflow-auto text-sm leading-6 break-words whitespace-pre-wrap text-foreground">
+              {shownNotice.body}
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
+
+      {/* 앱 사용법 가이드 창 */}
+      <Dialog open={activeGuide !== null} onOpenChange={(next) => !next && setOpenGuideId(null)}>
+        {activeGuide && (
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <div className="mb-1 flex items-center gap-2">
+                <span className="inline-flex h-5 items-center rounded bg-muted px-2 text-[11px] font-semibold text-muted-foreground-strong">
+                  {activeGuide.badge}
+                </span>
+              </div>
+              <DialogTitle className="leading-7">{activeGuide.title}</DialogTitle>
+              <DialogDescription>{activeGuide.sub}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2.5">
+              {activeGuide.steps.map((step) => (
+                <div key={step.title} className="rounded-lg border border-border bg-muted px-3.5 py-2.5">
+                  <div className="text-[13px] font-semibold text-foreground">{step.title}</div>
+                  <p className="mt-0.5 text-xs leading-5 text-muted-foreground-strong">{step.desc}</p>
+                </div>
+              ))}
+              <div className="rounded-lg bg-info/10 px-3.5 py-2.5 text-xs leading-5 text-muted-foreground-strong">
+                <b className="text-info-strong">TIP</b> · {activeGuide.tip}
+              </div>
+            </div>
+            <div className="border-t border-border pt-3">
+              <div className="mb-2 text-[11.5px] font-semibold text-muted-foreground">다른 가이드 보기</div>
+              <div className="flex flex-wrap gap-1.5">
+                {APP_GUIDES.map((g, index) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => {
+                      setBannerIdx(index);
+                      setOpenGuideId(g.id);
+                    }}
+                    className={cn(
+                      'inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                      g.id === activeGuide.id
+                        ? 'border-foreground/30 bg-muted font-semibold text-foreground'
+                        : 'border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground',
+                    )}
+                  >
+                    <BookOpen className="size-3" aria-hidden="true" />
+                    {g.badge}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
+
+      {/* 좁은 화면(1260px 미만) 공지·가이드 요약 창 */}
+      <Dialog open={digestOpen} onOpenChange={setDigestOpen}>
+        <DialogContent
+          className="sm:max-w-md"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            digestTriggerRef.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>공지사항 · 앱 사용법 가이드</DialogTitle>
+            <DialogDescription>오른쪽 레일이 접힌 화면에서 공지와 가이드를 바로 확인합니다.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <h3 className="mb-2 text-xs font-semibold text-muted-foreground">공지사항</h3>
+              {noticeItems.length === 0 ? (
+                <EmptyNote>새 공지가 없습니다.</EmptyNote>
+              ) : (
+                <ul className="max-h-52 space-y-1 overflow-auto">
+                  {noticeItems.map((notice) => {
+                    const isUnread = !notice.readAt;
+                    return (
+                      <li key={notice.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDigestOpen(false);
+                            openNotice(notice, null);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={cn('size-1.5 shrink-0 rounded-full', isUnread && 'bg-info')}
+                          />
+                          {notice.isRequired && <RequiredBadge />}
+                          <span
+                            className={cn(
+                              'min-w-0 flex-1 truncate text-sm',
+                              isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground-strong',
+                            )}
+                          >
+                            {notice.title}
+                          </span>
+                          <span className="text-xs text-muted-foreground tabular-nums">
+                            {noticeDate(notice.publishedAt)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="border-t border-border pt-3">
+              <h3 className="mb-2 text-xs font-semibold text-muted-foreground">앱 사용법 가이드</h3>
+              <div className="space-y-1.5">
+                {APP_GUIDES.map((g, index) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => {
+                      setBannerIdx(index);
+                      setDigestOpen(false);
+                      setOpenGuideId(g.id);
+                    }}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] font-semibold text-foreground">{g.title}</div>
+                      <div className="truncate text-[11.5px] text-muted-foreground">{g.sub}</div>
+                    </div>
+                    <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{g.badge}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

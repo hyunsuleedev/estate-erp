@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import type { BrokerageCase } from "@estate-erp/api-client";
+import type { CustomerLedgerRow } from "@estate-erp/api-client";
 import {
   Building2,
   EllipsisVertical,
@@ -16,24 +16,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { openBrokerageCasePlan } from "./-brokerage-case-plan-store";
+import { openProjectPlan } from "./-project-plan-store";
 
 export function CustomerCaseActionMenu({
-  brokerageCase,
+  project,
   customerName,
   align = "end",
   className,
 }: {
-  brokerageCase: BrokerageCase;
+  project: CustomerLedgerRow;
   customerName: string;
   align?: "start" | "center" | "end";
   className?: string;
 }) {
-  const primary = brokerageCase.primaryParticipant;
-  const hasCase = brokerageCase.brokerageCaseId !== null;
+  const primary = project.primaryParticipant;
+  const hasCase = project.projectId !== null;
   const listingTargets = [
     ...new Map(
-      brokerageCase.listingIntents.map(
+      project.listingIntents.map(
         (line) => [line.propertyId, line] as const,
       ),
     ).values(),
@@ -75,7 +75,7 @@ export function CustomerCaseActionMenu({
               </Link>
             </DropdownMenuItem>
           ) : null}
-          {brokerageCase.demandIntents.map((line) => (
+          {project.demandIntents.map((line) => (
             <DropdownMenuItem key={line.requirementId} asChild>
               <Link
                 to="/buyer-requirements/$id"
@@ -104,25 +104,25 @@ export function CustomerCaseActionMenu({
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          {/* 묶는 것은 사용자가 정한다. 건이 있으면 진행 계획을, 없으면 묶기를 연다. */}
+          {/* 묶는 것은 사용자가 정한다. 프로젝트가 있으면 진행 계획을, 없으면 묶기를 연다. */}
           <DropdownMenuItem
             onSelect={() =>
-              openBrokerageCasePlan(
-                brokerageCase.brokerageCaseId
+              openProjectPlan(
+                project.projectId
                   ? {
                       kind: "case",
-                      caseId: brokerageCase.brokerageCaseId,
+                      projectId: project.projectId,
                       customerName,
                     }
-                  : { kind: "bundle", row: brokerageCase, customerName },
+                  : { kind: "bundle", row: project, customerName },
               )
             }
           >
             <ListOrdered className="size-3.5" />
             <span className="truncate">
               {hasCase
-                ? `진행 계획${brokerageCase.stepCount ? ` (${brokerageCase.stepCount}단계)` : ""}`
-                : "건으로 묶기"}
+                ? `진행 계획${project.stepCount ? ` (${project.stepCount}단계)` : ""}`
+                : "프로젝트 열기"}
             </span>
           </DropdownMenuItem>
         </DropdownMenuContent>

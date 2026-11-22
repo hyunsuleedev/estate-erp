@@ -55,7 +55,7 @@ export function CustomerDemandIntakeActionMenu({
       toast.success(LIFECYCLE_SUCCESS_MESSAGES[nextStatus]);
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["brokerage-cases", "ledger"],
+          queryKey: ["projects", "ledger"],
         }),
         queryClient.invalidateQueries({ queryKey: ["buyer-intakes"] }),
       ]);

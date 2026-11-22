@@ -34,7 +34,7 @@ export function CustomerDemandIntentActionMenu({
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] }),
       queryClient.invalidateQueries({
-        queryKey: ["brokerage-cases", "ledger"],
+        queryKey: ["projects", "ledger"],
       }),
     ]);
   };

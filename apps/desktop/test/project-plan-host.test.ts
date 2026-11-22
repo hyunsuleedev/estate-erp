@@ -5,26 +5,26 @@ import { describe, it } from 'node:test';
 const read = (path: string) =>
   readFileSync(new URL(`../src/renderer/routes/_authenticated/${path}`, import.meta.url), 'utf8');
 
-describe('brokerage case plan window', () => {
+describe('project plan window', () => {
   const menu = read('customers/-customer-case-action-menu.tsx');
-  const dialog = read('customers/-brokerage-case-plan-dialog.tsx');
+  const dialog = read('customers/-project-plan-dialog.tsx');
 
   it('is not owned by a ledger row: the row menu only asks the page-level host to open it', () => {
     // 줄 안에 창을 두면 원장이 다시 불러와져 줄이 새로 그려질 때 창과 입력이 사라진다.
     assert.doesNotMatch(menu, /useState/);
-    assert.doesNotMatch(menu, /<Dialog|BrokerageCasePlanHost|BrokerageCasePlanDialog/);
-    assert.match(menu, /openBrokerageCasePlan\(/);
-    assert.match(dialog, /export function BrokerageCasePlanHost\(\)/);
-    assert.match(dialog, /useBrokerageCasePlanTarget\(\)/);
+    assert.doesNotMatch(menu, /<Dialog|ProjectPlanHost|ProjectPlanDialog/);
+    assert.match(menu, /openProjectPlan\(/);
+    assert.match(dialog, /export function ProjectPlanHost\(\)/);
+    assert.match(dialog, /useProjectPlanTarget\(\)/);
   });
 
-  it('is mounted once on each customer screen, with a list that reaches cases missing from the ledger', () => {
+  it('is mounted once on each customer screen, with a list that reaches projects missing from the ledger', () => {
     for (const page of ['customers/index.tsx', 'customers-table/index.tsx']) {
       const source = read(page);
-      assert.equal(source.match(/<BrokerageCasePlanHost \/>/g)?.length, 1, page);
-      assert.match(source, /<BrokerageCaseListButton/, page);
+      assert.equal(source.match(/<ProjectPlanHost \/>/g)?.length, 1, page);
+      assert.match(source, /<ProjectListButton/, page);
     }
-    assert.match(dialog, /api\.brokerageCases\.findAll\(\)/);
+    assert.match(dialog, /api\.projects\.findAll\(\)/);
     // 묶을 때는 화면에 보이는 줄이 아니라 그 고객의 의뢰 전부를 보낸다.
     assert.match(dialog, /ledgerRow\.listingIntakeIds \?\?/);
     assert.match(dialog, /ledgerRow\.buyerIntakeIds \?\?/);
@@ -53,6 +53,6 @@ describe('brokerage case plan window', () => {
     // 저장에 실패해 서버에 없는 글은 저장된 것처럼 보이지 않는다.
     assert.match(savedInput, /data-unsaved=\{unsaved \|\| undefined\}/);
     // 저장은 하나씩 차례로 보낸다.
-    assert.match(dialog, /scope: \{ id: `brokerage-case-plan-\$\{caseId\}` \}/);
+    assert.match(dialog, /scope: \{ id: `project-plan-\$\{projectId\}` \}/);
   });
 });

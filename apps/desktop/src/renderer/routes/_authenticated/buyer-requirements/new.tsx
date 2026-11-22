@@ -44,7 +44,7 @@ function NewBuyerRequirementPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['buyer-requirements'] }),
         queryClient.invalidateQueries({ queryKey: ['buyer-intakes'] }),
-        queryClient.invalidateQueries({ queryKey: ['brokerage-cases'] }),
+        queryClient.invalidateQueries({ queryKey: ['projects'] }),
       ]);
       const route = `/buyer-requirements/${created.id}`;
       const meta = getRouteMeta(route);

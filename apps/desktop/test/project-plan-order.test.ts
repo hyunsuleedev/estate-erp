@@ -4,12 +4,12 @@ import {
   moveStep,
   planStepOrder,
   toggleWithPrevious,
-} from '../src/renderer/routes/_authenticated/customers/-brokerage-case-plan-order';
+} from '../src/renderer/routes/_authenticated/customers/-project-plan-order';
 
 const show = (order: Array<{ id: string; sortOrder: number }>) =>
   order.map((item) => `${item.id}${item.sortOrder}`).join(' ');
 
-describe('brokerage case plan order', () => {
+describe('project plan order', () => {
   it('renumbers server order from 1 without gaps and keeps simultaneous steps together', () => {
     const order = planStepOrder([
       { id: 'A', sortOrder: 2 },

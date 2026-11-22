@@ -91,7 +91,7 @@ export function LedgerMatchPanel({
 
   const invalidateRelatedQueries = () => {
     void queryClient.invalidateQueries({ queryKey: ["matches"] });
-    void queryClient.invalidateQueries({ queryKey: ["brokerage-cases"] });
+    void queryClient.invalidateQueries({ queryKey: ["projects"] });
     void queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] });
     void queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
   };

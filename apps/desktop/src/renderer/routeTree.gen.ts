@@ -23,6 +23,7 @@ import { Route as AuthenticatedSitesIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
 import { Route as AuthenticatedServiceVendorsIndexRouteImport } from './routes/_authenticated/service-vendors/index'
 import { Route as AuthenticatedPropertiesIndexRouteImport } from './routes/_authenticated/properties/index'
+import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as AuthenticatedPartnerBrokersIndexRouteImport } from './routes/_authenticated/partner-brokers/index'
 import { Route as AuthenticatedNetworkIndexRouteImport } from './routes/_authenticated/network/index'
 import { Route as AuthenticatedEmployeesIndexRouteImport } from './routes/_authenticated/employees/index'
@@ -44,6 +45,7 @@ import { Route as AuthenticatedPropertiesNaverMyAdsRouteImport } from './routes/
 import { Route as AuthenticatedPropertiesMyAdsRouteImport } from './routes/_authenticated/properties/my-ads'
 import { Route as AuthenticatedPropertiesExternalListingsRouteImport } from './routes/_authenticated/properties/external-listings'
 import { Route as AuthenticatedPropertiesIdRouteImport } from './routes/_authenticated/properties/$id'
+import { Route as AuthenticatedProjectsIdRouteImport } from './routes/_authenticated/projects/$id'
 import { Route as AuthenticatedDocumentsPhotosRouteImport } from './routes/_authenticated/documents/photos'
 import { Route as AuthenticatedDealsIdRouteImport } from './routes/_authenticated/deals/$id'
 import { Route as AuthenticatedContactsNewRouteImport } from './routes/_authenticated/contacts/new'
@@ -129,6 +131,12 @@ const AuthenticatedPropertiesIndexRoute =
   AuthenticatedPropertiesIndexRouteImport.update({
     id: '/properties/',
     path: '/properties/',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
+const AuthenticatedProjectsIndexRoute =
+  AuthenticatedProjectsIndexRouteImport.update({
+    id: '/projects/',
+    path: '/projects/',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedPartnerBrokersIndexRoute =
@@ -255,6 +263,11 @@ const AuthenticatedPropertiesIdRoute =
     path: '/properties/$id',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedProjectsIdRoute = AuthenticatedProjectsIdRouteImport.update({
+  id: '/projects/$id',
+  path: '/projects/$id',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedDocumentsPhotosRoute =
   AuthenticatedDocumentsPhotosRouteImport.update({
     id: '/documents/photos',
@@ -357,6 +370,7 @@ export interface FileRoutesByFullPath {
   '/contacts/new': typeof AuthenticatedContactsNewRoute
   '/deals/$id': typeof AuthenticatedDealsIdRoute
   '/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
+  '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
   '/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
@@ -378,6 +392,7 @@ export interface FileRoutesByFullPath {
   '/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/network/': typeof AuthenticatedNetworkIndexRoute
   '/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
+  '/projects/': typeof AuthenticatedProjectsIndexRoute
   '/properties/': typeof AuthenticatedPropertiesIndexRoute
   '/service-vendors/': typeof AuthenticatedServiceVendorsIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
@@ -406,6 +421,7 @@ export interface FileRoutesByTo {
   '/contacts/new': typeof AuthenticatedContactsNewRoute
   '/deals/$id': typeof AuthenticatedDealsIdRoute
   '/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
+  '/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
   '/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
@@ -427,6 +443,7 @@ export interface FileRoutesByTo {
   '/employees': typeof AuthenticatedEmployeesIndexRoute
   '/network': typeof AuthenticatedNetworkIndexRoute
   '/partner-brokers': typeof AuthenticatedPartnerBrokersIndexRoute
+  '/projects': typeof AuthenticatedProjectsIndexRoute
   '/properties': typeof AuthenticatedPropertiesIndexRoute
   '/service-vendors': typeof AuthenticatedServiceVendorsIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
@@ -458,6 +475,7 @@ export interface FileRoutesById {
   '/_authenticated/contacts/new': typeof AuthenticatedContactsNewRoute
   '/_authenticated/deals/$id': typeof AuthenticatedDealsIdRoute
   '/_authenticated/documents/photos': typeof AuthenticatedDocumentsPhotosRoute
+  '/_authenticated/projects/$id': typeof AuthenticatedProjectsIdRoute
   '/_authenticated/properties/$id': typeof AuthenticatedPropertiesIdRoute
   '/_authenticated/properties/external-listings': typeof AuthenticatedPropertiesExternalListingsRoute
   '/_authenticated/properties/my-ads': typeof AuthenticatedPropertiesMyAdsRoute
@@ -479,6 +497,7 @@ export interface FileRoutesById {
   '/_authenticated/employees/': typeof AuthenticatedEmployeesIndexRoute
   '/_authenticated/network/': typeof AuthenticatedNetworkIndexRoute
   '/_authenticated/partner-brokers/': typeof AuthenticatedPartnerBrokersIndexRoute
+  '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
   '/_authenticated/properties/': typeof AuthenticatedPropertiesIndexRoute
   '/_authenticated/service-vendors/': typeof AuthenticatedServiceVendorsIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
@@ -509,6 +528,7 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/deals/$id'
     | '/documents/photos'
+    | '/projects/$id'
     | '/properties/$id'
     | '/properties/external-listings'
     | '/properties/my-ads'
@@ -530,6 +550,7 @@ export interface FileRouteTypes {
     | '/employees/'
     | '/network/'
     | '/partner-brokers/'
+    | '/projects/'
     | '/properties/'
     | '/service-vendors/'
     | '/settings/'
@@ -558,6 +579,7 @@ export interface FileRouteTypes {
     | '/contacts/new'
     | '/deals/$id'
     | '/documents/photos'
+    | '/projects/$id'
     | '/properties/$id'
     | '/properties/external-listings'
     | '/properties/my-ads'
@@ -579,6 +601,7 @@ export interface FileRouteTypes {
     | '/employees'
     | '/network'
     | '/partner-brokers'
+    | '/projects'
     | '/properties'
     | '/service-vendors'
     | '/settings'
@@ -609,6 +632,7 @@ export interface FileRouteTypes {
     | '/_authenticated/contacts/new'
     | '/_authenticated/deals/$id'
     | '/_authenticated/documents/photos'
+    | '/_authenticated/projects/$id'
     | '/_authenticated/properties/$id'
     | '/_authenticated/properties/external-listings'
     | '/_authenticated/properties/my-ads'
@@ -630,6 +654,7 @@ export interface FileRouteTypes {
     | '/_authenticated/employees/'
     | '/_authenticated/network/'
     | '/_authenticated/partner-brokers/'
+    | '/_authenticated/projects/'
     | '/_authenticated/properties/'
     | '/_authenticated/service-vendors/'
     | '/_authenticated/settings/'
@@ -745,6 +770,13 @@ declare module '@tanstack/react-router' {
       path: '/properties'
       fullPath: '/properties/'
       preLoaderRoute: typeof AuthenticatedPropertiesIndexRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/projects/': {
+      id: '/_authenticated/projects/'
+      path: '/projects'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AuthenticatedProjectsIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/partner-brokers/': {
@@ -894,6 +926,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedPropertiesIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/projects/$id': {
+      id: '/_authenticated/projects/$id'
+      path: '/projects/$id'
+      fullPath: '/projects/$id'
+      preLoaderRoute: typeof AuthenticatedProjectsIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/documents/photos': {
       id: '/_authenticated/documents/photos'
       path: '/documents/photos'
@@ -1022,6 +1061,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedContactsNewRoute: typeof AuthenticatedContactsNewRoute
   AuthenticatedDealsIdRoute: typeof AuthenticatedDealsIdRoute
   AuthenticatedDocumentsPhotosRoute: typeof AuthenticatedDocumentsPhotosRoute
+  AuthenticatedProjectsIdRoute: typeof AuthenticatedProjectsIdRoute
   AuthenticatedPropertiesIdRoute: typeof AuthenticatedPropertiesIdRoute
   AuthenticatedPropertiesExternalListingsRoute: typeof AuthenticatedPropertiesExternalListingsRoute
   AuthenticatedPropertiesMyAdsRoute: typeof AuthenticatedPropertiesMyAdsRoute
@@ -1043,6 +1083,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedEmployeesIndexRoute: typeof AuthenticatedEmployeesIndexRoute
   AuthenticatedNetworkIndexRoute: typeof AuthenticatedNetworkIndexRoute
   AuthenticatedPartnerBrokersIndexRoute: typeof AuthenticatedPartnerBrokersIndexRoute
+  AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
   AuthenticatedPropertiesIndexRoute: typeof AuthenticatedPropertiesIndexRoute
   AuthenticatedServiceVendorsIndexRoute: typeof AuthenticatedServiceVendorsIndexRoute
   AuthenticatedSettingsIndexRoute: typeof AuthenticatedSettingsIndexRoute
@@ -1071,6 +1112,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedContactsNewRoute: AuthenticatedContactsNewRoute,
   AuthenticatedDealsIdRoute: AuthenticatedDealsIdRoute,
   AuthenticatedDocumentsPhotosRoute: AuthenticatedDocumentsPhotosRoute,
+  AuthenticatedProjectsIdRoute: AuthenticatedProjectsIdRoute,
   AuthenticatedPropertiesIdRoute: AuthenticatedPropertiesIdRoute,
   AuthenticatedPropertiesExternalListingsRoute:
     AuthenticatedPropertiesExternalListingsRoute,
@@ -1097,6 +1139,7 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedEmployeesIndexRoute: AuthenticatedEmployeesIndexRoute,
   AuthenticatedNetworkIndexRoute: AuthenticatedNetworkIndexRoute,
   AuthenticatedPartnerBrokersIndexRoute: AuthenticatedPartnerBrokersIndexRoute,
+  AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
   AuthenticatedPropertiesIndexRoute: AuthenticatedPropertiesIndexRoute,
   AuthenticatedServiceVendorsIndexRoute: AuthenticatedServiceVendorsIndexRoute,
   AuthenticatedSettingsIndexRoute: AuthenticatedSettingsIndexRoute,

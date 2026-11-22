@@ -182,7 +182,7 @@ export function MatchCreateDialog({
       queryClient.invalidateQueries({ queryKey: ["listings"] });
       queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
       queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] });
-      queryClient.invalidateQueries({ queryKey: ["brokerage-cases"] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("매칭이 생성되었습니다");
       onOpenChange(false);
     },

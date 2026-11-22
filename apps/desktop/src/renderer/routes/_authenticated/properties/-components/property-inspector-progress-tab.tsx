@@ -174,7 +174,7 @@ function MatchSection({
   // 바로 이어 고칠 때 오래된 updatedAt으로 충돌(409)하며, 방문 일정을 다시 잡을 때
   // 이미 만든 일정을 못 보고 또 만든다. 부수 목록은 기다리지 않는다.
   const refreshRelated = async () => {
-    for (const key of ["listing-intakes", "buyer-requirements", "brokerage-cases"]) {
+    for (const key of ["listing-intakes", "buyer-requirements", "projects"]) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
     await queryClient.invalidateQueries({ queryKey: ["matches"] });

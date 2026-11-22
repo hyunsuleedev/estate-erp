@@ -12,11 +12,12 @@ import {
   Trash2,
 } from "lucide-react";
 import type {
-  BrokerageCase,
-  BrokerageCasePlan,
-  BrokerageCaseStep,
+  CustomerLedgerRow,
+  ProjectPlan,
+  ProjectStep,
 } from "@estate-erp/api-client";
 import { api } from "@/lib/api";
+import { announceProjectChange } from "@/lib/project-sync";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
 import { getStatusMeta } from "@/lib/status-config";
@@ -42,16 +43,17 @@ import {
   moveStep,
   planStepOrder,
   toggleWithPrevious,
-} from "./-brokerage-case-plan-order";
+} from "./-project-plan-order";
+import { decideTextCommit } from "../projects/-project-model";
 import {
-  closeBrokerageCasePlan,
-  openBrokerageCasePlan,
-  useBrokerageCasePlanTarget,
-} from "./-brokerage-case-plan-store";
+  closeProjectPlan,
+  openProjectPlan,
+  useProjectPlanTarget,
+} from "./-project-plan-store";
 
-const planQueryKey = (id: string) => ["brokerage-cases", "plan", id] as const;
+const planQueryKey = (id: string) => ["projects", "plan", id] as const;
 
-const STEP_KIND_LABEL: Record<BrokerageCaseStep["kind"], string> = {
+const STEP_KIND_LABEL: Record<ProjectStep["kind"], string> = {
   listing_intake: "매물 의뢰",
   buyer_intake: "구매 의뢰",
   deal: "거래",
@@ -68,25 +70,25 @@ function errorMessage(error: unknown, fallback: string) {
  * 창을 여는 메뉴는 고객 원장의 줄마다 있지만 창은 여기 하나다. 원장이 다시
  * 불러와져 줄이 새로 그려지거나 목록에서 빠져도 창과 입력 중인 글이 남는다.
  *
- * 건이 없는 줄에서 열면 그 줄의 의뢰들을 한 건으로 묶을지 묻고(서버가 알아서 묶지
- * 않는다), 건이 있으면 진행 계획을 보여 준다. 순서와 단계는 사람이 정하고, 각 단계의
+ * 프로젝트가 없는 줄에서 열면 그 줄의 의뢰들을 한 프로젝트로 묶을지 묻고(서버가 알아서 묶지
+ * 않는다), 프로젝트가 있으면 진행 계획을 보여 준다. 순서와 단계는 사람이 정하고, 각 단계의
  * 진행 상태와 잔금일은 의뢰·거래에서 읽어 옆에 보여 줄 뿐이다.
  */
-export function BrokerageCasePlanHost() {
+export function ProjectPlanHost() {
   const queryClient = useQueryClient();
-  const target = useBrokerageCasePlanTarget();
+  const target = useProjectPlanTarget();
   // 이 화면을 떠났다가 돌아왔을 때 예전 창이 다시 뜨지 않게 한다.
-  useEffect(() => closeBrokerageCasePlan, []);
+  useEffect(() => closeProjectPlan, []);
 
   const close = () => {
-    // 창 안에서 바꾼 것은 닫을 때 한 번에 원장과 건 목록에 반영한다.
+    // 창 안에서 바꾼 것은 닫을 때 한 번에 원장과 프로젝트 목록에 반영한다.
     void queryClient.invalidateQueries({
-      queryKey: ["brokerage-cases", "ledger"],
+      queryKey: ["projects", "ledger"],
     });
     void queryClient.invalidateQueries({
-      queryKey: ["brokerage-cases", "list"],
+      queryKey: ["projects", "list"],
     });
-    closeBrokerageCasePlan();
+    closeProjectPlan();
   };
 
   return (
@@ -113,8 +115,8 @@ export function BrokerageCasePlanHost() {
       >
         {target?.kind === "case" && (
           <PlanView
-            key={target.caseId}
-            caseId={target.caseId}
+            key={target.projectId}
+            projectId={target.projectId}
             customerName={target.customerName}
             onClose={close}
             onRemoved={close}
@@ -125,11 +127,11 @@ export function BrokerageCasePlanHost() {
             ledgerRow={target.row}
             customerName={target.customerName}
             onCancel={close}
-            onCreated={(caseId) =>
-              // 묶은 뒤에는 그 건의 진행 계획으로 바로 넘어간다.
-              openBrokerageCasePlan({
+            onCreated={(projectId) =>
+              // 묶은 뒤에는 그 프로젝트의 진행 계획으로 바로 넘어간다.
+              openProjectPlan({
                 kind: "case",
-                caseId,
+                projectId,
                 customerName: target.customerName,
               })
             }
@@ -141,16 +143,18 @@ export function BrokerageCasePlanHost() {
 }
 
 /**
- * 중개 건 목록. 고객 원장은 진행 중인 의뢰만 보여 주므로, 의뢰가 모두 종료된 건이나
- * 거래·직접 추가 단계만 있는 건은 원장에 줄이 없다. 그런 건의 진행 계획도 여기서 연다.
+ * 프로젝트 목록. 고객 원장은 진행 중인 의뢰만 보여 주므로, 의뢰가 모두 종료된 프로젝트나
+ * 거래·직접 추가 단계만 있는 프로젝트는 원장에 줄이 없다. 그런 프로젝트의 진행 계획도 여기서 연다.
  */
-export function BrokerageCaseListButton({ className }: { className?: string }) {
+export function ProjectListButton({ className }: { className?: string }) {
   const [open, setOpen] = useState(false);
   const listQuery = useQuery({
-    queryKey: ["brokerage-cases", "list"],
-    queryFn: () => api.brokerageCases.findAll(),
+    queryKey: ["projects", "list"],
+    queryFn: () => api.projects.findAll(),
   });
-  const cases = listQuery.data ?? [];
+  const projects = listQuery.data?.items ?? [];
+  // 목록은 쪽 단위로 온다. 개수는 전체 수를 쓴다.
+  const projectTotal = listQuery.data?.total ?? 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -160,44 +164,44 @@ export function BrokerageCaseListButton({ className }: { className?: string }) {
           variant="outline"
           size="sm"
           className={className}
-          aria-label={`중개 건 ${cases.length}개`}
+          aria-label={`프로젝트 ${projectTotal}개`}
         >
           <ListOrdered className="size-3.5" />
-          중개 건
-          {cases.length > 0 && (
+          프로젝트
+          {projectTotal > 0 && (
             <span className="tabular-nums text-muted-foreground">
-              {cases.length}
+              {projectTotal}
             </span>
           )}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
         <p className="border-b px-3 py-2 text-xs text-muted-foreground">
-          직접 묶은 건입니다. 의뢰가 모두 끝난 건도 여기서 엽니다.
+          직접 연 프로젝트입니다. 의뢰가 모두 끝난 프로젝트도 여기서 엽니다.
         </p>
         {listQuery.isLoading ? (
           <p className="px-3 py-4 text-sm text-muted-foreground">불러오는 중</p>
         ) : listQuery.isError ? (
           <p className="px-3 py-4 text-sm text-destructive" role="alert">
-            {errorMessage(listQuery.error, "중개 건을 불러오지 못했습니다.")}
+            {errorMessage(listQuery.error, "프로젝트를 불러오지 못했습니다.")}
           </p>
-        ) : cases.length === 0 ? (
+        ) : projects.length === 0 ? (
           <p className="px-3 py-4 text-sm text-muted-foreground">
-            아직 묶은 건이 없습니다. 고객 원장의 줄 메뉴에서 "건으로 묶기"를
+            아직 연 프로젝트가 없습니다. 고객 원장의 줄 메뉴에서 "프로젝트 열기"를
             누르세요.
           </p>
         ) : (
           <ul className="max-h-80 divide-y overflow-y-auto">
-            {cases.map((item) => (
+            {projects.map((item) => (
               <li key={item.id}>
                 <button
                   type="button"
                   className="flex w-full items-baseline gap-2 px-3 py-2 text-left text-sm hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none"
                   onClick={() => {
                     setOpen(false);
-                    openBrokerageCasePlan({
+                    openProjectPlan({
                       kind: "case",
-                      caseId: item.id,
+                      projectId: item.id,
                       customerName: item.customerName,
                     });
                   }}
@@ -205,8 +209,8 @@ export function BrokerageCaseListButton({ className }: { className?: string }) {
                   <span className="min-w-0 flex-1 truncate">
                     {item.title ??
                       (item.customerName
-                        ? `${item.customerName}님 건`
-                        : (item.firstStepTitle ?? "이름 없는 건"))}
+                        ? `${item.customerName}님 프로젝트`
+                        : (item.firstStepTitle ?? "이름 없는 프로젝트"))}
                   </span>
                   <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                     {item.stepCount}단계
@@ -227,10 +231,10 @@ function BundlePrompt({
   onCancel,
   onCreated,
 }: {
-  ledgerRow: BrokerageCase;
+  ledgerRow: CustomerLedgerRow;
   customerName: string;
   onCancel: () => void;
-  onCreated: (caseId: string) => void;
+  onCreated: (projectId: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
@@ -265,25 +269,26 @@ function BundlePrompt({
 
   const create = useMutation({
     mutationFn: () =>
-      api.brokerageCases.create({
+      api.projects.create({
         title: title.trim() || null,
         listingIntakeIds: listingIntakes.map((line) => line.listingIntakeId),
         buyerIntakeIds: buyerIntakes.map((line) => line.buyerIntakeId),
       }),
     onSuccess: (plan) => {
       queryClient.setQueryData(planQueryKey(plan.id), plan);
+      announceProjectChange("changed", plan.id);
       onCreated(plan.id);
     },
     onError: (error) =>
-      toast.error(errorMessage(error, "건으로 묶지 못했습니다.")),
+      toast.error(errorMessage(error, "프로젝트를 열지 못했습니다.")),
   });
 
   return (
     <>
       <DialogHeader className="border-b px-6 py-4">
-        <DialogTitle>건으로 묶기</DialogTitle>
+        <DialogTitle>프로젝트 열기</DialogTitle>
         <DialogDescription>
-          {customerName}님의 의뢰 {intakeCount}개를 한 건으로 묶고 진행 순서를
+          {customerName}님의 의뢰 {intakeCount}개를 프로젝트에 담고 진행 순서를
           정합니다. 의뢰와 거래는 그대로이고, 언제든 다시 풀 수 있습니다.
         </DialogDescription>
       </DialogHeader>
@@ -313,9 +318,9 @@ function BundlePrompt({
           ))}
         </ul>
         <div className="space-y-2">
-          <Label htmlFor="brokerage-case-title">건 이름 (선택)</Label>
+          <Label htmlFor="project-title">프로젝트 이름 (선택)</Label>
           <Input
-            id="brokerage-case-title"
+            id="project-title"
             value={title}
             maxLength={100}
             onChange={(event) => setTitle(event.target.value)}
@@ -347,12 +352,12 @@ function BundlePrompt({
 }
 
 function PlanView({
-  caseId,
+  projectId,
   customerName,
   onClose,
   onRemoved,
 }: {
-  caseId: string;
+  projectId: string;
   customerName: string | null;
   onClose: () => void;
   onRemoved: () => void;
@@ -362,37 +367,41 @@ function PlanView({
   const [newStepTitle, setNewStepTitle] = useState("");
 
   const planQuery = useQuery({
-    queryKey: planQueryKey(caseId),
-    queryFn: () => api.brokerageCases.findOne(caseId),
+    queryKey: planQueryKey(projectId),
+    queryFn: () => api.projects.findOne(projectId),
   });
   const candidatesQuery = useQuery({
-    queryKey: [...planQueryKey(caseId), "candidates"],
-    queryFn: () => api.brokerageCases.candidates(caseId),
+    queryKey: [...planQueryKey(projectId), "candidates"],
+    queryFn: () => api.projects.candidates(projectId),
   });
 
-  const applyPlan = (plan: BrokerageCasePlan) => {
-    queryClient.setQueryData(planQueryKey(caseId), plan);
+  const applyPlan = (plan: ProjectPlan) => {
+    queryClient.setQueryData(planQueryKey(projectId), plan);
+    // 이 창에서 고친 것을 다른 탭(열어 둔 상세 · 목록)도 다시 읽게 한다.
+    announceProjectChange("changed", projectId);
     void queryClient.invalidateQueries({
-      queryKey: [...planQueryKey(caseId), "candidates"],
+      queryKey: [...planQueryKey(projectId), "candidates"],
     });
   };
   const change = useMutation({
     // 저장을 하나씩 차례로 보낸다. 빠르게 이어서 고쳐도 늦게 온 앞 응답이 화면을
     // 예전 상태로 되돌리지 않는다.
-    scope: { id: `brokerage-case-plan-${caseId}` },
-    mutationFn: (run: () => Promise<BrokerageCasePlan>) => run(),
+    scope: { id: `project-plan-${projectId}` },
+    mutationFn: (run: () => Promise<ProjectPlan>) => run(),
     onSuccess: applyPlan,
     onError: (error) => {
       toast.error(errorMessage(error, "저장하지 못했습니다."));
       // 다른 곳에서 바뀐 계획일 수 있으니 다시 불러온다.
-      void queryClient.invalidateQueries({ queryKey: planQueryKey(caseId) });
+      void queryClient.invalidateQueries({ queryKey: planQueryKey(projectId) });
     },
   });
   const remove = useMutation({
-    mutationFn: () => api.brokerageCases.remove(caseId),
+    mutationFn: () => api.projects.remove(projectId),
     onSuccess: () => {
-      queryClient.removeQueries({ queryKey: planQueryKey(caseId) });
+      queryClient.removeQueries({ queryKey: planQueryKey(projectId) });
       toast.success("묶음을 풀었습니다. 의뢰와 거래는 그대로 있습니다.");
+      // 다른 탭에 열려 있는 이 프로젝트의 상세 · 목록도 알게 한다.
+      announceProjectChange("removed", projectId);
       onRemoved();
     },
     onError: (error) =>
@@ -403,8 +412,8 @@ function PlanView({
   const order = plan ? planStepOrder(plan.steps) : [];
   const saveOrder = (next: ReturnType<typeof planStepOrder>) =>
     change.mutate(() =>
-      api.brokerageCases.reorderSteps(
-        caseId,
+      api.projects.reorderSteps(
+        projectId,
         next.map((item) => ({ id: item.id, sortOrder: item.sortOrder })),
       ),
     );
@@ -423,7 +432,7 @@ function PlanView({
       <DialogHeader className="border-b px-6 py-4">
         <DialogTitle>진행 계획</DialogTitle>
         <DialogDescription>
-          {customerName ? `${customerName}님 건의` : "이 건의"} 단계와 순서를
+          {customerName ? `${customerName}님 프로젝트의` : "이 프로젝트의"} 단계와 순서를
           정합니다. 진행 상태와 잔금일은 각 의뢰와 거래에서 읽어 옵니다.
         </DialogDescription>
       </DialogHeader>
@@ -459,14 +468,14 @@ function PlanView({
               <SavedInput
                 key="case-title"
                 saving={change.isPending}
-                ariaLabel="건 이름"
+                ariaLabel="프로젝트 이름"
                 value={plan.title ?? ""}
-                placeholder="건 이름 (선택)"
+                placeholder="프로젝트 이름 (선택)"
                 maxLength={100}
                 className="h-8 w-full text-[15px] font-medium"
                 onSave={(title) =>
                   change.mutate(() =>
-                    api.brokerageCases.update(caseId, { title: title || null }),
+                    api.projects.update(projectId, { title: title || null }),
                   )
                 }
               />
@@ -497,12 +506,12 @@ function PlanView({
                     }
                     onUpdate={(dto) =>
                       change.mutate(() =>
-                        api.brokerageCases.updateStep(caseId, step.id, dto),
+                        api.projects.updateStep(projectId, step.id, dto),
                       )
                     }
                     onRemove={() =>
                       change.mutate(() =>
-                        api.brokerageCases.removeStep(caseId, step.id),
+                        api.projects.removeStep(projectId, step.id),
                       )
                     }
                   />
@@ -524,7 +533,7 @@ function PlanView({
                 // 보내는 즉시 비운다. 저장이 끝난 뒤에 비우면 그사이 새로 친 글이 사라진다.
                 setNewStepTitle("");
                 change.mutate(
-                  () => api.brokerageCases.createStep(caseId, { title }),
+                  () => api.projects.createStep(projectId, { title }),
                   {
                     // 저장하지 못했으면 되돌려 준다. 그사이 다른 글을 쳤으면 그대로 둔다.
                     onError: () =>
@@ -555,7 +564,7 @@ function PlanView({
 
             {hasCandidates && candidates && (
               <section
-                aria-label="건에 담을 수 있는 것"
+                aria-label="프로젝트에 담을 수 있는 것"
                 className="border-t px-6 py-3"
               >
                 <h3 className="text-xs font-medium text-muted-foreground">
@@ -574,7 +583,7 @@ function PlanView({
                       disabled={busy}
                       onAdd={() =>
                         change.mutate(() =>
-                          api.brokerageCases.addIntake(caseId, {
+                          api.projects.addIntake(projectId, {
                             kind: "listing",
                             intakeId: item.id,
                           }),
@@ -590,7 +599,7 @@ function PlanView({
                       disabled={busy}
                       onAdd={() =>
                         change.mutate(() =>
-                          api.brokerageCases.addIntake(caseId, {
+                          api.projects.addIntake(projectId, {
                             kind: "buyer",
                             intakeId: item.id,
                           }),
@@ -613,7 +622,7 @@ function PlanView({
                       disabled={busy}
                       onAdd={() =>
                         change.mutate(() =>
-                          api.brokerageCases.createStep(caseId, {
+                          api.projects.createStep(projectId, {
                             dealId: deal.id,
                           }),
                         )
@@ -646,7 +655,7 @@ function PlanView({
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
         title="묶음을 풀까요?"
-        description="건과 진행 계획만 없어집니다. 의뢰와 거래는 그대로 남습니다."
+        description="프로젝트와 진행 계획, 프로젝트에 적은 코멘트가 지워집니다. 담겨 있던 의뢰와 거래는 그대로 남습니다."
         confirmLabel="묶음 풀기"
         destructive
         loading={remove.isPending}
@@ -668,7 +677,7 @@ function StepRow({
   onUpdate,
   onRemove,
 }: {
-  step: BrokerageCaseStep;
+  step: ProjectStep;
   sortOrder: number;
   sharesOrderWithPrevious: boolean;
   isFirst: boolean;
@@ -798,7 +807,7 @@ function StepRow({
           variant="ghost"
           size="icon-xs"
           aria-label={`${step.title} 단계 빼기`}
-          title={linksIntake ? "건에서 빼기" : "단계 지우기"}
+          title={linksIntake ? "프로젝트에서 빼기" : "단계 지우기"}
           disabled={disabled}
           className="text-muted-foreground hover:text-destructive"
           onClick={() => (linksIntake ? setConfirmRemove(true) : onRemove())}
@@ -810,9 +819,9 @@ function StepRow({
       <ConfirmDialog
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
-        title="이 의뢰를 건에서 뺄까요?"
-        description="의뢰와 거래는 그대로 남고, 이 건의 진행 계획에서만 빠집니다."
-        confirmLabel="건에서 빼기"
+        title="이 의뢰를 프로젝트에서 뺄까요?"
+        description="의뢰와 거래는 그대로 남고, 이 프로젝트의 진행 계획에서만 빠집니다."
+        confirmLabel="프로젝트에서 빼기"
         destructive
         onConfirm={() => {
           setConfirmRemove(false);
@@ -824,7 +833,7 @@ function StepRow({
 }
 
 /** 단계가 가리키는 의뢰·거래의 현재 상태를 한 줄로. 저장된 값이 아니라 읽어 온 값이다. */
-function StepFlow({ step }: { step: BrokerageCaseStep }) {
+export function StepFlow({ step }: { step: ProjectStep }) {
   if (step.kind === "manual") return null;
 
   const parts: ReactNode[] = [];
@@ -965,14 +974,45 @@ function SavedInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(value);
   const [focused, setFocused] = useState(false);
+  // 이 칸이 딛고 선 값: 칸에 들어갈 때의 값이고, 내가 보낸 저장이 반영되면 그 값으로 옮긴다.
+  // 벗어날 때 적은 글 · 이 값 · 지금 값을 견줘 저장할지 정한다.
+  const base = useRef(value);
+  // 내가 보내고 아직 결과를 보지 못한 글들(보낸 순서). 지금 값이 이 중 하나로 바뀌면
+  // "다른 곳의 변경"이 아니라 내 저장의 결과다.
+  const sent = useRef<string[]>([]);
+  const previousValue = useRef(value);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  // 이 칸에서도 바꾸고 다른 곳(다른 탭 · 다른 사람)에서도 바뀌었다. 알아서 덮지 않는다.
+  const [conflict, setConflict] = useState(false);
   // 저장에 실패하면 쓴 글은 칸에 남지만 서버에는 없다. 저장된 것처럼 보이지 않게
   // 표시하고, 칸에 들어갔다 나오면 다시 저장을 시도한다.
   const unsaved = !focused && !saving && draft.trim() !== value.trim();
   // 서버 값이 바뀌어도(앞서 보낸 저장의 응답, 다른 칸의 저장) 이 칸을 고치는 중이면
   // 쓰던 글을 덮어쓰지 않는다. 포커스가 나갈 때 저장하고, 그 응답이 오면 맞춰진다.
   useEffect(() => {
+    const previous = previousValue.current;
+    previousValue.current = value;
+    // 내가 보낸 저장이 반영된 것이면 딛고 선 값을 옮긴다. 저장 응답은 칸에 다시 들어와 있는 동안에도 온다.
+    // 옮기지 않으면 그 뒤에 이어서 고친 글이 "양쪽에서 바뀜"으로, 원래대로 되돌린 글이 "손대지 않음"으로 오인된다.
+    const sentIndex = sent.current.indexOf(value.trim());
+    const own = sentIndex >= 0;
+    if (own) {
+      base.current = value;
+      // 이 글과 그 앞에 보낸 것들의 결과는 이제 본 것이다. 뒤에 보낸 것은 아직 기다린다.
+      sent.current = sent.current.slice(sentIndex + 1);
+    }
     if (document.activeElement === inputRef.current) return;
-    setDraft(value);
+    // 칸 밖에 있을 때: 칸의 글이 내 것이 아니면(앞 값 그대로이거나 방금 저장된 글) 새 값을 따라간다.
+    const held = draftRef.current.trim();
+    if (held === previous.trim() || held === value.trim()) {
+      setConflict(false);
+      setDraft(value);
+    } else if (!own) {
+      // 저장하지 못해 남아 있는 글은 다른 곳의 변경으로 지우지 않고, 양쪽에서 바뀐 것으로 표시해 둔다.
+      setConflict(true);
+    }
+    // own인데 칸의 글이 다르면: 그 뒤에 보낸 더 새 글이 칸에 있다. 그대로 두고 그 응답을 기다린다.
   }, [value]);
 
   const commit = (input: HTMLInputElement) => {
@@ -982,13 +1022,22 @@ function SavedInput({
       setDraft(value);
       return;
     }
-    const next = draft.trim();
-    if (next === value.trim()) return;
-    if (required && !next) {
+    // 손대지 않고 나왔는데 그 사이에 다른 곳에서 바뀌었으면 바뀐 값을 받아들인다.
+    // "적은 글이 지금 값과 다르면 저장"으로 하면 새 값을 예전 글로 덮어쓴다.
+    const decision = decideTextCommit({ draft, base: base.current, current: value });
+    if (decision.kind === "conflict") {
+      // 저장하지 않고 저장 안 된 글로 표시해 둔다. 다시 들어갔다 나오면 내 글로 저장하고, Esc는 바뀐 값으로 돌아간다.
+      setConflict(true);
+      return;
+    }
+    setConflict(false);
+    if (decision.kind === "none") return;
+    if (decision.kind === "adopt" || (required && !decision.value)) {
       setDraft(value);
       return;
     }
-    onSave(next);
+    sent.current = [...sent.current, decision.value];
+    onSave(decision.value);
   };
 
   return (
@@ -998,19 +1047,32 @@ function SavedInput({
       aria-label={ariaLabel}
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
-      onFocus={() => setFocused(true)}
+      onFocus={() => {
+        // 다시 들어오면 지금 값 위에서 고치는 것으로 본다.
+        base.current = value;
+        // 보낸 저장이 모두 끝난 뒤라면 그 결과는 이미 지금 값에 들어 있다(실패했으면 들어 있지 않다).
+        if (!saving) sent.current = [];
+        setFocused(true);
+      }}
       onBlur={(event) => {
         setFocused(false);
         commit(event.currentTarget);
       }}
       data-unsaved={unsaved || undefined}
-      title={unsaved ? "저장되지 않았습니다. 다시 눌러 저장하세요." : undefined}
+      title={
+        unsaved
+          ? conflict
+            ? "다른 곳에서 이 칸이 바뀌어 저장하지 않았습니다. 다시 눌렀다 나오면 내 글로 저장하고, Esc를 누르면 바뀐 값으로 돌아갑니다."
+            : "저장되지 않았습니다. 다시 눌러 저장하세요."
+          : undefined
+      }
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
           event.currentTarget.blur();
         }
         if (event.key === "Escape") {
+          setConflict(false);
           setDraft(value);
         }
       }}

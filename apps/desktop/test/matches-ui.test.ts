@@ -591,7 +591,7 @@ describe('desktop matches workbench', () => {
     }
     assert.match(
       matchesPageSource,
-      /\[\['buyer-requirements'\], \['matches'\], \['brokerage-cases'\]\]/,
+      /\[\['buyer-requirements'\], \['matches'\], \['projects'\]\]/,
     );
     assert.match(matchesPageSource, /onEditRequirement=\{saveRequirement\}/);
     // 완료하면 진행 · 보류만 보는 이 목록에서 줄이 빠지므로, 이유를 알리고 되돌리기를 준다

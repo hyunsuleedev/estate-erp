@@ -19,11 +19,11 @@ import {
 } from "react";
 import type {
   BuyerIntakeLifecycleStatus,
-  BrokerageCase,
-  BrokerageCaseDemandIntent,
-  BrokerageCaseLedgerMode,
-  BrokerageCaseLedgerSortField,
-  BrokerageCaseListingIntent,
+  CustomerLedgerRow,
+  CustomerLedgerDemandIntent,
+  CustomerLedgerMode,
+  CustomerLedgerSortField,
+  CustomerLedgerListingIntent,
 } from "@estate-erp/api-client";
 import {
   ArrowDown,
@@ -71,6 +71,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getRouteMeta } from "@/features/tabs/lib/routeMeta";
 import { useTabStore } from "@/features/tabs/store/useTabStore";
+import { useProjectChangesFromOtherTabs } from "../projects/-project-hooks";
 import {
   customerLedgerFilterDefinitions,
   customerLedgerFiltersToApiParams,
@@ -83,9 +84,9 @@ import {
 } from "./-customer-ledger-pagination";
 import { CustomerCaseActionMenu } from "./-customer-case-action-menu";
 import {
-  BrokerageCaseListButton,
-  BrokerageCasePlanHost,
-} from "./-brokerage-case-plan-dialog";
+  ProjectListButton,
+  ProjectPlanHost,
+} from "./-project-plan-dialog";
 import { CustomerDemandIntakeActionMenu } from "./-customer-demand-intake-action-menu";
 import { CustomerDemandIntentActionMenu } from "./-customer-demand-intent-action-menu";
 import { LedgerMatchPanel } from "../wanted-properties/-ledger-match-panel";
@@ -110,7 +111,7 @@ export const Route = createFileRoute("/_authenticated/customers/")({
 });
 
 type SortOrder = "asc" | "desc";
-type CustomerLedgerMode = Exclude<BrokerageCaseLedgerMode, "both">;
+type LedgerModeFilter = Exclude<CustomerLedgerMode, "both">;
 
 const PAGE_SIZE = 20;
 const CUSTOMER_CASE_ESTIMATED_HEIGHT = 240;
@@ -128,7 +129,7 @@ const CONSULTATION_TYPE_LABELS: Record<string, string> = {
 };
 
 const MODE_OPTIONS: Array<{
-  value: CustomerLedgerMode;
+  value: LedgerModeFilter;
   label: string;
 }> = [
   { value: "all", label: "전체" },
@@ -137,13 +138,15 @@ const MODE_OPTIONS: Array<{
 ];
 
 function CustomersNextPage() {
+  // 다른 탭에서 프로젝트를 열거나 풀면 줄의 묶음이 달라진다. 이 화면도 다시 읽는다.
+  useProjectChangesFromOtherTabs();
   const createTab = useTabStore((state) => state.createTab);
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
-  const [mode, setMode] = useState<CustomerLedgerMode>("all");
+  const [mode, setMode] = useState<LedgerModeFilter>("all");
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
   const [sortBy, setSortBy] =
-    useState<BrokerageCaseLedgerSortField | null>("createdAt");
+    useState<CustomerLedgerSortField | null>("createdAt");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [collapsedCaseIds, setCollapsedCaseIds] = useState<Set<string>>(
     () => new Set(),
@@ -227,10 +230,10 @@ function CustomersNextPage() {
   );
 
   const ledgerQuery = useInfiniteQuery({
-    queryKey: ["brokerage-cases", "ledger", "customers", filters],
+    queryKey: ["projects", "ledger", "customers", filters],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
-      api.brokerageCases.ledger({
+      api.projects.ledger({
         ...filters,
         cursor: pageParam ?? undefined,
       }),
@@ -372,12 +375,12 @@ function CustomersNextPage() {
   const matchCaseIdByKey = useMemo(() => {
     const caseIds = new Map<string, string>();
 
-    for (const brokerageCase of cases) {
-      for (const intent of brokerageCase.demandIntents) {
-        caseIds.set(`demand:${intent.requirementId}`, brokerageCase.id);
+    for (const project of cases) {
+      for (const intent of project.demandIntents) {
+        caseIds.set(`demand:${intent.requirementId}`, project.id);
       }
-      for (const intent of brokerageCase.listingIntents) {
-        caseIds.set(`listing:${intent.listingIntakeId}`, brokerageCase.id);
+      for (const intent of project.listingIntents) {
+        caseIds.set(`listing:${intent.listingIntakeId}`, project.id);
       }
     }
 
@@ -389,7 +392,7 @@ function CustomersNextPage() {
   const firstPage = ledgerQuery.data?.pages[0];
   const totalCases = firstPage?.pagination.total ?? 0;
   const summary = firstPage?.summary ?? {
-    cases: 0,
+    rows: 0,
     demand: 0,
     listing: 0,
     both: 0,
@@ -416,8 +419,8 @@ function CustomersNextPage() {
     activeFilters.length > 0 ||
     (sortBy !== null &&
       (sortBy !== "createdAt" || sortOrder !== "desc"));
-  const modeCount = (value: CustomerLedgerMode) => {
-    if (value === "all") return summary.cases;
+  const modeCount = (value: LedgerModeFilter) => {
+    if (value === "all") return summary.rows;
     return summary[value];
   };
 
@@ -479,7 +482,7 @@ function CustomersNextPage() {
     selectedItemKeys,
     loadedSelectionKeys,
   );
-  const changeSort = (field: BrokerageCaseLedgerSortField) => {
+  const changeSort = (field: CustomerLedgerSortField) => {
     const nextSort = getNextCustomerLedgerSort(
       { sortBy, sortOrder },
       field,
@@ -514,7 +517,7 @@ function CustomersNextPage() {
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
               <Tabs
                 value={mode}
-                onValueChange={(value) => setMode(value as CustomerLedgerMode)}
+                onValueChange={(value) => setMode(value as LedgerModeFilter)}
                 className="min-w-0 shrink-0 gap-0"
               >
                 <TabsList
@@ -565,7 +568,7 @@ function CustomersNextPage() {
             <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
               {totalCases.toLocaleString()}개 케이스
             </span>
-            <BrokerageCaseListButton className="h-8 shrink-0" />
+            <ProjectListButton className="h-8 shrink-0" />
             <Button
               type="button"
               size="sm"
@@ -578,7 +581,7 @@ function CustomersNextPage() {
           </div>
         </section>
         {/* 진행 계획 창은 줄이 아니라 화면에 하나만 둔다(줄이 다시 그려져도 남는다). */}
-        <BrokerageCasePlanHost />
+        <ProjectPlanHost />
 
         <section
           className="shrink-0 overflow-x-auto border-b border-border bg-[#faf9f6]"
@@ -602,7 +605,7 @@ function CustomersNextPage() {
               sortDefinitions={customerLedgerSortDefinitions}
               activeSorts={activeSorts}
               onSortAdd={(sort) => {
-                setSortBy(sort.field as BrokerageCaseLedgerSortField);
+                setSortBy(sort.field as CustomerLedgerSortField);
                 setSortOrder(sort.direction);
               }}
               onSortRemove={() => {
@@ -666,9 +669,9 @@ function CustomersNextPage() {
                   style={{ height: customerCaseVirtualizer.getTotalSize() }}
                 >
                   {virtualCustomerCases.map((virtualCase) => {
-                    const brokerageCase = cases[virtualCase.index];
-                    if (!brokerageCase) return null;
-                    const expanded = !collapsedCaseIds.has(brokerageCase.id);
+                    const project = cases[virtualCase.index];
+                    if (!project) return null;
+                    const expanded = !collapsedCaseIds.has(project.id);
 
                     return (
                       <div
@@ -676,7 +679,7 @@ function CustomersNextPage() {
                         ref={customerCaseVirtualizer.measureElement}
                         data-index={virtualCase.index}
                         data-customer-case-virtual-row
-                        data-customer-case-id={brokerageCase.id}
+                        data-customer-case-id={project.id}
                         role="listitem"
                         aria-posinset={virtualCase.index + 1}
                         aria-setsize={totalCases}
@@ -686,12 +689,12 @@ function CustomersNextPage() {
                         }}
                       >
                         <CustomerCaseGroup
-                          brokerageCase={brokerageCase}
+                          project={project}
                           expanded={expanded}
                           collapsedDemandIntakeIds={collapsedDemandIntakeIds}
                           selectedItemKeys={selectedItemKeys}
                           expandedMatchKey={
-                            activeMatchCaseId === brokerageCase.id
+                            activeMatchCaseId === project.id
                               ? expandedMatchKey
                               : null
                           }
@@ -802,7 +805,7 @@ function EditableIntentMemo({
     },
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["brokerage-cases"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects"] }),
         queryClient.invalidateQueries({
           queryKey:
             target.kind === "listing"
@@ -861,10 +864,10 @@ function CustomersNextLedgerHeader({
 }: {
   loadedCaseCount: number;
   selectionState: boolean | "indeterminate";
-  sortBy: BrokerageCaseLedgerSortField | null;
+  sortBy: CustomerLedgerSortField | null;
   sortOrder: SortOrder;
   onSelectionChange: (selected: boolean) => void;
-  onSort: (field: BrokerageCaseLedgerSortField) => void;
+  onSort: (field: CustomerLedgerSortField) => void;
 }) {
   return (
     <div
@@ -964,10 +967,10 @@ function CustomersNextSortableHeader({
 }: {
   icon?: ReactNode;
   label: string;
-  field: BrokerageCaseLedgerSortField;
-  sortBy: BrokerageCaseLedgerSortField | null;
+  field: CustomerLedgerSortField;
+  sortBy: CustomerLedgerSortField | null;
   sortOrder: SortOrder;
-  onSort: (field: BrokerageCaseLedgerSortField) => void;
+  onSort: (field: CustomerLedgerSortField) => void;
   groupEnd?: boolean;
 }) {
   const active = field === sortBy;
@@ -1038,7 +1041,7 @@ function CustomersNextHeaderLabel({
 }
 
 const CustomerCaseGroup = memo(function CustomerCaseGroup({
-  brokerageCase,
+  project,
   expanded,
   collapsedDemandIntakeIds,
   selectedItemKeys,
@@ -1048,7 +1051,7 @@ const CustomerCaseGroup = memo(function CustomerCaseGroup({
   onToggleMatch,
   onSelectionChange,
 }: {
-  brokerageCase: BrokerageCase;
+  project: CustomerLedgerRow;
   expanded: boolean;
   collapsedDemandIntakeIds: ReadonlySet<string>;
   selectedItemKeys: ReadonlySet<string>;
@@ -1059,15 +1062,15 @@ const CustomerCaseGroup = memo(function CustomerCaseGroup({
   onSelectionChange: (keys: readonly string[], selected: boolean) => void;
 }) {
   const participant =
-    brokerageCase.primaryParticipant ?? brokerageCase.participants[0] ?? null;
+    project.primaryParticipant ?? project.participants[0] ?? null;
   const customerName = participant?.contact.name ?? "고객 미지정";
-  const participantExtra = Math.max(0, brokerageCase.participants.length - 1);
-  const demandGroups = groupCustomerDemandIntents(brokerageCase.demandIntents);
+  const participantExtra = Math.max(0, project.participants.length - 1);
+  const demandGroups = groupCustomerDemandIntents(project.demandIntents);
   const listingGroups = groupCustomerListingIntents(
-    brokerageCase.listingIntents,
+    project.listingIntents,
   );
-  const summary = summarizeCustomerCase(brokerageCase);
-  const latestConsultation = brokerageCase.latestConsultation;
+  const summary = summarizeCustomerCase(project);
+  const latestConsultation = project.latestConsultation;
   const latestConsultationContent = latestConsultation?.content
     .replace(/\s+/g, " ")
     .trim();
@@ -1076,8 +1079,8 @@ const CustomerCaseGroup = memo(function CustomerCaseGroup({
       latestConsultation.type)
     : null;
   const intakeCount = demandGroups.length + listingGroups.length;
-  const panelId = `customers-next-case-${brokerageCase.id}`;
-  const selectionKeys = getCustomerCaseSelectionKeys(brokerageCase);
+  const panelId = `customers-next-case-${project.id}`;
+  const selectionKeys = getCustomerCaseSelectionKeys(project);
   const selectionState = getCustomerSelectionState(
     selectedItemKeys,
     selectionKeys,
@@ -1115,7 +1118,7 @@ const CustomerCaseGroup = memo(function CustomerCaseGroup({
           aria-label={`${customerName} 고객 케이스 ${expanded ? "접기" : "펼치기"}`}
           aria-expanded={expanded}
           aria-controls={panelId}
-          onClick={() => onToggle(brokerageCase.id)}
+          onClick={() => onToggle(project.id)}
         >
           {expanded ? (
             <ChevronDown className="size-4" aria-hidden="true" />
@@ -1225,7 +1228,7 @@ const CustomerCaseGroup = memo(function CustomerCaseGroup({
           </div>
         </div>
         <CustomerCaseActionMenu
-          brokerageCase={brokerageCase}
+          project={project}
           customerName={customerName}
         />
       </header>
@@ -1470,7 +1473,7 @@ function DemandIntentRow({
   selected,
   onSelectionChange,
 }: {
-  intent: BrokerageCaseDemandIntent;
+  intent: CustomerLedgerDemandIntent;
   isFirst: boolean;
   isLast: boolean;
   matchKey: string;
@@ -1881,7 +1884,7 @@ function ListingOptionRow({
   selected,
   onSelectionChange,
 }: {
-  line: BrokerageCaseListingIntent;
+  line: CustomerLedgerListingIntent;
   ordinal: number;
   isLast: boolean;
   selected: boolean;
@@ -2046,7 +2049,7 @@ function displayDemandRange(value: string): string {
   return value === "—" ? "미정" : value;
 }
 
-function getDemandTerms(intent: BrokerageCaseDemandIntent): DemandTerm[] {
+function getDemandTerms(intent: CustomerLedgerDemandIntent): DemandTerm[] {
   const area = displayDemandRange(
     formatAreaRange(intent.areaMin, intent.areaMax),
   );
@@ -2088,7 +2091,7 @@ function getDemandTerms(intent: BrokerageCaseDemandIntent): DemandTerm[] {
 }
 
 function formatDemandConditionLabel(
-  intent: BrokerageCaseDemandIntent,
+  intent: CustomerLedgerDemandIntent,
   terms = getDemandTerms(intent),
 ): string {
   const transactionLabel = getStatusMeta(
@@ -2128,7 +2131,7 @@ function displayListingValue(value: string): string {
   return value === "—" ? "미정" : value;
 }
 
-function getListingTerms(intent: BrokerageCaseListingIntent): ListingTerm[] {
+function getListingTerms(intent: CustomerLedgerListingIntent): ListingTerm[] {
   const area = displayListingValue(formatPyeong(intent.area));
 
   if (intent.transactionType === "monthly") {
@@ -2157,7 +2160,7 @@ function getListingTerms(intent: BrokerageCaseListingIntent): ListingTerm[] {
 }
 
 function getListingDetailTerms(
-  intent: BrokerageCaseListingIntent,
+  intent: CustomerLedgerListingIntent,
 ): ListingDetailTerm[] {
   const details: ListingDetailTerm[] = [];
 
@@ -2169,7 +2172,7 @@ function getListingDetailTerms(
 
 function formatListingMoveIn(
   intent: Pick<
-    BrokerageCaseListingIntent,
+    CustomerLedgerListingIntent,
     "moveInAvailableType" | "moveInAvailableFrom" | "moveInAvailableTo"
   >,
 ): string | null {
@@ -2195,7 +2198,7 @@ function formatListingMoveIn(
 }
 
 function formatListingConditionLabel(
-  intent: BrokerageCaseListingIntent,
+  intent: CustomerLedgerListingIntent,
   terms = getListingTerms(intent),
 ): string {
   const transactionLabel = getStatusMeta(

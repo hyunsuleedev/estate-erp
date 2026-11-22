@@ -56,7 +56,7 @@ function makeIntake(overrides: Partial<ListingIntake> = {}): ListingIntake {
   return {
     id: 'intake-1',
     officeId: 'office-1',
-    brokerageCaseId: 'case-1',
+    projectId: 'case-1',
     casePriorityRank: 0,
     propertyId: 'prop-1',
     lifecycleStatus: 'open',

@@ -3,6 +3,7 @@ import {
   Building2,
   CalendarDays,
   FileText,
+  FolderKanban,
   UserSearch,
   Handshake,
   LayoutDashboard,
@@ -10,6 +11,7 @@ import {
   Map,
   Megaphone,
   MessageSquare,
+  Network,
   Settings,
   Users,
   Wallet,
@@ -64,6 +66,15 @@ export const NAV_GROUPS: {
   { key: "operations", label: "업무·운영" },
 ];
 
+/**
+ * 개발 실행에서만 사이드바에 보이는 항목. 배포 빌드에는 들어가지 않는다.
+ * 네트워크는 2차 업데이트 대상이라 메뉴에서 빼 두었고, 지금은 확인용으로 여기에만 올려 두었다.
+ * 확인이 끝나면 이 목록을 비운다.
+ */
+const DEV_PREVIEW_ITEMS: NavItem[] = import.meta.env?.DEV
+  ? [{ path: "/network", label: "네트워크", icon: Network, group: "operations" }]
+  : [];
+
 export const NAV_ITEMS: NavItem[] = [
   // ── 시작
   {
@@ -92,13 +103,10 @@ export const NAV_ITEMS: NavItem[] = [
   },
 
   // ── 고객·상담
-  {
-    path: "/customers-table",
-    label: "고객 원장",
-    icon: Users,
-    group: "customers",
-    alsoActivePaths: ["/customers"],
-  },
+  // 고객 원장(/customers-table, /customers)은 2026-11-21에 메뉴에서 뺐다. 화면과 주소는 그대로라
+  // 다른 화면의 링크로는 열린다. 다시 켤 때는 여기에 { path: "/customers-table", label: "고객 원장",
+  // icon: Users, group: "customers", alsoActivePaths: ["/customers"] }를 되돌린다.
+  { path: "/projects", label: "프로젝트", icon: FolderKanban, group: "customers" },
   { path: "/contacts", label: "연락처", icon: BookUser, group: "customers" },
   {
     path: "/consultations",
@@ -164,6 +172,7 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ["owner", "manager"],
   },
   // 네트워크·협력업체 찾기·자료실은 현재 사이드바에서 제외 — 기존 라우트와 데이터는 유지한다.
+  ...DEV_PREVIEW_ITEMS,
   { path: "/settings", label: "설정", icon: Settings, group: "operations" },
 ];
 
@@ -218,6 +227,8 @@ export const ROUTE_LABELS: Record<string, string> = {
   // 고객
   "/_authenticated/customers/": "고객 중심 보기",
   "/_authenticated/customers-table/": "고객 원장",
+  "/_authenticated/projects/": "프로젝트",
+  "/_authenticated/projects/$id": "프로젝트 상세",
   "/_authenticated/contacts/": "연락처",
   "/_authenticated/contacts/$id": "연락처 상세",
   "/_authenticated/contacts/new": "연락처 추가",
