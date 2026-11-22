@@ -1,0 +1,107 @@
+// ============================================================
+// 프로젝트 — 사용자가 묶을 때만 생기는 업무철 (갈아타기 등)
+//
+// 의뢰는 프로젝트 없이 존재한다. 한 가족의 매물 의뢰와 구매 의뢰가 서로 물려 있을 때
+// 사용자가 직접 묶고, 진행 계획(ProjectStep)으로 순서를 정한다.
+// 서버가 알아서 묶지 않는다. 당사자는 의뢰(BuyerIntakeContact, PropertyContact)에서
+// 읽고 프로젝트에 따로 복사하지 않는다.
+//
+// 대표 고객(primaryContactId)은 당사자의 사본이 아니라 "이 프로젝트가 누구의 일인가"를
+// 사용자가 직접 정한 값이다. 의뢰 없이 사람만으로 프로젝트를 열 수 있게 하고, 매물 쪽
+// 소유자 정보가 정확하지 않아도 프로젝트의 손님을 분명히 한다. 비워 둘 수 있다.
+// ============================================================
+
+model Project {
+  id         String    @id @default(uuid()) @db.Uuid
+  officeId   String    @map("office_id") @db.Uuid
+  title      String?
+  memo       String?   @db.Text
+  /// 사용자가 정한 대표 고객. 같은 사무소의 연락처인지는 서버가 검사한다.
+  primaryContactId String? @map("primary_contact_id") @db.Uuid
+  /// 담당 직원
+  assignedToId     String? @map("assigned_to_id") @db.Uuid
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  office         Office              @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  primaryContact Contact?            @relation("ProjectPrimaryContact", fields: [primaryContactId], references: [id], onDelete: SetNull)
+  assignedTo     User?               @relation("ProjectAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  steps          ProjectStep[]
+  buyerIntakes   BuyerIntake[]
+  listingIntakes ListingIntake[]
+  comments       ProjectComment[]
+
+  // 하위 테이블의 복합 FK가 office_id까지 함께 검증한다.
+  @@unique([officeId, id])
+  @@index([officeId, archivedAt, createdAt])
+  @@index([officeId, primaryContactId])
+  @@index([officeId, assignedToId])
+  @@map("projects")
+}
+
+// ============================================================
+// 코멘트 — 직원이 일에 적어 두는 글
+//
+// 상담(Consultation)은 손님과 나눈 대화라 사람을 가리킨다. 코멘트는 직원이 일에 대해
+// 적는 글이라 일을 가리킨다. 지금은 프로젝트에만 단다. 거래 등 다른 곳에도 달게 되면
+// "종류 + id" 한 쌍이 아니라 곳마다 진짜 FK 칸을 늘리고, 정확히 하나만 채우는 CHECK를 둔다
+// (그때 project_id를 비울 수 있게 바꾼다).
+// ============================================================
+
+model ProjectComment {
+  id        String   @id @default(uuid()) @db.Uuid
+  officeId  String   @map("office_id") @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  /// 적은 직원. 직원 기록이 지워져도 글은 남는다.
+  authorId  String?  @map("author_id") @db.Uuid
+  body      String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office  Office  @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  project Project @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Cascade)
+  author  User?   @relation("ProjectCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([officeId, projectId, createdAt])
+  @@map("comments")
+}
+
+// ============================================================
+// 프로젝트의 진행 계획 — 사람이 정한 단계와 순서
+//
+// 단계는 프로젝트에 담긴 매물 의뢰나 구매 의뢰, 또는 의뢰 없이 바로 만든 거래 하나를
+// 가리키거나, 아무것도 가리키지 않는다("대출 실행", "이사").
+// 가리키는 대상의 진행 상태와 잔금일은 저장하지 않고 의뢰·거래에서 읽는다.
+// ============================================================
+
+model ProjectStep {
+  id              String    @id @default(uuid()) @db.Uuid
+  officeId        String    @map("office_id") @db.Uuid
+  projectId       String    @map("project_id") @db.Uuid
+  /// 사용자가 정한 차례. 같은 번호면 동시 진행.
+  sortOrder       Int       @map("sort_order")
+  title           String
+  // 이 단계가 가리키는 것. 셋 중 하나만 채우거나 모두 비운다 (CHECK 제약은 migration SQL).
+  listingIntakeId String?   @map("listing_intake_id") @db.Uuid
+  buyerIntakeId   String?   @map("buyer_intake_id") @db.Uuid
+  /// 의뢰 없이 바로 만든 거래. 의뢰가 있으면 의뢰를 가리키고 이 칸은 비운다.
+  dealId          String?   @map("deal_id") @db.Uuid
+  targetDate      DateTime? @map("target_date") @db.Date
+  memo            String?   @db.Text
+  /// 아무것도 가리키지 않는 단계만 사용자가 체크한다.
+  doneAt          DateTime? @map("done_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  office        Office         @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  project Project  @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Cascade)
+  // 같은 프로젝트에 담긴 의뢰만 가리킬 수 있다 (복합 FK가 DB에서 강제).
+  listingIntake ListingIntake? @relation(fields: [officeId, projectId, listingIntakeId], references: [officeId, projectId, id], onDelete: Restrict)
+  buyerIntake   BuyerIntake?   @relation(fields: [officeId, projectId, buyerIntakeId], references: [officeId, projectId, id], onDelete: Restrict)
+  deal          Deal?          @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  @@index([officeId, projectId, sortOrder])
+  @@index([dealId])
+  @@map("project_steps")
+}

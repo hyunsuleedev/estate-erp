@@ -23,7 +23,7 @@ import { PropertyContactsModule } from './modules/property-contacts/property-con
 import { ContactRelationsModule } from './modules/contact-relations/contact-relations.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { BuyerIntakesModule } from './modules/buyer-intakes/buyer-intakes.module';
-import { BrokerageCasesModule } from './modules/brokerage-cases/brokerage-cases.module';
+import { ProjectsModule } from './modules/projects/projects.module';
 import { BuyerRequirementsModule } from './modules/buyer-requirements/buyer-requirements.module';
 import { ConsultationsModule } from './modules/consultations/consultations.module';
 import { OfficeSitesModule } from './modules/office-sites/office-sites.module';
@@ -91,7 +91,7 @@ const GENERAL_API_RATE_LIMIT_PER_MINUTE = 600;
     PropertyContactsModule,
     TenantsModule,
     BuyerIntakesModule,
-    BrokerageCasesModule,
+    ProjectsModule,
     BuyerRequirementsModule,
     ConsultationsModule,
     TasksModule,

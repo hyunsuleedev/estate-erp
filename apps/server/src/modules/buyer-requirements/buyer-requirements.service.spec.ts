@@ -120,7 +120,7 @@ describe("BuyerRequirementsService", () => {
     const newIntake = {
       id: NEW_INTAKE_ID,
       officeId: OFFICE_ID,
-      brokerageCaseId: null,
+      projectId: null,
       lifecycleStatus: "open",
       receivedAt: new Date("2026-08-20T10:00:00.000Z"),
       memo: null,
@@ -183,11 +183,11 @@ describe("BuyerRequirementsService", () => {
     });
 
     expect(tx.buyerIntake.findFirst).not.toHaveBeenCalled();
-    // 같은 고객의 열린 의뢰가 있어도 서버가 건으로 묶지 않는다. 새 의뢰는 건 없이 생긴다.
+    // 같은 고객의 열린 의뢰가 있어도 서버가 프로젝트로 묶지 않는다. 새 의뢰는 프로젝트 없이 생긴다.
     expect(tx.buyerIntake.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.not.objectContaining({
-          brokerageCaseId: expect.anything(),
+          projectId: expect.anything(),
         }),
       }),
     );

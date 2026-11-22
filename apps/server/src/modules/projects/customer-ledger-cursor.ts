@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-export const BROKERAGE_CASE_LEDGER_SORT_FIELDS = [
+export const CUSTOMER_LEDGER_SORT_FIELDS = [
   'customer',
   'intentCount',
   'budgetMin',
@@ -14,39 +14,39 @@ export const BROKERAGE_CASE_LEDGER_SORT_FIELDS = [
   'createdAt',
 ] as const;
 
-export type BrokerageCaseLedgerSortField =
-  (typeof BROKERAGE_CASE_LEDGER_SORT_FIELDS)[number];
-export type BrokerageCaseLedgerSortOrder = 'asc' | 'desc';
+export type CustomerLedgerSortField =
+  (typeof CUSTOMER_LEDGER_SORT_FIELDS)[number];
+export type CustomerLedgerSortOrder = 'asc' | 'desc';
 
 type LedgerCursorSortValue = Date | Prisma.Decimal | string | null;
 
 interface LedgerCursorPayload {
   v: 1;
-  sortBy: BrokerageCaseLedgerSortField;
-  sortOrder: BrokerageCaseLedgerSortOrder;
+  sortBy: CustomerLedgerSortField;
+  sortOrder: CustomerLedgerSortOrder;
   sortValue: string | null;
   customerName: string | null;
   id: string;
   total: number;
 }
 
-export interface BrokerageCaseLedgerCursor {
-  sortBy: BrokerageCaseLedgerSortField;
-  sortOrder: BrokerageCaseLedgerSortOrder;
+export interface CustomerLedgerCursor {
+  sortBy: CustomerLedgerSortField;
+  sortOrder: CustomerLedgerSortOrder;
   sortValue: LedgerCursorSortValue;
   customerName: string | null;
   id: string;
   total: number;
 }
 
-export interface BrokerageCaseLedgerCursorRow {
+export interface CustomerLedgerCursorRow {
   sortValue: Date | Prisma.Decimal | number | string | null;
   customerName: string | null;
   id: string;
 }
 
 const LEDGER_SORT_FIELD_SET = new Set<string>(
-  BROKERAGE_CASE_LEDGER_SORT_FIELDS,
+  CUSTOMER_LEDGER_SORT_FIELDS,
 );
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -57,8 +57,8 @@ function invalidCursor(): never {
 }
 
 function serializeSortValue(
-  sortBy: BrokerageCaseLedgerSortField,
-  value: BrokerageCaseLedgerCursorRow['sortValue'],
+  sortBy: CustomerLedgerSortField,
+  value: CustomerLedgerCursorRow['sortValue'],
 ) {
   if (value === null) return null;
 
@@ -80,7 +80,7 @@ function serializeSortValue(
 }
 
 function deserializeSortValue(
-  sortBy: BrokerageCaseLedgerSortField,
+  sortBy: CustomerLedgerSortField,
   value: string | null,
 ): LedgerCursorSortValue {
   if (value === null) return null;
@@ -102,10 +102,10 @@ function deserializeSortValue(
   }
 }
 
-export function encodeBrokerageCaseLedgerCursor(input: {
-  sortBy: BrokerageCaseLedgerSortField;
-  sortOrder: BrokerageCaseLedgerSortOrder;
-  row: BrokerageCaseLedgerCursorRow;
+export function encodeCustomerLedgerCursor(input: {
+  sortBy: CustomerLedgerSortField;
+  sortOrder: CustomerLedgerSortOrder;
+  row: CustomerLedgerCursorRow;
   total: number;
 }) {
   const payload: LedgerCursorPayload = {
@@ -121,11 +121,11 @@ export function encodeBrokerageCaseLedgerCursor(input: {
   return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
 }
 
-export function decodeBrokerageCaseLedgerCursor(
+export function decodeCustomerLedgerCursor(
   encoded: string,
-  expectedSortBy: BrokerageCaseLedgerSortField,
-  expectedSortOrder: BrokerageCaseLedgerSortOrder,
-): BrokerageCaseLedgerCursor {
+  expectedSortBy: CustomerLedgerSortField,
+  expectedSortOrder: CustomerLedgerSortOrder,
+): CustomerLedgerCursor {
   if (!encoded || encoded.length > MAX_CURSOR_LENGTH) invalidCursor();
 
   let payload: unknown;
@@ -173,7 +173,7 @@ export function decodeBrokerageCaseLedgerCursor(
   };
 }
 
-function buildCustomerCursorCondition(cursor: BrokerageCaseLedgerCursor) {
+function buildCustomerCursorCondition(cursor: CustomerLedgerCursor) {
   if (cursor.customerName === null) {
     return Prisma.sql`eligible.customer_name IS NULL
       AND eligible.id > ${cursor.id}::uuid`;
@@ -189,7 +189,7 @@ function buildCustomerCursorCondition(cursor: BrokerageCaseLedgerCursor) {
   )`;
 }
 
-function buildTieBreakerCursorCondition(cursor: BrokerageCaseLedgerCursor) {
+function buildTieBreakerCursorCondition(cursor: CustomerLedgerCursor) {
   if (cursor.sortBy === 'createdAt') {
     return Prisma.sql`eligible.id > ${cursor.id}::uuid`;
   }
@@ -197,8 +197,8 @@ function buildTieBreakerCursorCondition(cursor: BrokerageCaseLedgerCursor) {
   return buildCustomerCursorCondition(cursor);
 }
 
-export function buildBrokerageCaseLedgerCursorCondition(input: {
-  cursor: BrokerageCaseLedgerCursor;
+export function buildCustomerLedgerCursorCondition(input: {
+  cursor: CustomerLedgerCursor;
   orderExpression: Prisma.Sql;
 }) {
   const { cursor, orderExpression } = input;

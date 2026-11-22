@@ -21,9 +21,9 @@ import {
 } from "../contacts/contact-phone.utils";
 import {
   appendIntakeStep,
-  assertActiveBrokerageCase,
+  assertActiveProject,
   BUYER_INTAKE_STEP_TITLE,
-} from "../brokerage-cases/brokerage-case-membership";
+} from "../projects/project-membership";
 
 export interface BuyerIntakeContactInput {
   contactId: string;
@@ -311,7 +311,7 @@ export class BuyerIntakesService {
   async create(
     officeId: string,
     dto: {
-      brokerageCaseId?: string;
+      projectId?: string;
       lifecycleStatus?: string;
       receivedAt?: string;
       memo?: string;
@@ -328,14 +328,14 @@ export class BuyerIntakesService {
     const lifecycleStatus =
       dto.lifecycleStatus ?? IntakeLifecycleStatus.OPEN;
     const intake = await this.prisma.$transaction(async (tx) => {
-      // 건은 사용자가 고른 경우에만 붙는다. 서버가 당사자를 보고 묶지 않는다.
-      if (dto.brokerageCaseId) {
-        await assertActiveBrokerageCase(tx, officeId, dto.brokerageCaseId);
+      // 프로젝트는 사용자가 고른 경우에만 붙는다. 서버가 당사자를 보고 묶지 않는다.
+      if (dto.projectId) {
+        await assertActiveProject(tx, officeId, dto.projectId);
       }
       const created = await tx.buyerIntake.create({
         data: {
           officeId,
-          brokerageCaseId: dto.brokerageCaseId ?? null,
+          projectId: dto.projectId ?? null,
           lifecycleStatus,
           receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined,
           memo: dto.memo,
@@ -354,10 +354,10 @@ export class BuyerIntakesService {
         },
         include: buyerIntakeInclude,
       });
-      if (dto.brokerageCaseId) {
+      if (dto.projectId) {
         await appendIntakeStep(tx, {
           officeId,
-          brokerageCaseId: dto.brokerageCaseId,
+          projectId: dto.projectId,
           kind: "buyer",
           intakeId: created.id,
           title: BUYER_INTAKE_STEP_TITLE,

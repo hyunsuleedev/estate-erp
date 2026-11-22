@@ -11,7 +11,7 @@ import {
   appendIntakeStep,
   listingIntakeStepTitle,
   type CaseIntakeKind,
-} from './brokerage-case-membership';
+} from './project-membership';
 
 const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   sale: '매매',
@@ -21,7 +21,12 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
 
 const MAX_TITLE_LENGTH = 100;
 const MAX_MEMO_LENGTH = 2_000;
-const MAX_STEPS_PER_CASE = 50;
+const MAX_STEPS_PER_PROJECT = 50;
+/** 목록 한 쪽의 프로젝트 수. 끝낸 프로젝트까지 모두 쪽을 넘겨 볼 수 있다. */
+const DEFAULT_PROJECT_PAGE = 50;
+const MAX_PROJECT_PAGE = 100;
+const PROJECT_LIST_STATUSES = ['open', 'archived', 'all'];
+const PROJECT_LIST_SORTS = ['updated', 'created'];
 
 /** 단계가 가리키는 거래에서 읽는 것. 금액은 표시용이고 자금 계산은 하지 않는다. */
 const dealFlowSelect = {
@@ -62,7 +67,23 @@ const dealFlowSelect = {
 
 type DealFlowRow = Prisma.DealGetPayload<{ select: typeof dealFlowSelect }>;
 
+const personSelect = {
+  id: true,
+  name: true,
+  phones: {
+    orderBy: [{ isPrimary: 'desc' as const }, { createdAt: 'asc' as const }],
+    take: 1,
+    select: { phone: true },
+  },
+} satisfies Prisma.ContactSelect;
+
+/** 매물 의뢰의 당사자로 보는 소유 관계 (고객 원장과 같은 기준) */
+const OWNER_ROLES = ['owner', 'co_owner'];
+
 const caseDetailInclude = {
+  primaryContact: { select: personSelect },
+  assignedTo: { select: { id: true, name: true } },
+  _count: { select: { comments: true } },
   steps: {
     orderBy: [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }],
     include: {
@@ -80,6 +101,14 @@ const caseDetailInclude = {
                   name: true, floor: true, floorEnd: true, floorLabel: true,
                   dong: { select: { name: true, isPlaceholder: true } },
                 },
+              },
+              propertyContacts: {
+                where: { status: 'active', role: { in: OWNER_ROLES } },
+                orderBy: [
+                  { isPrimary: 'desc' as const },
+                  { createdAt: 'asc' as const },
+                ],
+                select: { contact: { select: personSelect } },
               },
             },
           },
@@ -110,7 +139,7 @@ const caseDetailInclude = {
               { isPrimary: 'desc' as const },
               { createdAt: 'asc' as const },
             ],
-            select: { contact: { select: { id: true, name: true } } },
+            select: { contact: { select: personSelect } },
           },
           requirements: {
             orderBy: { priorityRank: 'asc' as const },
@@ -130,9 +159,9 @@ const caseDetailInclude = {
       deal: { select: dealFlowSelect },
     },
   },
-} satisfies Prisma.BrokerageCaseInclude;
+} satisfies Prisma.ProjectInclude;
 
-type CaseDetail = Prisma.BrokerageCaseGetPayload<{
+type CaseDetail = Prisma.ProjectGetPayload<{
   include: typeof caseDetailInclude;
 }>;
 type StepRow = CaseDetail['steps'][number];
@@ -199,14 +228,14 @@ function isDealDone(deal: DealFlowRow | null) {
 }
 
 /**
- * 중개 건과 진행 계획.
+ * 프로젝트와 진행 계획.
  *
- * 건은 사용자가 의뢰를 골라 묶을 때만 생긴다. 건에 담긴 의뢰는 진행 계획에 단계가
- * 하나씩 있다(담기면 단계가 생기고, 그 단계를 지우면 건에서 빠진다). 단계의 진행
+ * 프로젝트는 사용자가 의뢰를 골라 묶을 때만 생긴다. 프로젝트에 담긴 의뢰는 진행 계획에 단계가
+ * 하나씩 있다(담기면 단계가 생기고, 그 단계를 지우면 프로젝트에서 빠진다). 단계의 진행
  * 상태와 잔금일은 저장하지 않고 의뢰·거래에서 읽는다.
  */
 @Injectable()
-export class BrokerageCasePlanService {
+export class ProjectPlanService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(
@@ -214,26 +243,40 @@ export class BrokerageCasePlanService {
     dto: {
       title?: string | null;
       memo?: string | null;
+      primaryContactId?: string | null;
+      assignedToId?: string | null;
       listingIntakeIds?: string[];
       buyerIntakeIds?: string[];
     },
   ) {
     const listingIntakeIds = [...new Set(dto.listingIntakeIds ?? [])];
     const buyerIntakeIds = [...new Set(dto.buyerIntakeIds ?? [])];
-    if (listingIntakeIds.length + buyerIntakeIds.length === 0) {
-      throw new BadRequestException('건으로 묶을 의뢰를 하나 이상 고르세요.');
-    }
-    if (listingIntakeIds.length + buyerIntakeIds.length > MAX_STEPS_PER_CASE) {
+    const primaryContactId = dto.primaryContactId ?? null;
+    const assignedToId = dto.assignedToId ?? null;
+    // 누구의 일인지는 있어야 한다: 대표 고객을 정하거나, 사람이 딸린 의뢰를 담는다.
+    if (
+      listingIntakeIds.length + buyerIntakeIds.length === 0 &&
+      !primaryContactId
+    ) {
       throw new BadRequestException(
-        `한 건에는 의뢰를 ${MAX_STEPS_PER_CASE}개까지 묶을 수 있습니다.`,
+        '대표 고객을 정하거나 프로젝트에 담을 의뢰를 하나 이상 고르세요.',
+      );
+    }
+    if (listingIntakeIds.length + buyerIntakeIds.length > MAX_STEPS_PER_PROJECT) {
+      throw new BadRequestException(
+        `한 프로젝트에는 의뢰를 ${MAX_STEPS_PER_PROJECT}개까지 담을 수 있습니다.`,
       );
     }
     const title = this.normalizeText(dto.title, MAX_TITLE_LENGTH, '제목');
     const memo = this.normalizeText(dto.memo, MAX_MEMO_LENGTH, '메모');
 
-    const caseId = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.brokerageCase.create({
-        data: { officeId, title, memo },
+    const projectId = await this.prisma.$transaction(async (tx) => {
+      if (primaryContactId) {
+        await this.assertContact(tx, officeId, primaryContactId);
+      }
+      if (assignedToId) await this.assertStaff(tx, officeId, assignedToId);
+      const created = await tx.project.create({
+        data: { officeId, title, memo, primaryContactId, assignedToId },
         select: { id: true },
       });
       // 접수된 순서대로 단계를 만든다. 순서는 사용자가 나중에 바꾼다.
@@ -248,89 +291,205 @@ export class BrokerageCasePlanService {
       }
       return created.id;
     });
-    return this.findOne(caseId, officeId);
+    return this.findOne(projectId, officeId);
   }
 
   /**
-   * 보관하지 않은 중개 건 전부. 고객 원장은 진행 중인 의뢰만 보여 주므로, 의뢰가 모두
-   * 종료된 건이나 거래·직접 추가 단계만 있는 건은 원장에 줄이 없다. 그런 건의 진행
-   * 계획도 열 수 있도록 건 자체의 목록을 따로 준다.
+   * 프로젝트 목록. 고객 원장은 진행 중인 의뢰만 보여 주므로, 의뢰가 모두 종료된 프로젝트나
+   * 거래·직접 추가 단계만 있는 프로젝트, 의뢰 없이 사람만으로 연 프로젝트는 원장에 줄이 없다.
+   * 그런 프로젝트도 여기서는 모두 나온다.
+   *
+   * status: open(기본, 끝내지 않은 것) · archived(끝낸 것) · all.
+   * sort: updated(기본, 최근 고친 순) · created(최근 시작한 순). offset·limit으로 쪽을 넘긴다.
+   * 줄마다 진행 계획을 읽어 "몇 단계 중 몇 단계가 끝났나"를 계산한다(저장하지 않는다).
    */
-  async findAll(officeId: string) {
-    const cases = await this.prisma.brokerageCase.findMany({
-      where: { officeId, archivedAt: null },
-      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-      select: {
-        id: true,
-        title: true,
-        updatedAt: true,
-        steps: {
-          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-          select: { title: true },
-        },
-        buyerIntakes: {
-          orderBy: { receivedAt: 'asc' },
-          take: 1,
-          select: {
-            contacts: {
-              orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
-              take: 1,
-              select: { contact: { select: { name: true } } },
-            },
-          },
-        },
-        listingIntakes: {
-          orderBy: { receivedAt: 'asc' },
-          take: 1,
-          select: {
-            property: {
-              select: {
-                propertyContacts: {
-                  where: { status: 'active' },
-                  orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
-                  take: 1,
-                  select: { contact: { select: { name: true } } },
+  async findAll(
+    officeId: string,
+    query: {
+      status?: string;
+      search?: string;
+      assignedToId?: string;
+      sort?: string;
+      offset?: number;
+      limit?: number;
+    } = {},
+  ) {
+    const status = query.status ?? 'open';
+    if (!PROJECT_LIST_STATUSES.includes(status)) {
+      throw new BadRequestException('status 값이 올바르지 않습니다.');
+    }
+    const sort = query.sort ?? 'updated';
+    if (!PROJECT_LIST_SORTS.includes(sort)) {
+      throw new BadRequestException('sort 값이 올바르지 않습니다.');
+    }
+    const offset = query.offset ?? 0;
+    const limit = query.limit ?? DEFAULT_PROJECT_PAGE;
+    if (
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > MAX_PROJECT_PAGE
+    ) {
+      throw new BadRequestException('offset·limit 값이 올바르지 않습니다.');
+    }
+    const search = query.search?.trim();
+    const where: Prisma.ProjectWhereInput = {
+      officeId,
+      ...(status === 'open' ? { archivedAt: null } : {}),
+      ...(status === 'archived' ? { archivedAt: { not: null } } : {}),
+      ...(query.assignedToId ? { assignedToId: query.assignedToId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { title: { contains: search, mode: 'insensitive' } },
+              {
+                primaryContact: {
+                  name: { contains: search, mode: 'insensitive' },
                 },
               },
+              {
+                buyerIntakes: {
+                  some: {
+                    contacts: {
+                      some: {
+                        contact: {
+                          name: { contains: search, mode: 'insensitive' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              {
+                listingIntakes: {
+                  some: {
+                    property: {
+                      propertyContacts: {
+                        some: {
+                          status: 'active',
+                          role: { in: OWNER_ROLES },
+                          contact: {
+                            name: { contains: search, mode: 'insensitive' },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+    const [total, projects] = await Promise.all([
+      this.prisma.project.count({ where }),
+      this.prisma.project.findMany({
+        where,
+        // 같은 시각이면 id로 순서를 고정한다(쪽을 넘길 때 줄이 겹치거나 빠지지 않게).
+        orderBy: [
+          sort === 'created' ? { createdAt: 'desc' } : { updatedAt: 'desc' },
+          { id: 'asc' },
+        ],
+        skip: offset,
+        take: limit,
+        include: {
+          ...caseDetailInclude,
+          comments: {
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: 1,
+            select: {
+              body: true,
+              createdAt: true,
+              author: { select: { name: true } },
             },
           },
         },
-      },
-    });
-    return cases.map((item) => ({
-      id: item.id,
-      title: item.title,
-      updatedAt: item.updatedAt,
-      stepCount: item.steps.length,
-      firstStepTitle: item.steps[0]?.title ?? null,
-      /** 건에 담긴 의뢰의 대표 연락 고객. 의뢰가 없는 건은 null. */
-      customerName:
-        item.buyerIntakes[0]?.contacts[0]?.contact.name ??
-        item.listingIntakes[0]?.property.propertyContacts[0]?.contact.name ??
-        null,
-    }));
+      }),
+    ]);
+    return {
+      total,
+      /** 다음 쪽의 offset. 더 없으면 null. */
+      nextOffset: offset + projects.length < total ? offset + projects.length : null,
+      items: projects.map((project) => {
+        const detail = this.present(project);
+        const nextStep = detail.steps.find((step) => !step.done) ?? null;
+        const latestComment = project.comments[0] ?? null;
+        return {
+          id: detail.id,
+          title: detail.title,
+          memo: detail.memo,
+          archivedAt: detail.archivedAt,
+          createdAt: detail.createdAt,
+          updatedAt: detail.updatedAt,
+          primaryContact: detail.primaryContact,
+          assignedTo: detail.assignedTo,
+          /** 대표 고객. 정하지 않았으면 담긴 의뢰의 첫 당사자. 둘 다 없으면 null. */
+          customerName: detail.people[0]?.name ?? null,
+          peopleCount: detail.people.length,
+          buyerIntakeCount: detail.steps.filter(
+            (step) => step.kind === 'buyer_intake',
+          ).length,
+          listingIntakeCount: detail.steps.filter(
+            (step) => step.kind === 'listing_intake',
+          ).length,
+          stepCount: detail.steps.length,
+          doneStepCount: detail.steps.filter((step) => step.done).length,
+          firstStepTitle: detail.steps[0]?.title ?? null,
+          /** 아직 끝나지 않은 첫 단계. 모두 끝났거나 단계가 없으면 null. */
+          nextStepTitle: nextStep?.title ?? null,
+          nextStepTargetDate: nextStep?.targetDate ?? null,
+          commentCount: detail.commentCount,
+          latestComment: latestComment
+            ? {
+                body: latestComment.body,
+                createdAt: latestComment.createdAt,
+                authorName: latestComment.author?.name ?? null,
+              }
+            : null,
+        };
+      }),
+    };
   }
 
   async findOne(id: string, officeId: string) {
-    const brokerageCase = await this.prisma.brokerageCase.findFirst({
+    const project = await this.prisma.project.findFirst({
       where: { id, officeId },
       include: caseDetailInclude,
     });
-    if (!brokerageCase) {
-      throw new NotFoundException('중개 건을 찾을 수 없습니다.');
+    if (!project) {
+      throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
     }
-    return this.present(brokerageCase);
+    return this.present(project);
   }
 
   async update(
     id: string,
     officeId: string,
-    dto: { title?: string | null; memo?: string | null; archived?: boolean },
+    dto: {
+      title?: string | null;
+      memo?: string | null;
+      archived?: boolean;
+      primaryContactId?: string | null;
+      assignedToId?: string | null;
+    },
   ) {
     await this.assertCase(this.prisma, officeId, id);
-    await this.prisma.brokerageCase.update({
+    if (dto.primaryContactId) {
+      await this.assertContact(this.prisma, officeId, dto.primaryContactId);
+    }
+    if (dto.assignedToId) {
+      await this.assertStaff(this.prisma, officeId, dto.assignedToId);
+    }
+    await this.prisma.project.update({
       where: { id },
       data: {
+        ...(dto.primaryContactId !== undefined
+          ? { primaryContactId: dto.primaryContactId }
+          : {}),
+        ...(dto.assignedToId !== undefined
+          ? { assignedToId: dto.assignedToId }
+          : {}),
         ...(dto.title !== undefined
           ? { title: this.normalizeText(dto.title, MAX_TITLE_LENGTH, '제목') }
           : {}),
@@ -345,28 +504,28 @@ export class BrokerageCasePlanService {
     return this.findOne(id, officeId);
   }
 
-  /** 묶음을 푼다. 의뢰와 거래는 그대로 남고 건과 진행 계획만 없어진다. */
+  /** 묶음을 푼다. 의뢰와 거래는 그대로 남고 프로젝트와 진행 계획, 프로젝트에 적은 코멘트가 없어진다. */
   async remove(id: string, officeId: string) {
     await this.prisma.$transaction(async (tx) => {
       await this.assertCase(tx, officeId, id);
-      // 단계가 의뢰의 (건, 의뢰) 조합을 가리키므로 단계부터 지워야 의뢰를 뺄 수 있다.
-      await tx.brokerageCaseStep.deleteMany({
-        where: { officeId, brokerageCaseId: id },
+      // 단계가 의뢰의 (프로젝트, 의뢰) 조합을 가리키므로 단계부터 지워야 의뢰를 뺄 수 있다.
+      await tx.projectStep.deleteMany({
+        where: { officeId, projectId: id },
       });
       await tx.listingIntake.updateMany({
-        where: { officeId, brokerageCaseId: id },
-        data: { brokerageCaseId: null },
+        where: { officeId, projectId: id },
+        data: { projectId: null },
       });
       await tx.buyerIntake.updateMany({
-        where: { officeId, brokerageCaseId: id },
-        data: { brokerageCaseId: null },
+        where: { officeId, projectId: id },
+        data: { projectId: null },
       });
-      await tx.brokerageCase.delete({ where: { id } });
+      await tx.project.delete({ where: { id } });
     });
     return { success: true };
   }
 
-  /** 의뢰를 건에 담는다. 진행 계획의 맨 끝 단계로 들어간다. */
+  /** 의뢰를 프로젝트에 담는다. 진행 계획의 맨 끝 단계로 들어간다. */
   async addIntake(
     id: string,
     officeId: string,
@@ -415,14 +574,14 @@ export class BrokerageCasePlanService {
         title ??= this.dealStepTitle(deal);
       }
       if (!title) throw new BadRequestException('단계 제목을 입력하세요.');
-      const last = await tx.brokerageCaseStep.aggregate({
-        where: { officeId, brokerageCaseId: id },
+      const last = await tx.projectStep.aggregate({
+        where: { officeId, projectId: id },
         _max: { sortOrder: true },
       });
-      await tx.brokerageCaseStep.create({
+      await tx.projectStep.create({
         data: {
           officeId,
-          brokerageCaseId: id,
+          projectId: id,
           sortOrder: (last._max.sortOrder ?? 0) + 1,
           title,
           dealId: dto.dealId ?? null,
@@ -430,7 +589,7 @@ export class BrokerageCasePlanService {
           memo,
         },
       });
-      await tx.brokerageCase.update({
+      await tx.project.update({
         where: { id },
         data: { updatedAt: new Date() },
       });
@@ -450,12 +609,12 @@ export class BrokerageCasePlanService {
       done?: boolean;
     },
   ) {
-    const step = await this.prisma.brokerageCaseStep.findFirst({
-      where: { id: stepId, officeId, brokerageCaseId: id },
+    const step = await this.prisma.projectStep.findFirst({
+      where: { id: stepId, officeId, projectId: id },
     });
     if (!step) throw new NotFoundException('단계를 찾을 수 없습니다.');
 
-    const data: Prisma.BrokerageCaseStepUpdateInput = {};
+    const data: Prisma.ProjectStepUpdateInput = {};
     if (dto.title !== undefined) {
       const title = this.normalizeText(dto.title, MAX_TITLE_LENGTH, '제목');
       if (!title) throw new BadRequestException('단계 제목을 입력하세요.');
@@ -475,31 +634,31 @@ export class BrokerageCasePlanService {
       }
       data.doneAt = dto.done ? (step.doneAt ?? new Date()) : null;
     }
-    await this.prisma.brokerageCaseStep.update({ where: { id: stepId }, data });
+    await this.prisma.projectStep.update({ where: { id: stepId }, data });
     return this.findOne(id, officeId);
   }
 
-  /** 단계를 지운다. 의뢰를 가리키는 단계였다면 그 의뢰도 건에서 빠진다. */
+  /** 단계를 지운다. 의뢰를 가리키는 단계였다면 그 의뢰도 프로젝트에서 빠진다. */
   async removeStep(id: string, stepId: string, officeId: string) {
     await this.prisma.$transaction(async (tx) => {
-      const step = await tx.brokerageCaseStep.findFirst({
-        where: { id: stepId, officeId, brokerageCaseId: id },
+      const step = await tx.projectStep.findFirst({
+        where: { id: stepId, officeId, projectId: id },
       });
       if (!step) throw new NotFoundException('단계를 찾을 수 없습니다.');
-      await tx.brokerageCaseStep.delete({ where: { id: stepId } });
+      await tx.projectStep.delete({ where: { id: stepId } });
       if (step.listingIntakeId) {
         await tx.listingIntake.updateMany({
-          where: { id: step.listingIntakeId, officeId, brokerageCaseId: id },
-          data: { brokerageCaseId: null },
+          where: { id: step.listingIntakeId, officeId, projectId: id },
+          data: { projectId: null },
         });
       }
       if (step.buyerIntakeId) {
         await tx.buyerIntake.updateMany({
-          where: { id: step.buyerIntakeId, officeId, brokerageCaseId: id },
-          data: { brokerageCaseId: null },
+          where: { id: step.buyerIntakeId, officeId, projectId: id },
+          data: { projectId: null },
         });
       }
-      await tx.brokerageCase.update({
+      await tx.project.update({
         where: { id },
         data: { updatedAt: new Date() },
       });
@@ -508,7 +667,7 @@ export class BrokerageCasePlanService {
   }
 
   /**
-   * 사용자가 정한 순서를 저장한다. 건의 모든 단계를 빠짐없이 보내야 한다
+   * 사용자가 정한 순서를 저장한다. 프로젝트의 모든 단계를 빠짐없이 보내야 한다
    * (일부만 받으면 다른 화면에서 추가된 단계의 순서가 뒤섞인다).
    * 같은 번호는 동시 진행이다.
    */
@@ -523,15 +682,15 @@ export class BrokerageCasePlanService {
         typeof step?.id !== 'string' ||
         !Number.isInteger(step.sortOrder) ||
         step.sortOrder < 1 ||
-        step.sortOrder > MAX_STEPS_PER_CASE
+        step.sortOrder > MAX_STEPS_PER_PROJECT
       ) {
         throw new BadRequestException('단계 순서가 올바르지 않습니다.');
       }
     }
     await this.prisma.$transaction(async (tx) => {
       await this.assertCase(tx, officeId, id);
-      const existing = await tx.brokerageCaseStep.findMany({
-        where: { officeId, brokerageCaseId: id },
+      const existing = await tx.projectStep.findMany({
+        where: { officeId, projectId: id },
         select: { id: true },
       });
       const sent = new Set(steps.map((step) => step.id));
@@ -545,12 +704,12 @@ export class BrokerageCasePlanService {
         );
       }
       for (const step of steps) {
-        await tx.brokerageCaseStep.update({
+        await tx.projectStep.update({
           where: { id: step.id },
           data: { sortOrder: step.sortOrder },
         });
       }
-      await tx.brokerageCase.update({
+      await tx.project.update({
         where: { id },
         data: { updatedAt: new Date() },
       });
@@ -559,31 +718,37 @@ export class BrokerageCasePlanService {
   }
 
   /**
-   * 이 건에 더 담을 만한 것: 건에 담긴 의뢰의 당사자와 같은 사람의, 아직 어느 건에도
+   * 이 프로젝트에 더 담을 만한 것: 프로젝트에 담긴 의뢰의 당사자와 같은 사람의, 아직 어느 프로젝트에도
    * 담기지 않은 의뢰(이미 종료된 것 포함 — 거래가 끝난 의뢰도 흐름에 넣을 수 있어야
-   * 한다)와, 이 건의 의뢰 단계에 나오지 않는 거래. 제안일 뿐이고 담는 것은
+   * 한다)와, 이 프로젝트의 의뢰 단계에 나오지 않는 거래. 제안일 뿐이고 담는 것은
    * 사용자가 한다.
    */
   async findCandidates(id: string, officeId: string) {
     await this.assertCase(this.prisma, officeId, id);
-    const [buyerContacts, ownerContacts] = await Promise.all([
+    const [project, buyerContacts, ownerContacts] = await Promise.all([
+      this.prisma.project.findFirst({
+        where: { id, officeId },
+        select: { primaryContactId: true },
+      }),
       this.prisma.buyerIntakeContact.findMany({
-        where: { officeId, buyerIntake: { brokerageCaseId: id } },
+        where: { officeId, buyerIntake: { projectId: id } },
         select: { contactId: true },
       }),
       this.prisma.propertyContact.findMany({
         where: {
           officeId,
           status: 'active',
-          property: { listingIntakes: { some: { brokerageCaseId: id } } },
+          property: { listingIntakes: { some: { projectId: id } } },
         },
         select: { contactId: true },
       }),
     ]);
+    // 대표 고객만 정하고 연 프로젝트도 그 사람의 의뢰를 담을 수 있어야 한다.
     const contactIds = [
-      ...new Set(
-        [...buyerContacts, ...ownerContacts].map((item) => item.contactId),
-      ),
+      ...new Set([
+        ...(project?.primaryContactId ? [project.primaryContactId] : []),
+        ...[...buyerContacts, ...ownerContacts].map((item) => item.contactId),
+      ]),
     ];
     if (contactIds.length === 0) {
       return { listingIntakes: [], buyerIntakes: [], deals: [] };
@@ -593,10 +758,10 @@ export class BrokerageCasePlanService {
       this.prisma.listingIntake.findMany({
         where: {
           officeId,
-          // 어느 건에도 없거나, 보관한 건에 남아 있는 의뢰.
+          // 어느 프로젝트에도 없거나, 보관한 프로젝트에 남아 있는 의뢰.
           OR: [
-            { brokerageCaseId: null },
-            { brokerageCase: { archivedAt: { not: null } } },
+            { projectId: null },
+            { project: { archivedAt: { not: null } } },
           ],
           property: {
             propertyContacts: {
@@ -626,10 +791,10 @@ export class BrokerageCasePlanService {
       this.prisma.buyerIntake.findMany({
         where: {
           officeId,
-          // 어느 건에도 없거나, 보관한 건에 남아 있는 의뢰.
+          // 어느 프로젝트에도 없거나, 보관한 프로젝트에 남아 있는 의뢰.
           OR: [
-            { brokerageCaseId: null },
-            { brokerageCase: { archivedAt: { not: null } } },
+            { projectId: null },
+            { project: { archivedAt: { not: null } } },
           ],
           contacts: { some: { contactId: { in: contactIds } } },
         },
@@ -648,8 +813,8 @@ export class BrokerageCasePlanService {
           },
         },
       }),
-      // 이 건의 의뢰 단계에 이미 나오는 거래와, 이미 단계로 넣은 거래만 뺀다.
-      // (구매 의뢰가 있더라도 그 의뢰가 이 건에 없으면 거래를 직접 담을 수 있다.)
+      // 이 프로젝트의 의뢰 단계에 이미 나오는 거래와, 이미 단계로 넣은 거래만 뺀다.
+      // (구매 의뢰가 있더라도 그 의뢰가 이 프로젝트에 없으면 거래를 직접 담을 수 있다.)
       this.prisma.deal.findMany({
         where: {
           officeId,
@@ -659,10 +824,10 @@ export class BrokerageCasePlanService {
             { sellerContactId: { in: contactIds } },
           ],
           NOT: [
-            { buyerIntake: { brokerageCaseId: id } },
-            { listing: { intake: { brokerageCaseId: id } } },
+            { buyerIntake: { projectId: id } },
+            { listing: { intake: { projectId: id } } },
           ],
-          caseSteps: { none: { brokerageCaseId: id } },
+          projectSteps: { none: { projectId: id } },
         },
         orderBy: { createdAt: 'desc' },
         take: 20,
@@ -698,15 +863,39 @@ export class BrokerageCasePlanService {
   // ─── 내부 ────────────────────────────────────────────────────
 
   private async assertCase(
-    client: Pick<Prisma.TransactionClient, 'brokerageCase'>,
+    client: Pick<Prisma.TransactionClient, 'project'>,
     officeId: string,
     id: string,
   ) {
-    const found = await client.brokerageCase.findFirst({
+    const found = await client.project.findFirst({
       where: { id, officeId },
       select: { id: true },
     });
-    if (!found) throw new NotFoundException('중개 건을 찾을 수 없습니다.');
+    if (!found) throw new NotFoundException('프로젝트를 찾을 수 없습니다.');
+  }
+
+  private async assertContact(
+    client: Pick<Prisma.TransactionClient, 'contact'>,
+    officeId: string,
+    contactId: string,
+  ) {
+    const found = await client.contact.findFirst({
+      where: { id: contactId, officeId },
+      select: { id: true },
+    });
+    if (!found) throw new BadRequestException('대표 고객을 찾을 수 없습니다.');
+  }
+
+  private async assertStaff(
+    client: Pick<Prisma.TransactionClient, 'user'>,
+    officeId: string,
+    userId: string,
+  ) {
+    const found = await client.user.findFirst({
+      where: { id: userId, officeId, isActive: true },
+      select: { id: true },
+    });
+    if (!found) throw new BadRequestException('담당 직원을 찾을 수 없습니다.');
   }
 
   private async assertStepRoom(
@@ -714,12 +903,12 @@ export class BrokerageCasePlanService {
     officeId: string,
     id: string,
   ) {
-    const count = await tx.brokerageCaseStep.count({
-      where: { officeId, brokerageCaseId: id },
+    const count = await tx.projectStep.count({
+      where: { officeId, projectId: id },
     });
-    if (count >= MAX_STEPS_PER_CASE) {
+    if (count >= MAX_STEPS_PER_PROJECT) {
       throw new BadRequestException(
-        `한 건의 진행 계획은 ${MAX_STEPS_PER_CASE}단계까지 만들 수 있습니다.`,
+        `한 프로젝트의 진행 계획은 ${MAX_STEPS_PER_PROJECT}단계까지 만들 수 있습니다.`,
       );
     }
   }
@@ -737,7 +926,7 @@ export class BrokerageCasePlanService {
             where: { officeId, id: { in: listingIntakeIds } },
             select: {
               id: true,
-              brokerageCaseId: true,
+              projectId: true,
               propertyId: true,
               receivedAt: true,
             },
@@ -748,7 +937,7 @@ export class BrokerageCasePlanService {
             where: { officeId, id: { in: buyerIntakeIds } },
             select: {
               id: true,
-              brokerageCaseId: true,
+              projectId: true,
               receivedAt: true,
               requirements: {
                 orderBy: { priorityRank: 'asc' },
@@ -769,7 +958,7 @@ export class BrokerageCasePlanService {
       ...listingIntakes.map((intake) => ({
         kind: 'listing' as const,
         id: intake.id,
-        brokerageCaseId: intake.brokerageCaseId,
+        projectId: intake.projectId,
         receivedAt: intake.receivedAt,
         propertyId: intake.propertyId,
         transactionType: null as string | null,
@@ -777,7 +966,7 @@ export class BrokerageCasePlanService {
       ...buyerIntakes.map((intake) => ({
         kind: 'buyer' as const,
         id: intake.id,
-        brokerageCaseId: intake.brokerageCaseId,
+        projectId: intake.projectId,
         receivedAt: intake.receivedAt,
         propertyId: null as string | null,
         transactionType: intake.requirements[0]?.transactionType ?? null,
@@ -792,44 +981,44 @@ export class BrokerageCasePlanService {
   private async attachIntake(
     tx: Prisma.TransactionClient,
     officeId: string,
-    brokerageCaseId: string,
+    projectId: string,
     intake: {
       kind: CaseIntakeKind;
       id: string;
-      brokerageCaseId: string | null;
+      projectId: string | null;
       propertyId: string | null;
       transactionType: string | null;
     },
   ) {
-    // 보관한 건에서 옮겨 오는 의뢰의 옛 단계. 새 건의 단계가 제목·목표일·메모를 이어받는다.
+    // 보관한 프로젝트에서 옮겨 오는 의뢰의 옛 단계. 새 프로젝트의 단계가 제목·목표일·메모를 이어받는다.
     let carried: {
       title: string;
       targetDate: Date | null;
       memo: string | null;
     } | null = null;
-    if (intake.brokerageCaseId && intake.brokerageCaseId !== brokerageCaseId) {
-      const other = await tx.brokerageCase.findFirst({
-        where: { id: intake.brokerageCaseId, officeId },
+    if (intake.projectId && intake.projectId !== projectId) {
+      const other = await tx.project.findFirst({
+        where: { id: intake.projectId, officeId },
         select: { archivedAt: true },
       });
-      // 진행 중인 다른 건에 담긴 의뢰는 옮기지 않는다. 보관한 건에 남아 있는 의뢰는
-      // 고객 원장에 건 없는 의뢰로 보이므로(다시 꺼낼 화면이 없다) 새 건으로 옮긴다.
+      // 진행 중인 다른 프로젝트에 담긴 의뢰는 옮기지 않는다. 보관한 프로젝트에 남아 있는 의뢰는
+      // 고객 원장에 프로젝트 없는 의뢰로 보이므로(다시 꺼낼 화면이 없다) 새 프로젝트로 옮긴다.
       if (other && other.archivedAt === null) {
         throw new ConflictException(
-          '이미 다른 중개 건에 묶인 의뢰입니다. 그 건에서 먼저 빼 주세요.',
+          '이미 다른 프로젝트에 담긴 의뢰입니다. 그 프로젝트에서 먼저 빼 주세요.',
         );
       }
-      // 보관한 건의 진행 계획은 지난 기록이다. 그 단계를 지우지 않고, 의뢰를 가리키는
+      // 보관한 프로젝트의 진행 계획은 지난 기록이다. 그 단계를 지우지 않고, 의뢰를 가리키는
       // 연결만 끊어 제목·목표일·메모가 적힌 기록으로 남긴다. 연결을 그대로 두면 의뢰의
-      // 건을 바꿀 때 단계가 새 건으로 딸려 가 옛 기록에서 사라진다.
+      // 프로젝트를 바꿀 때 단계가 새 프로젝트로 딸려 가 옛 기록에서 사라진다.
       const intakeTarget =
         intake.kind === 'listing'
           ? { listingIntakeId: intake.id }
           : { buyerIntakeId: intake.id };
-      const previousSteps = await tx.brokerageCaseStep.findMany({
+      const previousSteps = await tx.projectStep.findMany({
         where: {
           officeId,
-          brokerageCaseId: intake.brokerageCaseId,
+          projectId: intake.projectId,
           ...intakeTarget,
         },
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
@@ -841,7 +1030,7 @@ export class BrokerageCasePlanService {
         // 없어지므로, 지금 완료 상태였다면 그 사실을 기록에 적어 둔다(완료였던 단계가
         // 미완료로 바뀌어 보이지 않게).
         const completedAt = await this.readIntakeDoneAt(tx, officeId, intake);
-        await tx.brokerageCaseStep.updateMany({
+        await tx.projectStep.updateMany({
           where: { id: { in: previousSteps.map((step) => step.id) } },
           data: {
             ...(intake.kind === 'listing'
@@ -855,12 +1044,12 @@ export class BrokerageCasePlanService {
     if (intake.kind === 'listing') {
       await tx.listingIntake.update({
         where: { id: intake.id },
-        data: { brokerageCaseId },
+        data: { projectId },
       });
     } else {
       await tx.buyerIntake.update({
         where: { id: intake.id },
-        data: { brokerageCaseId },
+        data: { projectId },
       });
     }
     const typeLabel = intake.transactionType
@@ -868,7 +1057,7 @@ export class BrokerageCasePlanService {
       : null;
     await appendIntakeStep(tx, {
       officeId,
-      brokerageCaseId,
+      projectId,
       kind: intake.kind,
       intakeId: intake.id,
       title:
@@ -909,39 +1098,39 @@ export class BrokerageCasePlanService {
   }
 
   /**
-   * 거래를 직접 가리키는 단계는 의뢰를 거치지 않은 거래에만 쓴다. 이 건에 담긴
+   * 거래를 직접 가리키는 단계는 의뢰를 거치지 않은 거래에만 쓴다. 이 프로젝트에 담긴
    * 의뢰에서 나온 거래는 그 의뢰의 단계에 이미 보이므로 두 줄로 넣지 못하게 한다.
    */
   private async assertDealCanBeStep(
     tx: Prisma.TransactionClient,
     officeId: string,
-    brokerageCaseId: string,
+    projectId: string,
     dealId: string,
   ) {
     const deal = await tx.deal.findFirst({
       where: { id: dealId, officeId },
       select: {
         ...dealFlowSelect,
-        buyerIntake: { select: { brokerageCaseId: true } },
+        buyerIntake: { select: { projectId: true } },
         listing: {
           select: {
             ...dealFlowSelect.listing.select,
-            intake: { select: { brokerageCaseId: true } },
+            intake: { select: { projectId: true } },
           },
         },
       },
     });
     if (!deal) throw new NotFoundException('거래를 찾을 수 없습니다.');
     if (
-      deal.buyerIntake?.brokerageCaseId === brokerageCaseId ||
-      deal.listing?.intake.brokerageCaseId === brokerageCaseId
+      deal.buyerIntake?.projectId === projectId ||
+      deal.listing?.intake.projectId === projectId
     ) {
       throw new ConflictException(
-        '이 거래는 건에 담긴 의뢰의 단계에 이미 나옵니다.',
+        '이 거래는 프로젝트에 담긴 의뢰의 단계에 이미 나옵니다.',
       );
     }
-    const existing = await tx.brokerageCaseStep.findFirst({
-      where: { brokerageCaseId, dealId },
+    const existing = await tx.projectStep.findFirst({
+      where: { projectId, dealId },
       select: { id: true },
     });
     if (existing) {
@@ -1086,15 +1275,52 @@ export class BrokerageCasePlanService {
     };
   }
 
-  private present(brokerageCase: CaseDetail) {
+  private present(project: CaseDetail) {
+    const person = (
+      contact: { id: string; name: string; phones: Array<{ phone: string }> },
+      role: 'primary' | 'buyer' | 'owner',
+    ) => ({
+      contactId: contact.id,
+      name: contact.name,
+      phone: contact.phones[0]?.phone ?? null,
+      role,
+    });
+    // 이 프로젝트의 사람들: 대표 고객이 맨 앞, 그다음 담긴 의뢰의 당사자(단계 순서대로).
+    // 저장하지 않고 읽을 때마다 모은다. 같은 사람은 한 번만 나온다.
+    const people = [
+      ...(project.primaryContact
+        ? [person(project.primaryContact, 'primary')]
+        : []),
+      ...project.steps.flatMap((step) => [
+        ...(step.buyerIntake?.contacts ?? []).map((item) =>
+          person(item.contact, 'buyer'),
+        ),
+        ...(step.listingIntake?.property.propertyContacts ?? []).map((item) =>
+          person(item.contact, 'owner'),
+        ),
+      ]),
+    ].filter(
+      (item, index, list) =>
+        list.findIndex((other) => other.contactId === item.contactId) === index,
+    );
     return {
-      id: brokerageCase.id,
-      title: brokerageCase.title,
-      memo: brokerageCase.memo,
-      archivedAt: brokerageCase.archivedAt,
-      createdAt: brokerageCase.createdAt,
-      updatedAt: brokerageCase.updatedAt,
-      steps: brokerageCase.steps.map((step) => this.presentStep(step)),
+      id: project.id,
+      title: project.title,
+      memo: project.memo,
+      archivedAt: project.archivedAt,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+      primaryContact: project.primaryContact
+        ? {
+            id: project.primaryContact.id,
+            name: project.primaryContact.name,
+            phone: project.primaryContact.phones[0]?.phone ?? null,
+          }
+        : null,
+      assignedTo: project.assignedTo,
+      people,
+      commentCount: project._count.comments,
+      steps: project.steps.map((step) => this.presentStep(step)),
     };
   }
 }

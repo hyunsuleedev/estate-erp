@@ -1176,10 +1176,10 @@ describe('ListingIntakesService', () => {
         }),
       }),
     );
-    // 건은 사용자가 고를 때만 붙는다.
+    // 프로젝트는 사용자가 고를 때만 붙는다.
     expect(tx.listingIntake.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ brokerageCaseId: null }),
+        data: expect.objectContaining({ projectId: null }),
       }),
     );
   });

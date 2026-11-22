@@ -78,8 +78,9 @@ model Office {
   buyerIntakes                         BuyerIntake[]
   buyerIntakeContacts                  BuyerIntakeContact[]
   buyerRequirements                    BuyerRequirement[]
-  brokerageCases                       BrokerageCase[]
-  brokerageCaseSteps                   BrokerageCaseStep[]
+  projects                       Project[]
+  projectSteps                   ProjectStep[]
+  projectComments                ProjectComment[]
   matches                              Match[]
   deals                                Deal[]
   dealPayments                         DealPayment[]
@@ -206,6 +207,8 @@ model User {
   dealParticipants DealParticipant[] @relation("DealParticipants")
   settlementLines  SettlementLine[]  @relation("SettlementLines")
   noticeReads      NoticeRead[]      @relation("NoticeReads")
+  assignedProjects Project[]         @relation("ProjectAssignee")
+  projectComments  ProjectComment[]  @relation("ProjectCommentAuthor")
 
   // 수수료 조정 승인 워크플로우
   commissionAdjustmentsRequested CommissionAdjustment[] @relation("AdjustmentRequester")

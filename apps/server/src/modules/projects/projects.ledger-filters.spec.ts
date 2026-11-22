@@ -1,14 +1,14 @@
 import {
-  BrokerageCasesService,
+  ProjectsService,
   hasBuyerRequirementLedgerFilters,
-  type BrokerageCaseLedgerQuery,
-} from "./brokerage-cases.service";
+  type CustomerLedgerQuery,
+} from "./projects.service";
 
 const OFFICE_ID = "00000000-0000-4000-8000-000000000001";
-const CASE_ID = "00000000-0000-4000-8000-000000000002";
+const PROJECT_ID = "00000000-0000-4000-8000-000000000002";
 const MATCHING_REQUIREMENT_ID = "00000000-0000-4000-8000-000000000003";
 const OTHER_REQUIREMENT_ID = "00000000-0000-4000-8000-000000000004";
-const CURSOR_CASE_IDS = [
+const CURSOR_PROJECT_IDS = [
   "00000000-0000-4000-8000-000000000010",
   "00000000-0000-4000-8000-000000000011",
   "00000000-0000-4000-8000-000000000012",
@@ -24,7 +24,7 @@ function createPrismaMock(
   related: {
     buyerIntakes?: unknown[];
     listingIntakes?: unknown[];
-    cases?: unknown[];
+    projects?: unknown[];
     consultations?: unknown[];
   } = {},
 ) {
@@ -36,8 +36,8 @@ function createPrismaMock(
     listingIntake: {
       findMany: jest.fn().mockResolvedValue(related.listingIntakes ?? []),
     },
-    brokerageCase: {
-      findMany: jest.fn().mockResolvedValue(related.cases ?? []),
+    project: {
+      findMany: jest.fn().mockResolvedValue(related.projects ?? []),
     },
     consultation: {
       findMany: jest.fn().mockResolvedValue(related.consultations ?? []),
@@ -48,8 +48,8 @@ function createPrismaMock(
 /** 묶음 id 조회가 돌려주는 한 줄. */
 function groupRow(overrides: Record<string, unknown> = {}) {
   return {
-    id: CASE_ID,
-    caseId: null,
+    id: PROJECT_ID,
+    projectId: null,
     primaryContactId: null,
     createdAt: new Date("2026-08-08T10:00:00.000Z"),
     buyerIntakeIds: null,
@@ -76,15 +76,15 @@ function renderSql(value: unknown): string {
     .join("");
 }
 
-describe("BrokerageCasesService buyer ledger filters", () => {
+describe("ProjectsService buyer ledger filters", () => {
   it("등록일 내림차순을 고객원장의 기본 정렬로 사용한다", async () => {
     const prisma = createPrismaMock();
-    const service = new BrokerageCasesService(prisma as never);
+    const service = new ProjectsService(prisma as never);
 
     await service.findLedger(OFFICE_ID);
 
     const queryText = renderSql(prisma.$queryRaw.mock.calls[0][0]);
-    // 등록일은 건이 아니라 담긴 의뢰의 가장 이른 접수일이다(묶거나 풀어도 자리가 안 바뀐다).
+    // 등록일은 프로젝트가 아니라 담긴 의뢰의 가장 이른 접수일이다(묶거나 풀어도 자리가 안 바뀐다).
     expect(queryText).toContain("MIN(ig.received_at) AS created_at");
     expect(queryText).toContain("lg.created_at AS created_at");
     expect(queryText).toContain("eligible.created_at DESC");
@@ -92,25 +92,25 @@ describe("BrokerageCasesService buyer ledger filters", () => {
     expect(queryText).not.toContain("OFFSET");
   });
 
-  it("중개 건 없이도 당사자 조합이 같은 의뢰를 한 줄로 묶는다", async () => {
+  it("프로젝트 없이도 당사자 조합이 같은 의뢰를 한 줄로 묶는다", async () => {
     const prisma = createPrismaMock();
-    const service = new BrokerageCasesService(prisma as never);
+    const service = new ProjectsService(prisma as never);
 
     await service.findLedger(OFFICE_ID);
 
     const queryText = renderSql(prisma.$queryRaw.mock.calls[0][0]);
-    // 묶음 id: 건에 담긴 의뢰는 건 id, 아니면 실제 당사자 조합에서 계산한다.
-    expect(queryText).toContain("COALESCE(\n          scope.case_id,");
+    // 묶음 id: 프로젝트에 담긴 의뢰는 프로젝트 id, 아니면 실제 당사자 조합에서 계산한다.
+    expect(queryText).toContain("COALESCE(\n          scope.project_id,");
     expect(queryText).toContain("MD5(ARRAY_TO_STRING(scope.principal_ids, ','))");
-    // 당사자는 저장된 건 참여자가 아니라 의뢰에서 읽는다.
+    // 당사자는 저장된 프로젝트 참여자가 아니라 의뢰에서 읽는다.
     expect(queryText).toContain('"buyer_intake_contacts"');
     expect(queryText).toContain('"property_contacts"');
-    expect(queryText).not.toContain("brokerage_case_participants");
+    expect(queryText).not.toContain("project_participants");
     expect(queryText).not.toContain("case_priority_rank");
-    // 보관한 건의 의뢰를 원장에서 숨기지 않는다. 건 없는 의뢰처럼 당사자 기준으로 묶인다.
+    // 보관한 프로젝트의 의뢰를 원장에서 숨기지 않는다. 프로젝트 없는 의뢰처럼 당사자 기준으로 묶인다.
     expect(queryText).toContain('CASE WHEN bc_scope."archived_at" IS NULL');
     expect(queryText).not.toContain(
-      '"brokerage_case_id" IS NULL OR bc_scope."archived_at" IS NULL',
+      '"project_id" IS NULL OR bc_scope."archived_at" IS NULL',
     );
   });
 
@@ -152,12 +152,12 @@ describe("BrokerageCasesService buyer ledger filters", () => {
         consultations: [{ ...primaryConsultation, contactId: "primary" }],
       },
     );
-    const service = new BrokerageCasesService(prisma as never);
+    const service = new ProjectsService(prisma as never);
 
     const result = await service.findLedger(OFFICE_ID);
 
     expect(result.items[0].latestConsultation).toEqual(primaryConsultation);
-    expect(result.items[0].brokerageCaseId).toBeNull();
+    expect(result.items[0].projectId).toBeNull();
     expect(
       result.items[0].participants.map((item) => [
         item.contact.id,
@@ -179,7 +179,7 @@ describe("BrokerageCasesService buyer ledger filters", () => {
   });
 
   it("opaque cursor로 다음 묶음을 조회하고 반복 전체 집계를 생략한다", async () => {
-    const firstRows = CURSOR_CASE_IDS.slice(0, 3).map((id, index) =>
+    const firstRows = CURSOR_PROJECT_IDS.slice(0, 3).map((id, index) =>
       groupRow({
         id,
         sortValue: new Date(`2026-08-0${8 - index}T10:00:00.000Z`),
@@ -188,7 +188,7 @@ describe("BrokerageCasesService buyer ledger filters", () => {
       }),
     );
     const prisma = createPrismaMock(firstRows);
-    const service = new BrokerageCasesService(prisma as never);
+    const service = new ProjectsService(prisma as never);
 
     const firstPage = await service.findLedger(OFFICE_ID, { limit: 2 });
 
@@ -198,7 +198,7 @@ describe("BrokerageCasesService buyer ledger filters", () => {
       nextCursor: expect.any(String),
     });
     expect(firstPage.summary).toEqual({
-      cases: 0,
+      rows: 0,
       demand: 0,
       listing: 0,
       both: 0,
@@ -212,7 +212,7 @@ describe("BrokerageCasesService buyer ledger filters", () => {
     prisma.$queryRaw.mockClear();
     prisma.$queryRaw.mockResolvedValueOnce([
       groupRow({
-        id: CURSOR_CASE_IDS[3],
+        id: CURSOR_PROJECT_IDS[3],
         sortValue: new Date("2026-08-05T10:00:00.000Z"),
         customerName: "고객 4",
         total: null,
@@ -245,21 +245,21 @@ describe("BrokerageCasesService buyer ledger filters", () => {
   it("NULL 정렬값 뒤에서도 고객명과 ID cursor 경계를 유지한다", async () => {
     const prisma = createPrismaMock([
       {
-        id: CURSOR_CASE_IDS[0],
+        id: CURSOR_PROJECT_IDS[0],
         buyerRequirementIds: null,
         sortValue: null,
         customerName: "가 고객",
         total: 2n,
       },
       {
-        id: CURSOR_CASE_IDS[1],
+        id: CURSOR_PROJECT_IDS[1],
         buyerRequirementIds: null,
         sortValue: null,
         customerName: "나 고객",
         total: 2n,
       },
     ]);
-    const service = new BrokerageCasesService(prisma as never);
+    const service = new ProjectsService(prisma as never);
     const firstPage = await service.findLedger(OFFICE_ID, {
       sortBy: "budgetMin",
       sortOrder: "asc",
@@ -286,21 +286,21 @@ describe("BrokerageCasesService buyer ledger filters", () => {
   it("손상되었거나 다른 정렬에 속한 cursor를 거부한다", async () => {
     const prisma = createPrismaMock([
       {
-        id: CURSOR_CASE_IDS[0],
+        id: CURSOR_PROJECT_IDS[0],
         buyerRequirementIds: null,
         sortValue: new Date("2026-08-08T10:00:00.000Z"),
         customerName: "고객 1",
         total: 2n,
       },
       {
-        id: CURSOR_CASE_IDS[1],
+        id: CURSOR_PROJECT_IDS[1],
         buyerRequirementIds: null,
         sortValue: new Date("2026-08-07T10:00:00.000Z"),
         customerName: "고객 2",
         total: 2n,
       },
     ]);
-    const service = new BrokerageCasesService(prisma as never);
+    const service = new ProjectsService(prisma as never);
 
     await expect(
       service.findLedger(OFFICE_ID, { cursor: "not-a-cursor" }),
@@ -326,7 +326,7 @@ describe("BrokerageCasesService buyer ledger filters", () => {
       }),
     ).toBe(false);
 
-    const buyerFilterQueries: BrokerageCaseLedgerQuery[] = [
+    const buyerFilterQueries: CustomerLedgerQuery[] = [
       { status: "active" },
       { urgency: "urgent" },
       { transactionType: "sale" },
@@ -356,7 +356,7 @@ describe("BrokerageCasesService buyer ledger filters", () => {
 
   it("전체 구매고객 조건을 buyer_matches에 적용하고 내놓음 보기에도 구매요건 존재를 요구한다", async () => {
     const prisma = createPrismaMock();
-    const service = new BrokerageCasesService(prisma as never);
+    const service = new ProjectsService(prisma as never);
 
     await service.findLedger(OFFICE_ID, {
       mode: "listing",
@@ -412,7 +412,7 @@ describe("BrokerageCasesService buyer ledger filters", () => {
 
   it("구매고객 필터가 없으면 매물 의뢰 전용 케이스를 계속 허용한다", async () => {
     const prisma = createPrismaMock();
-    const service = new BrokerageCasesService(prisma as never);
+    const service = new ProjectsService(prisma as never);
 
     await service.findLedger(OFFICE_ID, { mode: "listing" });
 
@@ -505,7 +505,7 @@ describe("BrokerageCasesService buyer ledger filters", () => {
       ],
       { buyerIntakes: [buyerIntake], listingIntakes: [listingIntake] },
     );
-    const service = new BrokerageCasesService(prisma as never);
+    const service = new ProjectsService(prisma as never);
 
     const result = await service.findLedger(OFFICE_ID, { priceMin: 50000 });
 
@@ -540,7 +540,7 @@ describe("BrokerageCasesService buyer ledger filters", () => {
 
   it("listing 보기만 허용하고 이전 supply API 값은 거부한다", async () => {
     const prisma = createPrismaMock();
-    const service = new BrokerageCasesService(prisma as never);
+    const service = new ProjectsService(prisma as never);
 
     await expect(
       service.findLedger(OFFICE_ID, { mode: "supply" as never }),

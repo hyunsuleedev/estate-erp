@@ -34,6 +34,8 @@ model Contact {
   relationsAsRelated  ContactRelation[]      @relation("RelatedContact")
   groupMemberships    ContactGroupMember[]
   tagAssignments      ContactTagAssignment[]
+  /// 이 사람이 대표 고객인 프로젝트
+  primaryProjects     Project[]              @relation("ProjectPrimaryContact")
 
   // office_id를 포함하는 관계 FK가 tenant 경계를 DB에서도 강제할 수 있게 한다.
   @@unique([officeId, id])

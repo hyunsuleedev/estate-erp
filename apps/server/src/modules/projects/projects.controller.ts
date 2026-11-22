@@ -18,20 +18,22 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
-  BrokerageCasesService,
-  type BrokerageCaseLedgerMode,
-  type BrokerageCaseLedgerSortField,
-} from './brokerage-cases.service';
-import { BrokerageCasePlanService } from './brokerage-case-plan.service';
+  ProjectsService,
+  type CustomerLedgerMode,
+  type CustomerLedgerSortField,
+} from './projects.service';
+import { ProjectPlanService } from './project-plan.service';
+import { ProjectCommentsService } from './project-comments.service';
 
 @ApiTags('고객 원장')
 @ApiBearerAuth()
-@Controller('brokerage-cases')
+@Controller('projects')
 @UseGuards(JwtAuthGuard)
-export class BrokerageCasesController {
+export class ProjectsController {
   constructor(
-    private readonly brokerageCases: BrokerageCasesService,
-    private readonly plan: BrokerageCasePlanService,
+    private readonly projects: ProjectsService,
+    private readonly plan: ProjectPlanService,
+    private readonly comments: ProjectCommentsService,
   ) {}
 
   @Get('ledger')
@@ -69,9 +71,9 @@ export class BrokerageCasesController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     const number = (value: string) => (value ? Number(value) : undefined);
-    return this.brokerageCases.findLedger(user.officeId, {
+    return this.projects.findLedger(user.officeId, {
       search: search || undefined,
-      mode: (mode as BrokerageCaseLedgerMode) || undefined,
+      mode: (mode as CustomerLedgerMode) || undefined,
       status: status || undefined,
       urgency: urgency || undefined,
       transactionType: transactionType || undefined,
@@ -96,26 +98,43 @@ export class BrokerageCasesController {
       nextContactBefore: nextContactBefore || undefined,
       moveInAfter: moveInAfter || undefined,
       moveInBefore: moveInBefore || undefined,
-      sortBy: (sortBy as BrokerageCaseLedgerSortField) || undefined,
+      sortBy: (sortBy as CustomerLedgerSortField) || undefined,
       sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
       cursor: cursor || undefined,
       limit: number(limit),
     });
   }
 
-  /** 보관하지 않은 중개 건 목록. 고객 원장에 줄이 없는 건도 여기서 연다. */
+  /** 프로젝트 목록. 고객 원장에 줄이 없는 프로젝트도 여기서 연다. */
   @Get()
-  findAll(@CurrentUser() user: CurrentUserPayload) {
-    return this.plan.findAll(user.officeId);
+  findAll(
+    @Query('status') status: string,
+    @Query('search') search: string,
+    @Query('assignedToId') assignedToId: string,
+    @Query('sort') sort: string,
+    @Query('offset') offset: string,
+    @Query('limit') limit: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.plan.findAll(user.officeId, {
+      status: status || undefined,
+      search: search || undefined,
+      assignedToId: assignedToId || undefined,
+      sort: sort || undefined,
+      offset: offset ? Number(offset) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
-  /** 사용자가 고른 의뢰들을 중개 건으로 묶는다. */
+  /** 프로젝트를 연다. 대표 고객만 정해 열거나, 고른 의뢰들을 묶어 연다. */
   @Post()
   create(
     @Body()
     dto: {
       title?: string | null;
       memo?: string | null;
+      primaryContactId?: string | null;
+      assignedToId?: string | null;
       listingIntakeIds?: string[];
       buyerIntakeIds?: string[];
     },
@@ -136,7 +155,13 @@ export class BrokerageCasesController {
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body()
-    dto: { title?: string | null; memo?: string | null; archived?: boolean },
+    dto: {
+      title?: string | null;
+      memo?: string | null;
+      archived?: boolean;
+      primaryContactId?: string | null;
+      assignedToId?: string | null;
+    },
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.plan.update(id, user.officeId, dto ?? {});
@@ -151,7 +176,51 @@ export class BrokerageCasesController {
     return this.plan.remove(id, user.officeId);
   }
 
-  /** 이 건에 더 담을 만한 의뢰·거래 제안. */
+  // ─── 코멘트 ──────────────────────────────────────────────────
+
+  /** 최근 것부터 한 쪽. before에 앞 쪽의 nextBefore를 그대로 주면 그보다 오래된 쪽을 준다. */
+  @Get(':id/comments')
+  findComments(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('before') before: string,
+    @Query('limit') limit: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.comments.findAll(id, user.officeId, {
+      before: before || undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
+  @Post(':id/comments')
+  createComment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { body?: string },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.comments.create(id, user, dto ?? {});
+  }
+
+  @Patch(':id/comments/:commentId')
+  updateComment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('commentId', ParseUUIDPipe) commentId: string,
+    @Body() dto: { body?: string },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.comments.update(id, commentId, user, dto ?? {});
+  }
+
+  @Delete(':id/comments/:commentId')
+  removeComment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('commentId', ParseUUIDPipe) commentId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.comments.remove(id, commentId, user);
+  }
+
+  /** 이 프로젝트에 더 담을 만한 의뢰·거래 제안. */
   @Get(':id/candidates')
   findCandidates(
     @Param('id', ParseUUIDPipe) id: string,
@@ -209,7 +278,7 @@ export class BrokerageCasesController {
     return this.plan.updateStep(id, stepId, user.officeId, dto ?? {});
   }
 
-  /** 단계를 지운다. 의뢰를 가리키는 단계였다면 그 의뢰도 건에서 빠진다. */
+  /** 단계를 지운다. 의뢰를 가리키는 단계였다면 그 의뢰도 프로젝트에서 빠진다. */
   @Delete(':id/steps/:stepId')
   removeStep(
     @Param('id', ParseUUIDPipe) id: string,

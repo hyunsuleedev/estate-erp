@@ -128,7 +128,7 @@ export class ListingIntakesController {
     @Body()
     dto: {
       propertyId: string;
-      brokerageCaseId?: string;
+      projectId?: string;
       lifecycleStatus?: string;
       closedReason?: string | null;
       receivedAt?: string | null;

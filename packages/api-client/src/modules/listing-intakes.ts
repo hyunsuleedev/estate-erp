@@ -46,8 +46,8 @@ export interface ListingIntakeListing {
 export interface ListingIntake {
   id: string;
   officeId: string;
-  /** 사용자가 중개 건으로 묶었을 때만 있다. */
-  brokerageCaseId: string | null;
+  /** 사용자가 프로젝트로 묶었을 때만 있다. */
+  projectId: string | null;
   propertyId: string;
   lifecycleStatus: IntakeLifecycleStatus;
   lifecycleChangedAt: string;
@@ -185,7 +185,7 @@ export interface CreateListingForIntakeDto {
 
 export interface CreateListingIntakeDto {
   propertyId: string;
-  brokerageCaseId?: string;
+  projectId?: string;
   lifecycleStatus?: IntakeLifecycleStatus;
   closedReason?: IntakeClosedReason | null;
   receivedAt?: string | null;

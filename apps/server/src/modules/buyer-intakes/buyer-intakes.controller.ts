@@ -102,7 +102,7 @@ export class BuyerIntakesController {
   create(
     @Body()
     dto: {
-      brokerageCaseId?: string;
+      projectId?: string;
       lifecycleStatus?: string;
       receivedAt?: string;
       memo?: string;

@@ -4,21 +4,21 @@ import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { contactPhonesIncludeOrdered } from "../contacts/contact-phone.utils";
 import {
-  BROKERAGE_CASE_LEDGER_SORT_FIELDS,
-  buildBrokerageCaseLedgerCursorCondition,
-  decodeBrokerageCaseLedgerCursor,
-  encodeBrokerageCaseLedgerCursor,
-  type BrokerageCaseLedgerCursorRow,
-  type BrokerageCaseLedgerSortField,
-  type BrokerageCaseLedgerSortOrder,
-} from "./brokerage-case-ledger-cursor";
+  CUSTOMER_LEDGER_SORT_FIELDS,
+  buildCustomerLedgerCursorCondition,
+  decodeCustomerLedgerCursor,
+  encodeCustomerLedgerCursor,
+  type CustomerLedgerCursorRow,
+  type CustomerLedgerSortField,
+  type CustomerLedgerSortOrder,
+} from "./customer-ledger-cursor";
 
-export type BrokerageCaseLedgerMode = "all" | "demand" | "listing" | "both";
-export type { BrokerageCaseLedgerSortField } from "./brokerage-case-ledger-cursor";
+export type CustomerLedgerMode = "all" | "demand" | "listing" | "both";
+export type { CustomerLedgerSortField } from "./customer-ledger-cursor";
 
-export interface BrokerageCaseLedgerQuery {
+export interface CustomerLedgerQuery {
   search?: string;
-  mode?: BrokerageCaseLedgerMode;
+  mode?: CustomerLedgerMode;
   status?: string;
   urgency?: string;
   transactionType?: string;
@@ -43,20 +43,20 @@ export interface BrokerageCaseLedgerQuery {
   nextContactBefore?: string;
   moveInAfter?: string;
   moveInBefore?: string;
-  sortBy?: BrokerageCaseLedgerSortField;
-  sortOrder?: BrokerageCaseLedgerSortOrder;
+  sortBy?: CustomerLedgerSortField;
+  sortOrder?: CustomerLedgerSortOrder;
   cursor?: string;
   limit?: number;
 }
 
-const CASE_MODES = new Set<BrokerageCaseLedgerMode>([
+const PROJECT_MODES = new Set<CustomerLedgerMode>([
   "all",
   "demand",
   "listing",
   "both",
 ]);
-const CASE_SORT_FIELDS = new Set<BrokerageCaseLedgerSortField>(
-  BROKERAGE_CASE_LEDGER_SORT_FIELDS,
+const PROJECT_SORT_FIELDS = new Set<CustomerLedgerSortField>(
+  CUSTOMER_LEDGER_SORT_FIELDS,
 );
 const TRANSACTION_TYPES = new Set(["sale", "jeonse", "monthly"]);
 const BUYER_REQUIREMENT_STATUSES = new Set([
@@ -108,10 +108,10 @@ const BUYER_REQUIREMENT_FILTER_FIELDS = [
   "nextContactBefore",
   "moveInAfter",
   "moveInBefore",
-] as const satisfies readonly (keyof BrokerageCaseLedgerQuery)[];
+] as const satisfies readonly (keyof CustomerLedgerQuery)[];
 
 export function hasBuyerRequirementLedgerFilters(
-  query: BrokerageCaseLedgerQuery,
+  query: CustomerLedgerQuery,
 ) {
   return BUYER_REQUIREMENT_FILTER_FIELDS.some((field) => {
     const value = query[field];
@@ -161,7 +161,7 @@ const ledgerListingIntakeInclude = {
         },
       },
       unit: { include: { dong: true, siteUnitType: true } },
-      // 매물 의뢰의 당사자는 그 부동산의 활성 관련인이다. 건에 따로 복사하지 않는다.
+      // 매물 의뢰의 당사자는 그 부동산의 활성 관련인이다. 프로젝트에 따로 복사하지 않는다.
       propertyContacts: {
         where: { status: "active" },
         include: {
@@ -195,13 +195,13 @@ export interface LedgerLatestConsultation {
 }
 
 /**
- * 고객 원장의 한 줄. 사용자가 묶은 중개 건이 있으면 그 건이 한 줄이고, 없으면
+ * 고객 원장의 한 줄. 사용자가 묶은 프로젝트가 있으면 그 프로젝트가 한 줄이고, 없으면
  * 실제 당사자(매수인·소유자) 조합이 같은 진행 중 의뢰들이 한 줄이다. 묶음은
  * 저장하지 않고 조회할 때 의뢰의 당사자에서 계산한다.
  */
 interface LedgerGroup {
   id: string;
-  brokerageCase: {
+  project: {
     id: string;
     title: string | null;
     memo: string | null;
@@ -228,9 +228,9 @@ interface LedgerParticipant {
   };
 }
 
-interface GroupIdRow extends BrokerageCaseLedgerCursorRow {
+interface GroupIdRow extends CustomerLedgerCursorRow {
   id: string;
-  caseId: string | null;
+  projectId: string | null;
   primaryContactId: string | null;
   createdAt: Date;
   buyerIntakeIds: string[] | null;
@@ -249,8 +249,8 @@ const OWNER_PRINCIPAL_ROLES = ["owner", "co_owner"];
  *   구매 의뢰는 buyer·co_buyer, 매물 의뢰는 활성 owner·co_owner가 당사자다.
  *   그런 역할이 하나도 없으면 연결된 사람 전원을 당사자로 본다. 연결된 사람이
  *   없는 의뢰는 고객 원장에 나오지 않는다.
- * - intake_groups: 의뢰마다 묶음 id. 중개 건에 담긴 의뢰는 건 id, 아니면 당사자
- *   조합에서 만든 id(같은 조합이면 같은 값). 보관한 건의 의뢰도 건 없는 의뢰와
+ * - intake_groups: 의뢰마다 묶음 id. 프로젝트에 담긴 의뢰는 프로젝트 id, 아니면 당사자
+ *   조합에서 만든 id(같은 조합이면 같은 값). 보관한 프로젝트의 의뢰도 프로젝트 없는 의뢰와
  *   똑같이 당사자 조합으로 묶는다(원장에서 사라지면 다시 꺼낼 화면이 없다).
  * - ledger_groups: 묶음마다 한 줄.
  */
@@ -259,9 +259,9 @@ function ledgerGroupCtes(officeId: string) {
     buyer_scope AS (
       SELECT
         bi."id" AS intake_id,
-        -- 보관한 건의 의뢰는 건 없는 의뢰처럼 당사자 기준으로 묶는다(원장에서 숨기지 않는다).
+        -- 보관한 프로젝트의 의뢰는 프로젝트 없는 의뢰처럼 당사자 기준으로 묶는다(원장에서 숨기지 않는다).
         CASE WHEN bc_scope."archived_at" IS NULL
-          THEN bi."brokerage_case_id" END AS case_id,
+          THEN bi."project_id" END AS project_id,
         bi."received_at" AS received_at,
         people.principal_ids,
         people.primary_contact_id
@@ -284,16 +284,16 @@ function ledgerGroupCtes(officeId: string) {
         WHERE bic."buyer_intake_id" = bi."id"
           AND bic."office_id" = ${officeId}::uuid
       ) people ON people.principal_ids IS NOT NULL
-      LEFT JOIN "brokerage_cases" bc_scope ON bc_scope."id" = bi."brokerage_case_id"
+      LEFT JOIN "projects" bc_scope ON bc_scope."id" = bi."project_id"
       WHERE bi."office_id" = ${officeId}::uuid
         AND bi."lifecycle_status" IN ('open', 'hold')
     ),
     listing_scope AS (
       SELECT
         li."id" AS intake_id,
-        -- 보관한 건의 의뢰는 건 없는 의뢰처럼 당사자 기준으로 묶는다(원장에서 숨기지 않는다).
+        -- 보관한 프로젝트의 의뢰는 프로젝트 없는 의뢰처럼 당사자 기준으로 묶는다(원장에서 숨기지 않는다).
         CASE WHEN bc_scope."archived_at" IS NULL
-          THEN li."brokerage_case_id" END AS case_id,
+          THEN li."project_id" END AS project_id,
         li."received_at" AS received_at,
         people.principal_ids,
         people.primary_contact_id
@@ -325,7 +325,7 @@ function ledgerGroupCtes(officeId: string) {
                    pc_all."created_at" ASC
         ) pc
       ) people ON people.principal_ids IS NOT NULL
-      LEFT JOIN "brokerage_cases" bc_scope ON bc_scope."id" = li."brokerage_case_id"
+      LEFT JOIN "projects" bc_scope ON bc_scope."id" = li."project_id"
       WHERE li."office_id" = ${officeId}::uuid
         AND li."lifecycle_status" IN ('open', 'hold')
     ),
@@ -333,11 +333,11 @@ function ledgerGroupCtes(officeId: string) {
       SELECT
         'buyer' AS kind,
         scope.intake_id,
-        scope.case_id,
+        scope.project_id,
         scope.received_at,
         scope.primary_contact_id,
         COALESCE(
-          scope.case_id,
+          scope.project_id,
           OVERLAY(OVERLAY(
             MD5(ARRAY_TO_STRING(scope.principal_ids, ','))
             PLACING '4' FROM 13) PLACING '8' FROM 17)::uuid
@@ -347,11 +347,11 @@ function ledgerGroupCtes(officeId: string) {
       SELECT
         'listing' AS kind,
         scope.intake_id,
-        scope.case_id,
+        scope.project_id,
         scope.received_at,
         scope.primary_contact_id,
         COALESCE(
-          scope.case_id,
+          scope.project_id,
           OVERLAY(OVERLAY(
             MD5(ARRAY_TO_STRING(scope.principal_ids, ','))
             PLACING '4' FROM 13) PLACING '8' FROM 17)::uuid
@@ -361,7 +361,7 @@ function ledgerGroupCtes(officeId: string) {
     ledger_groups AS (
       SELECT
         ig.group_id,
-        (ARRAY_AGG(ig.case_id))[1] AS case_id,
+        (ARRAY_AGG(ig.project_id))[1] AS project_id,
         MIN(ig.received_at) AS created_at,
         (ARRAY_AGG(
           ig.primary_contact_id
@@ -377,19 +377,19 @@ function ledgerGroupCtes(officeId: string) {
 }
 
 @Injectable()
-export class BrokerageCasesService {
+export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findLedger(officeId: string, query: BrokerageCaseLedgerQuery = {}) {
+  async findLedger(officeId: string, query: CustomerLedgerQuery = {}) {
     this.assertLedgerQuery(query);
     const limit = Math.min(100, Math.max(1, Math.floor(query.limit ?? 20)));
     const mode = query.mode ?? "all";
     const sortBy = query.sortBy ?? "createdAt";
-    const sortOrder: BrokerageCaseLedgerSortOrder =
+    const sortOrder: CustomerLedgerSortOrder =
       query.sortOrder === "asc" ? "asc" : "desc";
     const sqlSortOrder = sortOrder === "asc" ? "ASC" : "DESC";
     const cursor = query.cursor
-      ? decodeBrokerageCaseLedgerCursor(query.cursor, sortBy, sortOrder)
+      ? decodeCustomerLedgerCursor(query.cursor, sortBy, sortOrder)
       : null;
     const statusFilters = parseCsvValues(query.status);
     const urgencyFilters = parseCsvValues(query.urgency);
@@ -622,7 +622,7 @@ export class BrokerageCasesService {
       )`);
     }
 
-    const sortExpressions: Record<BrokerageCaseLedgerSortField, Prisma.Sql> = {
+    const sortExpressions: Record<CustomerLedgerSortField, Prisma.Sql> = {
       customer: Prisma.sql`eligible.customer_name`,
       intentCount: Prisma.sql`eligible.intent_count`,
       budgetMin: Prisma.sql`COALESCE(eligible.budget_min, eligible.listing_price)`,
@@ -636,7 +636,7 @@ export class BrokerageCasesService {
     };
     const orderExpression = sortExpressions[sortBy];
     const cursorCondition = cursor
-      ? buildBrokerageCaseLedgerCursorCondition({ cursor, orderExpression })
+      ? buildCustomerLedgerCursorCondition({ cursor, orderExpression })
       : null;
     const tieBreakerOrder =
       sortBy === "createdAt"
@@ -737,11 +737,11 @@ export class BrokerageCasesService {
       eligible AS (
         SELECT
           lg.group_id AS "id",
-          lg.case_id,
+          lg.project_id,
           lg.primary_contact_id,
           lg.buyer_intake_ids,
           lg.listing_intake_ids,
-          -- 줄의 등록일은 담긴 의뢰 중 가장 먼저 접수된 날이다. 건으로 묶거나 풀어도
+          -- 줄의 등록일은 담긴 의뢰 중 가장 먼저 접수된 날이다. 프로젝트로 묶거나 풀어도
           -- 바뀌지 않아 줄이 목록에서 자리를 옮기지 않는다.
           lg.created_at AS created_at,
           primary_contact."name" AS customer_name,
@@ -756,7 +756,7 @@ export class BrokerageCasesService {
           COALESCE(buyer_totals.intent_count, 0) + COALESCE(listing_totals.intent_count, 0) AS intent_count,
           COALESCE(buyer_totals.match_count, 0) + COALESCE(listing_totals.match_count, 0) AS match_count
         FROM ledger_groups lg
-        LEFT JOIN "brokerage_cases" bc ON bc."id" = lg.case_id
+        LEFT JOIN "projects" bc ON bc."id" = lg.project_id
         LEFT JOIN "contacts" primary_contact ON primary_contact."id" = lg.primary_contact_id
         LEFT JOIN LATERAL (
           SELECT bm.*
@@ -792,7 +792,7 @@ export class BrokerageCasesService {
       )
       SELECT
         eligible."id",
-        eligible.case_id AS "caseId",
+        eligible.project_id AS "projectId",
         eligible.primary_contact_id AS "primaryContactId",
         eligible.created_at AS "createdAt",
         eligible.buyer_intake_ids AS "buyerIntakeIds",
@@ -823,7 +823,7 @@ export class BrokerageCasesService {
     const total = cursor?.total ?? Number(pageRows[0]?.total ?? 0);
     const lastRow = hasNextPage ? pageRows.at(-1) : undefined;
     const nextCursor = lastRow
-      ? encodeBrokerageCaseLedgerCursor({
+      ? encodeCustomerLedgerCursor({
           sortBy,
           sortOrder,
           row: lastRow,
@@ -843,7 +843,7 @@ export class BrokerageCasesService {
     };
   }
 
-  /** 이 쪽에 나올 묶음들의 의뢰·건·최근 상담을 한꺼번에 읽어 줄 순서대로 맞춘다. */
+  /** 이 쪽에 나올 묶음들의 의뢰·프로젝트·최근 상담을 한꺼번에 읽어 줄 순서대로 맞춘다. */
   private async loadLedgerGroups(
     officeId: string,
     rows: GroupIdRow[],
@@ -851,7 +851,7 @@ export class BrokerageCasesService {
     if (rows.length === 0) return [];
     const buyerIntakeIds = rows.flatMap((row) => row.buyerIntakeIds ?? []);
     const listingIntakeIds = rows.flatMap((row) => row.listingIntakeIds ?? []);
-    const caseIds = rows.flatMap((row) => (row.caseId ? [row.caseId] : []));
+    const projectIds = rows.flatMap((row) => (row.projectId ? [row.projectId] : []));
     const primaryContactIds = [
       ...new Set(
         rows.flatMap((row) =>
@@ -860,7 +860,7 @@ export class BrokerageCasesService {
       ),
     ];
 
-    const [buyerIntakes, listingIntakes, cases, consultations] =
+    const [buyerIntakes, listingIntakes, projects, consultations] =
       await Promise.all([
         buyerIntakeIds.length
           ? this.prisma.buyerIntake.findMany({
@@ -874,9 +874,9 @@ export class BrokerageCasesService {
               include: ledgerListingIntakeInclude,
             })
           : [],
-        caseIds.length
-          ? this.prisma.brokerageCase.findMany({
-              where: { officeId, id: { in: caseIds } },
+        projectIds.length
+          ? this.prisma.project.findMany({
+              where: { officeId, id: { in: projectIds } },
               select: {
                 id: true,
                 title: true,
@@ -910,7 +910,7 @@ export class BrokerageCasesService {
 
     const buyerById = new Map(buyerIntakes.map((item) => [item.id, item]));
     const listingById = new Map(listingIntakes.map((item) => [item.id, item]));
-    const caseById = new Map(cases.map((item) => [item.id, item]));
+    const projectById = new Map(projects.map((item) => [item.id, item]));
     const consultationByContact = new Map(
       consultations.map((item) => [item.contactId, item]),
     );
@@ -921,7 +921,7 @@ export class BrokerageCasesService {
         : undefined;
       return {
         id: row.id,
-        brokerageCase: row.caseId ? (caseById.get(row.caseId) ?? null) : null,
+        project: row.projectId ? (projectById.get(row.projectId) ?? null) : null,
         primaryContactId: row.primaryContactId,
         createdAt: row.createdAt,
         buyerIntakes: (row.buyerIntakeIds ?? []).flatMap((id) => {
@@ -1195,29 +1195,29 @@ export class BrokerageCasesService {
     const updatedAt = [
       ...group.buyerIntakes.map((intake) => intake.updatedAt),
       ...group.listingIntakes.map((intake) => intake.updatedAt),
-      ...(group.brokerageCase ? [group.brokerageCase.updatedAt] : []),
+      ...(group.project ? [group.project.updatedAt] : []),
     ].reduce(
       (latest, value) => (value.getTime() > latest.getTime() ? value : latest),
       group.createdAt,
     );
 
     return {
-      // 묶음 id. 중개 건이 있으면 건 id, 없으면 당사자 조합에서 계산한 값이다.
+      // 묶음 id. 프로젝트가 있으면 프로젝트 id, 없으면 당사자 조합에서 계산한 값이다.
       id: group.id,
-      /** 사용자가 중개 건으로 묶었을 때만 있다. */
-      brokerageCaseId: group.brokerageCase?.id ?? null,
-      title: group.brokerageCase?.title ?? null,
-      memo: group.brokerageCase?.memo ?? null,
+      /** 사용자가 프로젝트로 묶었을 때만 있다. */
+      projectId: group.project?.id ?? null,
+      title: group.project?.title ?? null,
+      memo: group.project?.memo ?? null,
       archivedAt: null,
       createdAt: group.createdAt,
       updatedAt,
-      stepCount: group.brokerageCase?._count.steps ?? 0,
+      stepCount: group.project?._count.steps ?? 0,
       participants,
       primaryParticipant: participants[0] ?? null,
       latestConsultation: group.latestConsultation,
       demandIntents,
       listingIntents,
-      // 필터와 상관없이 이 줄의 진행 중 의뢰 전부. 건으로 묶을 때 쓴다.
+      // 필터와 상관없이 이 줄의 진행 중 의뢰 전부. 프로젝트로 묶을 때 쓴다.
       listingIntakeIds: group.listingIntakes.map((intake) => intake.id),
       buyerIntakeIds: group.buyerIntakes.map((intake) => intake.id),
       intentCount: demandIntents.length + listingIntents.length,
@@ -1232,7 +1232,7 @@ export class BrokerageCasesService {
 
   private async getSummary(officeId: string) {
     const rows = await this.prisma.$queryRaw<
-      Array<{ cases: bigint; demand: bigint; listing: bigint; both: bigint }>
+      Array<{ rows: bigint; demand: bigint; listing: bigint; both: bigint }>
     >(Prisma.sql`
       WITH ${ledgerGroupCtes(officeId)},
       group_flags AS (
@@ -1252,7 +1252,7 @@ export class BrokerageCasesService {
         GROUP BY ig.group_id
       )
       SELECT
-        COUNT(*) FILTER (WHERE has_demand OR has_listing) AS cases,
+        COUNT(*) FILTER (WHERE has_demand OR has_listing) AS "rows",
         COUNT(*) FILTER (WHERE has_demand) AS demand,
         COUNT(*) FILTER (WHERE has_listing) AS listing,
         COUNT(*) FILTER (WHERE has_demand AND has_listing) AS "both"
@@ -1260,7 +1260,7 @@ export class BrokerageCasesService {
     `);
     const row = rows[0];
     return {
-      cases: Number(row?.cases ?? 0),
+      rows: Number(row?.rows ?? 0),
       demand: Number(row?.demand ?? 0),
       listing: Number(row?.listing ?? 0),
       both: Number(row?.both ?? 0),
@@ -1268,11 +1268,11 @@ export class BrokerageCasesService {
   }
 
 
-  private assertLedgerQuery(query: BrokerageCaseLedgerQuery) {
-    if (query.mode && !CASE_MODES.has(query.mode)) {
+  private assertLedgerQuery(query: CustomerLedgerQuery) {
+    if (query.mode && !PROJECT_MODES.has(query.mode)) {
       throw new BadRequestException("유효하지 않은 고객 원장 보기 방식입니다.");
     }
-    if (query.sortBy && !CASE_SORT_FIELDS.has(query.sortBy)) {
+    if (query.sortBy && !PROJECT_SORT_FIELDS.has(query.sortBy)) {
       throw new BadRequestException("유효하지 않은 고객 원장 정렬 필드입니다.");
     }
     if (query.sortOrder && !["asc", "desc"].includes(query.sortOrder)) {

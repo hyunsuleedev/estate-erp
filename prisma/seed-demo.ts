@@ -471,11 +471,11 @@ async function wipe({ prisma, officeId }: Pick<Ctx, 'prisma' | 'officeId'>) {
   // BuyerRequirement
   // 진행 계획의 단계는 의뢰를 가리키므로 의뢰보다 먼저 지운다. DEMO 건의 단계와,
   // 사용자가 직접 묶은 건에 들어 있는 DEMO 의뢰의 단계가 대상이다.
-  await prisma.brokerageCaseStep.deleteMany({
+  await prisma.projectStep.deleteMany({
     where: {
       officeId,
       OR: [
-        { brokerageCase: { memo: demoLike } },
+        { project: { memo: demoLike } },
         ...(demoContactIds.length > 0
           ? [
               {
@@ -540,8 +540,8 @@ async function wipe({ prisma, officeId }: Pick<Ctx, 'prisma' | 'officeId'>) {
     },
   });
 
-  // Buyer/ListingIntake가 모두 제거된 뒤 DEMO 중개 건을 정리한다.
-  await prisma.brokerageCase.deleteMany({
+  // Buyer/ListingIntake가 모두 제거된 뒤 DEMO 프로젝트를 정리한다.
+  await prisma.project.deleteMany({
     where: {
       officeId,
       OR: [
@@ -1293,7 +1293,7 @@ async function seedBuyerRequirements(
   return created;
 }
 
-// 사용자가 직접 묶은 중개 건의 예: 기존 집을 팔고 상급 평형을 사는 갈아타기.
+// 사용자가 직접 묶은 프로젝트의 예: 기존 집을 팔고 상급 평형을 사는 갈아타기.
 // 이 고객의 진행 중 매물 의뢰와 구매 의뢰를 한 건으로 묶고 진행 계획을 짠다.
 // 다른 고객의 의뢰는 건 없이 둔다(대부분의 의뢰가 그렇다).
 async function seedTradeUpScenario(
@@ -1350,7 +1350,7 @@ async function seedTradeUpScenario(
     );
   }
 
-  const brokerageCase = await ctx.prisma.brokerageCase.create({
+  const project = await ctx.prisma.project.create({
     data: {
       officeId: ctx.officeId,
       title: `${contact.name} 실거주 갈아타기`,
@@ -1361,11 +1361,11 @@ async function seedTradeUpScenario(
   // 의뢰를 건에 먼저 담아야 단계가 그 의뢰를 가리킬 수 있다.
   await ctx.prisma.listingIntake.updateMany({
     where: { id: { in: listingIntakes.map((intake) => intake.id) } },
-    data: { brokerageCaseId: brokerageCase.id },
+    data: { projectId: project.id },
   });
   await ctx.prisma.buyerIntake.updateMany({
     where: { id: { in: buyerIntakes.map((intake) => intake.id) } },
-    data: { brokerageCaseId: brokerageCase.id },
+    data: { projectId: project.id },
   });
 
   const typeLabel: Record<string, string> = {
@@ -1406,19 +1406,19 @@ async function seedTradeUpScenario(
     })),
     { sortOrder: 4, title: '이사', memo: `${DEMO_TAG} 매도 잔금과 같은 주` },
   ];
-  await ctx.prisma.brokerageCaseStep.createMany({
+  await ctx.prisma.projectStep.createMany({
     data: steps.map((step) => ({
       officeId: ctx.officeId,
-      brokerageCaseId: brokerageCase.id,
+      projectId: project.id,
       ...step,
     })),
   });
 }
 
 // seed 실행 자체에서 고객 원장 시나리오를 검증한다: 직접 묶은 갈아타기 건 하나와,
-// 건 없이 당사자 기준으로 묶여 보이는 나머지 의뢰들.
+// 프로젝트 없이 당사자 기준으로 묶여 보이는 나머지 의뢰들.
 async function verifyCustomerLedgerScenarios(ctx: Ctx) {
-  const cases = await ctx.prisma.brokerageCase.findMany({
+  const cases = await ctx.prisma.project.findMany({
     where: {
       officeId: ctx.officeId,
       archivedAt: null,
@@ -1439,7 +1439,7 @@ async function verifyCustomerLedgerScenarios(ctx: Ctx) {
       ctx.prisma.listingIntake.count({
         where: {
           officeId: ctx.officeId,
-          brokerageCaseId: null,
+          projectId: null,
           lifecycleStatus: { in: ['open', 'hold'] },
           memo: { contains: DEMO_TAG },
         },
@@ -1447,7 +1447,7 @@ async function verifyCustomerLedgerScenarios(ctx: Ctx) {
       ctx.prisma.buyerIntake.count({
         where: {
           officeId: ctx.officeId,
-          brokerageCaseId: null,
+          projectId: null,
           lifecycleStatus: { in: ['open', 'hold'] },
           memo: { contains: DEMO_TAG },
         },

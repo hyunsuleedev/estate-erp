@@ -41,9 +41,9 @@ import { RealtimeService } from '../../realtime/realtime.service';
 import { closeOpenMatchesForIntake } from '../matches/match-lifecycle-sync';
 import {
   appendIntakeStep,
-  assertActiveBrokerageCase,
+  assertActiveProject,
   listingIntakeStepTitle,
-} from '../brokerage-cases/brokerage-case-membership';
+} from '../projects/project-membership';
 
 const DEFAULT_INTAKE_LIFECYCLE_STATUS = IntakeLifecycleStatus.OPEN;
 const VALID_INTAKE_LIFECYCLE_STATUSES: ReadonlySet<string> = new Set(
@@ -282,7 +282,7 @@ interface ListingInputDto {
 
 interface ListingIntakeCreateDto {
   propertyId: string;
-  brokerageCaseId?: string;
+  projectId?: string;
   lifecycleStatus?: string;
   closedReason?: string | null;
   receivedAt?: Date | string | null;
@@ -507,15 +507,15 @@ export class ListingIntakesService {
     }
 
     const intake = await this.prisma.$transaction(async (tx) => {
-      // 건은 사용자가 고른 경우에만 붙는다. 서버가 당사자를 보고 묶지 않는다.
-      if (dto.brokerageCaseId) {
-        await assertActiveBrokerageCase(tx, officeId, dto.brokerageCaseId);
+      // 프로젝트는 사용자가 고른 경우에만 붙는다. 서버가 당사자를 보고 묶지 않는다.
+      if (dto.projectId) {
+        await assertActiveProject(tx, officeId, dto.projectId);
       }
       const created = await tx.listingIntake
         .create({
           data: {
             officeId,
-            brokerageCaseId: dto.brokerageCaseId ?? null,
+            projectId: dto.projectId ?? null,
             propertyId: dto.propertyId,
             lifecycleStatus,
             lifecycleChangedAt: new Date(),
@@ -571,10 +571,10 @@ export class ListingIntakesService {
         });
       }
 
-      if (dto.brokerageCaseId) {
+      if (dto.projectId) {
         await appendIntakeStep(tx, {
           officeId,
-          brokerageCaseId: dto.brokerageCaseId,
+          projectId: dto.projectId,
           kind: 'listing',
           intakeId: created.id,
           title: await listingIntakeStepTitle(tx, dto.propertyId),

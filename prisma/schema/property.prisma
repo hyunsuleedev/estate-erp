@@ -42,8 +42,8 @@ model Property {
 model ListingIntake {
   id              String  @id @default(uuid()) @db.Uuid
   officeId        String  @map("office_id") @db.Uuid
-  /// 사용자가 중개 건으로 묶었을 때만 채워진다.
-  brokerageCaseId String? @map("brokerage_case_id") @db.Uuid
+  /// 사용자가 프로젝트로 묶었을 때만 채워진다.
+  projectId String? @map("project_id") @db.Uuid
   propertyId      String  @map("property_id") @db.Uuid
 
   /// 의뢰 생명주기만 저장: open | hold | closed
@@ -75,17 +75,17 @@ model ListingIntake {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office                Office              @relation(fields: [officeId], references: [id])
-  brokerageCase         BrokerageCase?      @relation(fields: [officeId, brokerageCaseId], references: [officeId, id], onDelete: Restrict)
+  project         Project?      @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Restrict)
   property              Property            @relation(fields: [propertyId], references: [id])
   jointBrokeragePartner PartnerBroker?      @relation("ListingIntakeJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
   listings              Listing[]
   consultations         Consultation[]
   tasks                 Task[]
   calendarEvents        CalendarEvent[]
-  caseSteps             BrokerageCaseStep[]
+  projectSteps             ProjectStep[]
 
   @@unique([officeId, id])
-  @@unique([officeId, brokerageCaseId, id])
+  @@unique([officeId, projectId, id])
   @@index([officeId, receivedAt])
   @@index([officeId, lifecycleStatus, updatedAt])
   @@index([officeId, lifecycleStatus, lifecycleChangedAt])
