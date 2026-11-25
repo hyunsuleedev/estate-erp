@@ -309,7 +309,7 @@ function OwnerListingBlock({
         open.length > 0 && (
           <div
             data-contact-match-lanes
-            className="overflow-x-auto [&_[data-match-branch]]:grid-cols-1! [&_[data-match-branch]]:pr-0!"
+            className="overflow-x-auto pr-0.5 [&_[data-match-branch]]:grid-cols-1! [&_[data-match-branch]]:pr-0!"
           >
             <BuyerMatchBranchList matches={open} actions={actions} counterparty="buyer" className="mb-1 ml-2 mr-0" />
           </div>
@@ -416,7 +416,7 @@ function RequirementBlock({
         // 띠는 최소 560px이라 더 좁아지면 이 칸만 가로로 굴린다.
         <div
           data-contact-match-lanes
-          className="overflow-x-auto [&_[data-match-branch]]:grid-cols-1! [&_[data-match-branch]]:pr-0!"
+          className="overflow-x-auto pr-0.5 [&_[data-match-branch]]:grid-cols-1! [&_[data-match-branch]]:pr-0!"
         >
           <BuyerMatchBranchList
             matches={open}

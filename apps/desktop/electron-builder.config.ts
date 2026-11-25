@@ -20,6 +20,43 @@ if (updateBaseUrl && !updateBaseUrl.startsWith('https://')) {
 // 나오지 않게 여기서 정한 것만 쓴다.
 const macIdentity = process.env.ESTATE_ERP_MAC_IDENTITY?.trim() || null;
 
+// Windows 서명(Azure Artifact Signing, 옛 Trusted Signing). 네 값을 모두 정한 빌드만 서명한다.
+// 네 값은 비밀이 아니다(계정·프로필의 이름과 주소). 서명 권한은 빌드하는 셸이나 CI의 환경
+// 변수 AZURE_TENANT_ID · AZURE_CLIENT_ID · AZURE_CLIENT_SECRET 로 따로 준다(.env.example 참고).
+// 서명은 Windows에서만 된다(PowerShell의 TrustedSigning 모듈을 쓴다).
+const winSign = {
+  // 인증서에 적힌 회사 이름(CN) 그대로. 앱 안의 업데이트 설정(app-update.yml)에도 들어가서,
+  // 설치된 앱은 업데이트로 받은 설치 파일의 서명이 이 이름인지 확인한 뒤에만 설치한다.
+  // 그래서 배포한 뒤에 이 이름이 달라지면 이미 설치된 앱은 업데이트를 받지 못한다.
+  publisherName: process.env.ESTATE_ERP_WIN_PUBLISHER_NAME?.trim() || null,
+  // 서명 계정을 만든 리전의 주소. 예: https://krc.codesigning.azure.net (한국 중부)
+  endpoint: process.env.ESTATE_ERP_WIN_SIGN_ENDPOINT?.trim() || null,
+  codeSigningAccountName: process.env.ESTATE_ERP_WIN_SIGN_ACCOUNT?.trim() || null,
+  certificateProfileName: process.env.ESTATE_ERP_WIN_SIGN_PROFILE?.trim() || null,
+};
+const winSignValues = Object.values(winSign);
+// 일부만 정해진 것은 빠뜨린 것이다. 서명 없이 조용히 넘어가지 않게 빌드를 멈춘다.
+if (winSignValues.some(Boolean) && !winSignValues.every(Boolean)) {
+  throw new Error(
+    'Windows signing needs all of ESTATE_ERP_WIN_PUBLISHER_NAME, ESTATE_ERP_WIN_SIGN_ENDPOINT, ESTATE_ERP_WIN_SIGN_ACCOUNT, ESTATE_ERP_WIN_SIGN_PROFILE',
+  );
+}
+if (winSign.endpoint && !winSign.endpoint.startsWith('https://')) {
+  throw new Error('ESTATE_ERP_WIN_SIGN_ENDPOINT must start with https://');
+}
+const winAzureSignOptions =
+  winSign.publisherName &&
+  winSign.endpoint &&
+  winSign.codeSigningAccountName &&
+  winSign.certificateProfileName
+    ? {
+        publisherName: winSign.publisherName,
+        endpoint: winSign.endpoint,
+        codeSigningAccountName: winSign.codeSigningAccountName,
+        certificateProfileName: winSign.certificateProfileName,
+      }
+    : null;
+
 const config: Configuration = {
   appId: 'com.estaitt.estaitflow',
   productName: 'EstaitFlow',
@@ -63,6 +100,8 @@ const config: Configuration = {
   },
   win: {
     target: [{ target: 'nsis', arch: ['x64'] }],
+    // 정하지 않으면 서명하지 않는다. 실행 파일, 설치 파일, 제거 프로그램이 모두 서명된다.
+    azureSignOptions: winAzureSignOptions,
   },
   nsis: {
     // 사용자별 설치다. 업데이트할 때 관리자 권한 창(UAC)이 뜨지 않는다. 중개사무소 직원 PC는

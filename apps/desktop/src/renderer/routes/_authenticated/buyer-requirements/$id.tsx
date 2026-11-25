@@ -415,6 +415,39 @@ function BuyerRequirementDetailPage() {
   // ── 매물 연결 창 (null이면 닫힘) ───────────────────────────
   const [linkMode, setLinkMode] = useState<"fit" | "all" | null>(null);
 
+  // 참여 손님(오른쪽 열)의 상태와 동작. 훅은 아래의 이른 return(불러오는 중 · 없음 · 오류)보다 앞에 둔다 —
+  // 뒤에 두면 불러오기가 끝나는 순간 훅의 수가 늘어 화면이 통째로 죽는다("Rendered more hooks than during the previous render").
+  const [participantDialogOpen, setParticipantDialogOpen] = useState(false);
+  const setPrimaryParticipant = useMutation({
+    mutationFn: (contactId: string) =>
+      api.buyerIntakes.updateContact(requirement!.buyerIntake!.id, contactId, { isPrimary: true }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] }),
+        queryClient.invalidateQueries({ queryKey: ["buyer-intakes"] }),
+      ]);
+      toast.success("대표 손님을 변경했습니다.");
+    },
+    onError: (err) => {
+      toast.error(apiErrorMessage(err, "대표 손님을 변경하지 못했습니다."));
+    },
+  });
+  const removeParticipant = useMutation({
+    mutationFn: (contactId: string) =>
+      api.buyerIntakes.removeContact(requirement!.buyerIntake!.id, contactId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] }),
+        queryClient.invalidateQueries({ queryKey: ["buyer-intakes"] }),
+      ]);
+      toast.success("참여 손님을 제외했습니다.");
+    },
+    onError: (err) => {
+      toast.error(apiErrorMessage(err, "참여 손님을 제외하지 못했습니다."));
+    },
+  });
+
+
   if (isLoading) {
     return (
       <PageShell onBack={backToList}>
@@ -494,37 +527,6 @@ function BuyerRequirementDetailPage() {
     const meta = getRouteMeta(route);
     void navigateActiveTab({ route, kind: meta.kind, title: meta.title });
   };
-
-  // 오른쪽 열(좁은 화면에서는 본문 안으로): 손님 → 상담
-  const [participantDialogOpen, setParticipantDialogOpen] = useState(false);
-  const setPrimaryParticipant = useMutation({
-    mutationFn: (contactId: string) =>
-      api.buyerIntakes.updateContact(r.buyerIntake!.id, contactId, { isPrimary: true }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] }),
-        queryClient.invalidateQueries({ queryKey: ["buyer-intakes"] }),
-      ]);
-      toast.success("대표 손님을 변경했습니다.");
-    },
-    onError: (err) => {
-      toast.error(apiErrorMessage(err, "대표 손님을 변경하지 못했습니다."));
-    },
-  });
-  const removeParticipant = useMutation({
-    mutationFn: (contactId: string) =>
-      api.buyerIntakes.removeContact(r.buyerIntake!.id, contactId),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] }),
-        queryClient.invalidateQueries({ queryKey: ["buyer-intakes"] }),
-      ]);
-      toast.success("참여 손님을 제외했습니다.");
-    },
-    onError: (err) => {
-      toast.error(apiErrorMessage(err, "참여 손님을 제외하지 못했습니다."));
-    },
-  });
 
   const people = (r.buyerIntake?.contacts ?? []).filter((person) => person.contact);
   // 사람의 역할은 거래유형으로 부른다: 매매는 매수인, 전세 · 월세는 임차인, 정하지 않았으면 고객 (화면 낱말 기준)

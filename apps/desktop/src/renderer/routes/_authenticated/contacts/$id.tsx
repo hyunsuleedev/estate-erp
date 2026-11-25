@@ -914,8 +914,11 @@ function PageShell({ onBack, children }: { onBack: () => void; children: ReactNo
 const RAIL_DEFAULT_WIDTH = 360;
 const RAIL_MIN_WIDTH = 300;
 const RAIL_MAX_WIDTH = 760;
-/** 오른쪽 열을 넓혀도 본문에 남겨 둘 너비 */
-const RAIL_BODY_MIN_WIDTH = 620;
+/**
+ * 오른쪽 열을 넓혀도 본문에 남겨 둘 너비. 본문의 "걸린 일"에 들어가는 매칭 단계 띠가 일곱 칸(최소 560px)에
+ * 가지 들여쓰기와 본문 여백을 더해 약 690px이 필요하다 — 이보다 좁히면 띠의 마지막 칸("거래 전환")이 잘린다.
+ */
+const RAIL_BODY_MIN_WIDTH = 760;
 const RAIL_WIDTH_STORAGE_KEY = 'contact-detail:rail-width';
 
 function readRailWidth() {
