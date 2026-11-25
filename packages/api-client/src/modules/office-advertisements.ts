@@ -9,7 +9,7 @@ export interface OfficeAdvertisement {
   advertisementId: string;
   articleNo: string;
   sourceUrl: string | null;
-  /** 우리 사무소의 광고인가. "바로 이 내 광고"는 비교 한 벌의 mainAdvertisement다 */
+  /** 우리 사무소의 광고인가. "바로 이 내 광고"는 비교 한 벌의 ownAdvertisement다 */
   isMine: boolean;
   isActive: boolean;
   articleName: string | null;
@@ -38,7 +38,7 @@ export interface AdvertisementComparisonSet {
   /** 비교 목록을 마지막으로 통째로 읽은 시각 */
   observedAt: string | null;
   /** 목록에서 "바로 이 내 광고"인 줄 (네이버 매물번호가 같은 줄) */
-  mainAdvertisement: OfficeAdvertisement | null;
+  ownAdvertisement: OfficeAdvertisement | null;
   /** 지금 네이버에 보이는 광고들. 내 것이 먼저, 그다음 순위순 */
   advertisements: OfficeAdvertisement[];
 }

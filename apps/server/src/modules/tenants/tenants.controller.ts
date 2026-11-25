@@ -57,6 +57,7 @@ export class TenantsController {
     dto: {
       propertyId: string;
       contactId: string;
+      role?: string;
       deposit?: number;
       monthlyRent?: number;
       contractStart?: string;
@@ -76,6 +77,7 @@ export class TenantsController {
       propertyId: string;
       name: string;
       phone?: string;
+      role?: string;
       deposit?: number;
       monthlyRent?: number;
       contractStart?: string;
@@ -112,5 +114,44 @@ export class TenantsController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.remove(id, user.officeId);
+  }
+
+  @Post(':id/members')
+  addMember(
+    @Param('id') id: string,
+    @Body()
+    dto: {
+      contactId: string;
+      role?: string;
+      isPrimary?: boolean;
+      memo?: string;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.addMember(id, user.officeId, dto);
+  }
+
+  @Patch(':id/members/:contactId')
+  updateMember(
+    @Param('id') id: string,
+    @Param('contactId') contactId: string,
+    @Body()
+    dto: {
+      role?: string;
+      isPrimary?: boolean;
+      memo?: string | null;
+    },
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.updateMember(id, contactId, user.officeId, dto);
+  }
+
+  @Delete(':id/members/:contactId')
+  removeMember(
+    @Param('id') id: string,
+    @Param('contactId') contactId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.removeMember(id, contactId, user.officeId);
   }
 }

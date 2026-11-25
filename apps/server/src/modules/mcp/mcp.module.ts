@@ -15,7 +15,7 @@ import { DongsModule } from '../dongs/dongs.module';
 import { UnitsModule } from '../units/units.module';
 import { OfficeSitesModule } from '../office-sites/office-sites.module';
 import { PropertyContactsModule } from '../property-contacts/property-contacts.module';
-import { ContactRelationsModule } from '../contact-relations/contact-relations.module';
+import { PartiesModule } from '../parties/parties.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { EmployeesModule } from '../employees/employees.module';
 import { OfficesModule } from '../offices/offices.module';
@@ -52,7 +52,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
     UnitsModule,
     OfficeSitesModule,
     PropertyContactsModule,
-    ContactRelationsModule,
+    PartiesModule,
     TenantsModule,
     EmployeesModule,
     OfficesModule,

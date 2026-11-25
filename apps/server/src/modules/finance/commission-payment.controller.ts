@@ -11,6 +11,7 @@ import {
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { uuidParam } from './finance-params';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -33,22 +34,23 @@ export class CommissionPaymentController {
     @CurrentUser() user: CurrentUserPayload,
     @Query('status') status?: string,
   ) {
-    return this.service.listByOffice(user.officeId, { status });
+    // 직원은 자기가 담당으로 배정된 거래의 청구만 받는다 (캘린더의 수금 예정 등)
+    return this.service.listByOffice(user.officeId, { status }, { userId: user.userId, role: user.role });
   }
 
   @Get('deal/:dealId')
   listByDeal(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dealId') dealId: string,
+    @Param('dealId', uuidParam('거래')) dealId: string,
   ) {
-    return this.service.listByDeal(user.officeId, dealId);
+    return this.service.listByDeal(user.officeId, dealId, { userId: user.userId, role: user.role });
   }
 
   @Post(':id/collect')
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   collect(
-    @Param('id') id: string,
+    @Param('id', uuidParam('청구')) id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { actualAmount: number; method: string; paidAt?: string; note?: string },
   ) {
@@ -58,7 +60,7 @@ export class CommissionPaymentController {
   @Get(':id/receipts')
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
-  listReceipts(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
+  listReceipts(@Param('id', uuidParam('청구')) id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.service.listReceipts(user.officeId, id);
   }
 
@@ -66,18 +68,25 @@ export class CommissionPaymentController {
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   addReceipt(
-    @Param('id') id: string,
+    @Param('id', uuidParam('청구')) id: string,
     @CurrentUser() user: CurrentUserPayload,
-    @Body() body: { amountWon: number; receivedAt?: string; method?: string; memo?: string },
+    @Body()
+    body: {
+      amountWon: number;
+      receivedAt?: string;
+      method?: string;
+      memo?: string;
+      vat?: 'included' | 'none';
+    },
   ) {
-    return this.service.addReceipt(id, user.officeId, user.userId, body);
+    return this.service.addReceipt(id, user.officeId, user.userId, body ?? {});
   }
 
   @Post(':id/refund')
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   refund(
-    @Param('id') id: string,
+    @Param('id', uuidParam('청구')) id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { amountWon: number; refundedAt?: string; memo?: string },
   ) {
@@ -88,18 +97,19 @@ export class CommissionPaymentController {
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   voidReceipt(
-    @Param('receiptId') receiptId: string,
+    @Param('receiptId', uuidParam('입금 기록')) receiptId: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { reason?: string },
   ) {
     return this.service.voidReceipt(receiptId, user.officeId, user.userId, body?.reason);
   }
 
+  // 면제는 할인·대손 승인과 같이 대표만 바로 한다. 매니저·중개사는 조정 요청(면제)을 올려 대표가 승인한다.
   @Post(':id/waive')
-  @Roles('owner', 'manager')
+  @Roles('owner')
   @UseGuards(RolesGuard)
   waive(
-    @Param('id') id: string,
+    @Param('id', uuidParam('청구')) id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { note?: string },
   ) {
@@ -110,7 +120,7 @@ export class CommissionPaymentController {
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   confirmDraft(
-    @Param('id') id: string,
+    @Param('id', uuidParam('청구')) id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { dueDate?: string },
   ) {
@@ -121,18 +131,47 @@ export class CommissionPaymentController {
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   issueTaxInvoice(
-    @Param('id') id: string,
+    @Param('id', uuidParam('청구')) id: string,
     @CurrentUser() user: CurrentUserPayload,
-    @Body() body: { taxInvoiceNo: string; taxInvoiceDate?: string },
+    @Body()
+    body: { taxInvoiceNo: string; taxInvoiceDate?: string; kind?: 'tax_invoice' | 'cash_receipt' },
   ) {
-    return this.service.issueTaxInvoice(id, user.officeId, body);
+    return this.service.issueTaxInvoice(id, user.officeId, body ?? {});
+  }
+
+  @Post(':id/tax-invoice/clear')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
+  clearTaxInvoice(@Param('id', uuidParam('청구')) id: string, @CurrentUser() user: CurrentUserPayload) {
+    return this.service.clearTaxInvoice(id, user.officeId);
+  }
+
+  @Post('distributions/:distributionId/settle')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
+  settleDistribution(
+    @Param('distributionId', uuidParam('분배')) distributionId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { settledAt?: string; memo?: string },
+  ) {
+    return this.service.settleDistribution(distributionId, user.officeId, body ?? {});
+  }
+
+  @Post('distributions/:distributionId/unsettle')
+  @Roles('owner', 'manager')
+  @UseGuards(RolesGuard)
+  unsettleDistribution(
+    @Param('distributionId', uuidParam('분배')) distributionId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.unsettleDistribution(distributionId, user.officeId);
   }
 
   @Patch(':id/distributions')
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   replaceDistributions(
-    @Param('id') id: string,
+    @Param('id', uuidParam('청구')) id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { items: DistributionInput[] },
   ) {
@@ -143,7 +182,7 @@ export class CommissionPaymentController {
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   applyDistributionsToDeal(
-    @Param('dealId') dealId: string,
+    @Param('dealId', uuidParam('거래')) dealId: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { items: DistributionInput[] },
   ) {

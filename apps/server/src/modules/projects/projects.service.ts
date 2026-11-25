@@ -1,4 +1,4 @@
-import { formatUnitName } from "@estate-erp/shared";
+import { formatPlaceLabel } from "@estate-erp/shared";
 import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -148,6 +148,8 @@ const ledgerBuyerIntakeInclude = {
       _count: { select: { matches: true } },
     },
   },
+  // 매칭 없이 바로 만든 거래도 "거래 중"이다. 취소된 거래는 세지 않는다.
+  _count: { select: { deals: { where: { isCancelled: false } } } },
 } satisfies Prisma.BuyerIntakeInclude;
 
 const ledgerListingIntakeInclude = {
@@ -176,7 +178,11 @@ const ledgerListingIntakeInclude = {
   },
   listings: {
     orderBy: [{ createdAt: "asc" as const }],
-    include: { _count: { select: { matches: true } } },
+    include: {
+      _count: {
+        select: { matches: true, deals: { where: { isCancelled: false } } },
+      },
+    },
   },
 } satisfies Prisma.ListingIntakeInclude;
 
@@ -1134,6 +1140,8 @@ export class ProjectsService {
             memo: requirement.memo,
             assignedTo: requirement.assignedTo,
             matchCount: requirement._count.matches,
+            /** 이 구매 의뢰의 취소되지 않은 거래 수 (매칭 없이 만든 거래 포함) */
+            activeDealCount: intake._count?.deals ?? 0,
             preferredSites,
             preferredRegions,
             contextLabel: contextParts.join(" · ") || "선호 지역 미등록",
@@ -1147,15 +1155,13 @@ export class ProjectsService {
       const area = toNumber(
         unit?.supplyAreaM2 ?? unit?.siteUnitType?.supplyAreaM2,
       );
-      const locationParts = [
-        property.site.name,
-        unit?.dong && !unit.dong.isPlaceholder
-          ? unit.dong.name.endsWith("동")
-            ? unit.dong.name
-            : `${unit.dong.name}동`
-          : null,
-        formatUnitName(unit) || null,
-      ].filter(Boolean);
+      // "고덕그라시움 102동 2203호" (공용 formatPlaceLabel)
+      const placeLabel = formatPlaceLabel({
+        siteName: property.site.name,
+        dongName: unit?.dong?.name,
+        dongIsPlaceholder: unit?.dong?.isPlaceholder,
+        unit,
+      });
       return intake.listings.map((listing) => ({
         kind: "listing" as const,
         listingIntakeId: intake.id,
@@ -1180,6 +1186,8 @@ export class ProjectsService {
         area,
         isPaused: listing.isPaused,
         matchCount: listing._count.matches,
+        /** 이 거래 조건의 취소되지 않은 거래 수 (매칭 없이 만든 거래 포함) */
+        activeDealCount: listing._count.deals ?? 0,
         propertyId: property.id,
         siteId: property.site.id,
         siteName: property.site.name,
@@ -1187,7 +1195,7 @@ export class ProjectsService {
         wardName: property.site.ward.name,
         dongName: unit?.dong?.name ?? null,
         unitName: unit?.name ?? null,
-        contextLabel: locationParts.join(" "),
+        contextLabel: placeLabel,
         memo: listing.memo ?? intake.memo,
       }));
     });

@@ -125,7 +125,7 @@ describe('McpToolsService', () => {
       noop, // units
       noop, // officeSites
       noop, // propertyContacts
-      noop, // contactRelations
+      noop, // parties
       noop, // tenants
       noop, // employees
       noop, // offices
@@ -286,7 +286,6 @@ describe('McpToolsService', () => {
         listingId: 'listing-1',
         channel: 'esiljang',
         status: 'active',
-        source: 'cp_sync',
         advertisedPrice: 150000,
         url: 'https://www.aipartner.com/advertisements/cp-100',
         externalAdId: 'cp-100',
@@ -302,7 +301,6 @@ describe('McpToolsService', () => {
         listingId: 'listing-1',
         channel: 'esiljang',
         status: 'active',
-        source: 'cp_sync',
         advertisedPrice: 150000,
         url: 'https://www.aipartner.com/advertisements/cp-100',
         externalAdId: 'cp-100',
@@ -366,6 +364,7 @@ describe('McpToolsService', () => {
     const metadata = {
       channel: 'esiljang',
       provider: 'esiljang',
+      accountKey: 'esil-user-1',
       scope: 'active_advertisements',
       observedAt: '2026-08-04T14:48:01.956Z',
       expectedTotal: 1,

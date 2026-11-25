@@ -264,6 +264,14 @@ export interface Contract {
   sellerContact?: Contact | null;
 }
 
+/**
+ * 문서 저장 응답. 계약서 문서를 저장하면 서버가 그 금액·날짜로 계약서 요약을 맞추고,
+ * 맞춘 칸(updated)과 읽지 못해 그대로 둔 칸(unreadable)의 이름을 알려 준다.
+ */
+export type SavedContractDocument = ContractDocument & {
+  summarySync?: { updated: string[]; unreadable: string[] };
+};
+
 export interface CreateContractDto {
   dealId?: string;
   transactionType?: string;
@@ -637,7 +645,7 @@ export function createContractsApi(request: RequestFn) {
         { params: { revisionId } },
       ),
     createDocument: (contractId: string, dto: CreateContractDocumentDto) =>
-      request<ContractDocument>(`/contracts/${contractId}/documents`, {
+      request<SavedContractDocument>(`/contracts/${contractId}/documents`, {
         method: 'POST',
         body: dto,
       }),
@@ -646,7 +654,7 @@ export function createContractsApi(request: RequestFn) {
       documentId: string,
       dto: UpdateContractDocumentDto,
     ) =>
-      request<ContractDocument>(
+      request<SavedContractDocument>(
         `/contracts/${contractId}/documents/${documentId}`,
         { method: 'PATCH', body: dto },
       ),

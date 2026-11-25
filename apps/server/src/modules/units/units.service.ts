@@ -16,6 +16,7 @@ import {
   NON_CLOSED_INTAKE_WHERE,
   OCCUPYING_DEALS_SELECT,
 } from '../listings/listing-state';
+import { presentPropertyLease, propertyLeaseInclude } from '../tenants/tenants.service';
 
 // 토지(land)는 Unit 자체를 만들지 않는다.
 // 그 외(아파트/오피스텔/빌라/상가/지식산업센터 등 건물형)는 모두
@@ -34,6 +35,44 @@ const UNIT_CELL_TYPES = [
 ] as const;
 
 const UNIT_CELL_TYPE_SET: ReadonlySet<string> = new Set(UNIT_CELL_TYPES);
+
+/** 요청으로 고칠 수 있는 공간 칸. 사무소·대지(siteId)는 서버가 정한다. */
+const UNIT_INPUT_FIELDS = [
+  'siteUnitTypeId',
+  'name',
+  'floor',
+  'floorEnd',
+  'floorLabel',
+  'lineNo',
+  'exclusiveAreaM2',
+  'supplyAreaM2',
+  'roomCount',
+  'bathRoomCount',
+  'isPiloti',
+  'cellType',
+] as const;
+
+function pickUnitFields<T extends object>(dto: T) {
+  const picked: Record<string, unknown> = {};
+  for (const field of UNIT_INPUT_FIELDS) {
+    const value = (dto as Record<string, unknown>)[field];
+    if (value !== undefined) picked[field] = value;
+  }
+  return picked as {
+    siteUnitTypeId?: string | null;
+    name?: string | null;
+    floor?: number | null;
+    floorEnd?: number | null;
+    floorLabel?: string | null;
+    lineNo?: number | null;
+    exclusiveAreaM2?: number | null;
+    supplyAreaM2?: number | null;
+    roomCount?: number | null;
+    bathRoomCount?: number | null;
+    isPiloti?: boolean;
+    cellType?: string;
+  };
+}
 
 @Injectable()
 export class UnitsService {
@@ -77,9 +116,9 @@ export class UnitsService {
               where: { officeId, role: 'owner', status: 'active' },
               include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
             },
-            tenants: {
+            leases: {
               where: { officeId, status: 'residing' },
-              include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+              include: propertyLeaseInclude,
             },
             consultations: {
               where: { officeId },
@@ -123,7 +162,7 @@ export class UnitsService {
         properties: { where: { officeId } },
       },
     });
-    if (!unit) throw new NotFoundException('Unit not found');
+    if (!unit) throw new NotFoundException('호수를 찾을 수 없습니다.');
     return unit;
   }
 
@@ -155,12 +194,12 @@ export class UnitsService {
     const site = await this.findAccessibleSite(dto.siteId, officeId);
 
     if (UNIT_DISABLED_SITE_TYPES.has(site.type)) {
-      throw new BadRequestException('Units are not supported for land sites');
+      throw new BadRequestException('토지에는 호수를 만들 수 없습니다.');
     }
 
     if (!dto.dongId) {
       throw new BadRequestException(
-        'dongId is required (use placeholder Dong for single-building sites)',
+        '동을 골라 주세요.',
       );
     }
 
@@ -172,7 +211,13 @@ export class UnitsService {
 
     this.assertValidLayoutCounts(dto);
     const space = this.normalizeSpace(dto);
-    const data = this.normalizeUnitCell({ ...dto, ...space });
+    // 요청 본문을 그대로 펼치면 officeId 같은 칸까지 바뀐다 — 만들 수 있는 칸만 받는다.
+    const data = this.normalizeUnitCell({
+      ...pickUnitFields(dto),
+      siteId: site.id,
+      dongId: dto.dongId,
+      ...space,
+    });
 
     // 대장에서 온 공공 호가 이미 있으면 같은 이름의 사무소 공간을 또 만들지 않는다 (그 호를 쓰면 된다)
     if (space.name) {
@@ -246,7 +291,7 @@ export class UnitsService {
         : dto.siteUnitTypeId;
 
     if (UNIT_DISABLED_SITE_TYPES.has(site.type)) {
-      throw new BadRequestException('Units are not supported for land sites');
+      throw new BadRequestException('토지에는 호수를 만들 수 없습니다.');
     }
 
     await this.findDongInSite(nextDongId, officeId, site.id);
@@ -271,7 +316,11 @@ export class UnitsService {
             dto.floorLabel !== undefined ? dto.floorLabel : existingUnit.floorLabel,
         })
       : {};
-    const data = this.normalizeUnitCell({ ...dto, ...space });
+    const data = this.normalizeUnitCell({
+      ...pickUnitFields(dto),
+      ...(dto.dongId !== undefined ? { dongId: dto.dongId } : {}),
+      ...space,
+    });
 
     return this.prisma.unit.update({
       where: { id },
@@ -294,7 +343,7 @@ export class UnitsService {
     });
 
     if (!site) {
-      throw new NotFoundException('Site not found');
+      throw new NotFoundException('단지를 찾을 수 없습니다.');
     }
 
     return site;
@@ -305,12 +354,12 @@ export class UnitsService {
   ): T {
     if (dto.cellType !== undefined && !UNIT_CELL_TYPE_SET.has(dto.cellType)) {
       throw new BadRequestException(
-        `cellType must be one of: ${UNIT_CELL_TYPES.join(', ')}`,
+        `알 수 없는 칸 종류입니다: ${dto.cellType}`,
       );
     }
 
     if (dto.cellType === 'piloti' && dto.isPiloti === false) {
-      throw new BadRequestException('cellType=piloti requires isPiloti=true');
+      throw new BadRequestException('필로티 칸 설정이 맞지 않습니다.');
     }
 
     if (
@@ -318,7 +367,7 @@ export class UnitsService {
       dto.cellType !== 'piloti' &&
       dto.isPiloti === true
     ) {
-      throw new BadRequestException('isPiloti=true requires cellType=piloti');
+      throw new BadRequestException('필로티 칸 설정이 맞지 않습니다.');
     }
 
     if (dto.cellType !== undefined) {
@@ -345,33 +394,33 @@ export class UnitsService {
         value !== null &&
         (!Number.isInteger(value) || value < 0)
       ) {
-        throw new BadRequestException(`${field} must be a non-negative integer or null`);
+        throw new BadRequestException(`${field === 'roomCount' ? '방 수' : '욕실 수'}는 0 이상의 정수로 입력해 주세요.`);
       }
     }
   }
 
   private withContactPhones<T extends Array<{ properties?: Array<{
     propertyContacts?: Array<{ contact?: { phones?: [] } | null }>;
-    tenants?: Array<{ contact?: { phones?: [] } | null }>;
+    leases?: Parameters<typeof presentPropertyLease>[0][];
     consultations?: Array<{ contact?: { phones?: [] } | null }>;
   }> }>>(units: T): T {
     return units.map((unit) => ({
       ...unit,
-      properties: unit.properties?.map((property) => ({
-        ...property,
-        propertyContacts: property.propertyContacts?.map((propertyContact) => ({
-          ...propertyContact,
-          contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
-        })),
-        tenants: property.tenants?.map((tenant) => ({
-          ...tenant,
-          contact: tenant.contact ? withPrimaryPhone(tenant.contact) : tenant.contact,
-        })),
-        consultations: property.consultations?.map((consultation) => ({
-          ...consultation,
-          contact: consultation.contact ? withPrimaryPhone(consultation.contact) : consultation.contact,
-        })),
-      })),
+      properties: unit.properties?.map((property) => {
+        const leases = property.leases?.map((lease) => presentPropertyLease(lease));
+        return {
+          ...property,
+          propertyContacts: property.propertyContacts?.map((propertyContact) => ({
+            ...propertyContact,
+            contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
+          })),
+          ...(leases ? { leases, tenants: leases } : {}),
+          consultations: property.consultations?.map((consultation) => ({
+            ...consultation,
+            contact: consultation.contact ? withPrimaryPhone(consultation.contact) : consultation.contact,
+          })),
+        };
+      }),
     })) as T;
   }
 
@@ -422,7 +471,7 @@ export class UnitsService {
     });
 
     if (!dong) {
-      throw new BadRequestException('Dong does not belong to this site');
+      throw new BadRequestException('고른 동이 이 단지의 동이 아닙니다.');
     }
 
     return dong;
@@ -440,7 +489,7 @@ export class UnitsService {
     });
 
     if (!dong) {
-      throw new NotFoundException('Dong not found');
+      throw new NotFoundException('동을 찾을 수 없습니다.');
     }
 
     return dong;
@@ -460,7 +509,7 @@ export class UnitsService {
     });
 
     if (!siteUnitType) {
-      throw new BadRequestException('SiteUnitType does not belong to this site');
+      throw new BadRequestException('고른 평형이 이 단지의 평형이 아닙니다.');
     }
 
     return siteUnitType;
@@ -475,7 +524,7 @@ export class UnitsService {
     });
 
     if (!unit) {
-      throw new NotFoundException('Unit not found');
+      throw new NotFoundException('호수를 찾을 수 없습니다.');
     }
 
     return unit;

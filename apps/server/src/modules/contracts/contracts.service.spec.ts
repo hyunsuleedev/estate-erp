@@ -19,6 +19,11 @@ describe('ContractsService', () => {
       },
       contact: {
         count: jest.fn(),
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      task: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       contractDocumentTemplate: {
         findFirst: jest.fn(),
@@ -35,7 +40,9 @@ describe('ContractsService', () => {
       contractParty: {
         deleteMany: jest.fn(),
         create: jest.fn(),
-        findMany: jest.fn(),
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn(),
       },
       contractDocumentRevision: {
         findFirst: jest.fn(),
@@ -319,7 +326,7 @@ describe('ContractsService', () => {
     prisma.officePrintTemplate.findFirst.mockResolvedValue(null);
 
     await expect(service.removePrintTemplate('print-template-1', 'other-office')).rejects.toThrow(
-      'Office print template not found',
+      '인쇄 양식을 찾을 수 없습니다.',
     );
     expect(prisma.officePrintTemplate.delete).not.toHaveBeenCalled();
   });
@@ -433,12 +440,190 @@ describe('ContractsService', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           dealId: null,
-          buyerContactId: null,
-          sellerContactId: null,
           totalPrice: 0,
         }),
       }),
     );
+  });
+
+  it('starts the contract with the deal payment schedule and move-in date', async () => {
+    const { prisma, service } = createService();
+    prisma.deal.findFirst.mockResolvedValue({
+      id: 'deal-1',
+      officeId: 'office-1',
+      transactionType: 'sale',
+      agreedPrice: 90000,
+      agreedDeposit: null,
+      agreedMonthlyRent: null,
+      agreedMoveInDate: new Date('2027-02-01'),
+      listing: null,
+      buyerContactId: 'buyer-1',
+      sellerContactId: 'seller-1',
+      contract: null,
+      specialTerms: null,
+      payments: [
+        { kind: 'pre_contract', scheduledAmount: 500, scheduledDate: new Date('2026-11-01') },
+        { kind: 'contract', scheduledAmount: 9000, scheduledDate: new Date('2026-11-10') },
+        { kind: 'interim', scheduledAmount: 20000, scheduledDate: new Date('2026-12-10') },
+        { kind: 'interim', scheduledAmount: 10000, scheduledDate: new Date('2026-12-20') },
+        { kind: 'balance', scheduledAmount: 51000, scheduledDate: new Date('2027-01-31') },
+      ],
+    });
+    prisma.contract.create.mockResolvedValue({ id: 'contract-1', attachments: [], documents: [] });
+    prisma.contractDocumentTemplate.findMany.mockResolvedValue([]);
+
+    await (service as any).create('office-1', { dealId: 'deal-1' });
+
+    expect(prisma.contract.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          totalPrice: 90000,
+          // 계약금 줄이 있으면 가계약금은 더하지 않는다 (보통 계약금에 들어간다)
+          statedDeposit: 9000,
+          statedInterimPayment: 30000,
+          statedInterimDate: new Date('2026-12-10'),
+          statedBalance: 51000,
+          statedBalanceDate: new Date('2027-01-31'),
+          moveInDate: new Date('2027-02-01'),
+        }),
+      }),
+    );
+  });
+
+  describe('문서 → 계약서 요약 맞추기', () => {
+    function mockContractDocument(prisma: ReturnType<typeof createService>['prisma']) {
+      prisma.contractDocument.findFirst.mockResolvedValue({
+        id: 'document-1',
+        status: 'draft',
+        category: 'contract',
+        metadata: {},
+        template: { code: 'base_contract' },
+        contract: { transactionType: 'sale' },
+      });
+      prisma.contractDocument.update.mockResolvedValue({ id: 'document-1' });
+      (prisma.contract as any).updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    }
+
+    it('copies amounts and dates written in the contract document to the contract summary', async () => {
+      const { prisma, service } = createService();
+      mockContractDocument(prisma);
+
+      const result = await (service as any).updateDocument('contract-1', 'document-1', 'office-1', {
+        metadata: {
+          documentEngine: {
+            fields: {
+              salePrice: '90000',
+              downPayment: '9,000',
+              interimPayment: '20000',
+              interimPayment2: '10000',
+              interimPaymentDate: '2026-12-10',
+              balancePayment: '51000',
+              balancePaymentDate: '2027-03-20',
+              contractDate: '2026-11-22',
+            },
+          },
+        },
+      });
+
+      expect((prisma.contract as any).updateMany).toHaveBeenCalledWith({
+        where: { id: 'contract-1', officeId: 'office-1' },
+        data: {
+          totalPrice: 90000,
+          statedDeposit: 9000,
+          statedInterimPayment: 30000,
+          statedInterimDate: new Date('2026-12-10'),
+          statedBalance: 51000,
+          statedBalanceDate: new Date('2027-03-20'),
+          contractDate: new Date('2026-11-22'),
+        },
+      });
+      expect(result.summarySync.unreadable).toEqual([]);
+    });
+
+    it('never clears the summary for empty fields and reports unreadable ones', async () => {
+      const { prisma, service } = createService();
+      mockContractDocument(prisma);
+
+      const result = await (service as any).updateDocument('contract-1', 'document-1', 'office-1', {
+        metadata: {
+          documentEngine: {
+            fields: { salePrice: '', downPayment: '9천', balancePaymentDate: '3월 20일', balancePayment: '51000' },
+          },
+        },
+      });
+
+      expect((prisma.contract as any).updateMany).toHaveBeenCalledWith({
+        where: { id: 'contract-1', officeId: 'office-1' },
+        data: { statedBalance: 51000 },
+      });
+      expect(result.summarySync.unreadable).toEqual(['계약금', '잔금일']);
+    });
+
+    it('leaves the summary alone when an annex document is saved', async () => {
+      const { prisma, service } = createService();
+      mockContractDocument(prisma);
+      prisma.contractDocument.findFirst.mockResolvedValue({
+        id: 'document-2',
+        status: 'draft',
+        category: 'disclosure',
+        metadata: {},
+        template: { code: 'disclosure' },
+        contract: { transactionType: 'sale' },
+      });
+
+      await (service as any).updateDocument('contract-1', 'document-2', 'office-1', {
+        metadata: { documentEngine: { fields: { balancePayment: '51000' } } },
+      });
+
+      expect((prisma.contract as any).updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  it('keeps a contract with an unconfirmed party name ("미확인 5678") from leaving draft', async () => {
+    const { prisma, service } = createService();
+    prisma.contract.findFirst.mockResolvedValue({
+      id: 'contract-1',
+      officeId: 'office-1',
+      attachments: [],
+      documents: [],
+      parties: [],
+    });
+    prisma.contractParty.findMany.mockResolvedValue([
+      { side: 'one', name: '홍길동', contactId: 'seller-1' },
+      { side: 'two', name: '미확인 5678', contactId: 'buyer-1' },
+    ]);
+    prisma.contractDocumentTemplate.findMany.mockResolvedValue([]);
+    prisma.contact.findMany.mockResolvedValue([{ name: '홍길동' }, { name: '미확인 5678' }]);
+
+    await expect(
+      (service as any).update('contract-1', 'office-1', { status: 'signed' }),
+    ).rejects.toThrow('이름이 확인되지 않은 연락처입니다');
+    expect(prisma.contract.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a buyer or seller contact from another office (create and update)', async () => {
+    const { prisma, service } = createService();
+    prisma.contact.count.mockResolvedValue(0);
+    prisma.contract.findFirst.mockResolvedValue({ id: 'contract-1', officeId: 'office-1', attachments: [], documents: [] });
+    prisma.contractDocumentTemplate.findMany.mockResolvedValue([]);
+    const foreign = '33333333-3333-4333-8333-333333333333';
+
+    await expect(
+      (service as any).create('office-1', { transactionType: 'sale', buyerContactId: foreign }),
+    ).rejects.toThrow('고른 연락처를 찾을 수 없습니다.');
+    await expect(
+      (service as any).update('contract-1', 'office-1', { buyerContactId: foreign }),
+    ).rejects.toThrow('고른 연락처를 찾을 수 없습니다.');
+    expect(prisma.contract.create).not.toHaveBeenCalled();
+    expect(prisma.contract.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed dates instead of failing in the database', async () => {
+    const { service } = createService();
+
+    await expect(
+      (service as any).create('office-1', { transactionType: 'sale', contractDate: '2026-99-99' }),
+    ).rejects.toThrow('날짜 형식이 잘못되었습니다.');
   });
 
   it('rejects unknown contract transaction types', async () => {
@@ -500,16 +685,42 @@ describe('ContractsService', () => {
         phone: '02-123-4567',
         address: '서울 강동구',
       },
-      buyerContact: {
-        id: 'buyer-1',
-        name: '박매수',
-        phones: [{ phone: '010-2222-3333' }],
-      },
-      sellerContact: {
-        id: 'seller-1',
-        name: '이매도',
-        phones: [{ phone: '010-1111-2222' }],
-      },
+      parties: [
+        {
+          id: 'party-seller',
+          side: 'one',
+          subId: 1,
+          parentId: null,
+          role: 'seller',
+          name: '이매도',
+          idNumber: null,
+          phone: null,
+          mobilePhone: null,
+          contactId: 'seller-1',
+          contact: {
+            id: 'seller-1',
+            name: '이매도',
+            phones: [{ phone: '010-1111-2222', label: 'mobile', isPrimary: true }],
+          },
+        },
+        {
+          id: 'party-buyer',
+          side: 'two',
+          subId: 1,
+          parentId: null,
+          role: 'buyer',
+          name: '박매수',
+          idNumber: null,
+          phone: null,
+          mobilePhone: null,
+          contactId: 'buyer-1',
+          contact: {
+            id: 'buyer-1',
+            name: '박매수',
+            phones: [{ phone: '010-2222-3333', label: 'mobile', isPrimary: true }],
+          },
+        },
+      ],
       deal: {
         listing: {
           property: {
@@ -729,7 +940,7 @@ describe('ContractsService', () => {
         status: 'draft',
         metadata: { contractAgreement: incompleteAgreement } as never,
       }),
-    ).resolves.toEqual({ id: 'document-1' });
+    ).resolves.toEqual(expect.objectContaining({ id: 'document-1' }));
   });
 
   it('validates the structured metadata stored on the current sale contract draft', async () => {
@@ -1097,7 +1308,7 @@ describe('ContractsService', () => {
         service.replaceParties('contract-1', 'other-office', {
           parties: [{ side: 'one', name: '김매도' }],
         } as ReplaceContractPartiesDto),
-      ).rejects.toThrow('Contract not found');
+      ).rejects.toThrow('계약서를 찾을 수 없습니다.');
 
       expect(prisma.contract.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1500,9 +1711,16 @@ describe('ContractsService', () => {
           { statedDeposit: { gte: 1000, lte: 5000 } },
           {
             OR: [
-              { parties: { some: { name: { contains: '김매도', mode: 'insensitive' } } } },
-              { buyerContact: { name: { contains: '김매도', mode: 'insensitive' } } },
-              { sellerContact: { name: { contains: '김매도', mode: 'insensitive' } } },
+              {
+                parties: {
+                  some: {
+                    OR: [
+                      { name: { contains: '김매도', mode: 'insensitive' } },
+                      { contact: { name: { contains: '김매도', mode: 'insensitive' } } },
+                    ],
+                  },
+                },
+              },
             ],
           },
           { deal: { isJointBrokerage: true } },
@@ -1602,16 +1820,6 @@ describe('ContractsService', () => {
                   },
                 ],
               },
-            },
-          },
-          {
-            buyerContact: {
-              phones: { some: { phone: canonicalContains } },
-            },
-          },
-          {
-            sellerContact: {
-              phones: { some: { phone: canonicalContains } },
             },
           },
         ]),
@@ -1825,7 +2033,39 @@ describe('ContractsService', () => {
       expect(prisma.contract.delete).toHaveBeenCalledWith({
         where: { id: 'contract-1' },
       });
+      // 계약서에 걸린 업무는 남기고 연결만 끊는다
+      expect(prisma.task.updateMany).toHaveBeenCalledWith({
+        where: { contractId: 'contract-1', officeId: 'office-1' },
+        data: { contractId: null },
+      });
       expect(result).toEqual({ id: 'contract-1', deleted: true });
+    });
+
+    it('refuses to delete the contract of a deal already in settling or later', async () => {
+      const { prisma, service } = createService();
+
+      prisma.contract.findFirst
+        .mockResolvedValueOnce({ id: 'contract-1' })
+        .mockResolvedValueOnce({ deal: { stage: 'settling', isCancelled: false } });
+
+      await expect(service.remove('contract-1', 'office-1')).rejects.toThrow(
+        '중도금/잔금 이후 단계의 거래에 연결된 계약서는 지울 수 없습니다',
+      );
+      expect(prisma.contract.delete).not.toHaveBeenCalled();
+    });
+
+    it('allows deleting the contract of a cancelled deal', async () => {
+      const { prisma, service } = createService();
+
+      prisma.contract.findFirst
+        .mockResolvedValueOnce({ id: 'contract-1' })
+        .mockResolvedValueOnce({ deal: { stage: 'settling', isCancelled: true } });
+      prisma.contract.delete.mockResolvedValue({ id: 'contract-1' });
+
+      await expect(service.remove('contract-1', 'office-1')).resolves.toEqual({
+        id: 'contract-1',
+        deleted: true,
+      });
     });
 
     it('rejects deleting a contract owned by another office', async () => {
@@ -1834,7 +2074,7 @@ describe('ContractsService', () => {
       prisma.contract.findFirst.mockResolvedValue(null);
 
       await expect(service.remove('contract-1', 'other-office')).rejects.toThrow(
-        'Contract not found',
+        '계약서를 찾을 수 없습니다.',
       );
       expect(prisma.contract.delete).not.toHaveBeenCalled();
     });
@@ -1864,7 +2104,7 @@ describe('ContractsService', () => {
 
       await expect(
         service.removeDocument('contract-1', 'document-1', 'other-office'),
-      ).rejects.toThrow('Contract document not found');
+      ).rejects.toThrow('문서를 찾을 수 없습니다.');
       expect(prisma.contractDocument.delete).not.toHaveBeenCalled();
     });
   });
@@ -1931,7 +2171,7 @@ describe('ContractsService', () => {
 
       await expect(
         service.copyDocument('contract-1', 'document-1', 'other-office', 'user-1'),
-      ).rejects.toThrow('Contract not found');
+      ).rejects.toThrow('계약서를 찾을 수 없습니다.');
       expect(prisma.contractDocument.create).not.toHaveBeenCalled();
     });
 

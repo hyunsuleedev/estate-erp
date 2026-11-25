@@ -127,6 +127,11 @@ export class BuyerIntakesController {
     return this.service.update(id, user.officeId, dto);
   }
 
+  @Delete(":id")
+  remove(@Param("id") id: string, @CurrentUser() user: CurrentUserPayload) {
+    return this.service.remove(id, user.officeId);
+  }
+
   @Post(":id/contacts")
   addContact(
     @Param("id") id: string,

@@ -115,7 +115,23 @@ describe('computeSettlement', () => {
       participants: [{ dealId: 'd1', userId: 'kim', sharePercent: 100, ratioOverride: null }],
       staff: [staff('kim', 60)],
     });
-    expect(result).toEqual({ lines: [], waiting: [], includedReceiptIds: [] });
+    expect(result).toEqual({ lines: [], waiting: [], cancelled: [], includedReceiptIds: [] });
+  });
+
+  it('취소한 거래의 입금은 잔금을 기다리지 않고 따로 뺀다 (정산에 넣지 않음)', () => {
+    const result = computeSettlement({
+      monthEnd: NOV.end,
+      timing: 'closed',
+      receipts: [
+        receipt({ id: 'r1', dealId: 'd1', amountWon: 1_650_000, balanceDone: false, balanceDoneAt: null, dealCancelled: true }),
+      ],
+      participants: [{ dealId: 'd1', userId: 'kim', sharePercent: 100, ratioOverride: null }],
+      staff: [staff('kim', 60)],
+    });
+    expect(result.lines).toEqual([]);
+    expect(result.waiting).toEqual([]);
+    expect(result.cancelled.map((c) => [c.receiptId, c.reason, c.amountWon])).toEqual([['r1', 'cancelled', 1_650_000]]);
+    expect(result.includedReceiptIds).toEqual([]);
   });
 
   it('돌려준 돈은 잔금과 상관없이 빼고, 뺄 돈이 더 크면 다음 달로 넘긴다', () => {

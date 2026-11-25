@@ -66,7 +66,9 @@ export function contactCategoryWhere(
       };
     case 'tenant':
       return {
-        tenants: { some: { status: { in: CURRENT_TENANT_STATUSES } } },
+        leaseTenancies: {
+          some: { lease: { status: { in: CURRENT_TENANT_STATUSES } } },
+        },
       };
     case 'representative':
       return {
@@ -79,6 +81,14 @@ export function contactCategoryWhere(
         OR: [
           { dealsAsBuyer: { some: ACTIVE_DEAL_WHERE } },
           { dealsAsSeller: { some: ACTIVE_DEAL_WHERE } },
+          {
+            contractParties: {
+              some: {
+                side: { in: ['one', 'two'] },
+                contract: { deal: ACTIVE_DEAL_WHERE },
+              },
+            },
+          },
         ],
       };
     case 'follow_up':
@@ -102,9 +112,10 @@ export function contactCategoryWhere(
         groupMemberships: { none: {} },
         buyerIntakeContacts: { none: {} },
         propertyContacts: { none: {} },
-        tenants: { none: {} },
+        leaseTenancies: { none: {} },
         dealsAsBuyer: { none: {} },
         dealsAsSeller: { none: {} },
+        contractParties: { none: {} },
       };
     case 'no_phone':
       return { phones: { none: {} } };
@@ -117,8 +128,8 @@ export const CONTACT_ROLE_INCLUDE = {
     where: { status: 'active' },
     select: { role: true },
   },
-  tenants: {
-    where: { status: { in: CURRENT_TENANT_STATUSES } },
+  leaseTenancies: {
+    where: { lease: { status: { in: CURRENT_TENANT_STATUSES } } },
     select: { id: true },
     take: 1,
   },
@@ -129,6 +140,14 @@ export const CONTACT_ROLE_INCLUDE = {
   },
   dealsAsSeller: {
     where: ACTIVE_DEAL_WHERE,
+    select: { id: true },
+    take: 1,
+  },
+  contractParties: {
+    where: {
+      side: { in: ['one', 'two'] },
+      contract: { deal: ACTIVE_DEAL_WHERE },
+    },
     select: { id: true },
     take: 1,
   },
@@ -144,9 +163,10 @@ export const CONTACT_ROLE_INTAKE_SELECT = {
 
 interface ContactRoleSource {
   propertyContacts?: Array<{ role: string }>;
-  tenants?: Array<unknown>;
+  leaseTenancies?: Array<unknown>;
   dealsAsBuyer?: Array<unknown>;
   dealsAsSeller?: Array<unknown>;
+  contractParties?: Array<unknown>;
   buyerIntakeContacts?: Array<{
     buyerIntake: {
       lifecycleStatus?: string;
@@ -178,13 +198,14 @@ export function deriveContactRoles(contact: ContactRoleSource): ContactRoleKey[]
   if (propertyRoles.some((role) => OWNER_ROLES.includes(role))) {
     roles.push('owner');
   }
-  if ((contact.tenants ?? []).length > 0) roles.push('tenant');
+  if ((contact.leaseTenancies ?? []).length > 0) roles.push('tenant');
   if (propertyRoles.some((role) => REPRESENTATIVE_ROLES.includes(role))) {
     roles.push('representative');
   }
   if (
     (contact.dealsAsBuyer ?? []).length > 0 ||
-    (contact.dealsAsSeller ?? []).length > 0
+    (contact.dealsAsSeller ?? []).length > 0 ||
+    (contact.contractParties ?? []).length > 0
   ) {
     roles.push('in_deal');
   }

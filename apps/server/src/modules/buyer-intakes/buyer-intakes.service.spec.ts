@@ -222,3 +222,63 @@ describe("BuyerIntakesService", () => {
     });
   });
 });
+
+describe("BuyerIntakesService.update — 구매 의뢰 종료", () => {
+  function setup(currentStatus: string, openMatches: Array<{ id: string; stage: string }>) {
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ lifecycle_status: currentStatus }]),
+      buyerIntake: {
+        update: jest.fn().mockImplementation(({ data }) => ({
+          ...intake(),
+          lifecycleStatus: data.lifecycleStatus ?? currentStatus,
+        })),
+      },
+      match: {
+        findMany: jest.fn().mockResolvedValue(openMatches),
+        update: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
+    };
+    return { tx, service: new BuyerIntakesService(prisma as never) };
+  }
+
+  it("의뢰를 닫으면 담긴 희망 조건들의 진행 중 매칭을 손님 조건 종료로 함께 닫는다", async () => {
+    const { tx, service } = setup("open", [{ id: "m1", stage: "viewing" }]);
+
+    await service.update(INTAKE_ID, OFFICE_ID, { lifecycleStatus: "closed" });
+
+    expect(tx.match.findMany).toHaveBeenCalledWith({
+      where: {
+        officeId: OFFICE_ID,
+        buyerRequirement: { buyerIntakeId: INTAKE_ID },
+        stage: { notIn: ["closed", "dealCreated"] },
+      },
+      select: { id: true, stage: true },
+    });
+    expect(tx.match.update).toHaveBeenCalledWith({
+      where: { id: "m1" },
+      data: expect.objectContaining({ stage: "closed", closedReason: "buyer_closed" }),
+    });
+  });
+
+  it("보류 · 다시 열기 · 이미 닫힌 의뢰는 매칭을 건드리지 않는다", async () => {
+    for (const [current, next] of [
+      ["open", "hold"],
+      ["closed", "open"],
+      ["closed", "closed"],
+    ]) {
+      const { tx, service } = setup(current, [{ id: "m1", stage: "viewing" }]);
+      await service.update(INTAKE_ID, OFFICE_ID, { lifecycleStatus: next });
+      expect(tx.match.findMany).not.toHaveBeenCalled();
+    }
+  });
+
+  it("상태 값이 틀리면 한국어로 알린다", async () => {
+    const { service } = setup("open", []);
+    await expect(
+      service.update(INTAKE_ID, OFFICE_ID, { lifecycleStatus: "done" }),
+    ).rejects.toThrow("구매 의뢰 상태는 진행 · 보류 · 종료 중 하나여야 합니다.");
+  });
+});

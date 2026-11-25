@@ -24,7 +24,9 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
+import { assertValidListingMoney, normalizeListingMoveIn } from '../listings/listing-input';
 import {
+  ACTIVE_LISTING_ADVERTISEMENT_OPEN_REQUESTS_INCLUDE,
   ACTIVE_LISTING_ADVERTISEMENT_WHERE,
   withActiveAdvertisementSummary,
 } from '../listings/listing-advertisement-summary';
@@ -32,6 +34,7 @@ import {
   buildIntakeConfirmationWhere,
   buildListingAvailabilityWhere,
 } from '../listings/listing-state';
+import { presentPropertyLease, propertyLeaseInclude } from '../tenants/tenants.service';
 import {
   contactPhonesIncludeOrdered,
   normalizePhone,
@@ -93,6 +96,10 @@ const OCCUPYING_DEALS_SELECT = {
     id: true,
     stage: true,
     stageChangedAt: true,
+    // 끝난 매물의 목록에 내놓은 가격 대신 거래가를 보인다
+    agreedPrice: true,
+    agreedDeposit: true,
+    agreedMonthlyRent: true,
   },
 } satisfies Prisma.Listing$dealsArgs;
 const VALID_CONFIRM_RESULTS: ReadonlySet<string> = new Set(
@@ -283,6 +290,8 @@ interface ListingInputDto {
 interface ListingIntakeCreateDto {
   propertyId: string;
   projectId?: string;
+  requesterContactId?: string | null;
+  requesterRole?: string | null;
   lifecycleStatus?: string;
   closedReason?: string | null;
   receivedAt?: Date | string | null;
@@ -297,6 +306,8 @@ interface ListingIntakeCreateDto {
 }
 
 interface ListingIntakeUpdateDto {
+  requesterContactId?: string | null;
+  requesterRole?: string | null;
   lifecycleStatus?: string;
   closedReason?: string | null;
   receivedAt?: Date | string | null;
@@ -321,6 +332,30 @@ interface ListingIntakeConfirmDto {
   expectedUpdatedAt?: Date | string | null;
   /** 통화 분석 제안으로 확인한 경우 그 통화 녹음 (확인 상담 기록에 연결) */
   callRecordingId?: string | null;
+}
+
+
+/** 오류 문구에 쓰는 이름 */
+const ROOM_FILTER_LABELS: Record<string, string> = {
+  roomCount: '방 수',
+  roomCountMin: '최소 방 수',
+  bathRoomCount: '욕실 수',
+  bathRoomCountMin: '최소 욕실 수',
+};
+const INTAKE_LIFECYCLE_LABELS: Record<string, string> = {
+  open: '진행',
+  hold: '보류',
+  closed: '종료',
+};
+
+/** 동·호 거르기에 쓸 이름 후보: 입력 그대로, 그리고 끝의 단위 글자('동'·'호')를 뗀 이름 */
+function spaceNameVariants(value: string, suffix: '동' | '호') {
+  const trimmed = value.trim();
+  const variants = [trimmed];
+  if (trimmed.length > 1 && trimmed.endsWith(suffix)) {
+    variants.push(trimmed.slice(0, -1).trim());
+  }
+  return variants;
 }
 
 @Injectable()
@@ -457,7 +492,7 @@ export class ListingIntakesService {
     });
 
     if (!intake) {
-      throw new NotFoundException('ListingIntake not found');
+      throw new NotFoundException('의뢰를 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
     return this.toResponse(intake);
@@ -478,6 +513,11 @@ export class ListingIntakesService {
       dto.lastCheckResult ?? null,
     );
     this.assertValidListingInputs(dto.listings ?? []);
+    await this.assertValidRequester(
+      officeId,
+      dto.requesterContactId,
+      dto.requesterRole,
+    );
     await this.assertAccessiblePartnerBroker(
       officeId,
       dto.isJointBrokerageRequired ? dto.jointBrokeragePartnerId : null,
@@ -489,7 +529,7 @@ export class ListingIntakesService {
     });
 
     if (!property) {
-      throw new NotFoundException('Property not found');
+      throw new NotFoundException('매물을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
     if (this.isNonClosedIntakeLifecycle(lifecycleStatus)) {
@@ -517,6 +557,8 @@ export class ListingIntakesService {
             officeId,
             projectId: dto.projectId ?? null,
             propertyId: dto.propertyId,
+            requesterContactId: dto.requesterContactId ?? null,
+            requesterRole: dto.requesterContactId ? (dto.requesterRole ?? null) : null,
             lifecycleStatus,
             lifecycleChangedAt: new Date(),
             lifecycleChangedBy: 'user',
@@ -547,7 +589,8 @@ export class ListingIntakesService {
           throw error;
         });
 
-      for (const listing of dto.listings ?? []) {
+      for (const input of dto.listings ?? []) {
+        const listing = normalizeListingMoveIn(input);
         await tx.listing.create({
           data: {
             officeId,
@@ -600,7 +643,7 @@ export class ListingIntakesService {
     });
 
     if (!existing) {
-      throw new NotFoundException('ListingIntake not found');
+      throw new NotFoundException('의뢰를 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
     const nextLifecycleStatus =
@@ -637,6 +680,11 @@ export class ListingIntakesService {
           ? existing.closedReason
           : null),
     );
+    await this.assertValidRequester(
+      officeId,
+      patch.requesterContactId,
+      patch.requesterRole,
+    );
     await this.assertAccessiblePartnerBroker(
       officeId,
       patch.isJointBrokerageRequired === false ? null : patch.jointBrokeragePartnerId,
@@ -650,6 +698,14 @@ export class ListingIntakesService {
     }
 
     const data = {
+      requesterContactId:
+        patch.requesterContactId !== undefined ? patch.requesterContactId : undefined,
+      requesterRole:
+        patch.requesterContactId === null
+          ? null
+          : patch.requesterRole !== undefined
+            ? patch.requesterRole
+            : undefined,
       lifecycleStatus: nextLifecycleStatus,
       lifecycleChangedAt: lifecycleChanged ? new Date() : undefined,
       lifecycleChangedBy:
@@ -755,7 +811,7 @@ export class ListingIntakesService {
       resolvedClosedReason === IntakeClosedReason.DEAL_COMPLETED
     ) {
       throw new BadRequestException(
-        'Invalid manual ListingIntake closed reason',
+        '고를 수 없는 종결 사유입니다.',
       );
     }
     const expectedUpdatedAtDate = expectedUpdatedAt
@@ -773,7 +829,7 @@ export class ListingIntakesService {
         },
       });
       if (!existing) {
-        throw new NotFoundException('ListingIntake not found');
+        throw new NotFoundException('의뢰를 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
       }
 
       if (existing.lifecycleStatus !== IntakeLifecycleStatus.CLOSED) {
@@ -847,11 +903,11 @@ export class ListingIntakesService {
     });
 
     if (!intake) {
-      throw new NotFoundException('ListingIntake not found');
+      throw new NotFoundException('의뢰를 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
     if (!this.isNonClosedIntakeLifecycle(intake.lifecycleStatus)) {
-      throw new BadRequestException('Closed intakes cannot add listings');
+      throw new BadRequestException('종료된 의뢰에는 거래 조건을 더할 수 없습니다. 의뢰를 다시 열거나 새로 등록하세요.');
     }
 
     return this.listings.create(officeId, {
@@ -889,7 +945,7 @@ export class ListingIntakesService {
     });
 
     if (!intake) {
-      throw new NotFoundException('ListingIntake not found');
+      throw new NotFoundException('의뢰를 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
     const checkedAt = this.resolveDate(dto.checkedAt) ?? new Date();
@@ -904,11 +960,11 @@ export class ListingIntakesService {
       (!VALID_INTAKE_CLOSED_REASONS.has(confirmedClosedReason) ||
         confirmedClosedReason === IntakeClosedReason.DEAL_COMPLETED)
     ) {
-      throw new BadRequestException('Invalid confirmation closed reason');
+      throw new BadRequestException('고를 수 없는 종결 사유입니다.');
     }
     if (dto.result !== 'unavailable' && dto.closedReason) {
       throw new BadRequestException(
-        'closedReason is only valid for unavailable confirmations',
+        '종결 사유는 "유효하지 않음"으로 확인할 때만 적을 수 있습니다.',
       );
     }
     const content = this.buildConfirmConsultationContent(
@@ -1170,16 +1226,22 @@ export class ListingIntakesService {
         property: {
           unit: {
             AND: [
+              // "101동"·"1203호"처럼 단위 글자를 붙여 넣어도 찾는다. "가동"처럼 이름이 '동'으로
+              // 끝나는 건물도 있어 붙인 그대로의 이름과 뗀 이름을 함께 견준다.
               ...(query.dong
                 ? [{
                     dong: {
-                      name: { equals: query.dong.trim(), mode: 'insensitive' as const },
+                      OR: spaceNameVariants(query.dong, '동').map((name) => ({
+                        name: { equals: name, mode: 'insensitive' as const },
+                      })),
                     },
                   }]
                 : []),
               ...(query.unit
                 ? [{
-                    name: { equals: query.unit.trim(), mode: 'insensitive' as const },
+                    OR: spaceNameVariants(query.unit, '호').map((name) => ({
+                      name: { equals: name, mode: 'insensitive' as const },
+                    })),
                   }]
                 : []),
             ],
@@ -1257,10 +1319,40 @@ export class ListingIntakesService {
     return where;
   }
 
+  /**
+   * 검색어를 띄어쓰기로 나눠 낱말마다 어딘가에 맞아야 찾는다("그라시움 101동 1203호").
+   * 한 칸에 이어 붙인 문장으로 견주면 단지·동·호를 함께 적은 검색이 늘 0건이었다.
+   */
   private buildSearchFilter(search: string): Prisma.ListingIntakeWhereInput {
-    const canonicalPhone = normalizePhone(search);
+    const tokens = search.trim().split(/\s+/).filter(Boolean).slice(0, 6);
+    if (tokens.length <= 1) return this.buildSearchTokenFilter(search.trim());
+    return { AND: tokens.map((token) => this.buildSearchTokenFilter(token)) };
+  }
+
+  private buildSearchTokenFilter(search: string): Prisma.ListingIntakeWhereInput {
+    // 숫자 3자리 이하(동 번호 등)로 전화번호를 견주면 010-1… 번호가 모두 걸린다. 4자리부터 견준다.
+    const digits = normalizePhone(search);
+    const canonicalPhone = digits.length >= 4 ? digits : '';
+    const strippedDong = search.length > 1 && search.endsWith('동') ? search.slice(0, -1) : null;
+    const strippedUnit = search.length > 1 && search.endsWith('호') ? search.slice(0, -1) : null;
     return {
       OR: [
+        ...(strippedDong
+          ? [{
+              property: {
+                unit: {
+                  dong: { name: { equals: strippedDong, mode: 'insensitive' as const } },
+                },
+              },
+            }]
+          : []),
+        ...(strippedUnit
+          ? [{
+              property: {
+                unit: { name: { equals: strippedUnit, mode: 'insensitive' as const } },
+              },
+            }]
+          : []),
         { property: { site: { name: { contains: search, mode: 'insensitive' } } } },
         {
           property: {
@@ -1345,7 +1437,8 @@ export class ListingIntakesService {
     const property = response.property as
       | {
           propertyContacts?: Array<{ contact?: { phones?: [] } | null }>;
-          tenants?: Array<{ contact?: { phones?: [] } | null }>;
+          leases?: Parameters<typeof presentPropertyLease>[0][];
+          tenants?: unknown[];
         }
       | undefined;
     if (property?.propertyContacts) {
@@ -1354,11 +1447,17 @@ export class ListingIntakesService {
         contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
       }));
     }
-    if (property?.tenants) {
-      property.tenants = property.tenants.map((tenant) => ({
-        ...tenant,
-        contact: tenant.contact ? withPrimaryPhone(tenant.contact) : tenant.contact,
-      }));
+    if (property?.leases) {
+      const presented = property.leases.map((lease) => presentPropertyLease(lease));
+      property.leases = presented;
+      property.tenants = presented;
+    }
+    const requesterContact = response.requesterContact as
+      | { phones?: [] }
+      | null
+      | undefined;
+    if (requesterContact) {
+      response.requesterContact = withPrimaryPhone(requesterContact);
     }
     const consultations = response.consultations as Array<{ contact?: { phones?: [] } | null }> | undefined;
     if (consultations) {
@@ -1451,13 +1550,21 @@ export class ListingIntakesService {
             select: {
               id: true,
               channel: true,
+              cpAccountId: true,
+              externalAdId: true,
               status: true,
               advertisedPrice: true,
               advertisedDeposit: true,
               advertisedMonthlyRent: true,
+              floorExposure: true,
               startedAt: true,
+              lastSyncedAt: true,
               url: true,
+              memo: true,
               createdAt: true,
+              changeRequests:
+                ACTIVE_LISTING_ADVERTISEMENT_OPEN_REQUESTS_INCLUDE
+                  .changeRequests,
             },
           },
         },
@@ -1522,6 +1629,9 @@ export class ListingIntakesService {
       property: {
         include: this.buildListPropertyInclude(),
       },
+      requesterContact: {
+        include: { phones: contactPhonesIncludeOrdered },
+      },
       jointBrokeragePartner: {
         select: {
           id: true,
@@ -1536,6 +1646,7 @@ export class ListingIntakesService {
           deals: OCCUPYING_DEALS_SELECT,
           advertisements: {
             orderBy: { createdAt: 'desc' as const },
+            include: ACTIVE_LISTING_ADVERTISEMENT_OPEN_REQUESTS_INCLUDE,
           },
           priceHistories: {
             orderBy: { createdAt: 'desc' as const },
@@ -1655,8 +1766,8 @@ export class ListingIntakesService {
     return {
       ...this.buildListPropertyInclude(),
       propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
-      tenants: {
-        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+      leases: {
+        include: propertyLeaseInclude,
         orderBy: { createdAt: 'desc' as const },
       },
     } satisfies Prisma.PropertyInclude;
@@ -1678,7 +1789,7 @@ export class ListingIntakesService {
       query.sortBy &&
       !VALID_LISTING_INTAKE_SORT_FIELDS.has(query.sortBy)
     ) {
-      throw new BadRequestException('Invalid sort field');
+      throw new BadRequestException('정렬할 수 없는 칸입니다.');
     }
     if (query.lifecycleStatus) {
       this.assertValidIntakeLifecycleStatus(query.lifecycleStatus);
@@ -1687,34 +1798,34 @@ export class ListingIntakesService {
       query.confirmationState &&
       !VALID_CONFIRMATION_STATES.has(query.confirmationState)
     ) {
-      throw new BadRequestException('Invalid confirmation state');
+      throw new BadRequestException('알 수 없는 확인 상태입니다.');
     }
 
     if (
       query.availability &&
       !VALID_LISTING_AVAILABILITIES.has(query.availability)
     ) {
-      throw new BadRequestException('Invalid listing availability');
+      throw new BadRequestException('알 수 없는 매물 상태입니다.');
     }
     if (
       query.availabilities?.some(
         (availability) => !VALID_LISTING_AVAILABILITIES.has(availability),
       )
     ) {
-      throw new BadRequestException('Invalid listing availability');
+      throw new BadRequestException('알 수 없는 매물 상태입니다.');
     }
     if (query.siteType && !VALID_SITE_TYPES.has(query.siteType)) {
-      throw new BadRequestException('Invalid siteType');
+      throw new BadRequestException('알 수 없는 건물 유형입니다.');
     }
     if (query.siteTypes?.some((siteType) => !VALID_SITE_TYPES.has(siteType))) {
-      throw new BadRequestException('Invalid siteType');
+      throw new BadRequestException('알 수 없는 건물 유형입니다.');
     }
 
     if (
       query.transactionType &&
       !VALID_TRANSACTION_TYPES.has(query.transactionType as TransactionType)
     ) {
-      throw new BadRequestException('Invalid transactionType');
+      throw new BadRequestException('거래유형은 매매·전세·월세 중 하나여야 합니다.');
     }
 
     for (const [field, value] of [
@@ -1727,34 +1838,58 @@ export class ListingIntakesService {
         value !== undefined &&
         (!Number.isInteger(value) || value < 0)
       ) {
-        throw new BadRequestException(`${field} must be a non-negative integer`);
+        throw new BadRequestException(`${ROOM_FILTER_LABELS[field]}는 0 이상의 정수로 입력해 주세요.`);
       }
     }
 
     if (query.roomCount !== undefined && query.roomCountMin !== undefined) {
-      throw new BadRequestException('Use either roomCount or roomCountMin');
+      throw new BadRequestException('방 수는 "정확히"와 "이상" 중 하나만 고르세요.');
     }
     if (
       query.bathRoomCount !== undefined &&
       query.bathRoomCountMin !== undefined
     ) {
       throw new BadRequestException(
-        'Use either bathRoomCount or bathRoomCountMin',
+        '욕실 수는 "정확히"와 "이상" 중 하나만 고르세요.',
       );
+    }
+  }
+
+  private async assertValidRequester(
+    officeId: string,
+    requesterContactId?: string | null,
+    requesterRole?: string | null,
+  ) {
+    if (requesterRole !== undefined && requesterRole !== null) {
+      const validRoles = new Set(['representative', 'tenant', 'other']);
+      if (!validRoles.has(requesterRole)) {
+        throw new BadRequestException('올바른 매물 의뢰 요청인 역할이 아닙니다.');
+      }
+    }
+    if (requesterContactId) {
+      const contact = await this.prisma.contact.findFirst({
+        where: { id: requesterContactId, officeId },
+        select: { id: true },
+      });
+      if (!contact) {
+        throw new NotFoundException('매물 의뢰 요청 연락처를 찾을 수 없습니다.');
+      }
     }
   }
 
   private assertValidListingInputs(listings: ListingInputDto[]) {
     for (const listing of listings) {
       if (!VALID_TRANSACTION_TYPES.has(listing.transactionType as TransactionType)) {
-        throw new BadRequestException('Invalid transactionType');
+        throw new BadRequestException('거래유형은 매매·전세·월세 중 하나여야 합니다.');
       }
+      assertValidListingMoney(listing);
+      normalizeListingMoveIn(listing);
       for (const slug of listing.maintenanceFeeIncludes ?? []) {
         if (
           !VALID_MAINTENANCE_FEE_INCLUDES.has(slug as MaintenanceFeeInclude)
         ) {
           throw new BadRequestException(
-            `Invalid maintenanceFeeIncludes slug: ${slug}`,
+            `알 수 없는 관리비 포함 항목입니다: ${slug}`,
           );
         }
       }
@@ -1768,7 +1903,7 @@ export class ListingIntakesService {
     if (lifecycleStatus !== IntakeLifecycleStatus.CLOSED) {
       if (closedReason !== undefined && closedReason !== null) {
         throw new BadRequestException(
-          'closedReason is only valid for closed intakes',
+          '종결 사유는 의뢰를 종료할 때만 적을 수 있습니다.',
         );
       }
       return null;
@@ -1776,14 +1911,14 @@ export class ListingIntakesService {
 
     const resolved = closedReason ?? IntakeClosedReason.OTHER;
     if (!VALID_INTAKE_CLOSED_REASONS.has(resolved)) {
-      throw new BadRequestException('Invalid ListingIntake closed reason');
+      throw new BadRequestException('알 수 없는 종결 사유입니다.');
     }
     return resolved;
   }
 
   private assertValidIntakeLifecycleStatus(lifecycleStatus: string) {
     if (!VALID_INTAKE_LIFECYCLE_STATUSES.has(lifecycleStatus)) {
-      throw new BadRequestException('Invalid ListingIntake lifecycle status');
+      throw new BadRequestException('알 수 없는 의뢰 상태입니다.');
     }
   }
 
@@ -1791,7 +1926,7 @@ export class ListingIntakesService {
     const allowedTransitions = INTAKE_LIFECYCLE_TRANSITIONS[current] ?? [];
     if (!allowedTransitions.includes(next)) {
       throw new BadRequestException(
-        `Invalid intake lifecycle transition: ${current} -> ${next}`,
+        `의뢰 상태를 ${INTAKE_LIFECYCLE_LABELS[current] ?? current}에서 ${INTAKE_LIFECYCLE_LABELS[next] ?? next}(으)로 바꿀 수 없습니다.`,
       );
     }
   }
@@ -1802,13 +1937,13 @@ export class ListingIntakesService {
   ) {
     if (optional && (result === undefined || result === null)) return;
     if (!result || !VALID_CONFIRM_RESULTS.has(result)) {
-      throw new BadRequestException('Invalid confirmation result');
+      throw new BadRequestException('알 수 없는 확인 결과입니다.');
     }
   }
 
   private assertValidConfirmChannel(channel?: string | null) {
     if (channel && !VALID_CONFIRM_CHANNELS.has(channel)) {
-      throw new BadRequestException('Invalid confirmation channel');
+      throw new BadRequestException('알 수 없는 연락 방법입니다.');
     }
   }
 
@@ -1821,7 +1956,7 @@ export class ListingIntakesService {
     const verifiedAt = this.resolveDate(lastVerifiedAt);
     if (Boolean(checkedAt) !== Boolean(lastCheckResult)) {
       throw new BadRequestException(
-        'lastCheckedAt and lastCheckResult must be set or cleared together',
+        '확인한 때와 확인 결과는 함께 적거나 함께 비워야 합니다.',
       );
     }
     if (
@@ -1829,7 +1964,7 @@ export class ListingIntakesService {
       (!checkedAt || verifiedAt.getTime() > checkedAt.getTime())
     ) {
       throw new BadRequestException(
-        'lastVerifiedAt cannot be after lastCheckedAt',
+        '마지막 확인일이 마지막 연락일보다 늦을 수 없습니다.',
       );
     }
   }
@@ -1838,7 +1973,7 @@ export class ListingIntakesService {
     if (!value) return null;
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) {
-      throw new BadRequestException('Invalid date');
+      throw new BadRequestException('날짜를 확인해 주세요.');
     }
     return date;
   }
@@ -1846,7 +1981,7 @@ export class ListingIntakesService {
   private parseExpectedUpdatedAt(value: Date | string) {
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) {
-      throw new BadRequestException('expectedUpdatedAt must be a valid date');
+      throw new BadRequestException('수정 시각이 올바르지 않습니다. 화면을 새로 고친 뒤 다시 시도해 주세요.');
     }
     return date;
   }
@@ -1968,7 +2103,7 @@ export class ListingIntakesService {
     });
 
     if (!partnerBroker) {
-      throw new NotFoundException('Partner broker not found');
+      throw new NotFoundException('공동중개 파트너를 찾을 수 없습니다.');
     }
   }
 

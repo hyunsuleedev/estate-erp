@@ -7,13 +7,15 @@ import {
 import { ListingAdvertisementsService } from "./listing-advertisements.service";
 
 jest.mock("@estate-erp/shared", () => ({
+  ...jest.requireActual("@estate-erp/shared"),
   ListingAdvertisementStatus: {
     ACTIVE: "active",
     ENDED: "ended",
   },
-  ListingAdvertisementSource: {
+  AdvertisementSyncState: {
     MANUAL: "manual",
-    CP_SYNC: "cp_sync",
+    SYNCED: "synced",
+    MANUAL_OVERRIDE: "manual_override",
   },
   ListingAdvertisementChannel: {
     ESILJANG: "esiljang",
@@ -49,7 +51,10 @@ describe("ListingAdvertisementsService", () => {
         create: jest.fn(),
         updateMany: jest.fn(),
       },
-      advertisementChangeRequest: { updateMany: jest.fn() },
+      advertisementChangeRequest: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        updateMany: jest.fn(),
+      },
       advertisementComparisonRecord: { updateMany: jest.fn() },
       advertisementComparison: {
         count: jest.fn().mockResolvedValue(0),
@@ -81,7 +86,9 @@ describe("ListingAdvertisementsService", () => {
 
   it("returns advertisement rows for the office with linked listing context", async () => {
     const { prisma, service } = createService();
-    prisma.listingAdvertisement.findMany.mockResolvedValue([{ id: "ad-1", changeRequests: [], comparisons: [], comparisonRecords: [] }]);
+    prisma.listingAdvertisement.findMany
+      .mockResolvedValueOnce([{ id: "ad-1", lastSyncedAt: null, manualEditedAt: null, changeRequests: [], comparisons: [], comparisonRecords: [] }])
+      .mockResolvedValueOnce([]);
     prisma.listingAdvertisement.count.mockResolvedValue(1);
 
     const result = await service.findAll("office-1", {
@@ -95,13 +102,14 @@ describe("ListingAdvertisementsService", () => {
       items: [
         {
           id: "ad-1",
-          // 연결 단계와 걸린 요청은 조회할 때 계산해 붙인다
+          lastSyncedAt: null,
+          manualEditedAt: null,
+          syncState: "manual",
           linkLevel: "none",
           changeRequests: [],
-          // 네이버 비교를 읽은 적이 없다
           comparison: null,
           actionContext: {
-            mainAdvertisementId: null,
+            ownAdvertisementId: null,
             observedAt: null,
             isActive: null,
             price: null,
@@ -115,17 +123,17 @@ describe("ListingAdvertisementsService", () => {
     expect(prisma.listingAdvertisement.findMany).toHaveBeenCalledWith({
       where: { officeId: "office-1" },
       include: expect.objectContaining({
+        cpAccount: expect.any(Object),
         listing: expect.objectContaining({
           include: expect.objectContaining({
             property: expect.any(Object),
+            deals: expect.any(Object),
           }),
         }),
-        // 매물이 없는 광고는 광고에 직접 걸린 관리 공간 · 건물을 읽는다
         property: expect.any(Object),
         site: true,
         changeRequests: expect.any(Object),
-        // 묶음 표 없이 비교 줄과 마지막으로 읽은 시각을 광고에서 바로 읽는다
-        comparisons: true,
+        comparisons: expect.objectContaining({ select: expect.any(Object) }),
         comparisonRecords: expect.objectContaining({ take: 1 }),
       }),
       orderBy: { updatedAt: "desc" },
@@ -137,18 +145,22 @@ describe("ListingAdvertisementsService", () => {
   it("exposes the dedicated My Ads comparison used for a reviewed CP action", async () => {
     const { prisma, service } = createService();
     const observedAt = new Date("2026-07-29T08:00:00.000Z");
-    prisma.listingAdvertisement.findMany.mockResolvedValue([
-      {
-        changeRequests: [],
-        id: "ad-1",
-        naverArticleNo: "2412345678",
-        comparisons: [
-          { id: "competitor-1", articleNo: "2499999999", isMine: false, isActive: true, ranking: 1, price: 157000, deposit: null, monthlyRent: null, lastSeenAt: observedAt },
-          { id: "office-ad-1", articleNo: "2412345678", isMine: true, isActive: true, ranking: 2, price: 158000, deposit: null, monthlyRent: null, lastSeenAt: observedAt },
-        ],
-        comparisonRecords: [{ observedAt }],
-      },
-    ]);
+    prisma.listingAdvertisement.findMany
+      .mockResolvedValueOnce([
+        {
+          changeRequests: [],
+          id: "ad-1",
+          lastSyncedAt: observedAt,
+          manualEditedAt: null,
+          naverArticleNo: "2412345678",
+          comparisons: [
+            { id: "competitor-1", articleNo: "2499999999", isMine: false, isActive: true, ranking: 1, price: 157000, deposit: null, monthlyRent: null, lastSeenAt: observedAt },
+            { id: "office-ad-1", articleNo: "2412345678", isMine: true, isActive: true, ranking: 2, price: 158000, deposit: null, monthlyRent: null, lastSeenAt: observedAt },
+          ],
+          comparisonRecords: [{ observedAt }],
+        },
+      ])
+      .mockResolvedValueOnce([{ naverArticleNo: "2412345678" }]);
     prisma.listingAdvertisement.count.mockResolvedValue(1);
 
     const result = await service.findAll("office-1");
@@ -156,15 +168,15 @@ describe("ListingAdvertisementsService", () => {
     expect(prisma.externalListing.findMany).not.toHaveBeenCalled();
     expect(result.items[0]).toEqual(
       expect.objectContaining({
+        syncState: "synced",
         actionContext: expect.objectContaining({
-          mainAdvertisementId: "office-ad-1",
+          ownAdvertisementId: "office-ad-1",
           observedAt,
           price: 158000,
         }),
-        // "바로 이 내 광고"는 네이버 매물번호가 같은 줄이고, 내 줄이 먼저 온다
         comparison: expect.objectContaining({
           observedAt,
-          mainAdvertisement: expect.objectContaining({ id: "office-ad-1" }),
+          ownAdvertisement: expect.objectContaining({ id: "office-ad-1" }),
           advertisements: [
             expect.objectContaining({ id: "office-ad-1" }),
             expect.objectContaining({ id: "competitor-1" }),
@@ -224,6 +236,7 @@ describe("ListingAdvertisementsService", () => {
     prisma.listing.findFirst.mockResolvedValue({ id: "listing-1" });
     prisma.listingAdvertisement.findFirst.mockResolvedValue({
       id: "ad-existing",
+      status: "active",
     });
 
     await expect(
@@ -388,7 +401,10 @@ describe("ListingAdvertisementsService", () => {
 
   it("deletes an advertisement that belongs to the office", async () => {
     const { prisma, service } = createService();
-    prisma.listingAdvertisement.findFirst.mockResolvedValue({ id: "ad-1" });
+    prisma.listingAdvertisement.findFirst.mockResolvedValue({
+      id: "ad-1",
+      status: "active",
+    });
     prisma.listingAdvertisement.delete.mockResolvedValue({ id: "ad-1" });
 
     await service.remove("ad-1", "office-1");
@@ -433,7 +449,10 @@ describe("ListingAdvertisementsService", () => {
 
   it("refuses a second active advertisement with the same CP number", async () => {
     const { prisma, service } = createService();
-    prisma.listingAdvertisement.findFirst.mockResolvedValue({ id: "ad-1" });
+    prisma.listingAdvertisement.findFirst.mockResolvedValue({
+      id: "ad-1",
+      status: "active",
+    });
 
     await expect(
       service.create("office-1", { channel: "esiljang", externalAdId: "cp-77" }),
@@ -536,12 +555,14 @@ describe("ListingAdvertisementsService", () => {
 
   it("filters by link level and reports the level of each row", async () => {
     const { prisma, service } = createService();
-    prisma.listingAdvertisement.findMany.mockResolvedValue([
-      { id: "ad-1", listingId: "l", propertyId: "p", siteId: "s", changeRequests: [], comparisons: [], comparisonRecords: [] },
-      { id: "ad-2", listingId: null, propertyId: "p", siteId: "s", changeRequests: [], comparisons: [], comparisonRecords: [] },
-      { id: "ad-3", listingId: null, propertyId: null, siteId: "s", changeRequests: [], comparisons: [], comparisonRecords: [] },
-      { id: "ad-4", listingId: null, propertyId: null, siteId: null, changeRequests: [], comparisons: [], comparisonRecords: [] },
-    ]);
+    prisma.listingAdvertisement.findMany
+      .mockResolvedValueOnce([
+        { id: "ad-1", listingId: "l", propertyId: "p", siteId: "s", changeRequests: [], comparisons: [], comparisonRecords: [] },
+        { id: "ad-2", listingId: null, propertyId: "p", siteId: "s", changeRequests: [], comparisons: [], comparisonRecords: [] },
+        { id: "ad-3", listingId: null, propertyId: null, siteId: "s", changeRequests: [], comparisons: [], comparisonRecords: [] },
+        { id: "ad-4", listingId: null, propertyId: null, siteId: null, changeRequests: [], comparisons: [], comparisonRecords: [] },
+      ])
+      .mockResolvedValueOnce([]);
     prisma.listingAdvertisement.count.mockResolvedValue(4);
 
     const result = await service.findAll("office-1", { link: "no_listing" });
@@ -555,26 +576,34 @@ describe("ListingAdvertisementsService", () => {
 
   it("says whether a requested change has shown up on the advertisement", async () => {
     const { prisma, service } = createService();
-    const request = (kind: string, toValue: unknown) => ({ id: kind, kind, toValue, task: { status: "pending" } });
-    prisma.listingAdvertisement.findMany.mockResolvedValue([
-      {
-        comparisons: [],
-        comparisonRecords: [],
-        id: "ad-1",
-        status: "active",
-        advertisedPrice: 315000,
-        advertisedDeposit: null,
-        advertisedMonthlyRent: null,
-        floorExposure: "exact",
-        changeRequests: [
-          request("price", { price: 315000 }),
-          request("price", { price: 310000 }),
-          request("floor_exposure", { floorExposure: "band" }),
-          request("takedown", null),
-          request("readvertise", null),
-        ],
-      },
-    ]);
+    const request = (action: string, targetValue: unknown, baseSnapshot: unknown = null) => ({
+      id: `${action}-${JSON.stringify(targetValue)}`,
+      action,
+      targetValue,
+      baseSnapshot,
+      status: "requested",
+    });
+    prisma.listingAdvertisement.findMany
+      .mockResolvedValueOnce([
+        {
+          comparisons: [],
+          comparisonRecords: [],
+          id: "ad-1",
+          status: "active",
+          advertisedPrice: 315000,
+          advertisedDeposit: null,
+          advertisedMonthlyRent: null,
+          floorExposure: "exact",
+          changeRequests: [
+            request("update", { price: 315000 }),
+            request("update", { price: 310000 }),
+            request("update", { floorExposure: "band" }),
+            request("takedown", null),
+            request("readvertise", null),
+          ],
+        },
+      ])
+      .mockResolvedValueOnce([]);
     prisma.listingAdvertisement.count.mockResolvedValue(1);
 
     const result = await service.findAll("office-1", {});
@@ -585,10 +614,10 @@ describe("ListingAdvertisementsService", () => {
   // ---- 광고 한 줄 = 한 광고 ----
 
   const liveAd = {
-    id: "ad-1", officeId: "office-1", listingId: "listing-1", propertyId: "property-1", siteId: "site-1",
-    channel: "esiljang", status: "active", source: "cp_sync", transactionType: "sale", externalAdId: "cp-1",
+    id: "ad-1", officeId: "office-1", cpAccountId: null, listingId: "listing-1", propertyId: "property-1", siteId: "site-1",
+    channel: "esiljang", status: "active", transactionType: "sale", externalAdId: "cp-1",
     naverArticleNo: "2400000001", advertisedPrice: 320000, advertisedDeposit: null, advertisedMonthlyRent: null,
-    firstSeenAt: new Date("2026-11-01"), endedAt: null,
+    floorExposure: "exact", firstSeenAt: new Date("2026-11-01"), endedAt: null, lastSyncedAt: new Date("2026-11-01"), manualEditedAt: null,
   };
 
   function linkedListing(prisma: ReturnType<typeof createService>["prisma"]) {
@@ -616,14 +645,14 @@ describe("ListingAdvertisementsService", () => {
     linkedListing(prisma);
     prisma.listingAdvertisement.findFirst.mockResolvedValue({ ...liveAd, status: "ended", endedAt: new Date("2026-11-12") });
 
-    // 재광고: 네이버 번호가 새로 나왔다
-    await service.create("office-1", { listingId: "listing-1", channel: "esiljang", source: "cp_sync", externalAdId: "cp-1", naverArticleNo: "2400000099", advertisedPrice: 320000 });
+    // 재광고: 네이버 번호가 새로 나왔다 (lastSyncedAt으로 sync 경로 표시)
+    const syncedAt = new Date("2026-11-18T10:00:00.000Z");
+    await service.create("office-1", { listingId: "listing-1", channel: "esiljang", lastSyncedAt: syncedAt, externalAdId: "cp-1", naverArticleNo: "2400000099", advertisedPrice: 320000 });
 
     expect(prisma.listingAdvertisement.create).not.toHaveBeenCalled();
     const { where, data } = prisma.listingAdvertisement.update.mock.calls[0][0];
     expect(where).toEqual({ id: "ad-1" });
     expect(data).toEqual(expect.objectContaining({ status: "active", endedAt: null, naverArticleNo: "2400000099" }));
-    // 다시 게재된 것과 바뀐 네이버 번호가 이력에 남는다
     expect(prisma.listingAdvertisementHistory.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ listingAdvertisementId: "ad-1", status: "active", naverArticleNo: "2400000099", source: "cp_sync" }),
     });
@@ -641,18 +670,47 @@ describe("ListingAdvertisementsService", () => {
     expect(prisma.listingAdvertisement.create).not.toHaveBeenCalled();
   });
 
-  it("updates the same row when the agent reports a live advertisement again", async () => {
+  it("does not end a live advertisement when a person records an ended one on the same listing and channel", async () => {
     const { prisma, service } = createService();
     linkedListing(prisma);
     prisma.listingAdvertisement.findFirst.mockResolvedValue(liveAd);
 
-    await service.create("office-1", { listingId: "listing-1", channel: "esiljang", source: "cp_sync", externalAdId: "cp-1", naverArticleNo: "2400000001", advertisedPrice: 315000 });
+    await expect(
+      service.create("office-1", {
+        listingId: "listing-1",
+        channel: "esiljang",
+        status: "ended",
+        advertisedPrice: 300000,
+        endedAt: "2026-10-15T00:00:00.000Z",
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.listingAdvertisement.update).not.toHaveBeenCalled();
+    expect(prisma.listingAdvertisement.create).not.toHaveBeenCalled();
+  });
+
+  it("updates the same row when a synced update reports a live advertisement again", async () => {
+    const { prisma, service } = createService();
+    linkedListing(prisma);
+    prisma.listingAdvertisement.findFirst.mockResolvedValue(liveAd);
+
+    await service.create("office-1", { listingId: "listing-1", channel: "esiljang", lastSyncedAt: new Date("2026-11-18T10:00:00.000Z"), externalAdId: "cp-1", naverArticleNo: "2400000001", advertisedPrice: 315000 });
 
     expect(prisma.listingAdvertisement.create).not.toHaveBeenCalled();
     expect(prisma.listingAdvertisement.update.mock.calls[0][0].data).toEqual(expect.objectContaining({ advertisedPrice: 315000 }));
     expect(prisma.listingAdvertisementHistory.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ advertisedPrice: 315000, status: "active" }),
     });
+  });
+
+  it("stamps manualEditedAt only on CP-synced field changes and not on memo-only edits", async () => {
+    const { prisma, service } = createService();
+    prisma.listingAdvertisement.findFirst.mockResolvedValue(liveAd);
+
+    await service.update("ad-1", "office-1", { memo: "메모만 고침" });
+    expect(prisma.listingAdvertisement.update.mock.calls[0][0].data).not.toHaveProperty("manualEditedAt");
+
+    await service.update("ad-1", "office-1", { advertisedPrice: 315000 });
+    expect(prisma.listingAdvertisement.update.mock.calls[1][0].data.manualEditedAt).toBeInstanceOf(Date);
   });
 
   it("writes history only when the status, Naver number or price actually changes", async () => {
@@ -781,5 +839,58 @@ describe("ListingAdvertisementsService", () => {
 
     await expect(service.link("ad-2", "office-1", { listingId: "listing-1" })).resolves.toBeDefined();
     expect(prisma.listingAdvertisement.delete).toHaveBeenCalledWith({ where: { id: "ad-1" } });
+  });
+
+  it("derives syncState as manual, synced, or manual_override from timestamps", async () => {
+    const { prisma, service } = createService();
+    const syncTime = new Date("2026-11-20T10:00:00Z");
+    const editTime = new Date("2026-11-21T10:00:00Z");
+    prisma.listingAdvertisement.findMany
+      .mockResolvedValueOnce([
+        { id: "ad-manual", lastSyncedAt: null, manualEditedAt: null, changeRequests: [], comparisons: [], comparisonRecords: [] },
+        { id: "ad-synced", lastSyncedAt: syncTime, manualEditedAt: null, changeRequests: [], comparisons: [], comparisonRecords: [] },
+        { id: "ad-override", lastSyncedAt: syncTime, manualEditedAt: editTime, changeRequests: [], comparisons: [], comparisonRecords: [] },
+      ])
+      .mockResolvedValueOnce([]);
+    prisma.listingAdvertisement.count.mockResolvedValue(3);
+
+    const res = await service.findAll("office-1", { page: 1, limit: 50 });
+    expect(res.items.map((item) => [item.id, item.syncState])).toEqual([
+      ["ad-manual", "manual"],
+      ["ad-synced", "synced"],
+      ["ad-override", "manual_override"],
+    ]);
+  });
+
+  it("discriminates P2002 external_ad_id vs channel conflicts and skips ended cross-listing externalAdId", async () => {
+    const { prisma, service } = createService();
+    prisma.listingAdvertisement.findFirst.mockResolvedValue({ ...liveAd, lastSyncedAt: null });
+    prisma.listingAdvertisement.update.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("unique external_ad_id", {
+        code: "P2002",
+        clientVersion: "test",
+        meta: { target: "listing_advertisements_active_external_ad_id_key" },
+      }),
+    );
+
+    await expect(service.update("ad-1", "office-1", { externalAdId: "cp-dup" })).rejects.toThrow(
+      "같은 CP 광고번호로 게재 중인 광고가 이미 있습니다. 광고번호를 확인해 주세요.",
+    );
+
+    // 다른 매물의 종료된 광고가 같은 externalAdId를 갖고 있어도 덮어쓰지 않고 새 광고를 만든다
+    prisma.listing.findFirst.mockResolvedValue({ id: "listing-2", propertyId: "property-2", transactionType: "sale" });
+    prisma.property.findFirst.mockResolvedValue({ id: "property-2", siteId: "site-1" });
+    prisma.listingAdvertisement.findFirst
+      .mockResolvedValueOnce(null) // byKey (listing-2 + esiljang)
+      .mockResolvedValueOnce(null) // byExternalAdId (status=active only when listingId given)
+      .mockResolvedValueOnce(null);
+    const created = await service.create("office-1", {
+      listingId: "listing-2",
+      channel: "esiljang",
+      externalAdId: "cp-ended-other-listing",
+      advertisedPrice: 100000,
+    });
+    expect(prisma.listingAdvertisement.create).toHaveBeenCalled();
+    expect(created.listingId).toBe("listing-2");
   });
 });

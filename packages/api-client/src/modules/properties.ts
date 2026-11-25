@@ -7,7 +7,7 @@ import type {
   ListingPriceHistory,
 } from './listings.js';
 import type { PropertyContact } from './property-contacts.js';
-import type { Tenant } from './tenants.js';
+import type { PropertyLease, Tenant } from './tenants.js';
 
 export interface PropertyListingIntake extends ListingIntakeState {
   isJointBrokerageRequired: boolean;
@@ -78,9 +78,24 @@ export interface Property {
     } | null;
   } | null;
   propertyContacts?: PropertyContact[];
+  leases?: PropertyLease[];
   tenants?: Tenant[];
   consultations?: Consultation[];
   listings?: PropertyListing[];
+  /**
+   * 끝난 의뢰의 거래 조건(상세 조회에만, 최근 30개). 가격 변경·광고 기록을 이어 보이고,
+   * 의뢰를 끝낸 뒤에도 게재 중인 광고를 알리는 데 쓴다. intake는 id·생명주기·종료 사유만 온다.
+   */
+  pastListings?: Array<
+    Omit<PropertyListing, 'intake' | 'deals'> & {
+      intake?: {
+        id: string;
+        lifecycleStatus: string;
+        closedReason: string | null;
+        lifecycleChangedAt: string | null;
+      } | null;
+    }
+  >;
 }
 
 export interface PropertiesFilter {
@@ -88,9 +103,6 @@ export interface PropertiesFilter {
   siteType?: string;
   siteId?: string;
   unitId?: string;
-  sido?: string;
-  sigungu?: string;
-  eupmyeondong?: string;
   search?: string;
   sortBy?: 'createdAt' | 'updatedAt';
   sortOrder?: 'asc' | 'desc';

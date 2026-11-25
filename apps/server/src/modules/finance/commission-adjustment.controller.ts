@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { uuidParam } from './finance-params';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -52,14 +53,14 @@ export class CommissionAdjustmentController {
       reason: string;
     },
   ) {
-    return this.service.request(user.officeId, user.userId, body);
+    return this.service.request(user.officeId, user.userId, body, { userId: user.userId, role: user.role });
   }
 
   @Post(':id/approve')
   @Roles('owner')
   @UseGuards(RolesGuard)
   approve(
-    @Param('id') id: string,
+    @Param('id', uuidParam('조정 요청')) id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { decisionNote?: string },
   ) {
@@ -75,7 +76,7 @@ export class CommissionAdjustmentController {
   @Roles('owner')
   @UseGuards(RolesGuard)
   reject(
-    @Param('id') id: string,
+    @Param('id', uuidParam('조정 요청')) id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body() body: { decisionNote?: string },
   ) {

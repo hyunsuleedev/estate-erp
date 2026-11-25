@@ -106,9 +106,10 @@ export function getLegalMaxRate(
   // jeonse / monthly (임대차)
   if (baseAmount < 5000) return { rate: 0.5, cap: 20 };
   if (baseAmount < 10000) return { rate: 0.4, cap: 30 };
-  if (baseAmount < 60000) return { rate: 0.3, cap: null };
-  if (baseAmount < 120000) return { rate: 0.4, cap: null };
-  return { rate: 0.6, cap: null };
+  if (baseAmount < 60000) return { rate: 0.3, cap: null };   // 6억 미만
+  if (baseAmount < 120000) return { rate: 0.4, cap: null };  // 12억 미만
+  if (baseAmount < 150000) return { rate: 0.5, cap: null };  // 15억 미만
+  return { rate: 0.6, cap: null };                           // 15억 이상 (협의)
 }
 
 /** 한쪽(seller 또는 buyer) 에 청구할 금액 = min(base × rate, cap). 만원 단위. */
@@ -122,9 +123,32 @@ export function calculateCommissionAmount(
     baseAmount,
     propertyKind,
   );
-  const raw = Math.round((baseAmount * rate) / 100);
+  // 법정 상한이므로 올리지 않는다(반올림하면 30,125만 × 0.4% = 120.5만이 121만이 되어 상한을 넘는다).
+  // 요율은 소수 한 자리까지라 정수로 바꿔 셈한다 — 부동소수 오차로 1만원이 깎이지 않게.
+  const raw = Math.floor((baseAmount * Math.round(rate * 10)) / 1000);
   const amount = cap !== null ? Math.min(raw, cap) : raw;
   return { rate, amount };
+}
+
+/**
+ * 2026-11-22 이전의 계산(반올림)으로 나오던 금액. 그때 자동으로 만든 청구가 DB에 남아 있다.
+ *
+ * 새 금액을 만들 때는 쓰지 않는다 — "이 청구가 사람이 손대지 않은 자동 금액인가"를 가릴 때만 쓴다.
+ * 내림으로 바꾼 뒤에도 예전 자동 청구(예: 30,125만 × 0.4% → 121만)를 자동 금액으로 알아봐야
+ * 거래 금액을 바꿀 때 청구가 따라 바뀐다. 알아보지 못하면 "사람이 정한 금액"으로 굳는다.
+ */
+export function calculateLegacyRoundedCommissionAmount(
+  transactionType: CommissionTransactionType,
+  baseAmount: number,
+  propertyKind: CommissionPropertyKind = 'housing',
+): number {
+  const { rate, cap } = getLegalMaxRate(
+    transactionType,
+    baseAmount,
+    propertyKind,
+  );
+  const raw = Math.round((baseAmount * rate) / 100);
+  return cap !== null ? Math.min(raw, cap) : raw;
 }
 
 /**

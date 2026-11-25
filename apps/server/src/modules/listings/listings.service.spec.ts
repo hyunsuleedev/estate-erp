@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ListingsService } from './listings.service';
 
@@ -70,6 +70,10 @@ describe('ListingsService', () => {
       listingIntake: {
         findFirst: jest.fn(),
         create: jest.fn(),
+        delete: jest.fn(),
+      },
+      priceHistory: {
+        deleteMany: jest.fn(),
       },
       $queryRaw: jest.fn(),
       $executeRaw: jest.fn(),
@@ -276,8 +280,13 @@ describe('ListingsService', () => {
       intakeId: 'intake-1',
       transactionType: 'sale',
     };
-    prisma.listing.findFirst.mockResolvedValue(listing);
+    prisma.listing.findFirst.mockResolvedValue({
+      ...listing,
+      intake: { projectId: null },
+      _count: { matches: 0, deals: 0, networkSharedProperties: 0 },
+    });
     prisma.listing.delete.mockResolvedValue(listing);
+    prisma.listing.count.mockResolvedValue(1);
 
     await service.remove('listing-1', 'office-1');
 
@@ -287,6 +296,167 @@ describe('ListingsService', () => {
       propertyId: 'property-1',
       intakeId: 'intake-1',
     });
+  });
+
+  it('deletes price history with the listing and removes an intake left without listings', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({
+      id: 'listing-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      intake: { projectId: null },
+      _count: { matches: 0, deals: 0, networkSharedProperties: 0 },
+    });
+    prisma.listing.delete.mockResolvedValue({ id: 'listing-1' });
+    prisma.listing.count.mockResolvedValue(0);
+
+    const result = await service.remove('listing-1', 'office-1');
+
+    expect(prisma.priceHistory.deleteMany).toHaveBeenCalledWith({
+      where: { officeId: 'office-1', listingId: 'listing-1' },
+    });
+    expect(prisma.listingIntake.delete).toHaveBeenCalledWith({ where: { id: 'intake-1' } });
+    expect(result).toEqual(expect.objectContaining({ intakeRemoved: true }));
+  });
+
+  it('keeps an intake that belongs to a project even when its last listing is deleted', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({
+      id: 'listing-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      intake: { projectId: 'project-1' },
+      _count: { matches: 0, deals: 0, networkSharedProperties: 0 },
+    });
+    prisma.listing.delete.mockResolvedValue({ id: 'listing-1' });
+    prisma.listing.count.mockResolvedValue(0);
+
+    const result = await service.remove('listing-1', 'office-1');
+
+    expect(prisma.listingIntake.delete).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({ intakeRemoved: false }));
+  });
+
+  it('refuses to delete a listing that a match still points to', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({
+      id: 'listing-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      intake: { projectId: null },
+      _count: { matches: 1, deals: 0, networkSharedProperties: 0 },
+    });
+
+    await expect(service.remove('listing-1', 'office-1')).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.listing.delete).not.toHaveBeenCalled();
+  });
+
+  it('locks the listing row before checking deals and matches, inside the delete transaction', async () => {
+    const { prisma, service } = createService();
+    const order: string[] = [];
+    prisma.$executeRaw.mockImplementation(async () => { order.push('lock'); return 1; });
+    prisma.listing.findFirst.mockImplementation(async () => {
+      order.push('check');
+      return {
+        id: 'listing-1',
+        propertyId: 'property-1',
+        intakeId: 'intake-1',
+        intake: { projectId: null },
+        _count: { matches: 0, deals: 0, networkSharedProperties: 0 },
+      };
+    });
+    prisma.listing.delete.mockImplementation(async () => { order.push('delete'); return { id: 'listing-1' }; });
+    prisma.listing.count.mockResolvedValue(1);
+
+    await service.remove('listing-1', 'office-1');
+
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(order).toEqual(['lock', 'check', 'delete']);
+  });
+
+  it('refuses to delete for a role other than owner or manager', async () => {
+    const { prisma, service } = createService();
+    await expect(service.remove('listing-1', 'office-1', 'agent')).rejects.toThrow('대표·매니저만');
+    expect(prisma.listing.delete).not.toHaveBeenCalled();
+  });
+
+  it('ignores fields that a listing update may not change', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({
+      id: 'listing-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      transactionType: 'sale',
+    });
+    prisma.listing.update.mockResolvedValue({ id: 'listing-1', propertyId: 'property-1', intakeId: 'intake-1' });
+
+    await service.update('listing-1', 'office-1', {
+      price: 150000,
+      officeId: 'office-2',
+      createdAt: '2020-01-01',
+    } as never);
+
+    expect(prisma.listing.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { price: 150000 } }),
+    );
+  });
+
+  it('turns a date-only move-in value into a Date (Prisma rejects "2027-03-01" as a DateTime)', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({
+      id: 'listing-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+      transactionType: 'sale',
+    });
+    prisma.listing.update.mockResolvedValue({ id: 'listing-1', propertyId: 'property-1', intakeId: 'intake-1' });
+
+    await service.update('listing-1', 'office-1', {
+      moveInAvailableType: 'range',
+      moveInAvailableFrom: '2027-03-01',
+      moveInAvailableTo: null,
+    });
+
+    expect(prisma.listing.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          moveInAvailableType: 'range',
+          moveInAvailableFrom: new Date('2027-03-01'),
+          moveInAvailableTo: null,
+        },
+      }),
+    );
+  });
+
+  it.each([
+    [{ moveInAvailableFrom: 'abc' }],
+    [{ moveInAvailableType: 'someday' }],
+    [{ moveInAvailableFrom: '2027-03-01', moveInAvailableTo: '2027-01-01' }],
+  ])('rejects an invalid move-in value %o', async (patch) => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({ id: 'listing-1', transactionType: 'sale' });
+
+    await expect(service.update('listing-1', 'office-1', patch as never)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.listing.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ price: -5 }],
+    [{ price: 1.5 }],
+    [{ deposit: 'abc' }],
+    [{ monthlyRent: 999_999_999 }],
+  ])('rejects an invalid money value %o', async (patch) => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({ id: 'listing-1', transactionType: 'sale' });
+
+    await expect(service.update('listing-1', 'office-1', patch as never)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.listing.update).not.toHaveBeenCalled();
   });
 
   it('rejects a stale listing update when expectedUpdatedAt no longer matches', async () => {
@@ -599,14 +769,18 @@ describe('ListingsService', () => {
           },
           property: expect.objectContaining({
             include: expect.objectContaining({
-              tenants: expect.objectContaining({
-                include: {
-                  contact: expect.objectContaining({
-                    include: expect.objectContaining({
-                      phones: expect.any(Object),
-                    }),
+              leases: expect.objectContaining({
+                include: expect.objectContaining({
+                  tenants: expect.objectContaining({
+                    include: {
+                      contact: expect.objectContaining({
+                        include: expect.objectContaining({
+                          phones: expect.any(Object),
+                        }),
+                      }),
+                    },
                   }),
-                },
+                }),
                 orderBy: { createdAt: 'desc' },
               }),
               listings: expect.objectContaining({
@@ -616,7 +790,14 @@ describe('ListingsService', () => {
                   moveInAvailableTo: true,
                   isPaused: true,
                   deals: expect.objectContaining({
-                    select: { id: true, stage: true, stageChangedAt: true },
+                    select: {
+                      id: true,
+                      stage: true,
+                      stageChangedAt: true,
+                      agreedPrice: true,
+                      agreedDeposit: true,
+                      agreedMonthlyRent: true,
+                    },
                   }),
                   advertisements: expect.objectContaining({
                     where: { status: 'active' },
@@ -688,11 +869,18 @@ describe('ListingsService', () => {
     await service.findOne('listing-1', 'office-1');
 
     const args = prisma.listing.findFirst.mock.calls[0][0];
-    expect(args.include.advertisements).toEqual({
+    const expectedInclude = {
       orderBy: { createdAt: 'desc' },
-    });
+      include: {
+        changeRequests: {
+          where: { status: { in: ['requested', 'in_progress', 'executed'] } },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    };
+    expect(args.include.advertisements).toEqual(expectedInclude);
     expect(args.include.property.include.listings.include.advertisements).toEqual(
-      { orderBy: { createdAt: 'desc' } },
+      expectedInclude,
     );
   });
 });

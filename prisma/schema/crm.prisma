@@ -21,12 +21,14 @@ model Consultation {
   matchId         String? @map("match_id") @db.Uuid
   buyerIntakeId   String? @map("buyer_intake_id") @db.Uuid
   buyerReqId      String? @map("buyer_req_id") @db.Uuid
+  dealId          String? @map("deal_id") @db.Uuid
+  projectId       String? @map("project_id") @db.Uuid
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office           Office                 @relation(fields: [officeId], references: [id])
-  contact          Contact                @relation(fields: [contactId], references: [id])
+  contact          Contact                @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
   createdBy        User                   @relation("ConsultationCreator", fields: [createdById], references: [id])
   callRecording    CallRecording?         @relation(fields: [callRecordingId], references: [id])
   property         Property?              @relation(fields: [propertyId], references: [id])
@@ -35,6 +37,8 @@ model Consultation {
   match            Match?                 @relation(fields: [matchId], references: [id])
   buyerIntake      BuyerIntake?           @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Restrict)
   buyerRequirement BuyerRequirement?      @relation(fields: [officeId, buyerIntakeId, buyerReqId], references: [officeId, buyerIntakeId, id], onDelete: Restrict)
+  deal             Deal?                  @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  project          Project?               @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Restrict)
   tasks            Task[]
   callLogs         CallLog[]
   /// 통화 분석이 이 상담에 붙인 업무 제안
@@ -46,6 +50,8 @@ model Consultation {
   @@index([officeId, listingIntakeId])
   @@index([officeId, listingId])
   @@index([officeId, buyerIntakeId])
+  @@index([officeId, dealId])
+  @@index([officeId, projectId])
   @@map("consultations")
 }
 
@@ -64,14 +70,16 @@ model BuyerIntake {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  office        Office               @relation(fields: [officeId], references: [id])
-  project Project?       @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Restrict)
-  contacts      BuyerIntakeContact[]
-  requirements  BuyerRequirement[]
-  consultations Consultation[]
-  projectSteps     ProjectStep[]
+  office         Office               @relation(fields: [officeId], references: [id])
+  project        Project?             @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Restrict)
+  contacts       BuyerIntakeContact[]
+  requirements   BuyerRequirement[]
+  consultations  Consultation[]
+  tasks          Task[]
+  calendarEvents CalendarEvent[]
+  projectSteps   ProjectStep[]
   /// 이 구매 의뢰에서 나온 거래
-  deals         Deal[]
+  deals          Deal[]
 
   // 하위 테이블의 복합 FK가 office_id까지 함께 검증한다.
   @@unique([officeId, id])
@@ -81,7 +89,7 @@ model BuyerIntake {
   @@map("buyer_intakes")
 }
 
-// 구매 의뢰에 실제로 참여하는 사람. 가족관계(ContactRelation)와 별개다.
+// 구매 의뢰에 실제로 참여하는 사람. 집단/세대 소속(PartyMember)과 별개다.
 model BuyerIntakeContact {
   id            String   @id @default(uuid()) @db.Uuid
   officeId      String   @map("office_id") @db.Uuid
@@ -321,20 +329,23 @@ model Deal {
   externalListing ExternalListing? @relation(fields: [externalListingId], references: [id])
   match           Match?           @relation("DealSourceMatch", fields: [matchId], references: [id])
   buyerIntake     BuyerIntake?     @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Restrict)
-  buyerContact    Contact?         @relation("DealBuyer", fields: [buyerContactId], references: [id])
-  sellerContact   Contact?         @relation("DealSeller", fields: [sellerContactId], references: [id])
+  buyerContact    Contact?         @relation("DealBuyer", fields: [officeId, buyerContactId], references: [officeId, id], onDelete: Restrict)
+  sellerContact   Contact?         @relation("DealSeller", fields: [officeId, sellerContactId], references: [officeId, id], onDelete: Restrict)
   partnerBroker   PartnerBroker?   @relation(fields: [partnerBrokerId], references: [id])
 
-  contract           Contract?
-  payments           DealPayment[]
-  participants       DealParticipant[]
-  commissionPayments CommissionPayment[]
-  calendarEvents     CalendarEvent[]
-  tasks              Task[]
+  contract                   Contract?
+  payments                   DealPayment[]
+  participants               DealParticipant[]
+  commissionPayments         CommissionPayment[]
+  consultations              Consultation[]
+  calendarEvents             CalendarEvent[]
+  tasks                      Task[]
   /// 이 거래의 본계약·완료로 자동 종료된 다른 매칭 (거래 취소 시 되살린다)
-  autoClosedMatches  Match[]             @relation("MatchClosedByDeal")
+  autoClosedMatches          Match[]             @relation("MatchClosedByDeal")
   /// 프로젝트의 진행 계획에서 이 거래를 직접 가리키는 단계
-  projectSteps          ProjectStep[]
+  projectSteps               ProjectStep[]
+  originatedPropertyContacts PropertyContact[]   @relation("PropertyContactSourceDeal")
+  originatedLeases           PropertyLease[]     @relation("PropertyLeaseSourceDeal")
 
   @@index([officeId, stage])
   @@index([officeId, isCancelled, stage])
@@ -414,10 +425,6 @@ model Contract {
   // 거래 유형 (계약서 기준)
   transactionType String @map("transaction_type") // sale / jeonse / monthly / yearly / exchange / sublease / transfer / succession
 
-  // 당사자 (계약서 기재자. Deal 의 당사자와 다를 수 있음 - 대리인 등)
-  buyerContactId  String? @map("buyer_contact_id") @db.Uuid
-  sellerContactId String? @map("seller_contact_id") @db.Uuid
-
   // ─── 계약서 상 총액 (Deal.agreedPrice 의 시점 스냅샷) ────────
   /// 계약서 맨 위에 찍히는 총 거래금액 (매매가/전세금, 만원)
   totalPrice Int @map("total_price")
@@ -461,13 +468,12 @@ model Contract {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  office        Office             @relation(fields: [officeId], references: [id])
-  deal          Deal?              @relation(fields: [dealId], references: [id])
-  buyerContact  Contact?           @relation("ContractBuyer", fields: [buyerContactId], references: [id])
-  sellerContact Contact?           @relation("ContractSeller", fields: [sellerContactId], references: [id])
-  tasks         Task[]
-  documents     ContractDocument[]
-  parties       ContractParty[]
+  office           Office             @relation(fields: [officeId], references: [id])
+  deal             Deal?              @relation(fields: [dealId], references: [id])
+  tasks            Task[]
+  documents        ContractDocument[]
+  parties          ContractParty[]
+  originatedLeases PropertyLease[]    @relation("PropertyLeaseSourceContract")
 
   @@index([officeId])
   @@index([officeId, status])
@@ -527,7 +533,7 @@ model ContractParty {
 
   office   Office          @relation(fields: [officeId], references: [id])
   contract Contract        @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  contact  Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  contact  Contact?        @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
   parent   ContractParty?  @relation("ContractPartyAgent", fields: [parentId], references: [id], onDelete: Cascade)
   agents   ContractParty[] @relation("ContractPartyAgent")
 

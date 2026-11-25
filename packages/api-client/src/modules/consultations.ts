@@ -48,6 +48,8 @@ export interface Consultation {
   matchId: string | null;
   buyerIntakeId: string | null;
   buyerReqId: string | null;
+  dealId?: string | null;
+  projectId?: string | null;
   createdAt: string;
   updatedAt: string;
   contact?: { id: string; name: string; phone: string | null };
@@ -97,6 +99,7 @@ export interface Consultation {
 export interface ConsultationsFilter {
   q?: string;
   contactId?: string;
+  scope?: 'self' | 'party';
   propertyId?: string;
   siteId?: string;
   dongId?: string;
@@ -106,6 +109,8 @@ export interface ConsultationsFilter {
   matchId?: string;
   buyerIntakeId?: string;
   buyerReqId?: string;
+  dealId?: string;
+  projectId?: string;
   context?:
     | 'property'
     | 'listingIntake'
@@ -113,6 +118,8 @@ export interface ConsultationsFilter {
     | 'match'
     | 'buyerIntake'
     | 'buyerRequirement'
+    | 'deal'
+    | 'project'
     | 'unlinked';
   outcome?: 'actionRequired' | 'confirmed' | 'held';
   type?: string;
@@ -139,14 +146,20 @@ export interface CreateConsultationDto {
   matchId?: string;
   buyerIntakeId?: string;
   buyerReqId?: string;
+  dealId?: string;
+  projectId?: string;
   /** 기존 통화 녹음(CallRecording)을 상담에 연결 */
   callRecordingId?: string;
+  /** 상담한 때(ISO). 비우면 지금. 지난 일만 받는다 */
+  consultedAt?: string;
 }
 
-// 서버 PATCH /consultations/:id는 type/content만 허용 (purpose·컨텍스트 FK 변경 불가)
+// 서버 PATCH /consultations/:id는 방식·내용·상담한 때만 허용 (purpose·컨텍스트 FK 변경 불가)
 export interface UpdateConsultationDto {
   type?: string;
   content?: string;
+  /** 상담한 때(ISO). 지난 일만 받는다 */
+  consultedAt?: string;
 }
 
 /**

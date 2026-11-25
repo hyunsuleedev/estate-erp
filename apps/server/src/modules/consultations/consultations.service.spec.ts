@@ -10,10 +10,19 @@ describe('ConsultationsService', () => {
         create: jest.fn(),
       },
       contact: { findFirst: jest.fn() },
-      buyerRequirement: { findFirst: jest.fn() },
-      buyerIntake: { findFirst: jest.fn() },
+      // 연결 칸이 이 사무소의 것인지 세는 검사(assertLinksInOffice). 기본은 "있음"
+      buyerRequirement: {
+        findFirst: jest.fn(),
+        count: jest.fn().mockResolvedValue(1),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      buyerIntake: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(1) },
       buyerIntakeContact: { findFirst: jest.fn() },
-      callRecording: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn(), create: jest.fn() },
+      property: { count: jest.fn().mockResolvedValue(1) },
+      listing: { count: jest.fn().mockResolvedValue(1) },
+      listingIntake: { count: jest.fn().mockResolvedValue(1) },
+      match: { count: jest.fn().mockResolvedValue(1) },
+      callRecording: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(1), create: jest.fn() },
     };
 
     const callIntelligence = {
@@ -28,13 +37,111 @@ describe('ConsultationsService', () => {
     };
   }
 
+  it('refuses links that belong to another office before saving', async () => {
+    const { prisma, service } = createService();
+    prisma.contact.findFirst.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' });
+    // 다른 사무소의 매물: 이 사무소 범위로 세면 0건
+    prisma.property.count.mockResolvedValue(0);
+
+    await expect(
+      service.create('office-1', 'user-1', {
+        contactId: '11111111-1111-4111-8111-111111111111',
+        type: 'phone',
+        content: '남의 매물',
+        propertyId: '55555555-5555-4555-8555-555555555555',
+      }),
+    ).rejects.toThrow('연결할 매물을 찾을 수 없습니다.');
+    expect(prisma.property.count).toHaveBeenCalledWith({
+      where: { id: '55555555-5555-4555-8555-555555555555', officeId: 'office-1' },
+    });
+    // 모양이 틀린 id도 400으로 막는다 (DB까지 가지 않는다)
+    await expect(
+      service.create('office-1', 'user-1', {
+        contactId: '11111111-1111-4111-8111-111111111111',
+        type: 'phone',
+        content: '이상한 id',
+        listingId: 'abc',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.create('office-1', 'user-1', { contactId: 'abc', type: 'phone', content: 'x' }),
+    ).rejects.toThrow('연락처를 찾을 수 없습니다.');
+    expect(prisma.consultation.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses an empty note, an unknown method and a future time when writing a consultation', async () => {
+    const { prisma, service } = createService();
+    prisma.contact.findFirst.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' });
+
+    await expect(
+      service.create('office-1', 'user-1', { contactId: '11111111-1111-4111-8111-111111111111', type: 'phone', content: '   ' }),
+    ).rejects.toThrow('상담 내용을 입력하세요.');
+    await expect(
+      service.create('office-1', 'user-1', { contactId: '11111111-1111-4111-8111-111111111111', type: 'sms', content: '문자 상담' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.create('office-1', 'user-1', {
+        contactId: '11111111-1111-4111-8111-111111111111',
+        type: 'phone',
+        content: '내일 통화',
+        consultedAt: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.consultation.create).not.toHaveBeenCalled();
+  });
+
+  it('stores a past consultation time as the consultation date', async () => {
+    const { prisma, service } = createService();
+    prisma.contact.findFirst.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' });
+    prisma.consultation.create.mockResolvedValue({ id: 'c-1', contact: null, callRecording: null });
+    const yesterday = new Date(Date.now() - 86_400_000);
+
+    await service.create('office-1', 'user-1', {
+      contactId: '11111111-1111-4111-8111-111111111111',
+      type: 'visit',
+      content: '  어제 방문  ',
+      consultedAt: yesterday.toISOString(),
+    });
+
+    expect(prisma.consultation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactId: '11111111-1111-4111-8111-111111111111',
+          type: 'visit',
+          content: '어제 방문',
+          createdAt: yesterday,
+        }),
+      }),
+    );
+  });
+
+  it("bumps the person's open buyer requirements' last contact date without overwriting a newer one", async () => {
+    const { prisma, service } = createService();
+    const contactId = '11111111-1111-4111-8111-111111111111';
+    const consultedAt = new Date('2026-11-20T03:00:00.000Z');
+    prisma.contact.findFirst.mockResolvedValue({ id: contactId });
+    prisma.consultation.create.mockResolvedValue({ id: 'c-1', createdAt: consultedAt, contact: null, callRecording: null });
+
+    await service.create('office-1', 'user-1', { contactId, type: 'phone', content: '30평대 찾음' });
+
+    expect(prisma.buyerRequirement.updateMany).toHaveBeenCalledWith({
+      where: {
+        officeId: 'office-1',
+        status: { not: 'completed' },
+        buyerIntake: { contacts: { some: { contactId } } },
+        OR: [{ lastContactDate: null }, { lastContactDate: { lt: consultedAt } }],
+      },
+      data: { lastContactDate: consultedAt },
+    });
+  });
+
   it('builds entity-aware filters for contact, property hierarchy, context, and global search', async () => {
     const { prisma, service } = createService();
     prisma.consultation.findMany.mockResolvedValue([]);
     prisma.consultation.count.mockResolvedValue(0);
 
     await service.findAll('office-1', {
-      contactId: 'contact-1',
+      contactId: '11111111-1111-4111-8111-111111111111',
       siteId: 'site-1',
       dongId: 'dong-1',
       unitId: 'unit-1',
@@ -47,7 +154,7 @@ describe('ConsultationsService', () => {
         where: {
           AND: [
             { officeId: 'office-1' },
-            { contactId: 'contact-1' },
+            { contactId: '11111111-1111-4111-8111-111111111111' },
             { property: { siteId: 'site-1' } },
             { property: { unit: { dongId: 'dong-1' } } },
             { property: { unitId: 'unit-1' } },
@@ -117,31 +224,31 @@ describe('ConsultationsService', () => {
 
   it('구매요건 상담의 BuyerIntake를 자동으로 채운다', async () => {
     const { prisma, service } = createService();
-    prisma.contact.findFirst.mockResolvedValue({ id: 'contact-1' });
+    prisma.contact.findFirst.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' });
     prisma.buyerRequirement.findFirst.mockResolvedValue({
-      id: 'requirement-1',
-      buyerIntakeId: 'intake-1',
+      id: '44444444-4444-4444-8444-444444444444',
+      buyerIntakeId: '22222222-2222-4222-8222-222222222222',
     });
     prisma.buyerIntakeContact.findFirst.mockResolvedValue({
       id: 'participant-1',
     });
     prisma.consultation.create.mockResolvedValue({
       id: 'consultation-1',
-      contact: { id: 'contact-1', phones: [] },
+      contact: { id: '11111111-1111-4111-8111-111111111111', phones: [] },
     });
 
     await service.create('office-1', 'user-1', {
-      contactId: 'contact-1',
+      contactId: '11111111-1111-4111-8111-111111111111',
       type: 'phone',
       content: '예산 조건을 다시 확인함',
-      buyerReqId: 'requirement-1',
+      buyerReqId: '44444444-4444-4444-8444-444444444444',
     });
 
     expect(prisma.consultation.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          buyerIntakeId: 'intake-1',
-          buyerReqId: 'requirement-1',
+          buyerIntakeId: '22222222-2222-4222-8222-222222222222',
+          buyerReqId: '44444444-4444-4444-8444-444444444444',
         }),
       }),
     );
@@ -149,19 +256,19 @@ describe('ConsultationsService', () => {
 
   it('구매요건과 다른 BuyerIntake를 동시에 지정하면 거부한다', async () => {
     const { prisma, service } = createService();
-    prisma.contact.findFirst.mockResolvedValue({ id: 'contact-1' });
+    prisma.contact.findFirst.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' });
     prisma.buyerRequirement.findFirst.mockResolvedValue({
-      id: 'requirement-1',
-      buyerIntakeId: 'intake-1',
+      id: '44444444-4444-4444-8444-444444444444',
+      buyerIntakeId: '22222222-2222-4222-8222-222222222222',
     });
 
     await expect(
       service.create('office-1', 'user-1', {
-        contactId: 'contact-1',
+        contactId: '11111111-1111-4111-8111-111111111111',
         type: 'phone',
         content: '잘못 연결된 상담',
-        buyerIntakeId: 'intake-2',
-        buyerReqId: 'requirement-1',
+        buyerIntakeId: '33333333-3333-4333-8333-333333333333',
+        buyerReqId: '44444444-4444-4444-8444-444444444444',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
 
@@ -170,16 +277,16 @@ describe('ConsultationsService', () => {
 
   it('BuyerIntake 참여자가 아닌 연락처의 상담 연결을 거부한다', async () => {
     const { prisma, service } = createService();
-    prisma.contact.findFirst.mockResolvedValue({ id: 'contact-1' });
-    prisma.buyerIntake.findFirst.mockResolvedValue({ id: 'intake-1' });
+    prisma.contact.findFirst.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' });
+    prisma.buyerIntake.findFirst.mockResolvedValue({ id: '22222222-2222-4222-8222-222222222222' });
     prisma.buyerIntakeContact.findFirst.mockResolvedValue(null);
 
     await expect(
       service.create('office-1', 'user-1', {
-        contactId: 'contact-1',
+        contactId: '11111111-1111-4111-8111-111111111111',
         type: 'phone',
         content: '참여자가 아닌 연락처',
-        buyerIntakeId: 'intake-1',
+        buyerIntakeId: '22222222-2222-4222-8222-222222222222',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -253,7 +360,7 @@ describe('ConsultationsService', () => {
     prisma.consultation.findMany.mockResolvedValue([
       {
         id: 'c-1',
-        contact: { id: 'contact-1', name: '김소유', phones: [] },
+        contact: { id: '11111111-1111-4111-8111-111111111111', name: '김소유', phones: [] },
         callRecording: {
           id: 'rec-1',
           direction: 'visit',
@@ -347,7 +454,7 @@ describe('ConsultationsService', () => {
           findFirst: jest.fn().mockResolvedValue({
             id: 'c-1',
             type: 'visit',
-            contactId: 'contact-1',
+            contactId: '11111111-1111-4111-8111-111111111111',
             createdAt: new Date('2026-11-10T05:00:00.000Z'),
             contact: { phones: [{ phone: '01012345678', isPrimary: true }] },
           }),
@@ -382,7 +489,7 @@ describe('ConsultationsService', () => {
       expect(tx.callRecording.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           officeId: 'office-1',
-          contactId: 'contact-1',
+          contactId: '11111111-1111-4111-8111-111111111111',
           direction: 'visit',
           phoneNumber: '01012345678',
           durationSec: 600,

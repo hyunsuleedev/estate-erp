@@ -5,7 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { formatPlaceLabel } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { isPartnerShareRowId, loadPartnerShareInputs, partnerShareCalcRows } from './partner-shares';
 import {
   computeSettlement,
   monthRange,
@@ -38,16 +40,32 @@ export interface SettlementView {
   lines: SettlementLineView[];
   /** 이 달 정산에 들어가지 않은 입금 (지금 설정 기준) */
   waiting: SettlementWaitingItem[];
+  /**
+   * 취소한 거래의 입금 — 정산에 넣지 않음. 받은 날과 취소한 날 가운데 늦은 날이 이 달인 것만 보인다
+   * (매달 쌓여 보이지 않게). 대표가 돌려줄지 위약금으로 남길지 정한다.
+   */
+  cancelledReceipts: SettlementWaitingItem[];
   /** 확정할 수 없는 이유. 확정할 수 있으면 null. */
   blockedReason: string | null;
   /** 확정을 취소할 수 있는지 (가장 최근 정산이고 지급 기록이 없을 때) */
   canUnconfirm: boolean;
+  /**
+   * 사무소가 가장 최근에 확정한 달 ('YYYY-MM'). 확정한 달은 고치지 않으므로, 그 뒤에 정산에 들어갈 수 있게 된
+   * 입금(예: 확정한 뒤에 담당을 정함)은 이 다음 달 정산에 들어간다. 화면이 그것을 미리 알려 준다.
+   */
+  latestConfirmedMonth: string | null;
 }
 
 function assertMonth(month: string) {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
     throw new BadRequestException('달은 2026-11 같은 형식이어야 합니다.');
   }
+}
+
+/** '2026-11' → '2026-12' */
+function nextMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
 }
 
 /** 한국 시각의 이번 달 'YYYY-MM' */
@@ -59,18 +77,25 @@ function dealTitle(deal: {
   listing: {
     property: {
       site: { name: string } | null;
-      unit: { name: string | null; dong: { name: string | null; isPlaceholder: boolean } | null } | null;
+      unit: {
+        name: string | null;
+        floor?: number | null;
+        floorEnd?: number | null;
+        floorLabel?: string | null;
+        dong: { name: string | null; isPlaceholder: boolean } | null;
+      } | null;
     } | null;
   } | null;
 }): string {
   const property = deal.listing?.property;
-  const dong = property?.unit?.dong;
-  const parts = [
-    property?.site?.name,
-    dong && !dong.isPlaceholder && dong.name ? `${dong.name}동` : null,
-    property?.unit?.name ? `${property.unit.name}호` : null,
-  ].filter(Boolean);
-  return parts.length ? parts.join(' ') : '거래';
+  // 화면 공통 표기: "고덕그라시움 102동 2203호" (@estate-erp/shared formatPlaceLabel)
+  const label = formatPlaceLabel({
+    siteName: property?.site?.name,
+    dongName: property?.unit?.dong?.name,
+    dongIsPlaceholder: property?.unit?.dong?.isPlaceholder,
+    unit: property?.unit,
+  });
+  return label || '거래';
 }
 
 @Injectable()
@@ -90,7 +115,7 @@ export class SettlementService {
 
   async updateSettings(officeId: string, data: { timing?: string }) {
     if (!TIMINGS.includes(data.timing as SettlementTiming)) {
-      throw new BadRequestException('정산 시점은 잔금이 끝난 뒤(closed) 또는 돈이 들어온 달(received)이어야 합니다.');
+      throw new BadRequestException('정산 시점은 잔금이 끝난 뒤 또는 돈이 들어온 달 가운데 하나여야 합니다.');
     }
     await this.prisma.office.update({
       where: { id: officeId },
@@ -136,8 +161,10 @@ export class SettlementService {
           detail: line.detail as unknown as SettlementDetailItem[],
         })),
         waiting: live.result.waiting,
+        cancelledReceipts: live.cancelledInMonth,
         blockedReason: null,
         canUnconfirm: latest?.month === month && confirmed.lines.every((line) => !line.paidAt),
+        latestConfirmedMonth: latest?.month ?? null,
       };
     }
     return {
@@ -147,8 +174,43 @@ export class SettlementService {
       confirmedAt: null,
       lines: live.result.lines.map((line) => ({ ...line, lineId: null, paidAt: null })),
       waiting: live.result.waiting,
+      cancelledReceipts: live.cancelledInMonth,
       blockedReason: this.blockedReason(month, latest?.month ?? null, live.result.lines.length),
       canUnconfirm: false,
+      latestConfirmedMonth: latest?.month ?? null,
+    };
+  }
+
+  /**
+   * 아직 확정하지 않은 다음 정산에서 내 몫이 얼마로 계산되는지 (본인 줄만). 정산 화면과 같은 계산(calculate)이다.
+   * 다음 정산 달 = 가장 최근 확정 달의 다음 달, 확정한 적이 없으면 이번 달(한국 시각). 대표가 확정하면 그 달로 들어간다.
+   */
+  async previewMine(officeId: string, userId: string) {
+    const latest = await this.prisma.settlement.findFirst({
+      where: { officeId },
+      orderBy: { month: 'desc' },
+      select: { month: true },
+    });
+    const month = latest ? nextMonth(latest.month) : currentMonth();
+    const { result } = await this.calculate(this.prisma, officeId, month);
+    const line = result.lines.find((item) => item.userId === userId) ?? null;
+    return {
+      month,
+      line: line
+        ? {
+            employmentType: line.employmentType,
+            withholdTax: line.withholdTax,
+            targetWon: line.targetWon,
+            shareWon: line.shareWon,
+            baseWon: line.baseWon,
+            adjustWon: line.adjustWon,
+            carryInWon: line.carryInWon,
+            withholdingWon: line.withholdingWon,
+            netWon: line.netWon,
+            carryOutWon: line.carryOutWon,
+            detail: line.detail,
+          }
+        : null,
     };
   }
 
@@ -225,13 +287,15 @@ export class SettlementService {
             detail: line.detail as unknown as Prisma.InputJsonValue,
           })),
         });
-        if (result.includedReceiptIds.length > 0) {
+        // 받은 몫(공동중개)은 입금 기록이 아니라 확정 정산의 계산 근거로 알아본다 — 입금 기록에만 정산 표시를 한다
+        const receiptIds = result.includedReceiptIds.filter((id) => !isPartnerShareRowId(id));
+        if (receiptIds.length > 0) {
           // 계산한 뒤 그 사이에 취소되거나 다른 정산에 들어간 입금이 있으면 전부 되돌린다.
           const { count } = await tx.commissionReceipt.updateMany({
-            where: { id: { in: result.includedReceiptIds }, officeId, settlementId: null, voidedAt: null },
+            where: { id: { in: receiptIds }, officeId, settlementId: null, voidedAt: null },
             data: { settlementId: settlement.id },
           });
-          if (count !== result.includedReceiptIds.length) {
+          if (count !== receiptIds.length) {
             throw new ConflictException('계산하는 사이에 입금 기록이 바뀌었습니다. 다시 확인해 주세요.');
           }
         }
@@ -474,12 +538,18 @@ export class SettlementService {
                 stage: true,
                 stageChangedAt: true,
                 isCancelled: true,
+                cancelledAt: true,
                 listing: {
                   select: {
                     property: {
                       select: {
                         site: { select: { name: true } },
-                        unit: { select: { name: true, dong: { select: { name: true, isPlaceholder: true } } } },
+                        unit: {
+                          select: {
+                            name: true, floor: true, floorEnd: true, floorLabel: true,
+                            dong: { select: { name: true, isPlaceholder: true } },
+                          },
+                        },
                       },
                     },
                   },
@@ -513,9 +583,15 @@ export class SettlementService {
         balanceDone: done,
         // 잔금 완료(completed)로 바뀐 시각만 안다. 그 뒤 종료(closed)까지 갔으면 시각을 묻지 않는다.
         balanceDoneAt: done && payment.deal.stage === 'completed' ? payment.deal.stageChangedAt : null,
+        dealCancelled: payment.deal.isCancelled,
         reversal: receipt.kind === 'refund' ? reversals.get(receipt.paymentId) : undefined,
       };
     });
+
+    // 공동중개 상대가 수금한 청구에서 받은 우리 몫(받음 기록)도 입금 한 줄로 넣는다 (같은 규칙)
+    const shareInputs = await loadPartnerShareInputs(db, officeId);
+    const shareRows = partnerShareCalcRows(shareInputs.distributions, shareInputs.confirmed, end);
+    calcReceipts.push(...shareRows);
 
     const dealIds = [...new Set(calcReceipts.map((receipt) => receipt.dealId))];
     const participantRows = dealIds.length
@@ -564,7 +640,22 @@ export class SettlementService {
       carryInWon: carryIn.get(user.id) ?? 0,
     }));
 
-    return { timing, result: computeSettlement({ monthEnd: end, timing, receipts: calcReceipts, participants, staff }) };
+    const result = computeSettlement({ monthEnd: end, timing, receipts: calcReceipts, participants, staff });
+    // 취소한 거래의 입금은 받은 날과 취소한 날 가운데 늦은 날이 속한 달에만 보인다
+    const { start } = monthRange(month);
+    const eventAt = new Map([
+      ...receipts.map((r) => {
+        const cancelledAt = r.payment.deal.cancelledAt;
+        const at = cancelledAt && cancelledAt > r.receivedAt ? cancelledAt : r.receivedAt;
+        return [r.id, at.getTime()] as const;
+      }),
+      ...shareRows.map((r) => [r.id, r.eventAt.getTime()] as const),
+    ]);
+    const cancelledInMonth = result.cancelled.filter((item) => {
+      const at = eventAt.get(item.receiptId) ?? 0;
+      return at >= start.getTime() && at < end.getTime();
+    });
+    return { timing, result, cancelledInMonth };
   }
 }
 

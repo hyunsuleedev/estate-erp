@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { PropertiesService } from './properties.service';
+import { buildPropertySearchWhere } from './property-search';
 
 describe('PropertiesService — site/unit chain guard', () => {
   function createService() {
@@ -74,7 +75,7 @@ describe('PropertiesService — site/unit chain guard', () => {
       ).rejects.toThrow(BadRequestException);
       await expect(
         service.create('office-1', { siteId: 'site-1', unitId: 'unit-1' }),
-      ).rejects.toThrow('unitId is not allowed for land properties');
+      ).rejects.toThrow('토지에는 호수를 붙일 수 없습니다.');
     });
 
     it('allows a land property without a unit', async () => {
@@ -99,7 +100,7 @@ describe('PropertiesService — site/unit chain guard', () => {
         ).rejects.toThrow(BadRequestException);
         await expect(
           service.create('office-1', { siteId: 'site-1' }),
-        ).rejects.toThrow('unitId is required for building-type properties');
+        ).rejects.toThrow('호수를 골라야 합니다');
       },
     );
 
@@ -118,5 +119,28 @@ describe('PropertiesService — site/unit chain guard', () => {
         service.create('office-1', { siteId: 'site-1', unitId: 'unit-1' }),
       ).resolves.toEqual({ id: 'property-1' });
     });
+  });
+});
+
+describe('buildPropertySearchWhere — 전화로 들은 동·호로 찾기', () => {
+  const flatten = (value: unknown): string => JSON.stringify(value);
+
+  it('splits glued "108동1505호" into a dong token and a unit token', () => {
+    const where = buildPropertySearchWhere('고덕그라시움 108동1505호') as { AND: unknown[] };
+    expect(where.AND).toHaveLength(3);
+    expect(flatten(where.AND[1])).toContain('"dong":{"name":{"in":["108","108동"]}}');
+    expect(flatten(where.AND[2])).toContain('"unit":{"name":{"in":["1505","1505호"]}}');
+  });
+
+  it('lets a bare number match either a dong or a unit', () => {
+    const where = buildPropertySearchWhere('1505');
+    const text = flatten(where);
+    expect(text).toContain('"dong":{"name":{"in":["1505","1505동"]}}');
+    expect(text).toContain('"unit":{"name":{"in":["1505","1505호"]}}');
+  });
+
+  it('keeps a site name search as before', () => {
+    expect(flatten(buildPropertySearchWhere('고덕그라시움'))).toContain('"name":{"contains":"고덕그라시움"');
+    expect(buildPropertySearchWhere('   ')).toBeNull();
   });
 });

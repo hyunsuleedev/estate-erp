@@ -29,6 +29,9 @@ export interface BuyerRequirementMatch {
   listingId: string;
   buyerReqId: string;
   stage: string;
+  /** 종료 직전 단계와 종료 이유 (MatchClosedReason) — 종료한 매칭만 */
+  closedFromStage?: string | null;
+  closedReason?: string | null;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
@@ -52,6 +55,12 @@ export interface BuyerRequirementMatch {
         type: string;
         roadAddress: string | null;
         jibunAddress: string | null;
+      } | null;
+      unit?: {
+        id: string;
+        name: string | null;
+        floor: number | null;
+        dong?: { id: string; name: string; isPlaceholder?: boolean } | null;
       } | null;
     } | null;
   } | null;
@@ -191,11 +200,24 @@ export interface CreateBuyerRequirementDto {
   }[];
 }
 
+/** 수정은 보낸 칸만 바꾼다. null을 보내면 그 칸을 비운다 (입주 희망일 · 연락일 · 담당 · 메모 · 거래유형). */
 export interface UpdateBuyerRequirementDto extends Omit<
   CreateBuyerRequirementDto,
-  'buyerIntakeId' | 'contactId' | 'createNewIntake'
+  | 'buyerIntakeId'
+  | 'contactId'
+  | 'createNewIntake'
+  | 'transactionType'
+  | 'moveInDate'
+  | 'assignedToId'
+  | 'nextContactDate'
+  | 'memo'
 > {
-  lastContactDate?: string;
+  transactionType?: string | null;
+  moveInDate?: string | null;
+  assignedToId?: string | null;
+  nextContactDate?: string | null;
+  lastContactDate?: string | null;
+  memo?: string | null;
 }
 
 export function createBuyerRequirementsApi(request: RequestFn) {
@@ -232,8 +254,9 @@ export function createBuyerRequirementsApi(request: RequestFn) {
         body: { priorityRank },
       }),
 
+    /** 완료로 바꾸면 그 조건의 진행 중 매칭도 닫히고, 닫은 수가 closedMatchCount로 온다 */
     updateStatus: (id: string, status: BuyerRequirementStatus) =>
-      request<BuyerRequirement>(`/buyer-requirements/${id}/status`, {
+      request<BuyerRequirement & { closedMatchCount: number }>(`/buyer-requirements/${id}/status`, {
         method: 'PATCH',
         body: { status },
       }),

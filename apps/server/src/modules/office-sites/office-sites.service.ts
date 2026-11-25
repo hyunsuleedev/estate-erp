@@ -6,16 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RegisterPrivateSiteDto } from './dto/register-private-site.dto';
-
-/**
- * 단일 동 건물은 placeholder Dong으로 Site → Dong → Unit 체인을 통일한다.
- * 단독주택·토지는 Dong이 없고, 아파트는 동수를 모르면 사용자가 동을 직접 추가한다.
- */
-function needsPlaceholderDong(type: string, totalDongs: number | undefined): boolean {
-  if (type === 'house' || type === 'land') return false;
-  if (totalDongs !== undefined) return totalDongs === 1;
-  return type !== 'apartment';
-}
+import { createPrivateSiteRecord } from '../sites/private-site';
 
 @Injectable()
 export class OfficeSitesService {
@@ -73,7 +64,7 @@ export class OfficeSitesService {
     });
 
     if (!officeSite) {
-      throw new NotFoundException('OfficeSite not found');
+      throw new NotFoundException('관리단지를 찾을 수 없습니다. 이미 목록에서 뺐을 수 있습니다.');
     }
 
     return officeSite;
@@ -96,7 +87,14 @@ export class OfficeSitesService {
         memo: dto.memo,
         isFavorite: dto.isFavorite,
       },
-      create: { officeId, ...dto },
+      // 받는 칸만 골라 넣는다. 본문을 펼치면 본문의 officeId가 앞의 값을 덮어
+      // 다른 사무소의 관리단지 목록에 줄이 생겼다(2026-11-22 검토)
+      create: {
+        officeId,
+        siteId: dto.siteId,
+        memo: dto.memo,
+        isFavorite: dto.isFavorite,
+      },
       include: {
         site: {
           include: {
@@ -150,28 +148,18 @@ export class OfficeSitesService {
         );
       }
 
-      const site = await tx.site.create({
-        data: {
-          officeId,
-          isPublic: false,
-          isLocked: false,
-          type: dto.type,
-          name: dto.name,
-          wardCode: dto.wardCode,
-          roadAddress: dto.roadAddress,
-          jibunAddress: dto.jibunAddress,
-          zipCode: dto.zipCode,
-          builtYear: dto.builtYear,
-          totalUnits: dto.totalUnits,
-          totalDongs: dto.totalDongs,
-        },
+      // 단지 + 동 구분 없는 동(필요할 때) — POST /sites와 같은 함수로 만든다
+      const site = await createPrivateSiteRecord(tx, officeId, {
+        type: dto.type,
+        name: dto.name,
+        wardCode: dto.wardCode,
+        roadAddress: dto.roadAddress,
+        jibunAddress: dto.jibunAddress,
+        zipCode: dto.zipCode,
+        builtYear: dto.builtYear,
+        totalUnits: dto.totalUnits,
+        totalDongs: dto.totalDongs,
       });
-
-      if (needsPlaceholderDong(dto.type, dto.totalDongs)) {
-        await tx.dong.create({
-          data: { officeId, siteId: site.id, name: '-', isPlaceholder: true },
-        });
-      }
 
       return tx.officeSite.create({
         data: { officeId, siteId: site.id },
@@ -203,7 +191,8 @@ export class OfficeSitesService {
 
     return this.prisma.officeSite.update({
       where: { id: officeSite.id },
-      data: dto,
+      // 메모·고정만 바꾼다. 본문을 그대로 넣으면 officeId·siteId까지 바꿀 수 있었다
+      data: { memo: dto.memo, isFavorite: dto.isFavorite },
       include: {
         site: {
           include: {
@@ -233,7 +222,7 @@ export class OfficeSitesService {
     const searchTerms = query.trim().split(/\s+/).filter(Boolean);
 
     if (searchTerms.length === 0) {
-      throw new BadRequestException('q is required');
+      throw new BadRequestException('검색어를 입력해 주세요.');
     }
 
     return this.prisma.site.findMany({
@@ -282,7 +271,7 @@ export class OfficeSitesService {
     });
 
     if (!site) {
-      throw new NotFoundException('Site not found');
+      throw new NotFoundException('단지를 찾을 수 없습니다.');
     }
 
     return site;

@@ -1,44 +1,52 @@
 // ============================================================
-// 연락처 (모든 사람의 기본 정보)
+// 연락처 (모든 사람·법인의 기본 정보 — 법적 권리주체)
+// kind: 'person' (개인) | 'organization' (법인·단체)
 // ============================================================
 
 model Contact {
-  id        String   @id @default(uuid()) @db.Uuid
-  officeId  String   @map("office_id") @db.Uuid
-  name      String
-  email     String?
-  memo      String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                  String   @id @default(uuid()) @db.Uuid
+  officeId            String   @map("office_id") @db.Uuid
+  kind                String   @default("person") // person, organization
+  name                String
+  businessRegNo       String?  @map("business_reg_no")
+  email               String?
+  memo                String?
+  referredByContactId String?  @map("referred_by_contact_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
 
-  office              Office                 @relation(fields: [officeId], references: [id])
-  phones              ContactPhone[]
-  propertyContacts    PropertyContact[]
-  buyerIntakeContacts BuyerIntakeContact[]
-  consultations       Consultation[]
-  tenants             Tenant[]
-  tasks               Task[]
-  calendarEvents      CalendarEvent[]
-  dealsAsBuyer        Deal[]                 @relation("DealBuyer")
-  dealsAsSeller       Deal[]                 @relation("DealSeller")
-  contractsAsBuyer    Contract[]             @relation("ContractBuyer")
-  contractsAsSeller   Contract[]             @relation("ContractSeller")
-  contractParties     ContractParty[]
-  commissionPayments  CommissionPayment[]    @relation("CommissionPayer")
-  // 통화 녹음
-  callRecordings      CallRecording[]
+  office                  Office                 @relation(fields: [officeId], references: [id])
+  referredBy              Contact?               @relation("ContactReferral", fields: [officeId, referredByContactId], references: [officeId, id], onDelete: Restrict)
+  referrals               Contact[]              @relation("ContactReferral")
+  phones                  ContactPhone[]
+  organizationParty       Party?                 @relation("PartyOrganizationContact")
+  partyMemberships        PartyMember[]          @relation("PartyMemberContact")
+  propertyContacts        PropertyContact[]
+  requestedListingIntakes ListingIntake[]        @relation("ListingIntakeRequester")
+  buyerIntakeContacts     BuyerIntakeContact[]
+  consultations           Consultation[]
+  leaseTenancies          PropertyLeaseTenant[]
+  tasks                   Task[]
+  calendarEvents          CalendarEvent[]
+  dealsAsBuyer            Deal[]                 @relation("DealBuyer")
+  dealsAsSeller           Deal[]                 @relation("DealSeller")
+  contractParties         ContractParty[]
+  commissionPayments      CommissionPayment[]    @relation("CommissionPayer")
+  // 통화 녹음 및 제안
+  callRecordings          CallRecording[]
+  callActionSuggestions   CallActionSuggestion[]
   // 통화 이벤트 로그 (CTI)
-  callLogs            CallLog[]
-  // ContactRelation 양방향
-  relationsAsMain     ContactRelation[]      @relation("MainContact")
-  relationsAsRelated  ContactRelation[]      @relation("RelatedContact")
-  groupMemberships    ContactGroupMember[]
-  tagAssignments      ContactTagAssignment[]
+  callLogs                CallLog[]
+  groupMemberships        ContactGroupMember[]
+  tagAssignments          ContactTagAssignment[]
   /// 이 사람이 대표 고객인 프로젝트
-  primaryProjects     Project[]              @relation("ProjectPrimaryContact")
+  primaryProjects         Project[]              @relation("ProjectPrimaryContact")
 
   // office_id를 포함하는 관계 FK가 tenant 경계를 DB에서도 강제할 수 있게 한다.
   @@unique([officeId, id])
+  @@unique([officeId, id, kind])
+  @@index([officeId, kind])
+  @@index([officeId, referredByContactId])
   @@map("contacts")
 }
 
@@ -154,104 +162,154 @@ model ContactPhone {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office  Office  @relation(fields: [officeId], references: [id])
-  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Cascade)
 
-  // 같은 사무소의 canonical 번호는 정확히 한 ContactPhone만 소유할 수 있다.
-  @@unique([officeId, phone])
+  // 같은 사무소의 mobile 번호만 유일(partial unique index는 migration SQL). 집전화/팩스 등은 공유 허용.
+  @@unique([contactId, phone])
+  @@index([officeId, phone])
   @@index([contactId])
   // Contact당 대표번호는 최대 한 개. partial unique index는 migration SQL에서 생성한다.
   @@map("contact_phones")
 }
 
 // ============================================================
-// 연락처 관계 (사람 ↔ 사람, 영구)
-// 의뢰가 끝나도 변하지 않는 관계(가족)만 둔다. 법무사·세무사·대리인은 의뢰마다
-// 달라지므로 PropertyContact.role에 적는다.
+// 집단/소속 (세대 household · 법인 organization)
+// 개인(Contact kind=person)을 묶어 세대 단위 상담·자산 조회 및 법인 담당자를 표현한다.
+// 법인은 Contact(kind=organization)에 존재하며 Party(kind=organization)가 1:1 연결된다.
 // ============================================================
 
-model ContactRelation {
-  id               String   @id @default(uuid()) @db.Uuid
-  officeId         String   @map("office_id") @db.Uuid
-  /// 기준 인물.
-  contactId        String   @map("contact_id") @db.Uuid
-  /// 상대 인물. relationType은 이 인물이 기준 인물에게 어떤 관계인지 뜻한다.
-  relatedContactId String   @map("related_contact_id") @db.Uuid
-  relationType     String   @map("relation_type") // parent, spouse, child, sibling, grandparent, grandchild, other
-  /// 기준 인물 화면에서 보여줄 보충 라벨 ("큰어머니", "외할머니")
-  label            String?
-  /// 상대 인물 화면에서 보여줄 역방향 보충 라벨 ("조카", "외손녀")
-  inverseLabel     String?  @map("inverse_label")
-  memo             String?
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+model Party {
+  id                      String   @id @default(uuid()) @db.Uuid
+  officeId                String   @map("office_id") @db.Uuid
+  kind                    String // household | organization
+  name                    String?
+  organizationContactId   String?  @map("organization_contact_id") @db.Uuid
+  organizationContactKind String?  @map("organization_contact_kind")
+  homePhone               String?  @map("home_phone")
+  memo                    String?
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
 
-  office         Office  @relation(fields: [officeId], references: [id])
-  contact        Contact @relation("MainContact", fields: [contactId], references: [id])
-  relatedContact Contact @relation("RelatedContact", fields: [relatedContactId], references: [id])
+  office              Office        @relation(fields: [officeId], references: [id])
+  organizationContact Contact?      @relation("PartyOrganizationContact", fields: [officeId, organizationContactId, organizationContactKind], references: [officeId, id, kind], onDelete: Cascade)
+  members             PartyMember[]
 
-  // 자기 연결 금지, relationType 허용값, 방향을 무시한 Contact 쌍 고유성은
-  // PostgreSQL CHECK / expression unique index로 강제한다 (migration SQL 참조).
-  @@index([contactId, officeId])
-  @@index([relatedContactId, officeId])
-  @@map("contact_relations")
+  @@unique([officeId, id])
+  @@unique([officeId, id, kind])
+  @@unique([officeId, organizationContactId])
+  @@unique([officeId, organizationContactId, organizationContactKind])
+  @@index([officeId, kind])
+  @@map("parties")
+}
+
+model PartyMember {
+  id          String   @id @default(uuid()) @db.Uuid
+  officeId    String   @map("office_id") @db.Uuid
+  partyId     String   @map("party_id") @db.Uuid
+  partyKind   String   @map("party_kind") // household | organization
+  contactId   String   @map("contact_id") @db.Uuid
+  contactKind String   @default("person") @map("contact_kind")
+  roleLabel   String?  @map("role_label")
+  isPrimary   Boolean  @default(false) @map("is_primary")
+  status      String   @default("active") // active | inactive
+  memo        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  office  Office  @relation(fields: [officeId], references: [id])
+  party   Party   @relation(fields: [officeId, partyId, partyKind], references: [officeId, id, kind], onDelete: Cascade)
+  contact Contact @relation("PartyMemberContact", fields: [officeId, contactId, contactKind], references: [officeId, id, kind], onDelete: Cascade)
+
+  @@index([officeId, partyId])
+  @@index([officeId, contactId])
+  @@map("party_members")
 }
 
 // ============================================================
-// 매물 관련 연락처 (매물 ↔ 사람, 역할별)
+// 매물 관련 연락처 (매물 ↔ 사람/법인, 소유·권리 이력)
 // ============================================================
 
 model PropertyContact {
-  id         String   @id @default(uuid()) @db.Uuid
-  officeId   String   @map("office_id") @db.Uuid
-  contactId  String   @map("contact_id") @db.Uuid
-  propertyId String   @map("property_id") @db.Uuid
-  role       String // owner, co_owner, representative, lawyer, tax_agent
-  shareRatio Decimal? @map("share_ratio") @db.Decimal // owner/co_owner 지분비율 (%)
-  isResident Boolean  @default(false) @map("is_resident")
+  id           String    @id @default(uuid()) @db.Uuid
+  officeId     String    @map("office_id") @db.Uuid
+  contactId    String    @map("contact_id") @db.Uuid
+  propertyId   String    @map("property_id") @db.Uuid
+  role         String // owner, co_owner, representative, lawyer, tax_agent
+  shareRatio   Decimal?  @map("share_ratio") @db.Decimal // owner/co_owner 지분비율 (%)
+  isResident   Boolean   @default(false) @map("is_resident")
   /// 이 Property에서의 주 연락 창구. Contact 자체의 전역 대표 여부가 아니다.
-  isPrimary  Boolean  @default(false) @map("is_primary")
-  status     String   @default("active") // active, transferred, archived
-  memo       String?
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  isPrimary    Boolean   @default(false) @map("is_primary")
+  status       String    @default("active") // active, transferred, archived
+  startedAt    DateTime? @map("started_at")
+  endedAt      DateTime? @map("ended_at")
+  sourceDealId String?   @map("source_deal_id") @db.Uuid
+  memo         String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  office   Office   @relation(fields: [officeId], references: [id])
-  contact  Contact  @relation(fields: [contactId], references: [id])
-  property Property @relation(fields: [propertyId], references: [id])
+  office     Office   @relation(fields: [officeId], references: [id])
+  contact    Contact  @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
+  property   Property @relation(fields: [propertyId], references: [id])
+  sourceDeal Deal?    @relation("PropertyContactSourceDeal", fields: [sourceDealId], references: [id], onDelete: SetNull)
 
-  @@unique([contactId, propertyId, role])
+  @@index([contactId, propertyId, role])
   @@index([officeId])
   @@index([propertyId])
-  // 활성 주 연락처는 Property당 최대 한 명. Prisma가 partial unique index를
-  // 표현하지 못하므로 migration SQL에서 DB 제약을 생성한다.
+  @@index([sourceDealId])
+  // 활성 중복 역할 방지 & 활성 주 연락처는 Property당 최대 한 명 (partial unique index는 migration SQL).
   @@map("property_contacts")
 }
 
 // ============================================================
-// 세입자 (매물별 현 거주자 + 계약정보)
+// 임대차 계약 및 임차인 (매물별 임대차 1건 + N명 임차인/거주자)
 // ============================================================
 
-model Tenant {
-  id            String    @id @default(uuid()) @db.Uuid
-  officeId      String    @map("office_id") @db.Uuid
-  propertyId    String    @map("property_id") @db.Uuid
-  contactId     String    @map("contact_id") @db.Uuid
-  deposit       Int? // 보증금 (만원)
-  monthlyRent   Int?      @map("monthly_rent") // 월세 (만원)
-  contractStart DateTime? @map("contract_start")
-  contractEnd   DateTime? @map("contract_end")
-  moveOutDate   DateTime? @map("move_out_date")
-  status        String    @default("residing") // residing, moving_out, moved
-  memo          String?
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+model PropertyLease {
+  id               String    @id @default(uuid()) @db.Uuid
+  officeId         String    @map("office_id") @db.Uuid
+  propertyId       String    @map("property_id") @db.Uuid
+  deposit          Int? // 보증금 (만원)
+  monthlyRent      Int?      @map("monthly_rent") // 월세 (만원)
+  contractStart    DateTime? @map("contract_start")
+  contractEnd      DateTime? @map("contract_end")
+  moveOutDate      DateTime? @map("move_out_date")
+  status           String    @default("residing") // residing, moving_out, moved
+  sourceDealId     String?   @map("source_deal_id") @db.Uuid
+  sourceContractId String?   @map("source_contract_id") @db.Uuid
+  memo             String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  office   Office   @relation(fields: [officeId], references: [id])
-  property Property @relation(fields: [propertyId], references: [id])
-  contact  Contact  @relation(fields: [contactId], references: [id])
+  office         Office                @relation(fields: [officeId], references: [id])
+  property       Property              @relation(fields: [propertyId], references: [id])
+  sourceDeal     Deal?                 @relation("PropertyLeaseSourceDeal", fields: [sourceDealId], references: [id], onDelete: SetNull)
+  sourceContract Contract?             @relation("PropertyLeaseSourceContract", fields: [sourceContractId], references: [id], onDelete: SetNull)
+  tenants        PropertyLeaseTenant[]
 
+  @@unique([officeId, id])
   @@index([officeId])
   @@index([officeId, status, contractEnd])
   @@index([propertyId])
-  @@map("tenants")
+  @@map("property_leases")
+}
+
+model PropertyLeaseTenant {
+  id        String   @id @default(uuid()) @db.Uuid
+  officeId  String   @map("office_id") @db.Uuid
+  leaseId   String   @map("lease_id") @db.Uuid
+  contactId String   @map("contact_id") @db.Uuid
+  role      String   @default("tenant") // tenant, co_tenant, resident
+  isPrimary Boolean  @default(false) @map("is_primary")
+  memo      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  office  Office        @relation(fields: [officeId], references: [id])
+  lease   PropertyLease @relation(fields: [officeId, leaseId], references: [officeId, id], onDelete: Cascade)
+  contact Contact       @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
+
+  @@unique([leaseId, contactId])
+  @@index([officeId, contactId])
+  // 임대차당 주 연락 임차인은 최대 한 명 (partial unique index는 migration SQL).
+  @@map("property_lease_tenants")
 }

@@ -108,13 +108,22 @@ describe('ListingIntakesService', () => {
     expect(args.select.listings.select.advertisements.select).toEqual({
       id: true,
       channel: true,
+      cpAccountId: true,
+      externalAdId: true,
       status: true,
       advertisedPrice: true,
       advertisedDeposit: true,
       advertisedMonthlyRent: true,
+      floorExposure: true,
       startedAt: true,
+      lastSyncedAt: true,
       url: true,
+      memo: true,
       createdAt: true,
+      changeRequests: {
+        where: { status: { in: ['requested', 'in_progress', 'executed'] } },
+        orderBy: { createdAt: 'desc' },
+      },
     });
   });
 
@@ -189,6 +198,12 @@ describe('ListingIntakesService', () => {
     });
     expect(detailInclude.listings.include.advertisements).toEqual({
       orderBy: { createdAt: 'desc' },
+      include: {
+        changeRequests: {
+          where: { status: { in: ['requested', 'in_progress', 'executed'] } },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
     });
   });
 
@@ -551,11 +566,11 @@ describe('ListingIntakesService', () => {
                   AND: [
                     {
                       dong: {
-                        name: { equals: '101', mode: 'insensitive' },
+                        OR: [{ name: { equals: '101', mode: 'insensitive' } }],
                       },
                     },
                     {
-                      name: { equals: '1004', mode: 'insensitive' },
+                      OR: [{ name: { equals: '1004', mode: 'insensitive' } }],
                     },
                   ],
                 },
@@ -564,6 +579,58 @@ describe('ListingIntakesService', () => {
           ]),
         }),
       }),
+    );
+  });
+
+  it('also matches dong and unit typed with their unit suffix', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', { dong: '101동', unit: '1004호' });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              property: {
+                unit: {
+                  AND: [
+                    {
+                      dong: {
+                        OR: [
+                          { name: { equals: '101동', mode: 'insensitive' } },
+                          { name: { equals: '101', mode: 'insensitive' } },
+                        ],
+                      },
+                    },
+                    {
+                      OR: [
+                        { name: { equals: '1004호', mode: 'insensitive' } },
+                        { name: { equals: '1004', mode: 'insensitive' } },
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('requires every word of a multi-word search to match somewhere', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', { search: '그라시움 101동' });
+
+    const where = prisma.listingIntake.findMany.mock.calls[0][0].where;
+    const searchFilter = where.AND.find((filter: { AND?: unknown[] }) => Array.isArray(filter.AND));
+    expect(searchFilter.AND).toHaveLength(2);
+    expect(searchFilter.AND[1].OR).toEqual(
+      expect.arrayContaining([
+        { property: { unit: { dong: { name: { equals: '101', mode: 'insensitive' } } } } },
+      ]),
     );
   });
 
@@ -734,13 +801,13 @@ describe('ListingIntakesService', () => {
 
     await expect(
       service.findAll('office-1', { roomCount: -1 }),
-    ).rejects.toThrow('roomCount must be a non-negative integer');
+    ).rejects.toThrow('방 수는 0 이상의 정수로 입력해 주세요.');
     await expect(
       service.findAll('office-1', { bathRoomCount: 1.5 }),
-    ).rejects.toThrow('bathRoomCount must be a non-negative integer');
+    ).rejects.toThrow('욕실 수는 0 이상의 정수로 입력해 주세요.');
     await expect(
       service.findAll('office-1', { roomCount: 3, roomCountMin: 4 }),
-    ).rejects.toThrow('Use either roomCount or roomCountMin');
+    ).rejects.toThrow('방 수는 "정확히"와 "이상" 중 하나만 고르세요.');
   });
 
   it('uses ward code as the most specific region filter', async () => {
@@ -926,7 +993,7 @@ describe('ListingIntakesService', () => {
 
     await expect(
       service.updateLifecycleStatus('intake-1', 'office-1', 'verified'),
-    ).rejects.toThrow('Invalid ListingIntake lifecycle status');
+    ).rejects.toThrow('알 수 없는 의뢰 상태입니다.');
 
     expect(prisma.listingIntake.update).not.toHaveBeenCalled();
   });

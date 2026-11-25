@@ -44,9 +44,34 @@ model PartnerBroker {
   deals                Deal[]
   distributions        CommissionDistribution[]
   jointRequiredIntakes ListingIntake[]          @relation("ListingIntakeJointBrokeragePartner")
+  contacts             PartnerBrokerContact[]
 
+  @@unique([officeId, id])
   @@index([officeId, name])
   @@index([officeId, isActive])
   @@index([linkedOfficeId])
   @@map("partner_brokers")
+}
+
+/// 공동중개 상대 사무소 소속 중개사·실장 (1:N). CTI 수신 번호 조회에도 사용한다.
+model PartnerBrokerContact {
+  id              String   @id @default(uuid()) @db.Uuid
+  officeId        String   @map("office_id") @db.Uuid
+  partnerBrokerId String   @map("partner_broker_id") @db.Uuid
+  name            String
+  phone           String
+  normalizedPhone String   @map("normalized_phone")
+  role            String? // 대표 | 소속공인중개사 | 실장 등
+  isPrimary       Boolean  @default(false) @map("is_primary")
+  memo            String?
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  office        Office        @relation(fields: [officeId], references: [id])
+  partnerBroker PartnerBroker @relation(fields: [officeId, partnerBrokerId], references: [officeId, id], onDelete: Cascade)
+
+  @@index([officeId, normalizedPhone])
+  @@index([partnerBrokerId])
+  @@map("partner_broker_contacts")
 }

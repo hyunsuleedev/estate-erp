@@ -59,13 +59,16 @@ model Office {
   contactGroupMembers                  ContactGroupMember[]
   contactTags                          ContactTag[]
   contactTagAssignments                ContactTagAssignment[]
-  contactRelations                     ContactRelation[]
+  parties                              Party[]
+  partyMembers                         PartyMember[]
   propertyContacts                     PropertyContact[]
-  tenants                              Tenant[]
+  propertyLeases                       PropertyLease[]
+  propertyLeaseTenants                 PropertyLeaseTenant[]
   properties                           Property[]
   listingIntakes                       ListingIntake[]
   publicListings                       PublicListing[]
   listings                             Listing[]
+  cpAccounts                           OfficeCpAccount[]
   listingAdvertisements                ListingAdvertisement[]
   listingAdvertisementHistories        ListingAdvertisementHistory[]
   advertisementChangeRequests          AdvertisementChangeRequest[]
@@ -110,8 +113,9 @@ model Office {
   officeExpenseTemplates  OfficeExpenseTemplate[]
 
   // 공동중개 파트너 주소록
-  partnerBrokers     PartnerBroker[] @relation("OfficePartnerBrokers")
-  linkedFromPartners PartnerBroker[] @relation("LinkedAsPartner")
+  partnerBrokers        PartnerBroker[]        @relation("OfficePartnerBrokers")
+  linkedFromPartners    PartnerBroker[]        @relation("LinkedAsPartner")
+  partnerBrokerContacts PartnerBrokerContact[]
 
   // 공적장부 / 사진
   publicDocuments PublicDocument[]
@@ -196,8 +200,9 @@ model User {
   assignedRequirements        BuyerRequirement[]           @relation("AssignedAgent")
   assignedTasks               Task[]                       @relation("TaskAssignee")
   createdTasks                Task[]                       @relation("TaskCreator")
-  advertisementChangeRequests AdvertisementChangeRequest[] @relation("AdvertisementChangeRequester")
-  assignedTaskRequests        Task[]                       @relation("TaskAssigner")
+  advertisementChangeRequests         AdvertisementChangeRequest[] @relation("AdvertisementChangeRequester")
+  assignedAdvertisementChangeRequests AdvertisementChangeRequest[] @relation("AdvertisementChangeAssignee")
+  assignedTaskRequests                Task[]                       @relation("TaskAssigner")
   consultations               Consultation[]               @relation("ConsultationCreator")
   calendarEvents              CalendarEvent[]
 

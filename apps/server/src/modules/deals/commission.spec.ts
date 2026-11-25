@@ -42,6 +42,51 @@ describe('법정 중개보수 (commission)', () => {
       expect(getLegalMaxRate('sale', 90000)).toEqual({ rate: 0.5, cap: null });
     });
 
+    // 공인중개사법 시행규칙 별표1 (2021.10.19 시행). 금액은 만원, 경계값은 "이상"이 다음 구간이다.
+    it.each([
+      [4999, 0.6, 25],
+      [5000, 0.5, 80],
+      [19999, 0.5, 80],
+      [20000, 0.4, null],
+      [89999, 0.4, null],
+      [90000, 0.5, null],
+      [119999, 0.5, null],
+      [120000, 0.6, null],
+      [149999, 0.6, null],
+      [150000, 0.7, null],
+    ])('매매 %i만원 → %f%% (한도 %p)', (base, rate, cap) => {
+      expect(getLegalMaxRate('sale', base)).toEqual({ rate, cap });
+    });
+
+    it.each([
+      [4999, 0.5, 20],
+      [5000, 0.4, 30],
+      [9999, 0.4, 30],
+      [10000, 0.3, null],
+      [59999, 0.3, null],
+      [60000, 0.4, null],
+      [119999, 0.4, null],
+      [120000, 0.5, null],
+      [149999, 0.5, null],
+      [150000, 0.6, null],
+    ])('임대차 %i만원 → %f%% (한도 %p)', (base, rate, cap) => {
+      expect(getLegalMaxRate('jeonse', base)).toEqual({ rate, cap });
+      expect(getLegalMaxRate('monthly', base)).toEqual({ rate, cap });
+    });
+
+    it('전세 13억 → 0.5% = 한쪽 650만 (12억 이상 15억 미만 구간)', () => {
+      expect(calculateCommissionAmount('jeonse', 130000)).toEqual({ rate: 0.5, amount: 650 });
+    });
+
+    it('한도액이 있는 구간은 한도에서 멈춘다', () => {
+      // 매매 1.9억 × 0.5% = 95만 → 한도 80만
+      expect(calculateCommissionAmount('sale', 19000)).toEqual({ rate: 0.5, amount: 80 });
+      // 전세 9천만 × 0.4% = 36만 → 한도 30만
+      expect(calculateCommissionAmount('jeonse', 9000)).toEqual({ rate: 0.4, amount: 30 });
+      // 매매 4천만 × 0.6% = 24만 → 한도 25만 아래
+      expect(calculateCommissionAmount('sale', 4000)).toEqual({ rate: 0.6, amount: 24 });
+    });
+
     it('propertyKind 생략 시 housing 으로 동작 (하위호환)', () => {
       expect(getLegalMaxRate('jeonse', 30000)).toEqual(
         getLegalMaxRate('jeonse', 30000, 'housing'),

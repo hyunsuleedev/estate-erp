@@ -150,7 +150,7 @@ suite('private site registration PostgreSQL integration', () => {
     expect(await search(officeB, 'QA전용단지')).toEqual([]);
 
     const privateSite = await db.site.findFirstOrThrow({ where: { name: 'QA전용단지' } });
-    await expect(service.add(officeB, { siteId: privateSite.id })).rejects.toThrow('Site not found');
+    await expect(service.add(officeB, { siteId: privateSite.id })).rejects.toThrow('단지를 찾을 수 없습니다.');
   });
 
   it('refuses duplicates per office and against public sites only', async () => {
@@ -205,7 +205,7 @@ suite('private site registration PostgreSQL integration', () => {
     });
     expect(unit).toMatchObject({ officeId: officeA, siteId, name: '101호' });
 
-    await expect(sites.overview(siteId, officeB)).rejects.toThrow('Site not found');
+    await expect(sites.overview(siteId, officeB)).rejects.toThrow('단지를 찾을 수 없습니다.');
     await expect(
       units.create(officeB, { siteId, dongId: overview.defaultDongId!, name: '102호' }),
     ).rejects.toThrow();
@@ -223,12 +223,12 @@ suite('private site registration PostgreSQL integration', () => {
     const dongs = new DongsService(db as PrismaService);
     const units = new UnitsService(db as PrismaService);
 
-    await expect(dongs.create(officeA, { siteId: site.id, name: '102' })).rejects.toThrow('Site not found');
-    await expect(dongs.update(dong.id, officeA, { name: '변경' })).rejects.toThrow('Dong not found');
-    await expect(dongs.remove(dong.id, officeA)).rejects.toThrow('Dong not found');
+    await expect(dongs.create(officeA, { siteId: site.id, name: '102' })).rejects.toThrow('단지를 찾을 수 없습니다.');
+    await expect(dongs.update(dong.id, officeA, { name: '변경' })).rejects.toThrow('동을 찾을 수 없습니다.');
+    await expect(dongs.remove(dong.id, officeA)).rejects.toThrow('동을 찾을 수 없습니다.');
     await expect(
       units.create(officeA, { siteId: site.id, dongId: dong.id, name: '102호' }),
-    ).rejects.toThrow('Site not found');
+    ).rejects.toThrow('단지를 찾을 수 없습니다.');
     await expect(units.update(unit.id, officeA, { name: '변경' })).rejects.toThrow('Unit not found');
     await expect(units.remove(unit.id, officeA)).rejects.toThrow('Unit not found');
 

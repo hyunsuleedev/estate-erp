@@ -1,4 +1,4 @@
-import { formatUnitName } from '@estate-erp/shared';
+import { formatPlaceLabel } from '@estate-erp/shared';
 import { NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
@@ -71,7 +71,7 @@ export async function appendIntakeStep(
   });
 }
 
-/** 매물 의뢰 단계의 기본 제목: "고덕그라시움 101동 3501 매물 의뢰". */
+/** 매물 의뢰 단계의 기본 제목: "고덕그라시움 101동 3501호 매물 의뢰". */
 export async function listingIntakeStepTitle(
   tx: Prisma.TransactionClient,
   propertyId: string,
@@ -88,18 +88,16 @@ export async function listingIntakeStepTitle(
       },
     },
   });
-  const dong = property?.unit?.dong;
-  const parts = [
-    property?.site.name,
-    dong && !dong.isPlaceholder
-      ? dong.name.endsWith('동')
-        ? dong.name
-        : `${dong.name}동`
-      : null,
-    formatUnitName(property?.unit),
-    '매물 의뢰',
-  ].filter(Boolean);
-  return parts.join(' ');
+  // "고덕그라시움 102동 2203호 매물 의뢰" (공용 formatPlaceLabel)
+  const place = property
+    ? formatPlaceLabel({
+        siteName: property.site.name,
+        dongName: property.unit?.dong?.name,
+        dongIsPlaceholder: property.unit?.dong?.isPlaceholder,
+        unit: property.unit,
+      })
+    : '';
+  return [place, '매물 의뢰'].filter(Boolean).join(' ');
 }
 
 export const BUYER_INTAKE_STEP_TITLE = '구매 의뢰';

@@ -53,6 +53,27 @@ export interface CtiLookupVendorContact {
   vendor: { id: string; name: string };
 }
 
+export interface CtiLookupPartnerBrokerContact {
+  id: string;
+  name: string;
+  phone: string;
+  role: string | null;
+  partnerBroker: { id: string; name: string };
+}
+
+export interface CtiLookupPartySummary {
+  id: string;
+  kind: string;
+  name: string | null;
+  roleLabel: string | null;
+  members: Array<{
+    contactId: string;
+    name: string;
+    roleLabel: string | null;
+    isPrimary: boolean;
+  }>;
+}
+
 export interface CtiLookupProperty {
   role: string;
   property: {
@@ -72,11 +93,14 @@ export interface CtiLookupResult {
   isNew: boolean;
   contact: {
     id: string;
+    kind: string;
     name: string;
     tags: string[];
     memo: string | null;
   } | null;
+  parties?: CtiLookupPartySummary[];
   vendorContacts: CtiLookupVendorContact[];
+  partnerBrokerContacts?: CtiLookupPartnerBrokerContact[];
   recentConsultations: Array<{
     id: string;
     type: string;

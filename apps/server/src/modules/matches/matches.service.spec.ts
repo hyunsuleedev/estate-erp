@@ -326,9 +326,95 @@ describe('MatchesService memo updates', () => {
         expectedUpdatedAt: 'not-a-date',
       }),
     ).rejects.toThrow(
-      new BadRequestException('expectedUpdatedAt must be a valid date'),
+      new BadRequestException('수정 시각 형식이 올바르지 않습니다.'),
     );
 
     expect(prisma.match.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('MatchesService read-only after deal conversion', () => {
+  it('refuses to move a converted match while its deal is still active', async () => {
+    const converted = {
+      ...buildMatch('dealCreated'),
+      deals: [{ id: 'deal-1', stage: 'preparing', isCancelled: false }],
+    };
+    const { service, prisma } = setup(converted as never);
+
+    await expect(
+      service.updateStage('match-1', 'office-1', { stage: 'suggested' }),
+    ).rejects.toThrow('거래로 전환한 매칭이라 단계를 바꿀 수 없습니다');
+    await expect(
+      service.updateStage('match-1', 'office-1', { stage: 'closed' }),
+    ).rejects.toThrow('거래로 전환한 매칭이라');
+    expect(prisma.match.update).not.toHaveBeenCalled();
+  });
+
+  it('lets a converted match move once its deal is cancelled', async () => {
+    const converted = {
+      ...buildMatch('dealCreated'),
+      deals: [{ id: 'deal-1', stage: 'preparing', isCancelled: true }],
+    };
+    const { service, prisma } = setup(converted as never);
+
+    await service.updateStage('match-1', 'office-1', { stage: 'negotiating' });
+
+    expect(prisma.match.update).toHaveBeenCalled();
+  });
+});
+
+describe('MatchesService completed buyer', () => {
+  it('does not reopen a match of a completed buyer requirement, but still lets it close', async () => {
+    const closed = {
+      ...buildMatch('closed'),
+      closedFromStage: 'viewing',
+      buyerRequirement: { status: 'completed', buyerIntake: { contacts: [] } },
+    };
+    const { service, prisma } = setup(closed as never);
+
+    await expect(
+      service.updateStage('match-1', 'office-1', { stage: 'viewing' }),
+    ).rejects.toThrow('완료한 희망 조건의 매칭입니다');
+    expect(prisma.match.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('MatchesService closed buyer intake', () => {
+  it('does not move or reopen a match whose buyer intake is closed', async () => {
+    const match = {
+      ...buildMatch('viewing'),
+      buyerRequirement: {
+        status: 'active',
+        buyerIntake: { lifecycleStatus: 'closed', contacts: [] },
+      },
+    };
+    const { service, prisma } = setup(match as never);
+
+    await expect(
+      service.updateStage('match-1', 'office-1', { stage: 'negotiating' }),
+    ).rejects.toThrow('종료한 구매 의뢰의 매칭입니다');
+    expect(prisma.match.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses to link a listing to a requirement of a closed buyer intake', async () => {
+    const prisma = {
+      listing: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'l1', intake: { lifecycleStatus: 'open' } }),
+      },
+      buyerRequirement: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'r1',
+          status: 'active',
+          buyerIntake: { lifecycleStatus: 'closed' },
+        }),
+      },
+      $transaction: jest.fn(),
+    };
+    const service = new MatchesService(prisma as never);
+
+    await expect(
+      service.create('office-1', { listingId: 'l1', buyerReqId: 'r1' }),
+    ).rejects.toThrow('종료한 구매 의뢰의 희망 조건입니다');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

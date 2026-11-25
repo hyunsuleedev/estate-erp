@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -16,6 +18,11 @@ import {
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { PublicDocumentsService } from './public-documents.service';
+
+/** 주소의 id 형식이 틀리면 DB까지 가지 않고 400으로 돌려준다 (그대로 두면 500이 난다). */
+const DocumentRequestIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new BadRequestException('잘못된 서류 발급 주소입니다.'),
+});
 
 @ApiTags('Public Documents')
 @ApiBearerAuth()
@@ -91,7 +98,7 @@ export class PublicDocumentsController {
 
   @Patch(':id/status')
   updateStatus(
-    @Param('id') id: string,
+    @Param('id', DocumentRequestIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body()
     body: {
@@ -108,7 +115,7 @@ export class PublicDocumentsController {
 
   @Post(':id/retry')
   retry(
-    @Param('id') id: string,
+    @Param('id', DocumentRequestIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.retry(id, user.officeId);
@@ -116,7 +123,7 @@ export class PublicDocumentsController {
 
   @Patch(':id/file')
   attachFile(
-    @Param('id') id: string,
+    @Param('id', DocumentRequestIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
     @Body()
     body: {
@@ -131,7 +138,7 @@ export class PublicDocumentsController {
 
   @Delete(':id')
   remove(
-    @Param('id') id: string,
+    @Param('id', DocumentRequestIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.remove(id, user.officeId);

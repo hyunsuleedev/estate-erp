@@ -136,32 +136,38 @@ export function diffComparisonChanges(
 }
 
 /**
- * 비교 줄에 "바로 이 내 광고"를 반영한다: 광고의 네이버 번호를 가진 줄은 내 광고다.
+ * 비교 줄에 "바로 이 내 광고" 및 같은 사무소의 다른 계정 광고를 반영한다.
  *
- * 저장하는 isMine은 읽어 온 그대로다(우리 사무소의 광고인지). "이 줄이 바로 이 광고인지"는 저장하지 않고
- * 광고의 지금 번호로 그때그때 가른다. 저장해 두면 번호가 바뀔 때 어긋난다 — 재광고로 새 번호가 되면
- * 새 번호의 줄이 남의 광고로 남고, 잘못 적은 번호를 바로잡으면 옛 번호의 경쟁 광고가 내 광고로 남는다.
+ * - articleNo === naverArticleNo → 바로 이 내 광고(ownAdvertisement)
+ * - officeOwnArticleNos에 포함 → 우리 사무소의 다른 계정·다른 채널 광고도 isMine = true
  */
 export function withOwnRow<Row extends { articleNo: string; isMine: boolean }>(
   rows: Row[],
   naverArticleNo: string | null,
+  officeOwnArticleNos?: ReadonlySet<string>,
 ): Row[] {
-  if (!naverArticleNo) return rows;
-  return rows.map((row) =>
-    row.articleNo === naverArticleNo && !row.isMine
-      ? { ...row, isMine: true }
-      : row,
-  );
+  if (!naverArticleNo && (!officeOwnArticleNos || officeOwnArticleNos.size === 0)) {
+    return rows;
+  }
+  return rows.map((row) => {
+    const mine =
+      (naverArticleNo != null && row.articleNo === naverArticleNo) ||
+      Boolean(officeOwnArticleNos?.has(row.articleNo));
+    return mine && !row.isMine ? { ...row, isMine: true } : row;
+  });
 }
 
 /** 화면 · MCP에 내보내는 비교 한 벌: 읽은 시각, 내 줄, 전체 줄 */
-export function toComparisonSet(
+export function toComparisonSet<
+  Row extends { articleNo: string; isMine: boolean; ranking: number | null },
+>(
   naverArticleNo: string | null,
-  rows: AdvertisementComparison[],
+  rows: Row[],
   observedAt: Date | null,
+  officeOwnArticleNos?: ReadonlySet<string>,
 ) {
   if (rows.length === 0 && !observedAt) return null;
-  const advertisements = withOwnRow(rows, naverArticleNo).sort(
+  const advertisements = withOwnRow(rows, naverArticleNo, officeOwnArticleNos).sort(
     (left, right) =>
       Number(right.isMine) - Number(left.isMine) ||
       (left.ranking ?? Number.MAX_SAFE_INTEGER) -
@@ -169,7 +175,7 @@ export function toComparisonSet(
   );
   return {
     observedAt,
-    mainAdvertisement:
+    ownAdvertisement:
       (naverArticleNo &&
         advertisements.find((row) => row.articleNo === naverArticleNo)) ||
       null,
@@ -225,7 +231,7 @@ export class OfficeAdvertisementsService {
       }),
     };
 
-    const [advertisements, total] = await Promise.all([
+    const [advertisements, total, officeArticleRows] = await Promise.all([
       this.prisma.listingAdvertisement.findMany({
         where,
         select: {
@@ -234,7 +240,36 @@ export class OfficeAdvertisementsService {
           status: true,
           naverArticleNo: true,
           lastCheckedAt: true,
-          comparisons: true,
+          comparisons: {
+            select: {
+              id: true,
+              officeId: true,
+              advertisementId: true,
+              articleNo: true,
+              sourceUrl: true,
+              isMine: true,
+              isActive: true,
+              articleName: true,
+              realtorName: true,
+              realtorId: true,
+              representativeTelNo: true,
+              price: true,
+              deposit: true,
+              monthlyRent: true,
+              ranking: true,
+              sameAddrCnt: true,
+              articleConfirmYmd: true,
+              floorInfo: true,
+              floorExposureMode: true,
+              verificationTypeCode: true,
+              seango: true,
+              epju: true,
+              firstSeenAt: true,
+              lastSeenAt: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
           comparisonRecords: {
             orderBy: { observedAt: 'desc' },
             take: 1,
@@ -246,7 +281,16 @@ export class OfficeAdvertisementsService {
         take: limit,
       }),
       this.prisma.listingAdvertisement.count({ where }),
+      this.prisma.listingAdvertisement.findMany({
+        where: { officeId, status: 'active', naverArticleNo: { not: null } },
+        select: { naverArticleNo: true },
+      }),
     ]);
+    const officeOwnArticleNos = new Set(
+      officeArticleRows
+        .map((row) => row.naverArticleNo)
+        .filter((no): no is string => Boolean(no)),
+    );
 
     return {
       items: advertisements.map((advertisement) => ({
@@ -258,6 +302,7 @@ export class OfficeAdvertisementsService {
           advertisement.naverArticleNo,
           advertisement.comparisons,
           advertisement.comparisonRecords[0]?.observedAt ?? null,
+          officeOwnArticleNos,
         ),
       })),
       pagination: {
@@ -418,16 +463,36 @@ export class OfficeAdvertisementsService {
       }
 
       const observedAt = new Date();
-      const existing = await tx.advertisementComparison.findMany({
-        where: { advertisementId: advertisement.id },
-        select: { articleNo: true },
-      });
+      const [existing, officeArticleRows] = await Promise.all([
+        tx.advertisementComparison.findMany({
+          where: { advertisementId: advertisement.id },
+          select: { articleNo: true },
+        }),
+        tx.listingAdvertisement.findMany({
+          where: { officeId, status: 'active', naverArticleNo: { not: null } },
+          select: { naverArticleNo: true },
+        }),
+      ]);
+      const officeOwnArticleNos = new Set(
+        officeArticleRows
+          .map((row) => row.naverArticleNo)
+          .filter((no): no is string => Boolean(no)),
+      );
+      if (advertisement.naverArticleNo) {
+        officeOwnArticleNos.add(advertisement.naverArticleNo);
+      }
       const existingArticleNos = new Set(existing.map((row) => row.articleNo));
       let created = 0;
       let updated = 0;
 
       for (const row of dto.advertisements) {
-        // isMine은 읽어 온 그대로 둔다. "바로 이 내 광고"인지는 저장하지 않고 광고의 번호로 가른다(withOwnRow).
+        // 같은 사무소의 다른 CP 계정이 올린 활성 광고 번호도 자동으로 우리 사무소 광고(isMine=true)로 잡는다.
+        const isSisterMine =
+          row.articleNo !== advertisement.naverArticleNo &&
+          officeOwnArticleNos.has(row.articleNo);
+        const normalizedRow: AdvertisementComparisonRowInput = isSisterMine
+          ? { ...row, isMine: true }
+          : row;
         await tx.advertisementComparison.upsert({
           where: {
             advertisementId_articleNo: {
@@ -435,8 +500,8 @@ export class OfficeAdvertisementsService {
               articleNo: row.articleNo,
             },
           },
-          create: this.rowCreateData(officeId, advertisement.id, row, observedAt),
-          update: this.rowUpdateData(row, observedAt),
+          create: this.rowCreateData(officeId, advertisement.id, normalizedRow, observedAt),
+          update: this.rowUpdateData(normalizedRow, observedAt),
         });
         if (existingArticleNos.has(row.articleNo)) updated += 1;
         else created += 1;
@@ -455,12 +520,13 @@ export class OfficeAdvertisementsService {
           where: { advertisementId: advertisement.id },
         }),
         advertisement.naverArticleNo,
+        officeOwnArticleNos,
       );
       const transactionType =
         advertisement.listing?.transactionType ??
         advertisement.transactionType ??
         'sale';
-      const main =
+      const ownAdvertisement =
         rows.find((row) => row.articleNo === advertisement.naverArticleNo) ??
         null;
       const analysis = analyzeAdvertisementComparison({
@@ -469,10 +535,10 @@ export class OfficeAdvertisementsService {
         advertisedDeposit: advertisement.advertisedDeposit,
         advertisedMonthlyRent: advertisement.advertisedMonthlyRent,
         hasComparison: true,
-        main,
+        ownAdvertisement,
         rows,
       });
-      const state = this.toRecordState(analysis, main);
+      const state = this.toRecordState(analysis, ownAdvertisement);
       const previous = await tx.advertisementComparisonRecord.findFirst({
         where: { advertisementId: advertisement.id },
         orderBy: { observedAt: 'desc' },
@@ -486,9 +552,9 @@ export class OfficeAdvertisementsService {
           ...state,
           totalCount:
             analysis.totalCount ?? rows.filter((row) => row.isActive).length,
-          ownPrice: main?.price ?? null,
-          ownDeposit: main?.deposit ?? null,
-          ownMonthlyRent: main?.monthlyRent ?? null,
+          ownPrice: ownAdvertisement?.price ?? null,
+          ownDeposit: ownAdvertisement?.deposit ?? null,
+          ownMonthlyRent: ownAdvertisement?.monthlyRent ?? null,
           lowestCompetitorAmount: lowestCompetitorAmount(transactionType, rows),
           signal: analysis.primarySignal,
           changes: diffComparisonChanges(previous, state),
@@ -553,6 +619,7 @@ export class OfficeAdvertisementsService {
         type: 'advertisement_comparison_changed',
         title: `네이버 비교에서 달라진 광고 ${advertisementCount}건`,
         content: summary.join(' · '),
+        linkType: 'my_ads',
       });
       await tx.advertisementComparisonRecord.updateMany({
         where: { id: { in: records.map((record) => record.id) } },

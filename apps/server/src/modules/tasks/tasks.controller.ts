@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
   Patch,
   Delete,
   Param,
+  ParseUUIDPipe,
   Body,
   Query,
   UseGuards,
@@ -16,6 +18,11 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+
+/** 주소의 id 형식이 틀리면 DB까지 가지 않고 400으로 돌려준다 (그대로 두면 uuid 변환 오류로 500이 난다). */
+const TaskIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new BadRequestException('잘못된 업무 주소입니다.'),
+});
 
 @ApiTags('업무')
 @ApiBearerAuth()
@@ -30,17 +37,19 @@ export class TasksController {
     @Query('status') status?: string,
     @Query('category') category?: string,
     @Query('assignedToId') assignedToId?: string,
+    @Query('projectId') projectId?: string,
   ) {
     return this.tasksService.findAll(user.officeId, {
       status: status || undefined,
       category: category || undefined,
       assignedToId: assignedToId || undefined,
+      projectId: projectId || undefined,
     });
   }
 
   @Get(':id')
   findOne(
-    @Param('id') id: string,
+    @Param('id', TaskIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.tasksService.findOne(id, user.officeId);
@@ -63,10 +72,12 @@ export class TasksController {
       listingIntakeId?: string;
       listingId?: string;
       consultationId?: string;
+      buyerIntakeId?: string;
       buyerReqId?: string;
       matchId?: string;
       dealId?: string;
       contractId?: string;
+      projectId?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -75,7 +86,7 @@ export class TasksController {
 
   @Post(':id/claim')
   claim(
-    @Param('id') id: string,
+    @Param('id', TaskIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.tasksService.claim(id, user.officeId, user.userId);
@@ -83,7 +94,7 @@ export class TasksController {
 
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', TaskIdPipe) id: string,
     @Body()
     dto: {
       title?: string;
@@ -98,10 +109,12 @@ export class TasksController {
       listingIntakeId?: string | null;
       listingId?: string | null;
       consultationId?: string | null;
+      buyerIntakeId?: string | null;
       buyerReqId?: string | null;
       matchId?: string | null;
       dealId?: string | null;
       contractId?: string | null;
+      projectId?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -129,14 +142,14 @@ export class TasksController {
     @Body() dto: { ids: string[] },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.tasksService.bulkDelete(dto.ids, user.officeId);
+    return this.tasksService.bulkDelete(dto.ids, user.officeId, user.role);
   }
 
   @Delete(':id')
   remove(
-    @Param('id') id: string,
+    @Param('id', TaskIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.tasksService.remove(id, user.officeId);
+    return this.tasksService.remove(id, user.officeId, user.role);
   }
 }

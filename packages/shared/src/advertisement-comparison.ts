@@ -30,14 +30,14 @@ export interface ComparisonRowLike {
 export interface ComparisonSubject<Row extends ComparisonRowLike = ComparisonRowLike> {
   /** sale | jeonse | monthly. 모르면 매매로 본다 */
   transactionType: string | null | undefined;
-  /** 우리 기록의 광고 가격. 네이버에 내 광고 줄이 없을 때만 쓴다 */
+  /** 우리 기록의 광고 가격. 네이버에 내 광고 줄(ownAdvertisement)이 없을 때만 쓴다 */
   advertisedPrice: number | null;
   advertisedDeposit: number | null;
   advertisedMonthlyRent: number | null;
   /** 비교를 한 번이라도 읽었는가 */
   hasComparison: boolean;
   /** 비교 목록에서 "바로 이 내 광고"인 줄 (네이버 매물번호가 같은 줄) */
-  main: Row | null;
+  ownAdvertisement: Row | null;
   rows: Row[];
 }
 
@@ -93,20 +93,21 @@ type Terms = {
 export function analyzeAdvertisementComparison<Row extends ComparisonRowLike>(
   subject: ComparisonSubject<Row>,
 ): AdvertisementComparisonAnalysis<Row> {
-  const main = subject.main;
+  const own = subject.ownAdvertisement;
   const activeRows = subject.rows.filter((advertisement) => advertisement.isActive);
   const competitors = activeRows.filter(
     (advertisement) => !advertisement.isMine,
   );
-  const ownTerms = main
-    ? termsFromAdvertisement(main)
+  // 사용자 결정: 마지막 네이버 수집 당시 가격(ownAdvertisement)을 유지하고, 없을 때만 advertised* 사용
+  const ownTerms = own
+    ? termsFromAdvertisement(own)
     : {
         price: subject.advertisedPrice,
         deposit: subject.advertisedDeposit,
         monthlyRent: subject.advertisedMonthlyRent,
       };
   const transactionType = subject.transactionType ?? 'sale';
-  const ownRanking = main?.ranking ?? null;
+  const ownRanking = own?.ranking ?? null;
   const analyzedCompetitors = competitors
     .map((advertisement) => ({
       advertisement,
@@ -129,7 +130,7 @@ export function analyzeAdvertisementComparison<Row extends ComparisonRowLike>(
         (right.advertisement.ranking ?? Number.MAX_SAFE_INTEGER),
     );
 
-  const totalCount = comparisonTotalCount(main, activeRows);
+  const totalCount = comparisonTotalCount(own, activeRows);
   const positionRatio =
     ownRanking != null && totalCount != null && totalCount > 0
       ? ownRanking / totalCount
@@ -147,8 +148,8 @@ export function analyzeAdvertisementComparison<Row extends ComparisonRowLike>(
   const higherPricedAheadCount = ahead.filter(
     (competitor) => competitor.priceRelation === 'higher',
   ).length;
-  const ownFloorExposureMode = main
-    ? exposureMode(main)
+  const ownFloorExposureMode = own
+    ? exposureMode(own)
     : OfficeAdvertisementFloorExposureMode.UNKNOWN;
   const floorExposureDisadvantage =
     ownFloorExposureMode === OfficeAdvertisementFloorExposureMode.BAND &&
@@ -172,9 +173,9 @@ export function analyzeAdvertisementComparison<Row extends ComparisonRowLike>(
       : null;
 
   let primarySignal: AdvertisementComparisonSignal = 'competitive';
-  if (!subject.hasComparison || !main) {
+  if (!subject.hasComparison || !own) {
     primarySignal = 'comparison_pending';
-  } else if (!main.isActive) {
+  } else if (!own.isActive) {
     primarySignal = 'own_ad_inactive';
   } else if (lowerPricedCompetitors.length > 0) {
     primarySignal = 'lower_price_competitor';
@@ -198,7 +199,7 @@ export function analyzeAdvertisementComparison<Row extends ComparisonRowLike>(
     totalCount,
     positionRatio,
     aheadCount: ahead.length,
-    ownFloorInfo: main?.floorInfo ?? null,
+    ownFloorInfo: own?.floorInfo ?? null,
     ownFloorExposureMode,
     exactFloorCompetitorCount: exactFloorCompetitors.length,
     exactFloorAheadCount: exactFloorCompetitors.filter(
@@ -228,15 +229,15 @@ export function analyzeAdvertisementComparisonRow<Row extends ComparisonRowLike>
         OfficeAdvertisementFloorExposureMode.EXACT,
     };
   }
-  const main = subject.main;
-  const ownTerms = main
-    ? termsFromAdvertisement(main)
+  const own = subject.ownAdvertisement;
+  const ownTerms = own
+    ? termsFromAdvertisement(own)
     : {
         price: subject.advertisedPrice,
         deposit: subject.advertisedDeposit,
         monthlyRent: subject.advertisedMonthlyRent,
       };
-  const ownRanking = main?.ranking ?? null;
+  const ownRanking = own?.ranking ?? null;
   return {
     advertisement,
     isAhead:

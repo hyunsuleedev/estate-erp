@@ -69,3 +69,31 @@ describe('unit space labels', () => {
     );
   });
 });
+
+describe('place label', () => {
+  it('names a home as complex + dong + ho', async () => {
+    const { formatDongLabel, formatPlaceLabel } = await import('../src/place.ts');
+    assert.equal(formatDongLabel('102'), '102동');
+    assert.equal(formatDongLabel('102동'), '102동');
+    assert.equal(formatDongLabel('A'), 'A동');
+    assert.equal(formatDongLabel('상가동'), '상가동');
+    assert.equal(formatDongLabel('본관'), '본관');
+    // 동 구분 없는 건물은 "-"를 찍지 않는다
+    assert.equal(formatDongLabel('-'), '');
+    assert.equal(formatDongLabel('1', true), '');
+
+    assert.equal(
+      formatPlaceLabel({ siteName: '고덕그라시움', dongName: '102', unit: { name: '2203' } }),
+      '고덕그라시움 102동 2203호',
+    );
+    assert.equal(formatPlaceLabel({ dongName: '102', unit: { name: '2203' } }), '102동 2203호');
+    assert.equal(
+      formatPlaceLabel({ siteName: '고덕빌라', dongName: '-', dongIsPlaceholder: true, unit: { name: '201' } }),
+      '고덕빌라 201호',
+    );
+    assert.equal(formatPlaceLabel({ siteName: '중앙상가', dongName: '-', unit: { floor: 2 } }), '중앙상가 2층');
+    // 단독주택 · 토지: 건물 이름만
+    assert.equal(formatPlaceLabel({ siteName: '고덕동 123-4' }), '고덕동 123-4');
+    assert.equal(formatPlaceLabel(null), '');
+  });
+});

@@ -8,6 +8,8 @@ import {
   Query,
   Body,
   UseGuards,
+  NotFoundException,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { MatchesService } from './matches.service';
@@ -22,6 +24,11 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+
+/** 주소의 id가 uuid 꼴이 아니면(잘못된 링크) DB 오류(500) 대신 "찾을 수 없습니다"로 답한다 */
+const matchIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new NotFoundException('매칭을 찾을 수 없습니다'),
+});
 
 @ApiTags('매칭')
 @ApiBearerAuth()
@@ -48,7 +55,7 @@ export class MatchesController {
 
   @Get(':id')
   findOne(
-    @Param('id') id: string,
+    @Param('id', matchIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.matchesService.findOne(id, user.officeId);
@@ -64,7 +71,7 @@ export class MatchesController {
 
   @Patch(':id/stage')
   updateStage(
-    @Param('id') id: string,
+    @Param('id', matchIdPipe) id: string,
     @Body() dto: UpdateMatchStageDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -73,7 +80,7 @@ export class MatchesController {
 
   @Patch(':id/memo')
   updateMemo(
-    @Param('id') id: string,
+    @Param('id', matchIdPipe) id: string,
     @Body() dto: UpdateMatchMemoDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -82,7 +89,7 @@ export class MatchesController {
 
   @Patch(':id/agreed-terms')
   updateAgreedTerms(
-    @Param('id') id: string,
+    @Param('id', matchIdPipe) id: string,
     @Body() dto: UpdateMatchAgreedTermsDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -91,7 +98,7 @@ export class MatchesController {
 
   @Delete(':id')
   remove(
-    @Param('id') id: string,
+    @Param('id', matchIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.matchesService.remove(id, user.officeId);

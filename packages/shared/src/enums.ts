@@ -25,29 +25,106 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
   monthly: '월세',
 };
 
-/**
- * 연락처 사이에 저장할 수 있는 관계.
- *
- * relationType은 `relatedContactId`가 `contactId`에게 어떤 관계인지를 뜻한다.
- * 예: contactId=자녀, relatedContactId=어머니, relationType=parent.
- *
- * 의뢰가 끝나도 변하지 않는 관계(가족)만 둔다. 법무사·세무사·대리인은 의뢰마다 달라지므로
- * 여기 두지 않고 매물 관계자(PropertyContact.role)에 적는다 (사용자 결정 2026-11-18).
- * 사위·조카처럼 목록에 없는 관계는 `other`와 보충 이름으로 적는다.
- */
-export const ContactRelationType = {
-  PARENT: 'parent',
-  SPOUSE: 'spouse',
-  CHILD: 'child',
-  SIBLING: 'sibling',
-  GRANDPARENT: 'grandparent',
-  GRANDCHILD: 'grandchild',
+/** 연락처 주체 종류 (법적 권리주체: 개인 | 법인·단체) */
+export const ContactKind = {
+  PERSON: 'person',
+  ORGANIZATION: 'organization',
+} as const;
+export type ContactKind = (typeof ContactKind)[keyof typeof ContactKind];
+
+export const CONTACT_KIND_LABELS: Record<ContactKind, string> = {
+  person: '개인',
+  organization: '법인·단체',
+};
+
+/** 집단/소속 종류 (세대 | 법인 소속) */
+export const PartyKind = {
+  HOUSEHOLD: 'household',
+  ORGANIZATION: 'organization',
+} as const;
+export type PartyKind = (typeof PartyKind)[keyof typeof PartyKind];
+
+export const PARTY_KIND_LABELS: Record<PartyKind, string> = {
+  household: '세대·가족',
+  organization: '법인·소속',
+};
+
+/** 집단 멤버 상태 */
+export const PartyMemberStatus = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+} as const;
+export type PartyMemberStatus =
+  (typeof PartyMemberStatus)[keyof typeof PartyMemberStatus];
+
+export const HOUSEHOLD_ROLE_PRESETS = [
+  '남편',
+  '아내',
+  '아버지',
+  '어머니',
+  '아들',
+  '딸',
+  '할아버지',
+  '할머니',
+  '장인',
+  '장모',
+  '시아버지',
+  '시어머니',
+  '형제·자매',
+] as const;
+
+export const ORGANIZATION_ROLE_PRESETS = [
+  '대표이사',
+  '임원',
+  '실무 담당자',
+  '관리소장',
+  '회계·정산',
+] as const;
+
+/** 임대차 내 임차인/거주자 역할 */
+export const PropertyLeaseTenantRole = {
+  TENANT: 'tenant',
+  CO_TENANT: 'co_tenant',
+  RESIDENT: 'resident',
+} as const;
+export type PropertyLeaseTenantRole =
+  (typeof PropertyLeaseTenantRole)[keyof typeof PropertyLeaseTenantRole];
+
+export const PROPERTY_LEASE_TENANT_ROLE_LABELS: Record<
+  PropertyLeaseTenantRole,
+  string
+> = {
+  tenant: '임차인',
+  co_tenant: '공동임차인',
+  resident: '실거주자',
+};
+
+/** 매물 의뢰 창구 역할 (소유자와 별개인 의뢰인) */
+export const ListingIntakeRequesterRole = {
+  REPRESENTATIVE: 'representative',
+  TENANT: 'tenant',
   OTHER: 'other',
 } as const;
-export type ContactRelationType =
-  (typeof ContactRelationType)[keyof typeof ContactRelationType];
+export type ListingIntakeRequesterRole =
+  (typeof ListingIntakeRequesterRole)[keyof typeof ListingIntakeRequesterRole];
 
-export const CONTACT_RELATION_TYPES = Object.values(ContactRelationType);
+export const LISTING_INTAKE_REQUESTER_ROLE_LABELS: Record<
+  ListingIntakeRequesterRole,
+  string
+> = {
+  representative: '대리 의뢰인',
+  tenant: '세입자(승계·전대)',
+  other: '기타 의뢰인',
+};
+
+/** 상담 조회 범위 */
+export const ConsultationScope = {
+  SELF: 'self',
+  PARTY: 'party',
+  CONTEXT: 'context',
+} as const;
+export type ConsultationScope =
+  (typeof ConsultationScope)[keyof typeof ConsultationScope];
 
 /** 그룹 넣기·빼기 한 번에 처리할 수 있는 연락처 수 */
 export const CONTACT_GROUP_MEMBERS_MAX = 500;
@@ -135,47 +212,17 @@ export const BUYER_INTAKE_CONTACT_ROLES = Object.values(
   BuyerIntakeContactRole,
 );
 
-/**
- * 반대쪽 Contact에서 볼 때의 관계 유형. 모든 관계가 같은 목록 안에서 뒤집히므로
- * 저장하는 유형과 같다.
- */
-export type ContactRelationDisplayType = ContactRelationType;
-
-export const CONTACT_RELATION_INVERSE_TYPES: Record<
-  ContactRelationType,
-  ContactRelationDisplayType
-> = {
-  parent: 'child',
-  child: 'parent',
-  spouse: 'spouse',
-  sibling: 'sibling',
-  grandparent: 'grandchild',
-  grandchild: 'grandparent',
-  other: 'other',
-};
-
-export const CONTACT_RELATION_TYPE_LABELS: Record<
-  ContactRelationDisplayType,
+export const BUYER_INTAKE_CONTACT_ROLE_LABELS: Record<
+  BuyerIntakeContactRole,
   string
 > = {
-  parent: '부모',
-  spouse: '배우자',
-  child: '자녀',
-  sibling: '형제자매',
-  grandparent: '조부모',
-  grandchild: '손주',
+  buyer: '매수인·임차인',
+  co_buyer: '공동 당사자',
+  representative: '대리인',
+  supporter: '자금 지원',
+  advisor: '조언·가족',
   other: '기타',
 };
-
-export function invertContactRelationType(
-  relationType: string,
-): ContactRelationDisplayType | string {
-  return (
-    CONTACT_RELATION_INVERSE_TYPES[
-      relationType as ContactRelationType
-    ] ?? relationType
-  );
-}
 
 /**
  * 계약서 거래 유형 (Contract 단계).
@@ -316,10 +363,10 @@ export const MAINTENANCE_FEE_INCLUDE_LABELS: Record<
 /**
  * CP 광고 원장의 생명주기.
  *
- * ListingAdvertisement는 CP에서 실제로 관측한 광고만 저장한다. 사용자가
- * 요청한 광고 작업은 일반 Task가 나타내고, 세부 실행·재시도 상태는 로컬
- * Skill이 소유하므로 광고 row에는 active / ended만 존재한다. ended row도
- * 실제 게재 이력으로 보존하고 endedAt은 예정일이 아닌 관측 종료 시각이다.
+ * ListingAdvertisement는 CP에서 실제로 관측하거나 직접 입력한 광고를 저장한다.
+ * 동기화 상태(manual / synced / manual_override)는 컬럼으로 저장하지 않고
+ * lastSyncedAt · manualEditedAt에서 계산한다. ended row도 실제 게재 이력으로 보존하고
+ * endedAt은 예정일이 아닌 관측 종료 시각이다.
  */
 export const ListingAdvertisementStatus = {
   ACTIVE: 'active',
@@ -328,13 +375,36 @@ export const ListingAdvertisementStatus = {
 export type ListingAdvertisementStatus =
   (typeof ListingAdvertisementStatus)[keyof typeof ListingAdvertisementStatus];
 
-/** 광고 레코드 출처 (ListingAdvertisement.source) */
-export const ListingAdvertisementSource = {
+/** 광고 동기화 상태 (저장하지 않고 lastSyncedAt · manualEditedAt에서 파생) */
+export const AdvertisementSyncState = {
   MANUAL: 'manual',
-  CP_SYNC: 'cp_sync',
+  SYNCED: 'synced',
+  MANUAL_OVERRIDE: 'manual_override',
 } as const;
-export type ListingAdvertisementSource =
-  (typeof ListingAdvertisementSource)[keyof typeof ListingAdvertisementSource];
+export type AdvertisementSyncState =
+  (typeof AdvertisementSyncState)[keyof typeof AdvertisementSyncState];
+
+/** 광고 변경 요청 액션 */
+export const AdvertisementChangeAction = {
+  PUBLISH: 'publish',
+  UPDATE: 'update',
+  READVERTISE: 'readvertise',
+  TAKEDOWN: 'takedown',
+} as const;
+export type AdvertisementChangeAction =
+  (typeof AdvertisementChangeAction)[keyof typeof AdvertisementChangeAction];
+
+/** 광고 변경 요청 상태 */
+export const AdvertisementChangeRequestStatus = {
+  REQUESTED: 'requested',
+  IN_PROGRESS: 'in_progress',
+  EXECUTED: 'executed',
+  VERIFIED: 'verified',
+  FAILED: 'failed',
+  CANCELLED: 'cancelled',
+} as const;
+export type AdvertisementChangeRequestStatus =
+  (typeof AdvertisementChangeRequestStatus)[keyof typeof AdvertisementChangeRequestStatus];
 
 /** CP사 (ListingAdvertisement.channel) — 자주 쓰이는 CP 슬러그. 자유텍스트도 허용. */
 export const ListingAdvertisementChannel = {
@@ -501,6 +571,8 @@ export const MatchClosedReason = {
   MANUAL: 'manual',
   OTHER_BUYER_CONTRACTED: 'other_buyer_contracted',
   INTAKE_CLOSED: 'intake_closed',
+  /** 손님 쪽 희망 조건을 끝냈다(다른 곳에서 구함 등). INTAKE_CLOSED는 매물 의뢰 쪽이다. */
+  BUYER_CLOSED: 'buyer_closed',
   DEAL_CANCELLED: 'deal_cancelled',
 } as const;
 export type MatchClosedReason =
@@ -509,7 +581,8 @@ export type MatchClosedReason =
 export const MATCH_CLOSED_REASON_LABELS: Record<MatchClosedReason, string> = {
   manual: '직접 종료',
   other_buyer_contracted: '다른 손님과 본계약',
-  intake_closed: '의뢰 종료',
+  intake_closed: '매물 의뢰 종료',
+  buyer_closed: '손님 조건 종료',
   deal_cancelled: '거래 취소',
 };
 
@@ -592,6 +665,35 @@ export function normalizeDealStage(stage: string): string {
     return DealStage.PREPARING;
   }
   return stage;
+}
+
+/** 끝난 거래 단계 — 잔금 완료 · 정산 종료 */
+const ENDED_DEAL_STAGES: ReadonlySet<string> = new Set([DealStage.COMPLETED, DealStage.CLOSED]);
+
+/**
+ * 앞날의 일정이 "이미 끝난 거래의 일"인지 본다. 끝난(잔금 완료 · 정산 종료) 거래가 있고,
+ * 그 일정이 **거래를 만들기 전에** 잡힌 것이어야 한다(거래 전환 전에 잡아 둔 임장이 날짜만 앞날로 남은 경우).
+ * 그런 거래를 돌려준다(없으면 null).
+ *
+ * 기준 시각은 거래를 만든 시각(createdAt)이다. 바뀌지 않는 값이라 판정이 뒤집히지 않는다.
+ * 단계가 바뀐 시각(stageChangedAt)은 쓰지 않는다 — 잔금 완료 뒤에 새로 잡은 약속이 정산 종료로 넘어가는 순간
+ * "끝나기 전에 잡힌 일정"으로 바뀌어 다시 숨겨진다. 단계만 보고 판정하지도 않는다 — 고객 검토 · 협상 중의 재임장,
+ * 거래 전환 뒤 잔금 전 집 확인, 거래가 끝난 뒤 새로 잡은 약속은 모두 유효한 일정이다.
+ * 일정이나 거래의 시각을 모르면 끝난 일로 보지 않는다.
+ */
+export function findDealThatOutlivedEvent<
+  T extends { stage: string; createdAt?: string | Date | null; isCancelled?: boolean | null },
+>(eventCreatedAt: string | Date | null | undefined, deals: ReadonlyArray<T | null | undefined>): T | null {
+  if (!eventCreatedAt) return null;
+  const createdMs = new Date(eventCreatedAt).getTime();
+  if (Number.isNaN(createdMs)) return null;
+  for (const deal of deals) {
+    if (!deal || deal.isCancelled || !deal.createdAt) continue;
+    if (!ENDED_DEAL_STAGES.has(normalizeDealStage(deal.stage))) continue;
+    const dealCreatedMs = new Date(deal.createdAt).getTime();
+    if (!Number.isNaN(dealCreatedMs) && createdMs < dealCreatedMs) return deal;
+  }
+  return null;
 }
 
 /** 거래 취소 주체 */

@@ -161,6 +161,7 @@ export function createResidentialSaleAgreementDraft(
     specialTerms: input.specialTerms ?? '',
     sourceNotice:
       input.sourceNotice ??
+      // i18n-ignore — 계약서 아래에 인쇄되는 글이다
       '공인중개사법 시행령 제22조의 거래계약서 필수기재사항을 기준으로 작성한 초안입니다. 계약 확정 전 최신 공적장부와 당사자 신분을 다시 확인하세요.',
   };
 }

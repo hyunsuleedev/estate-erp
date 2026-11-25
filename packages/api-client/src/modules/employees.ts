@@ -4,11 +4,24 @@ import type { Consultation } from './consultations.js';
 import type { Deal } from './deals.js';
 import type { Task } from './tasks.js';
 
+export interface EmployeeAttentionItem {
+  kind: 'task' | 'buyer';
+  id: string;
+  title: string;
+  dueDate: string;
+}
+
 export interface EmployeeCounts {
   activeTaskCount: number;
   activeBuyerRequirementCount: number;
+  activeProjectCount?: number;
   activeDealCount: number;
   unsettledDealCount: number;
+  overdueTaskCount?: number;
+  overdueBuyerCount?: number;
+  unsettledCommissionTotal?: number;
+  consultationCount?: number;
+  commissionAmountTotal?: number;
 }
 
 export interface Employee {
@@ -42,6 +55,7 @@ export interface Employee {
   createdAt: string;
   updatedAt: string;
   counts: EmployeeCounts;
+  attentionItems?: EmployeeAttentionItem[];
   latestActivityAt: string | null;
 }
 
@@ -55,21 +69,78 @@ export interface EmployeeActivity {
   createdAt: string;
 }
 
+export interface EmployeeAssignedProject {
+  id: string;
+  title: string | null;
+  memo: string | null;
+  createdAt: string;
+  updatedAt: string;
+  primaryContact: { id: string; name: string } | null;
+  completedStepCount: number;
+  totalStepCount: number;
+  _count: {
+    listingIntakes: number;
+    buyerIntakes: number;
+    steps: number;
+    comments: number;
+  };
+}
+
+export interface EmployeeSettlementSummary {
+  id: string;
+  month: string;
+  timing: string;
+  confirmedAt: string;
+  employmentType: string;
+  withholdTax: boolean;
+  targetWon: number;
+  shareWon: number;
+  baseWon: number;
+  adjustWon: number;
+  carryInWon: number;
+  withholdingWon: number;
+  netWon: number;
+  carryOutWon: number;
+  paidAt: string | null;
+}
+
+export interface EmployeeConsultationBreakdown {
+  phone: number;
+  visit: number;
+  online: number;
+}
+
+export interface EmployeeWeeklyActivity {
+  label: string;
+  consultations: number;
+  activities: number;
+}
+
 export interface EmployeeDealParticipant {
   id: string;
   role: string;
   side: string;
   commissionAmount: number | null;
-  commissionRate: number | null;
+  commissionRate: number | string | null;
+  sharePercent?: number | null;
   settlementStatus: string;
   settlementDate: string | null;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
-  deal: Deal;
+  deal: Deal & {
+    contract?: {
+      id: string;
+      status: string;
+      contractDate: string | null;
+      moveInDate: string | null;
+      statedBalanceDate?: string | null;
+    } | null;
+  };
 }
 
 export interface EmployeeDetail extends Omit<Employee, 'latestActivityAt'> {
+  lastLoginAt?: string | null;
   office: {
     id: string;
     name: string;
@@ -77,7 +148,9 @@ export interface EmployeeDetail extends Omit<Employee, 'latestActivityAt'> {
   };
   assignedTasks: Task[];
   assignedBuyerRequirements: BuyerRequirement[];
+  assignedProjects?: EmployeeAssignedProject[];
   dealParticipants: EmployeeDealParticipant[];
+  recentSettlementLines?: EmployeeSettlementSummary[];
   recentConsultations: Consultation[];
   recentActivities: EmployeeActivity[];
 }
@@ -111,9 +184,14 @@ export interface EmployeePerformance {
   activeTaskCount: number;
   activeBuyerRequirementCount: number;
   activeDealCount: number;
+  closedDealCount?: number;
   unsettledDealCount: number;
   consultationCount: number;
   commissionAmountTotal: number;
+  completedTaskCount30d?: number;
+  consultationCount30d?: number;
+  consultationByType30d?: EmployeeConsultationBreakdown;
+  weeklyActivity?: EmployeeWeeklyActivity[];
 }
 
 export function createEmployeesApi(request: RequestFn) {

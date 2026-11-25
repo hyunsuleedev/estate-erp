@@ -31,6 +31,13 @@ export interface CalcReceipt {
   ourRatio: number;
   /** 거래의 잔금이 끝났는지와 그 시각. 시각을 모르면 null. */
   balanceDone: boolean;
+  /**
+   * 거래가 취소됐는지. 취소한 거래의 입금은 정산에 넣지 않고 따로 알린다(잔금을 영원히 기다리는 목록에 두지 않는다).
+   * 대표가 돌려줄지(돌려준 돈 기록) 위약금으로 남길지 정한다. 없으면 취소되지 않은 것으로 본다.
+   */
+  dealCancelled?: boolean;
+  /** partner_share: 공동중개 상대가 수금한 청구에서 받은 우리 몫(받음 기록). 없으면 우리가 수금한 입금. */
+  source?: 'partner_share';
   balanceDoneAt: Date | null;
   /**
    * 돌려준 돈(refund)에만 쓴다. 이 청구에서 이미 정산해 준 몫을 직원별로 되돌리는 비율
@@ -64,6 +71,8 @@ export interface CalcStaff {
 
 export interface SettlementDetailItem {
   receiptId: string;
+  /** partner_share: 공동중개 받은 몫 (금액은 부가세 별도로 본 값) */
+  source?: 'partner_share';
   dealId: string;
   dealTitle: string;
   kind: 'receipt' | 'refund';
@@ -94,17 +103,21 @@ export interface SettlementCalcLine {
 
 export interface SettlementWaitingItem {
   receiptId: string;
+  /** partner_share: 공동중개 받은 몫 (금액은 부가세 별도로 본 값) */
+  source?: 'partner_share';
   dealId: string;
   dealTitle: string;
   receivedAt: string;
   amountWon: number;
-  /** balance: 잔금을 기다림 / participants: 담당 배분이 없음 / ratio: 직원 몫이 정해지지 않음 */
-  reason: 'balance' | 'participants' | 'ratio';
+  /** balance: 잔금을 기다림 / participants: 담당 배분이 없음 / ratio: 직원 몫이 정해지지 않음 / cancelled: 취소한 거래 */
+  reason: 'balance' | 'participants' | 'ratio' | 'cancelled';
 }
 
 export interface SettlementCalcResult {
   lines: SettlementCalcLine[];
   waiting: SettlementWaitingItem[];
+  /** 취소한 거래의 입금. 정산에 넣지 않는다 (기다리는 것도 아니다). */
+  cancelled: SettlementWaitingItem[];
   /** 이 정산에 들어간 입금 기록. 확정할 때 이 줄들에 정산을 표시한다. */
   includedReceiptIds: string[];
 }
@@ -141,6 +154,7 @@ export function computeSettlement(input: {
   const wait = (r: CalcReceipt, reason: SettlementWaitingItem['reason']) =>
     waiting.push({
       receiptId: r.id,
+      ...(r.source ? { source: r.source } : {}),
       dealId: r.dealId,
       dealTitle: r.dealTitle,
       receivedAt: r.receivedAt.toISOString(),
@@ -204,6 +218,8 @@ export function computeSettlement(input: {
 
   /* 2. 줄마다 이번 정산에 넣을 수 있는지 본다 */
   const reasonFor = (r: CalcReceipt): SettlementWaitingItem['reason'] | null => {
+    // 취소한 거래에 들어온 돈은 나누지 않는다. 돌려준 돈(환불)은 아래 규칙대로 지난 몫에서 뺀다.
+    if (r.kind === 'receipt' && r.dealCancelled) return 'cancelled';
     // 돌려준 돈은 정산 시점과 상관없이 바로 뺀다. 들어온 돈만 잔금을 기다린다.
     if (r.kind === 'receipt' && timing === 'closed') {
       const doneInTime = r.balanceDone && (!r.balanceDoneAt || r.balanceDoneAt.getTime() < monthEnd.getTime());
@@ -235,6 +251,7 @@ export function computeSettlement(input: {
     }
     row.detail.push({
       receiptId: r.id,
+      ...(r.source ? { source: r.source } : {}),
       dealId: r.dealId,
       dealTitle: r.dealTitle,
       kind: r.kind,
@@ -254,6 +271,7 @@ export function computeSettlement(input: {
       if (r.kind === 'receipt' && eff.supplyWon > 0) {
         waiting.push({
           receiptId: r.id,
+          ...(r.source ? { source: r.source } : {}),
           dealId: r.dealId,
           dealTitle: r.dealTitle,
           receivedAt: r.receivedAt.toISOString(),
@@ -315,7 +333,12 @@ export function computeSettlement(input: {
       detail: row?.detail ?? [],
     });
   }
-  return { lines, waiting, includedReceiptIds };
+  return {
+    lines,
+    waiting: waiting.filter((item) => item.reason !== 'cancelled'),
+    cancelled: waiting.filter((item) => item.reason === 'cancelled'),
+    includedReceiptIds,
+  };
 }
 
 /** 'YYYY-MM' 달의 시작과 끝(다음 달 1일)을 한국 시각 기준으로 돌려준다. */

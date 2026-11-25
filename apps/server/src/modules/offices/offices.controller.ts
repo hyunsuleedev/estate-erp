@@ -8,7 +8,11 @@ import {
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { OfficesService } from './offices.service';
-import { CreateOfficeDto, UpdateOfficeDto } from './offices.dto';
+import {
+  CreateOfficeDto,
+  UpdateCommissionConfigDto,
+  UpdateOfficeDto,
+} from './offices.dto';
 
 @ApiTags('사무소')
 @ApiBearerAuth()
@@ -54,15 +58,7 @@ export class OfficesController {
   @UseGuards(RolesGuard)
   updateCommissionConfig(
     @Body()
-    dto: {
-      distributionType?: string;
-      defaultAgentRate?: number;
-      listingAgentRate?: number;
-      buyingAgentRate?: number;
-      dualAgentRate?: number;
-      managerRate?: number;
-      closerBonus?: number;
-    },
+    dto: UpdateCommissionConfigDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.officesService.updateCommissionConfig(user.officeId, dto);

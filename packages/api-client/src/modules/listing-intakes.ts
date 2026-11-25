@@ -31,7 +31,15 @@ export interface ListingIntakeListing {
   createdAt: string;
   updatedAt: string;
   /** 이 거래 옵션의 비취소 Deal — 있으면 "거래중/종료" */
-  deals?: Array<{ id: string; stage: string; stageChangedAt: string | null }>;
+  /** 이 조건을 점유한 거래(진행·완료). 끝난 매물은 목록에 거래가를 보인다 */
+  deals?: Array<{
+    id: string;
+    stage: string;
+    stageChangedAt: string | null;
+    agreedPrice?: number | null;
+    agreedDeposit?: number | null;
+    agreedMonthlyRent?: number | null;
+  }>;
   /** 매물관리 목록에 필요한 현재 게재 중 광고. */
   activeAdvertisements?: ListingAdvertisement[];
   /** status=active 조건으로 서버가 계산한 현재 광고 수. */
@@ -61,10 +69,17 @@ export interface ListingIntake {
   nextConfirmAt: string | null;
   isJointBrokerageRequired: boolean;
   jointBrokeragePartnerId: string | null;
+  requesterContactId?: string | null;
+  requesterRole?: string | null;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
   jointBrokeragePartner?: {
+    id: string;
+    name: string;
+    phone: string | null;
+  } | null;
+  requesterContact?: {
     id: string;
     name: string;
     phone: string | null;
@@ -138,9 +153,6 @@ export interface ListingIntakesFilter {
   isJointBrokerage?: boolean;
   provinceCode?: string;
   districtCode?: string;
-  sido?: string;
-  sigungu?: string;
-  eupmyeondong?: string;
   siteId?: string;
   siteIds?: string;
   search?: string;
@@ -195,6 +207,8 @@ export interface CreateListingIntakeDto {
   nextConfirmAt?: string | null;
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
+  requesterContactId?: string | null;
+  requesterRole?: string | null;
   memo?: string | null;
   listings?: CreateListingForIntakeDto[];
 }
@@ -209,6 +223,8 @@ export interface UpdateListingIntakeDto {
   nextConfirmAt?: string | null;
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
+  requesterContactId?: string | null;
+  requesterRole?: string | null;
   memo?: string | null;
   expectedUpdatedAt?: string | null;
 }

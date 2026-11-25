@@ -20,7 +20,7 @@ import { SitesModule } from './modules/sites/sites.module';
 import { DongsModule } from './modules/dongs/dongs.module';
 import { UnitsModule } from './modules/units/units.module';
 import { PropertyContactsModule } from './modules/property-contacts/property-contacts.module';
-import { ContactRelationsModule } from './modules/contact-relations/contact-relations.module';
+import { PartiesModule } from './modules/parties/parties.module';
 import { TenantsModule } from './modules/tenants/tenants.module';
 import { BuyerIntakesModule } from './modules/buyer-intakes/buyer-intakes.module';
 import { ProjectsModule } from './modules/projects/projects.module';
@@ -39,7 +39,6 @@ import { PropertyPhotosModule } from './modules/property-photos/property-photos.
 import { McpModule } from './modules/mcp/mcp.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { NetworkModule } from './modules/network/network.module';
-import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module';
 import { RegionsModule } from './modules/regions/regions.module';
 import { ServiceVendorsModule } from './modules/service-vendors/service-vendors.module';
@@ -87,7 +86,7 @@ const GENERAL_API_RATE_LIMIT_PER_MINUTE = 600;
     ListingAdvertisementsModule,
     OfficeAdvertisementsModule,
     ContactsModule,
-    ContactRelationsModule,
+    PartiesModule,
     PropertyContactsModule,
     TenantsModule,
     BuyerIntakesModule,
@@ -112,7 +111,6 @@ const GENERAL_API_RATE_LIMIT_PER_MINUTE = 600;
     CtiModule,
     NotificationsModule,
     NetworkModule,
-    DashboardModule,
     ActivityLogsModule,
     McpModule,
   ],

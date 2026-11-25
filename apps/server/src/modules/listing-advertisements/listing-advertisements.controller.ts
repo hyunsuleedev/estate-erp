@@ -22,8 +22,11 @@ import {
 } from "./listing-advertisements.service";
 import {
   AdvertisementChangeRequestsService,
-  CreateAdvertisementChangeRequestDto,
+  CreateAdvertisementChangeRequestItemDto,
+  CreateAdvertisementChangeRequestsBatchDto,
+  UpdateAdvertisementChangeRequestStatusDto,
 } from "./advertisement-change-requests.service";
+import { OfficeCpAccountsService } from "./office-cp-accounts.service";
 import { AdvertisementRawFields } from "./advertisement-link";
 
 @ApiTags("광고 게재")
@@ -34,20 +37,97 @@ export class ListingAdvertisementsController {
   constructor(
     private readonly service: ListingAdvertisementsService,
     private readonly changeRequests: AdvertisementChangeRequestsService,
+    private readonly cpAccounts: OfficeCpAccountsService,
   ) {}
 
-  /** 걸려 있는 광고 변경 요청 */
+  /** 사무소가 등록한 CP 계정 목록 */
+  @Get("cp-accounts")
+  findCpAccounts(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query("channel") channel: string,
+    @Query("includeInactive") includeInactive: string,
+  ) {
+    return this.cpAccounts.findAll(user.officeId, {
+      channel: channel || undefined,
+      includeInactive: includeInactive === "true",
+    });
+  }
+
+  /** CP 계정 등록 · 별칭 갱신 (accountKey = CP 로그인 ID) */
+  @Post("cp-accounts")
+  upsertCpAccount(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body()
+    body: {
+      channel: string;
+      accountKey: string;
+      accountName?: string | null;
+    },
+  ) {
+    return this.cpAccounts.upsertAccount(user.officeId, body);
+  }
+
+  @Patch("cp-accounts/:accountId")
+  updateCpAccount(
+    @Param("accountId") accountId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: { accountName?: string | null; isActive?: boolean },
+  ) {
+    return this.cpAccounts.update(user.officeId, accountId, body);
+  }
+
+  /** 걸려 있는(또는 전체) 광고 변경 요청 */
   @Get("change-requests")
   findOpenChangeRequests(
     @CurrentUser() user: CurrentUserPayload,
     @Query("advertisementId") advertisementId: string,
+    @Query("listingId") listingId: string,
+    @Query("channel") channel: string,
+    @Query("cpAccountId") cpAccountId: string,
+    @Query("accountKey") accountKey: string,
+    @Query("status") status: string,
+    @Query("includeClosed") includeClosed: string,
   ) {
     return this.changeRequests.findOpen(user.officeId, {
       advertisementId: advertisementId || undefined,
+      listingId: listingId || undefined,
+      channel: channel || undefined,
+      cpAccountId: cpAccountId || undefined,
+      accountKey: accountKey || undefined,
+      status: status || undefined,
+      includeClosed: includeClosed === "true",
     });
   }
 
-  /** 요청 거두기 (연결된 업무를 취소한다) */
+  /** 신규 게재(publish) 포함 단건 변경 요청 생성 */
+  @Post("change-requests")
+  createUnifiedChangeRequest(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: CreateAdvertisementChangeRequestItemDto,
+  ) {
+    return this.changeRequests.createSingle(user.officeId, user.userId, body);
+  }
+
+  /** 여러 광고의 변경 요청을 한 묶음 업무(Task, N:1)로 생성 */
+  @Post("change-requests/batch")
+  createBatchChangeRequests(
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: CreateAdvertisementChangeRequestsBatchDto,
+  ) {
+    return this.changeRequests.createBatch(user.officeId, user.userId, body);
+  }
+
+  /** 에이전트·담당자가 요청 진행/실행/실패 상태를 기록 */
+  @Patch("change-requests/:requestId")
+  updateChangeRequestStatus(
+    @Param("requestId") requestId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: UpdateAdvertisementChangeRequestStatusDto,
+  ) {
+    return this.changeRequests.updateStatus(user.officeId, requestId, body);
+  }
+
+  /** 요청 거두기 */
   @Delete("change-requests/:requestId")
   cancelChangeRequest(
     @Param("requestId") requestId: string,
@@ -69,8 +149,8 @@ export class ListingAdvertisementsController {
     @CurrentUser() user: CurrentUserPayload,
     @Query("listingId") listingId: string,
     @Query("channel") channel: string,
+    @Query("cpAccountId") cpAccountId: string,
     @Query("status") status: string,
-    @Query("source") source: string,
     @Query("search") search: string,
     @Query("propertyId") propertyId: string,
     @Query("link") link: string,
@@ -83,8 +163,8 @@ export class ListingAdvertisementsController {
     return this.service.findAll(user.officeId, {
       listingId: listingId || undefined,
       channel: channel || undefined,
+      cpAccountId: cpAccountId || undefined,
       status: status || undefined,
-      source: source || undefined,
       search: search || undefined,
       propertyId: propertyId || undefined,
       link: (link as AdvertisementLinkFilter) || undefined,
@@ -106,9 +186,10 @@ export class ListingAdvertisementsController {
       listingId?: string | null;
       propertyId?: string | null;
       siteId?: string | null;
+      cpAccountId?: string | null;
+      accountKey?: string | null;
       channel: string;
       status?: string;
-      source?: string;
       advertisedPrice?: number | null;
       advertisedDeposit?: number | null;
       advertisedMonthlyRent?: number | null;
@@ -132,9 +213,10 @@ export class ListingAdvertisementsController {
     @CurrentUser() user: CurrentUserPayload,
     @Body()
     body: AdvertisementRawFields & Partial<{
+      cpAccountId: string | null;
+      accountKey: string | null;
       channel: string;
       status: string;
-      source: string;
       advertisedPrice: number | null;
       advertisedDeposit: number | null;
       advertisedMonthlyRent: number | null;
@@ -154,7 +236,7 @@ export class ListingAdvertisementsController {
     return this.service.update(id, user.officeId, body);
   }
 
-  /** 광고 한 건의 흐름: 광고 이력 + 네이버 비교 기록 */
+  /** 광고 한 건의 흐름: 광고 이력 + 네이버 비교 기록 + 변경 요청 이력 */
   @Get(":id/timeline")
   findTimeline(@Param("id") id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.service.findTimeline(id, user.officeId);
@@ -180,7 +262,7 @@ export class ListingAdvertisementsController {
   createChangeRequest(
     @Param("id") id: string,
     @CurrentUser() user: CurrentUserPayload,
-    @Body() body: CreateAdvertisementChangeRequestDto,
+    @Body() body: CreateAdvertisementChangeRequestItemDto,
   ) {
     return this.changeRequests.create(user.officeId, user.userId, id, body);
   }

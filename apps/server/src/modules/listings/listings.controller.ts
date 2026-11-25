@@ -148,6 +148,6 @@ export class ListingsController {
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.listingsService.remove(id, user.officeId);
+    return this.listingsService.remove(id, user.officeId, user.role ?? null);
   }
 }

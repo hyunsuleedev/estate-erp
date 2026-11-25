@@ -13,6 +13,12 @@ export type CommissionClientSide = 'seller' | 'buyer';
 export type CommissionCollectedBy = 'us' | 'partner';
 
 export type TaxInvoiceStatus = 'none' | 'issued' | 'sent';
+/**
+ * 수금 원장이 쓰는 발행 기록 상태. TaxInvoiceStatus 에 현금영수증(cash_receipt)을 더했다.
+ * none: 기록 없음 / issued·sent: 세금계산서 / cash_receipt: 현금영수증.
+ * CommissionPayment.taxInvoiceStatus 에도 cash_receipt 가 올 수 있다(그 타입은 다른 화면 때문에 그대로 둔다).
+ */
+export type TaxDocStatus = TaxInvoiceStatus | 'cash_receipt';
 
 export interface DistributionInput {
   recipientType: 'our_office' | 'partner_broker';
@@ -76,6 +82,21 @@ export interface CommissionPayment {
   adjustments?: CommissionAdjustment[];
 }
 
+export interface PartnerBrokerContact {
+  id: string;
+  officeId: string;
+  partnerBrokerId: string;
+  name: string;
+  phone: string;
+  normalizedPhone: string;
+  role: string | null;
+  isPrimary: boolean;
+  memo: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PartnerBroker {
   id: string;
   officeId: string;
@@ -92,7 +113,18 @@ export interface PartnerBroker {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  contacts?: PartnerBrokerContact[];
 }
+
+export interface CreatePartnerBrokerContactDto {
+  name: string;
+  phone: string;
+  role?: string;
+  isPrimary?: boolean;
+  memo?: string;
+}
+
+export type UpdatePartnerBrokerContactDto = Partial<CreatePartnerBrokerContactDto>;
 
 export interface CreatePartnerBrokerDto {
   name: string;
@@ -168,8 +200,12 @@ export interface PipelineBucket {
 
 export interface MonthlyTrend {
   month: string;
+  /** 우리 통장에 들어온 돈 (만원, 부가세 별도) */
   collected: number;
+  /** 그 수금 가운데 공동중개 상대에게 넘겨줄 몫 (만원). 보냈는지와 상관없이 우리 돈이 아니다. */
+  partnerShare?: number;
   expense: number;
+  /** 수금 − 줄 몫 − 고정비 */
   net: number;
 }
 
@@ -185,6 +221,29 @@ export interface LedgerPaymentDistribution {
   shareRatio: number;
   shareAmount: number;
   status: string;
+  /** 공동중개 상대와 이 몫을 주고받았다고 기록한 날 */
+  settledAt: string | null;
+  settlementMemo: string | null;
+}
+
+export interface LedgerReceipt {
+  id: string;
+  /** receipt: 들어온 돈 / refund: 돌려준 돈(금액 음수) */
+  kind: 'receipt' | 'refund' | string;
+  receivedAt: string;
+  /** 원, 부가세 포함 */
+  amountWon: number;
+  /** 원, 부가세 뺀 금액 */
+  supplyWon: number;
+}
+
+export interface LedgerCollection {
+  id: string;
+  /** receipt: 입금 / refund: 돌려줌(음수) / partner_share: 공동중개 상대가 받은 돈에서 받은 우리 몫 */
+  kind: 'receipt' | 'refund' | 'partner_share';
+  at: string;
+  /** 원, 부가세 뺀 금액 */
+  won: number;
 }
 
 export interface LedgerPayment {
@@ -202,8 +261,22 @@ export interface LedgerPayment {
   status: CommissionPaymentStatus;
   method: string | null;
   note: string | null;
-  taxInvoiceStatus: TaxInvoiceStatus;
+  taxInvoiceStatus: TaxDocStatus;
   taxInvoiceNo: string | null;
+  taxInvoiceDate: string | null;
+  /** 입금 기록 합계 (원, 부가세 포함, 돌려준 돈은 뺌) */
+  receivedAmountWon: number;
+  /** 위 금액에서 부가세를 뺀 값 (원). 청구액(만원 × 10,000)과 비교하는 기준. */
+  receivedSupplyWon: number;
+  /** 입금 기록 (취소한 것은 뺌, 오래된 것부터). 상대가 수금한 청구면 상대 통장에 들어온 돈이다. */
+  receipts: LedgerReceipt[];
+  /**
+   * 우리 통장에 들어온 돈: 우리가 수금한 청구의 입금 기록 + 상대가 수금한 청구에서 받은 우리 몫('받음 기록').
+   * 캐시플로우 수금·원장 수금 합계·캘린더 입금이 모두 이것으로 센다 (서버 loadOurCollections).
+   */
+  collections?: LedgerCollection[];
+  /** 위 합계 (원, 부가세 뺀 금액). 원장 응답에는 늘 있다(다른 화면이 청구를 이 모양으로 만들 때를 위해 선택). */
+  ourCollectedWon?: number;
   distributions: LedgerPaymentDistribution[];
   pendingAdjustments: number;
 }
@@ -221,6 +294,10 @@ export interface LedgerDeal {
   siteName: string | null;
   dongName: string | null;
   unitName: string | null;
+  /** "고덕그라시움 102동 2203호" (서버가 formatPlaceLabel 로 만든다) */
+  placeLabel?: string | null;
+  /** "102동 2203호" — 단지가 문맥에 있을 때 */
+  placeShort?: string | null;
   buyerContactName: string | null;
   sellerContactName: string | null;
   partnerBroker: { id: string; name: string } | null;
@@ -241,6 +318,8 @@ export interface LedgerDealGroup {
 export type LedgerPreset = 'upcoming' | 'this-month' | 'month' | 'all';
 
 export interface LedgerView {
+  /** 사무소에 확정된 청구가 하나라도 있는지 (기간과 상관없이). 빈 화면 안내를 나눈다. */
+  hasAnyPayment: boolean;
   preset: LedgerPreset;
   period: string;
   periodLabel: string;
@@ -257,10 +336,14 @@ export interface LedgerView {
     id: string;
     code: string | null;
     type: string;
+    /** 만원, 깎는 금액이라 음수 */
     amount: number;
+    paymentId: string;
     paymentCode: string | null;
     dealId: string;
     reason: string;
+    requestedByName: string | null;
+    requestedAt: string;
   }>;
   groups: LedgerDealGroup[];
 }
@@ -271,6 +354,9 @@ export interface CashflowSummary {
   overdue: number;
   expected: number;
   monthlyExpense: number;
+  /** 그 달 수금 가운데 공동중개 상대에게 넘겨줄 몫 (만원) */
+  partnerShare?: number;
+  /** 수금 − 공동중개 줄 몫 − 고정비 */
   netProfit: number;
   taxInvoicePending: number;
   pipeline: {
@@ -310,6 +396,8 @@ export type EmploymentType = 'freelancer' | 'employee';
 
 export interface SettlementDetailItem {
   receiptId: string;
+  /** partner_share: 공동중개 상대가 수금한 청구에서 받은 우리 몫 (금액은 부가세 별도로 본 값) */
+  source?: 'partner_share';
   dealId: string;
   dealTitle: string;
   kind: 'receipt' | 'refund';
@@ -352,12 +440,14 @@ export interface SettlementLine {
 
 export interface SettlementWaitingItem {
   receiptId: string;
+  /** partner_share: 공동중개 받은 몫 (금액은 부가세 별도로 본 값) */
+  source?: 'partner_share';
   dealId: string;
   dealTitle: string;
   receivedAt: string;
   amountWon: number;
-  /** balance: 잔금을 기다림 / participants: 담당 배분이 없음 / ratio: 직원 몫이 정해지지 않음 */
-  reason: 'balance' | 'participants' | 'ratio';
+  /** balance: 잔금을 기다림 / participants: 담당 배분이 없음 / ratio: 직원 몫이 정해지지 않음 / cancelled: 취소한 거래 */
+  reason: 'balance' | 'participants' | 'ratio' | 'cancelled';
 }
 
 export interface SettlementView {
@@ -367,16 +457,24 @@ export interface SettlementView {
   confirmedAt: string | null;
   lines: SettlementLine[];
   waiting: SettlementWaitingItem[];
+  /** 취소한 거래의 입금 — 정산에 넣지 않음 (받은 날·취소한 날 가운데 늦은 날이 이 달인 것) */
+  cancelledReceipts?: SettlementWaitingItem[];
   /** 확정할 수 없는 이유. 확정할 수 있으면 null. */
   blockedReason: string | null;
   canUnconfirm: boolean;
+  /** 가장 최근에 확정한 달. 그 뒤에 들어갈 수 있게 된 입금은 이 다음 달 정산에 들어간다. */
+  latestConfirmedMonth: string | null;
 }
+
 
 export interface MySettlementLine extends Omit<SettlementLine, 'userId' | 'name' | 'lineId'> {
   lineId: string;
   month: string;
   confirmedAt: string;
 }
+
+/** 확정 전 정산의 내 줄 (금액은 원) */
+export type MySettlementPreviewLine = Omit<SettlementLine, 'userId' | 'name' | 'lineId' | 'paidAt'>;
 
 export interface DealParticipantShare {
   userId: string;
@@ -405,6 +503,9 @@ export function createFinanceApi(request: RequestFn) {
       unmarkPaid: (lineId: string) =>
         request<SettlementView>(`/finance/settlements/lines/${lineId}/unpay`, { method: 'POST', body: {} }),
       mine: () => request<MySettlementLine[]>('/finance/settlements/mine'),
+      /** 아직 확정하지 않은 다음 정산의 내 몫 (정산 화면과 같은 계산, 바뀔 수 있음). 내 줄이 없으면 line 은 null. */
+      minePreview: () =>
+        request<{ month: string; line: MySettlementPreviewLine | null }>('/finance/settlements/mine/preview'),
       getSettings: () => request<{ timing: SettlementTiming }>('/finance/settlements/settings'),
       updateSettings: (data: { timing: SettlementTiming }) =>
         request<{ timing: SettlementTiming }>('/finance/settlements/settings', {
@@ -452,10 +553,19 @@ export function createFinanceApi(request: RequestFn) {
       listReceipts: (id: string) =>
         request<CommissionReceipt[]>(`/finance/commission-payments/${id}/receipts`),
 
-      /** 입금 한 건을 원 단위(부가세 포함)로 기록한다 */
+      /**
+       * 입금 한 건을 통장에 들어온 금액 그대로(원) 기록한다.
+       * vat: included(기본, 부가세 포함해 받음) | none(부가세 없이 받음)
+       */
       addReceipt: (
         id: string,
-        data: { amountWon: number; receivedAt?: string; method?: string; memo?: string },
+        data: {
+          amountWon: number;
+          receivedAt?: string;
+          method?: string;
+          memo?: string;
+          vat?: 'included' | 'none';
+        },
       ) =>
         request<CommissionPayment>(`/finance/commission-payments/${id}/receipts`, {
           method: 'POST',
@@ -488,13 +598,41 @@ export function createFinanceApi(request: RequestFn) {
           { method: 'POST', body: data ?? {} },
         ),
 
+      /** 현금영수증·세금계산서를 발행했다고 기록한다 (kind 기본값은 세금계산서) */
       issueTaxInvoice: (
         id: string,
-        data: { taxInvoiceNo: string; taxInvoiceDate?: string },
+        data: {
+          taxInvoiceNo: string;
+          taxInvoiceDate?: string;
+          kind?: 'tax_invoice' | 'cash_receipt';
+        },
       ) =>
         request<CommissionPayment>(
           `/finance/commission-payments/${id}/tax-invoice`,
           { method: 'POST', body: data },
+        ),
+
+      /** 잘못 적은 현금영수증·세금계산서 기록을 지운다 */
+      clearTaxInvoice: (id: string) =>
+        request<CommissionPayment>(
+          `/finance/commission-payments/${id}/tax-invoice/clear`,
+          { method: 'POST', body: {} },
+        ),
+
+      /** 공동중개 상대와 이 몫을 주고받았다고 기록한다 (다 받은 청구만) */
+      settleDistribution: (
+        distributionId: string,
+        data: { settledAt?: string; memo?: string } = {},
+      ) =>
+        request<CommissionDistribution>(
+          `/finance/commission-payments/distributions/${distributionId}/settle`,
+          { method: 'POST', body: data },
+        ),
+
+      unsettleDistribution: (distributionId: string) =>
+        request<CommissionDistribution>(
+          `/finance/commission-payments/distributions/${distributionId}/unsettle`,
+          { method: 'POST', body: {} },
         ),
 
       replaceDistributions: (
@@ -527,9 +665,9 @@ export function createFinanceApi(request: RequestFn) {
         category: string;
         amount: number;
         frequency?: string;
-        dayOfMonth?: number;
+        dayOfMonth?: number | null;
         taxDeductible?: boolean;
-        note?: string;
+        note?: string | null;
       }) =>
         request<OfficeExpenseTemplate>('/finance/expenses', {
           method: 'POST',
@@ -543,10 +681,12 @@ export function createFinanceApi(request: RequestFn) {
           category: string;
           amount: number;
           frequency: string;
-          dayOfMonth: number;
+          /** null 이면 결제일을 지운다 */
+          dayOfMonth: number | null;
           taxDeductible: boolean;
           isActive: boolean;
-          note: string;
+          /** null 이면 메모를 지운다 */
+          note: string | null;
         }>,
       ) =>
         request<OfficeExpenseTemplate>(`/finance/expenses/${id}`, {

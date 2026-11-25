@@ -1,8 +1,11 @@
 import type { RequestFn } from '../client.js';
 import type {
   PartnerBroker,
+  PartnerBrokerContact,
   CreatePartnerBrokerDto,
   UpdatePartnerBrokerDto,
+  CreatePartnerBrokerContactDto,
+  UpdatePartnerBrokerContactDto,
 } from './finance.js';
 
 export function createPartnerBrokersApi(request: RequestFn) {
@@ -24,5 +27,23 @@ export function createPartnerBrokersApi(request: RequestFn) {
       }),
     remove: (id: string) =>
       request<PartnerBroker>(`/partner-brokers/${id}`, { method: 'DELETE' }),
+    addContact: (partnerBrokerId: string, dto: CreatePartnerBrokerContactDto) =>
+      request<PartnerBrokerContact>(`/partner-brokers/${partnerBrokerId}/contacts`, {
+        method: 'POST',
+        body: dto,
+      }),
+    updateContact: (
+      partnerBrokerId: string,
+      contactId: string,
+      dto: UpdatePartnerBrokerContactDto,
+    ) =>
+      request<PartnerBrokerContact>(
+        `/partner-brokers/${partnerBrokerId}/contacts/${contactId}`,
+        { method: 'PATCH', body: dto },
+      ),
+    removeContact: (partnerBrokerId: string, contactId: string) =>
+      request<void>(`/partner-brokers/${partnerBrokerId}/contacts/${contactId}`, {
+        method: 'DELETE',
+      }),
   };
 }

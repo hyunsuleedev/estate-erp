@@ -83,7 +83,7 @@ describe('UnitsService — site type guard', () => {
         name: '201호',
         roomCount: -1,
       }),
-    ).rejects.toThrow('roomCount must be a non-negative integer or null');
+    ).rejects.toThrow('방 수는 0 이상의 정수로 입력해 주세요.');
 
     await expect(
       service.create('office-1', {
@@ -92,7 +92,7 @@ describe('UnitsService — site type guard', () => {
         name: '201호',
         bathRoomCount: 1.5,
       }),
-    ).rejects.toThrow('bathRoomCount must be a non-negative integer or null');
+    ).rejects.toThrow('욕실 수는 0 이상의 정수로 입력해 주세요.');
   });
 
   it('rejects creating a unit on a land site', async () => {
@@ -112,7 +112,7 @@ describe('UnitsService — site type guard', () => {
         dongId: 'dong-1',
         name: '101호',
       }),
-    ).rejects.toThrow('Units are not supported for land sites');
+    ).rejects.toThrow('토지에는 호수를 만들 수 없습니다.');
 
     expect(prisma.unit.create).not.toHaveBeenCalled();
   });

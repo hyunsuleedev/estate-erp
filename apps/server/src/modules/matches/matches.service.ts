@@ -39,7 +39,16 @@ function getMatchStageStorageValues(stage: string): string[] {
 const matchInclude = {
   listing: {
     include: {
-      intake: { select: LISTING_INTAKE_STATE_SELECT },
+      intake: {
+        select: {
+          ...LISTING_INTAKE_STATE_SELECT,
+          // 한 의뢰에는 진행 중인 거래가 하나뿐이다. 같은 집의 다른 거래 조건(매매 ↔ 전세)이 거래 중이면
+          // 이 매칭은 거래로 넘길 수 없으므로, 화면이 협상 끝에서야 알지 않게 미리 보여 준다.
+          listings: {
+            select: { id: true, transactionType: true, deals: OCCUPYING_DEALS_SELECT },
+          },
+        },
+      },
       deals: OCCUPYING_DEALS_SELECT,
       property: {
         include: {
@@ -60,6 +69,11 @@ const matchInclude = {
       preferredRegions: {
         include: { province: true, district: true, ward: true },
       },
+      // 매칭 상세 · 희망매물 줄의 "희망 지역·단지"가 단지만 고른 손님에게 "지역 협의"로 보이지 않게 단지도 보낸다
+      preferredSites: {
+        include: { site: { select: { id: true, name: true, type: true } } },
+        orderBy: { priority: 'asc' },
+      },
     },
   },
   calendarEvents: {
@@ -67,7 +81,7 @@ const matchInclude = {
     orderBy: { start: 'asc' },
   },
   deals: {
-    select: { id: true, stage: true, isCancelled: true },
+    select: { id: true, stage: true, isCancelled: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
   },
 } satisfies Prisma.MatchInclude;
@@ -129,7 +143,7 @@ export class MatchesService {
       where: { id, officeId },
       include: this.matchInclude,
     });
-    if (!match) throw new NotFoundException('Match not found');
+    if (!match) throw new NotFoundException('매칭을 찾을 수 없습니다');
     return this.withPropertyContext(match);
   }
 
@@ -143,25 +157,58 @@ export class MatchesService {
     /** id: 같은 요청을 다시 보내도 한 건만 생기게 할 때 (통화 분석 제안 반영) */
     options: { id?: string } = {},
   ) {
-    // 동일 매물 + 동일 구매조건 조합 중복 방지 (종료된 매칭은 재생성 허용)
-    const duplicate = await this.prisma.match.findFirst({
-      where: {
-        officeId,
-        listingId: dto.listingId,
-        buyerReqId: dto.buyerReqId,
-        stage: { not: 'closed' },
-      },
-      select: { id: true },
-    });
-    if (duplicate) {
+    // 매물과 희망 조건이 이 사무소의 것인지 본다 (FK는 id만 가리킨다)
+    const [listing, requirement] = await Promise.all([
+      this.prisma.listing.findFirst({
+        where: { id: dto.listingId, officeId },
+        select: { id: true, intake: { select: { lifecycleStatus: true } } },
+      }),
+      this.prisma.buyerRequirement.findFirst({
+        where: { id: dto.buyerReqId, officeId },
+        select: { id: true, status: true, buyerIntake: { select: { lifecycleStatus: true } } },
+      }),
+    ]);
+    if (!listing) throw new NotFoundException('매물을 찾을 수 없습니다');
+    if (!requirement) throw new NotFoundException('희망 조건을 찾을 수 없습니다');
+    if (listing.intake.lifecycleStatus === IntakeLifecycleStatus.CLOSED) {
+      throw new BadRequestException(
+        '종료된 매물은 연결할 수 없습니다. 매물관리에서 의뢰를 다시 연 뒤 연결해 주세요',
+      );
+    }
+    if (requirement.status === 'completed') {
       throw new ConflictException(
-        '이미 같은 매물과 구매조건으로 진행 중인 매칭이 있습니다',
+        '완료한 희망 조건입니다. 상태를 활성으로 바꾼 뒤 매물을 연결해 주세요',
+      );
+    }
+    if (requirement.buyerIntake?.lifecycleStatus === IntakeLifecycleStatus.CLOSED) {
+      throw new ConflictException(
+        '종료한 구매 의뢰의 희망 조건입니다. 구매 의뢰를 다시 연 뒤 매물을 연결해 주세요',
       );
     }
 
-    const match = await this.prisma.match.create({
-      data: { ...(options.id ? { id: options.id } : {}), officeId, ...dto },
-      include: this.matchInclude,
+    // 동일 매물 + 동일 구매조건 조합 중복 방지 (종료된 매칭은 재생성 허용).
+    // 같은 조합을 동시에 두 번 보내면(단추 두 번 누르기) 둘 다 검사를 통과할 수 있어, 조합마다 잠그고 본다.
+    const match = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`match:${dto.listingId}:${dto.buyerReqId}`}::text, 0))`;
+      const duplicate = await tx.match.findFirst({
+        where: {
+          officeId,
+          listingId: dto.listingId,
+          buyerReqId: dto.buyerReqId,
+          stage: { not: 'closed' },
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw new ConflictException(
+          '이미 이 고객에게 연결해 진행 중인 매물입니다',
+        );
+      }
+
+      return tx.match.create({
+        data: { ...(options.id ? { id: options.id } : {}), officeId, ...dto },
+        include: this.matchInclude,
+      });
     });
 
     return this.withPropertyContext(match);
@@ -182,6 +229,37 @@ export class MatchesService {
 
     const currentMatch = await this.findOne(id, officeId);
     const currentStage = normalizeMatchStage(currentMatch.stage);
+
+    // 완료한 손님의 매칭은 다시 열지 않는다. 손님 조건을 먼저 활성으로 바꾼다 (새로 연결할 때와 같다).
+    if (
+      targetStage !== MatchStage.CLOSED &&
+      currentMatch.buyerRequirement?.status === 'completed'
+    ) {
+      throw new ConflictException(
+        '완료한 희망 조건의 매칭입니다. 고객 상태를 활성으로 바꾼 뒤 다시 시작해 주세요',
+      );
+    }
+    // 구매 의뢰를 닫았으면(고객 원장의 의뢰 종료) 그 의뢰의 매칭도 옮기거나 다시 열지 않는다
+    if (
+      targetStage !== MatchStage.CLOSED &&
+      currentMatch.buyerRequirement?.buyerIntake?.lifecycleStatus === IntakeLifecycleStatus.CLOSED
+    ) {
+      throw new ConflictException(
+        '종료한 구매 의뢰의 매칭입니다. 구매 의뢰를 다시 연 뒤 진행해 주세요',
+      );
+    }
+
+    // 거래로 넘긴 매칭은 읽기 전용이다. 진행은 거래관리가 맡고, 거래를 취소하면 매칭이 알아서 닫힌다.
+    // 단계를 되돌리면 거래는 진행 중인데 매칭만 예전 단계로 돌아가 두 화면이 어긋난다.
+    if (
+      currentStage === MatchStage.DEAL_CREATED &&
+      targetStage !== MatchStage.DEAL_CREATED &&
+      currentMatch.deals.some((deal) => !deal.isCancelled)
+    ) {
+      throw new ConflictException(
+        '거래로 전환한 매칭이라 단계를 바꿀 수 없습니다. 진행은 거래관리에서 해 주세요',
+      );
+    }
     const currentIndex = MATCH_STAGE_ORDER.indexOf(
       currentStage as (typeof MATCH_STAGE_ORDER)[number],
     );
@@ -294,12 +372,12 @@ export class MatchesService {
           select: { id: true },
         });
         if (!accessibleMatch) {
-          throw new NotFoundException('Match not found');
+          throw new NotFoundException('매칭을 찾을 수 없습니다');
         }
         if (expectedUpdatedAt) {
           throw new ConflictException('다른 사용자가 먼저 수정했습니다.');
         }
-        throw new NotFoundException('Match not found');
+        throw new NotFoundException('매칭을 찾을 수 없습니다');
       }
       throw error;
     }
@@ -323,7 +401,7 @@ export class MatchesService {
       where: { id, officeId },
       select: { stage: true },
     });
-    if (!current) throw new NotFoundException('Match not found');
+    if (!current) throw new NotFoundException('매칭을 찾을 수 없습니다');
     if (normalizeMatchStage(current.stage) === MatchStage.DEAL_CREATED) {
       throw new ConflictException(
         '거래로 전환한 매칭입니다. 합의 조건은 거래관리에서 수정해 주세요',
@@ -376,7 +454,7 @@ export class MatchesService {
   private parseExpectedUpdatedAt(value: string | Date) {
     const parsed = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(parsed.getTime())) {
-      throw new BadRequestException('expectedUpdatedAt must be a valid date');
+      throw new BadRequestException('수정 시각 형식이 올바르지 않습니다.');
     }
     return parsed;
   }

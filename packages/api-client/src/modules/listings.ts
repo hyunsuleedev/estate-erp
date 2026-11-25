@@ -1,5 +1,6 @@
 import type { RequestFn } from '../client.js';
 import type {
+  AdvertisementSyncState,
   IntakeCheckResult,
   IntakeClosedReason,
   IntakeConfirmationState,
@@ -7,16 +8,33 @@ import type {
   ListingAvailability,
 } from '@estate-erp/shared';
 import type { PaginatedResponse } from '../types.js';
+import type { AdvertisementChangeRequest } from './listing-advertisements.js';
 import type { Tenant } from './tenants.js';
 
 export type ListingAdvertisementStatus =
   | 'active'
   | 'ended';
-export type ListingAdvertisementSource = 'manual' | 'cp_sync';
+
+export interface OfficeCpAccount {
+  id: string;
+  officeId: string;
+  channel: string;
+  accountKey: string;
+  accountName: string | null;
+  lastSyncedAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  _count?: {
+    advertisements: number;
+  };
+}
 
 export interface ListingAdvertisement {
   id: string;
   officeId: string;
+  cpAccountId?: string | null;
+  cpAccount?: Pick<OfficeCpAccount, 'id' | 'channel' | 'accountKey' | 'accountName'> | null;
   /** 어느 의뢰의 광고인지. 매물과 아직 잇지 못한 광고는 null */
   listingId: string | null;
   /** 우리 사무소의 관리 공간. 매물이 없어도 호실까지 찾았으면 있다 */
@@ -37,7 +55,6 @@ export interface ListingAdvertisement {
   floorExposure?: string | null;
   channel: string;
   status: ListingAdvertisementStatus;
-  source: ListingAdvertisementSource | string;
   advertisedPrice: number | null;
   advertisedDeposit: number | null;
   advertisedMonthlyRent: number | null;
@@ -54,6 +71,9 @@ export interface ListingAdvertisement {
   providerStatusObservedAt: string | null;
   lastCheckedAt: string | null;
   lastSyncedAt: string | null;
+  manualEditedAt?: string | null;
+  syncState?: AdvertisementSyncState;
+  changeRequests?: AdvertisementChangeRequest[];
   createdAt: string;
   updatedAt: string;
 }
@@ -77,6 +97,10 @@ export interface ListingOccupyingDeal {
   id: string;
   stage: string;
   stageChangedAt: string | null;
+  /** 합의 금액(만원). 끝난 매물은 내놓은 가격 대신 이 값을 거래가로 보인다 */
+  agreedPrice?: number | null;
+  agreedDeposit?: number | null;
+  agreedMonthlyRent?: number | null;
 }
 
 export interface ListingIntakeState {
@@ -149,6 +173,8 @@ export interface Listing {
       type: string;
       roadAddress: string | null;
       jibunAddress: string | null;
+      /** 법정동 코드(10자리). 앞 2자리가 시도, 앞 5자리가 시군구 */
+      wardCode?: string | null;
     };
     unit?: {
       id: string;
@@ -230,9 +256,8 @@ export interface ListingsFilter {
   areaMin?: number;
   /** 공급면적 상한 (m²) */
   areaMax?: number;
-  sido?: string;
-  sigungu?: string;
-  eupmyeondong?: string;
+  /** 법정동 코드(10자리)와 같은 동의 매물만 */
+  wardCode?: string;
   siteId?: string;
   search?: string;
   sortBy?: 'price' | 'createdAt' | 'updatedAt';
@@ -286,7 +311,7 @@ export interface UpdateListingDto {
   moveInAvailableFrom?: string | null;
   moveInAvailableTo?: string | null;
   isPaused?: boolean;
-  memo?: string;
+  memo?: string | null;
   expectedUpdatedAt?: string | null;
 }
 
@@ -310,7 +335,8 @@ export function createListingsApi(request: RequestFn) {
     update: (id: string, dto: UpdateListingDto) =>
       request<Listing>(`/listings/${id}`, { method: 'PATCH', body: dto }),
 
+    /** intakeRemoved: 의뢰의 마지막 조건이라 의뢰도 함께 지워졌는지 */
     remove: (id: string) =>
-      request<void>(`/listings/${id}`, { method: 'DELETE' }),
+      request<{ id: string; intakeRemoved?: boolean }>(`/listings/${id}`, { method: 'DELETE' }),
   };
 }

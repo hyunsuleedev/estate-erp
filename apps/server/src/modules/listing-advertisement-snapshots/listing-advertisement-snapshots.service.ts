@@ -5,12 +5,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   inferOfficeAdvertisementFloorExposureMode,
   OfficeAdvertisementFloorExposureMode,
 } from "@estate-erp/shared";
-import { Prisma } from "@prisma/client";
+import { Prisma, type ListingAdvertisement } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   assertValidAdvertisementRawFields,
@@ -23,6 +24,7 @@ import {
   mergeAdvertisements,
   recordAdvertisementHistory,
 } from "../listing-advertisements/advertisement-identity";
+import { OfficeCpAccountsService } from "../listing-advertisements/office-cp-accounts.service";
 
 const ACTIVE_SESSION_STATUS = "processing";
 const SHA_256_PATTERN = /^[0-9a-f]{64}$/;
@@ -33,6 +35,7 @@ type JsonRecord = Record<string, unknown>;
 export interface BeginListingAdvertisementSnapshotDto {
   channel: string;
   provider: string;
+  accountKey: string;
   scope: string;
   observedAt: string;
   expectedTotal: number | null;
@@ -81,7 +84,6 @@ export function hashCanonicalJson(value: unknown): string {
     .digest("hex");
 }
 
-/** 글자나 숫자로 온 값을 다듬은 글자로. 그 밖의 모양과 빈 글은 null */
 function rawText(value: unknown): string | null {
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   if (typeof value !== "string") return null;
@@ -100,13 +102,11 @@ const TRANSACTION_TYPE_BY_TEXT: Record<string, string> = {
   단기임대: "monthly",
 };
 
-/** CP가 적은 거래유형("월세")을 우리 값으로. 모르는 말이면 null (추측하지 않는다) */
 function normalizeTransactionType(value: unknown): string | null {
   const text = rawText(value);
   return text ? (TRANSACTION_TYPE_BY_TEXT[text.toLowerCase()] ?? null) : null;
 }
 
-/** 층 표기에서 노출 방식을 읽는다(네이버 비교 쪽과 같은 규칙). 알 수 없으면 null */
 function deriveFloorExposure(floorText: string | null): string | null {
   const mode = inferOfficeAdvertisementFloorExposureMode(floorText);
   return mode === OfficeAdvertisementFloorExposureMode.UNKNOWN ? null : mode;
@@ -118,7 +118,10 @@ function asInputJson(value: unknown): Prisma.InputJsonValue {
 
 @Injectable()
 export class ListingAdvertisementSnapshotsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly cpAccounts?: OfficeCpAccountsService,
+  ) {}
 
   async begin(
     officeId: string,
@@ -126,11 +129,37 @@ export class ListingAdvertisementSnapshotsService {
     dto: BeginListingAdvertisementSnapshotDto,
   ) {
     const normalized = this.validateBeginDto(dto);
+    const cpAccount = this.cpAccounts
+      ? await this.cpAccounts.ensureAccount(
+          this.prisma,
+          officeId,
+          normalized.channel,
+          normalized.accountKey,
+        )
+      : await this.prisma.officeCpAccount.upsert({
+          where: {
+            officeId_channel_accountKey: {
+              officeId,
+              channel: normalized.channel,
+              accountKey: normalized.accountKey,
+            },
+          },
+          create: {
+            officeId,
+            channel: normalized.channel,
+            accountKey: normalized.accountKey,
+            isActive: true,
+          },
+          update: { isActive: true },
+        });
+    const cpAccountId = cpAccount.id;
+
     const existing =
       await this.prisma.listingAdvertisementSnapshotSession.findFirst({
         where: {
           officeId,
           channel: normalized.channel,
+          cpAccountId,
           manifestHash: normalized.manifestHash,
         },
       });
@@ -143,13 +172,14 @@ export class ListingAdvertisementSnapshotsService {
         where: {
           officeId,
           channel: normalized.channel,
+          cpAccountId,
           status: ACTIVE_SESSION_STATUS,
         },
         select: { id: true, status: true, manifestHash: true, createdAt: true },
       });
     if (active) {
       throw new ConflictException({
-        message: `active advertisement snapshot session ${active.id} exists for channel`,
+        message: `active advertisement snapshot session ${active.id} exists for account`,
         session: active,
       });
     }
@@ -159,6 +189,7 @@ export class ListingAdvertisementSnapshotsService {
         await this.prisma.listingAdvertisementSnapshotSession.create({
           data: {
             officeId,
+            cpAccountId,
             channel: normalized.channel,
             scope: normalized.scope,
             status: ACTIVE_SESSION_STATUS,
@@ -183,6 +214,7 @@ export class ListingAdvertisementSnapshotsService {
             where: {
               officeId,
               channel: normalized.channel,
+              cpAccountId,
               manifestHash: normalized.manifestHash,
             },
           });
@@ -193,14 +225,15 @@ export class ListingAdvertisementSnapshotsService {
             where: {
               officeId,
               channel: normalized.channel,
+              cpAccountId,
               status: ACTIVE_SESSION_STATUS,
             },
             select: { id: true },
           });
         throw new ConflictException(
           blocking
-            ? `active advertisement snapshot session ${blocking.id} exists for channel`
-            : "active advertisement snapshot session exists for channel",
+            ? `active advertisement snapshot session ${blocking.id} exists for account`
+            : "active advertisement snapshot session exists for account",
         );
       }
       throw error;
@@ -268,7 +301,6 @@ export class ListingAdvertisementSnapshotsService {
         );
       }
 
-      // 준 연결을 확인하고 위 단계(관리 공간 · 건물)를 채운다. 서로 어긋나면 거절한다.
       const link = errorMessage
         ? { listingId: null, propertyId: null, siteId: null, transactionType: null }
         : await resolveAdvertisementLink(tx, officeId, dto);
@@ -279,7 +311,6 @@ export class ListingAdvertisementSnapshotsService {
           })
         : null;
 
-      // resolved = 읽어서 넣을 수 있는 항목(연결 단계와 무관). failed = 광고를 읽지 못함.
       const status = errorMessage ? "failed" : "resolved";
       const resolution = errorMessage
         ? null
@@ -468,7 +499,6 @@ export class ListingAdvertisementSnapshotsService {
       const unresolved = items.filter((item) => item.status !== "resolved");
       if (unresolved.length > 0) {
         throw new ConflictException({
-          // 매물에 연결하지 못한 광고는 막지 않는다. 막는 것은 읽지 못한 광고(error)뿐이다.
           message: "items submitted with an error must be resubmitted before completion",
           unresolved: unresolved.map((item) => ({
             id: item.id,
@@ -498,7 +528,7 @@ export class ListingAdvertisementSnapshotsService {
         );
       }
 
-      // 한 매물에 같은 채널의 게재 중 광고는 하나다. 매물이 없는 광고는 이 검사에 들지 않는다.
+      // 한 계정·채널 안에서는 한 매물에 게재 중 광고가 하나다. 다른 계정끼리는 같은 매물 광고 가능.
       const listingIds = items.flatMap((item) =>
         item.listingId ? [item.listingId] : [],
       );
@@ -507,7 +537,7 @@ export class ListingAdvertisementSnapshotsService {
           "multiple current CP advertisements resolved to the same listing",
         );
       }
-      // 제출한 뒤 지워진 관리 공간 · 건물을 가리키지 않게 다시 확인한다
+
       const links = new Map<string, Awaited<ReturnType<typeof resolveAdvertisementLink>>>();
       for (const item of items) {
         try {
@@ -525,28 +555,60 @@ export class ListingAdvertisementSnapshotsService {
       }
       const externalAdIds = items.map((item) => item.externalAdId);
 
-      // 이번 수집에 없는 광고는 종료한다. 줄은 그대로 두고, 종료된 때를 이력에 남긴다.
+      const activeAccountCount = this.cpAccounts
+        ? await this.cpAccounts.countActiveByChannel(tx, officeId, session.channel)
+        : await tx.officeCpAccount.count({
+            where: { officeId, channel: session.channel, isActive: true },
+          });
+
+      // 이번 스냅샷에 없는 활성 광고를 종료한다 (source 구분 없이 계정 범위 + 시간 보호 적용).
+      // 단일 계정 사무소는 cpAccountId=null 수동 광고도 누락 종료 대상에 포함하고,
+      // 다중 계정 사무소는 다른 계정 광고 오종료를 막기 위해 cpAccountId가 일치하는 행만 종료한다.
       const staleAdvertisements = await tx.listingAdvertisement.findMany({
         where: {
           officeId,
           channel: session.channel,
-          source: "cp_sync",
           status: "active",
-          ...(externalAdIds.length > 0
-            ? {
-                OR: [
-                  { externalAdId: null },
-                  { externalAdId: { notIn: externalAdIds } },
-                ],
-              }
-            : {}),
+          firstSeenAt: { lte: session.observedAt },
+          AND: [
+            {
+              OR: [
+                { manualEditedAt: null },
+                { manualEditedAt: { lte: session.observedAt } },
+              ],
+            },
+            ...(session.cpAccountId && activeAccountCount <= 1
+              ? [
+                  {
+                    OR: [
+                      { cpAccountId: session.cpAccountId },
+                      { cpAccountId: null },
+                    ],
+                  },
+                ]
+              : session.cpAccountId
+                ? [{ cpAccountId: session.cpAccountId }]
+                : []),
+            ...(externalAdIds.length > 0
+              ? [
+                  {
+                    OR: [
+                      { externalAdId: null },
+                      { externalAdId: { notIn: externalAdIds } },
+                    ],
+                  },
+                ]
+              : []),
+          ],
         },
       });
+      const endedAdvertisementIds = new Set<string>();
       for (const stale of staleAdvertisements) {
         const ended = await tx.listingAdvertisement.update({
           where: { id: stale.id },
           data: { status: "ended", endedAt: session.observedAt },
         });
+        endedAdvertisementIds.add(ended.id);
         await recordAdvertisementHistory(tx, ended, {
           observedAt: session.observedAt,
           source: "cp_sync",
@@ -557,8 +619,10 @@ export class ListingAdvertisementSnapshotsService {
 
       let createdAdvertisements = 0;
       let updatedAdvertisements = 0;
-      // 이번 회차에서 이미 고친 줄. 같은 매물 · 채널로 이어진 CP 광고가 둘이면 두 번째가 여기에 걸린다.
       const touched = new Map<string, string>();
+      const syncedAdsById = new Map<string, ListingAdvertisement>();
+      const syncedAdsByListingId = new Map<string, ListingAdvertisement>();
+
       for (const item of items) {
         const raw = this.requireRecord(item.raw, item.externalAdId);
         const link = links.get(item.id)!;
@@ -568,10 +632,10 @@ export class ListingAdvertisementSnapshotsService {
           raw,
         );
         const foundLink = getAdvertisementLinkLevel(link) !== "none";
-        // 같은 광고를 찾는다: 열쇠(매물 + 채널 / 관리 공간 + 채널 + 거래유형), 없으면 CP 광고 번호.
-        // 종료돼 있던 줄도 같은 광고면 그 줄이 다시 게재 중으로 돌아온다(재광고 · 다시 게재는 새 줄이 아니다).
+
         const same = await findSameAdvertisement(tx, officeId, {
           channel: session.channel,
+          cpAccountId: session.cpAccountId ?? null,
           externalAdId: item.externalAdId,
           listingId: link.listingId,
           propertyId: link.propertyId,
@@ -583,38 +647,49 @@ export class ListingAdvertisementSnapshotsService {
           same.byKey.id !== same.byExternalAdId.id &&
           !touched.has(same.byKey.id)
         ) {
-          // 연결 없이 들어와 있던 줄이 이 매물 · 채널의 광고였다
           same.byKey = await mergeAdvertisements(tx, same.byExternalAdId, same.byKey);
         }
         const existing = same.byKey ?? same.byExternalAdId;
         if (existing && touched.has(existing.id)) {
           throw new ConflictException(
-            `CP 광고 ${touched.get(existing.id)}와 ${item.externalAdId}가 같은 매물 · 같은 채널에 이어져 있습니다. 한 매물의 한 채널 광고는 하나입니다. 연결을 확인해 주세요.`,
+            `CP 광고 ${touched.get(existing.id)}와 ${item.externalAdId}가 같은 매물 · 같은 채널(계정)에 이어져 있습니다. 연결을 확인해 주세요.`,
           );
         }
         if (existing) {
+          // 스냅샷 관측 시각 이후에 사람이 직접 수정했다면 수동 입력값을 보호한다.
+          const protectedByManualEdit =
+            existing.manualEditedAt != null &&
+            existing.manualEditedAt.getTime() > session.observedAt.getTime();
           const updated = await tx.listingAdvertisement.update({
             where: { id: existing.id },
-            data: {
-              ...data,
-              // 종료돼 있었다면 다시 게재 중으로
-              status: "active",
-              endedAt: null,
-              source: "cp_sync",
-              // 이번 수집이 연결을 찾지 못했다고 해서, 사람이 화면에서 이어 둔 연결을 지우지 않는다.
-              // 이번에 찾은 것이 있을 때만 그것으로 바꾼다.
-              ...(foundLink && {
-                listingId: link.listingId,
-                propertyId: link.propertyId,
-                siteId: link.siteId,
-              }),
-              transactionType:
-                (foundLink ? link.transactionType : null) ??
-                data.transactionType ??
-                existing.transactionType,
-            },
+            data: protectedByManualEdit
+              ? {
+                  ...(session.cpAccountId && !existing.cpAccountId
+                    ? { cpAccountId: session.cpAccountId }
+                    : {}),
+                  ...(foundLink && {
+                    listingId: link.listingId,
+                    propertyId: link.propertyId,
+                    siteId: link.siteId,
+                  }),
+                }
+              : {
+                  ...data,
+                  ...(session.cpAccountId ? { cpAccountId: session.cpAccountId } : {}),
+                  status: "active",
+                  endedAt: null,
+                  ...(foundLink && {
+                    listingId: link.listingId,
+                    propertyId: link.propertyId,
+                    siteId: link.siteId,
+                  }),
+                  transactionType:
+                    (foundLink ? link.transactionType : null) ??
+                    data.transactionType ??
+                    existing.transactionType,
+                },
           });
-          if (advertisementStateChanged(existing, updated)) {
+          if (!protectedByManualEdit && advertisementStateChanged(existing, updated)) {
             await recordAdvertisementHistory(tx, updated, {
               observedAt: session.observedAt,
               source: "cp_sync",
@@ -622,11 +697,14 @@ export class ListingAdvertisementSnapshotsService {
             });
           }
           touched.set(updated.id, item.externalAdId);
+          syncedAdsById.set(updated.id, updated);
+          if (updated.listingId) syncedAdsByListingId.set(updated.listingId, updated);
           updatedAdvertisements += 1;
         } else {
           const created = await tx.listingAdvertisement.create({
             data: {
               officeId,
+              cpAccountId: session.cpAccountId ?? null,
               channel: session.channel,
               firstSeenAt: session.observedAt,
               ...data,
@@ -642,9 +720,30 @@ export class ListingAdvertisementSnapshotsService {
             snapshotSessionId: session.id,
           });
           touched.set(created.id, item.externalAdId);
+          syncedAdsById.set(created.id, created);
+          if (created.listingId) syncedAdsByListingId.set(created.listingId, created);
           createdAdvertisements += 1;
         }
       }
+
+      if (session.cpAccountId) {
+        await tx.officeCpAccount.update({
+          where: { id: session.cpAccountId },
+          data: { lastSyncedAt: session.observedAt },
+        });
+      }
+
+      // 열린 변경 요청이 이번 완전 스냅샷으로 충족됐으면 verified 전이 및 묶음 Task 완료
+      await this.verifyChangeRequestsFromSnapshot(tx, {
+        officeId,
+        channel: session.channel,
+        cpAccountId: session.cpAccountId ?? null,
+        activeAccountCount,
+        observedAt: session.observedAt,
+        syncedAdsById,
+        syncedAdsByListingId,
+        endedAdvertisementIds,
+      });
 
       const completed = await tx.listingAdvertisementSnapshotSession.update({
         where: { id: session.id },
@@ -664,6 +763,117 @@ export class ListingAdvertisementSnapshotsService {
       });
       return this.completedSummary(completed);
     });
+  }
+
+  private async verifyChangeRequestsFromSnapshot(
+    tx: Prisma.TransactionClient,
+    params: {
+      officeId: string;
+      channel: string;
+      cpAccountId: string | null;
+      activeAccountCount: number;
+      observedAt: Date;
+      syncedAdsById: Map<string, ListingAdvertisement>;
+      syncedAdsByListingId: Map<string, ListingAdvertisement>;
+      endedAdvertisementIds: Set<string>;
+    },
+  ) {
+    const openRequests = await tx.advertisementChangeRequest.findMany({
+      where: {
+        officeId: params.officeId,
+        channel: params.channel,
+        status: { in: ["requested", "in_progress", "executed"] },
+        createdAt: { lte: params.observedAt },
+        ...(params.cpAccountId && params.activeAccountCount <= 1
+          ? { OR: [{ cpAccountId: params.cpAccountId }, { cpAccountId: null }] }
+          : params.cpAccountId
+            ? { cpAccountId: params.cpAccountId }
+            : {}),
+      },
+    });
+    if (openRequests.length === 0) return;
+
+    const touchedTaskIds = new Set<string>();
+    for (const req of openRequests) {
+      let verifiedAdId: string | null | undefined;
+      let verified = false;
+      const target = isRecord(req.targetValue) ? req.targetValue : {};
+      const base = isRecord(req.baseSnapshot) ? req.baseSnapshot : {};
+
+      if (req.action === "publish" && req.listingId) {
+        const synced = params.syncedAdsByListingId.get(req.listingId);
+        if (synced && synced.status === "active") {
+          verified = true;
+          verifiedAdId = synced.id;
+        }
+      } else if (req.advertisementId) {
+        if (req.action === "takedown") {
+          if (params.endedAdvertisementIds.has(req.advertisementId)) {
+            verified = true;
+          }
+        } else {
+          const synced = params.syncedAdsById.get(req.advertisementId);
+          if (synced && synced.status === "active") {
+            if (req.action === "update") {
+              const checks = [
+                target.price === undefined || target.price === synced.advertisedPrice,
+                target.deposit === undefined || target.deposit === synced.advertisedDeposit,
+                target.monthlyRent === undefined ||
+                  target.monthlyRent === synced.advertisedMonthlyRent,
+                target.floorExposure === undefined ||
+                  target.floorExposure === synced.floorExposure,
+              ];
+              verified = checks.every(Boolean);
+            } else if (req.action === "readvertise") {
+              const articleChanged =
+                typeof base.naverArticleNo === "string" &&
+                synced.naverArticleNo != null &&
+                synced.naverArticleNo !== base.naverArticleNo;
+              const wasEnded = base.status === "ended";
+              const startedChanged =
+                typeof base.startedAt === "string" &&
+                synced.startedAt != null &&
+                synced.startedAt.toISOString() !== base.startedAt;
+              verified = articleChanged || wasEnded || startedChanged;
+            }
+          }
+        }
+      }
+
+      if (verified) {
+        await tx.advertisementChangeRequest.update({
+          where: { id: req.id },
+          data: {
+            status: "verified",
+            verifiedAt: params.observedAt,
+            ...(verifiedAdId ? { advertisementId: verifiedAdId } : {}),
+          },
+        });
+        if (req.taskId) touchedTaskIds.add(req.taskId);
+      }
+    }
+
+    for (const taskId of touchedTaskIds) {
+      const siblings = await tx.advertisementChangeRequest.findMany({
+        where: { officeId: params.officeId, taskId },
+        select: { status: true },
+      });
+      const allDone =
+        siblings.length > 0 &&
+        siblings.every(
+          (row) => row.status === "verified" || row.status === "cancelled",
+        );
+      if (allDone) {
+        await tx.task.updateMany({
+          where: {
+            id: taskId,
+            officeId: params.officeId,
+            status: { in: ["pending", "in_progress"] },
+          },
+          data: { status: "completed" },
+        });
+      }
+    }
   }
 
   async cancel(
@@ -697,11 +907,15 @@ export class ListingAdvertisementSnapshotsService {
   private validateBeginDto(dto: BeginListingAdvertisementSnapshotDto) {
     const channel = dto.channel?.trim().toLowerCase();
     const provider = dto.provider?.trim().toLowerCase();
+    const accountKey = dto.accountKey?.trim();
     if (!channel || !CHANNEL_PATTERN.test(channel)) {
       throw new BadRequestException("channel must be a provider slug");
     }
     if (provider !== channel) {
       throw new BadRequestException("provider must match channel");
+    }
+    if (!accountKey) {
+      throw new BadRequestException("accountKey (CP login ID) is required");
     }
     if (dto.scope !== "active_advertisements") {
       throw new BadRequestException("scope must be active_advertisements");
@@ -751,6 +965,7 @@ export class ListingAdvertisementSnapshotsService {
 
     return {
       channel,
+      accountKey,
       scope: dto.scope,
       observedAt,
       expectedTotal: dto.expectedTotal,
@@ -844,11 +1059,8 @@ export class ListingAdvertisementSnapshotsService {
     observedAt: Date,
     raw: JsonRecord,
   ) {
-    // 수집기(Reader)가 CP 화면에서 읽은 글자를 그대로 남긴다. 이 칸들은 연결과 상관없이 저장하고,
-    // 읽을 수 없는 모양이면 버리지 않고 비워 둔다(가격처럼 틀리면 안 되는 값이 아니다).
     const floorText = rawText(raw.floorText ?? raw.floor);
     const fullAddress = rawText(raw.fullAddress);
-    // 한 줄 주소는 도로명("…로 12", "…길 3")인지 지번인지 모양으로만 가른다
     const fullAddressIsRoad = fullAddress ? /(로|길)\s*\d/.test(fullAddress) : false;
     const fields = {
       transactionType: normalizeTransactionType(raw.transactionType),
@@ -877,7 +1089,6 @@ export class ListingAdvertisementSnapshotsService {
     return {
       ...fields,
       status: "active",
-      source: "cp_sync",
       advertisedPrice: this.nullableInteger(raw.advertisedPrice),
       advertisedDeposit: this.nullableInteger(raw.advertisedDeposit),
       advertisedMonthlyRent: this.nullableInteger(raw.advertisedMonthlyRent),
@@ -893,25 +1104,6 @@ export class ListingAdvertisementSnapshotsService {
       lastSeenAt: observedAt,
       lastSyncedAt: observedAt,
     };
-  }
-
-  private advertisedPriceChanged(
-    existing: {
-      advertisedPrice: number | null;
-      advertisedDeposit: number | null;
-      advertisedMonthlyRent: number | null;
-    },
-    next: {
-      advertisedPrice: number | null;
-      advertisedDeposit: number | null;
-      advertisedMonthlyRent: number | null;
-    },
-  ) {
-    return (
-      existing.advertisedPrice !== next.advertisedPrice ||
-      existing.advertisedDeposit !== next.advertisedDeposit ||
-      existing.advertisedMonthlyRent !== next.advertisedMonthlyRent
-    );
   }
 
   private nullableInteger(value: unknown): number | null {

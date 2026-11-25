@@ -39,10 +39,9 @@ export class NotificationsService {
     userId: string,
     options: ListNotificationsOptions = {},
   ) {
-    const limit = Math.min(
-      Math.max(options.limit ?? DEFAULT_LIMIT, 1),
-      MAX_LIMIT,
-    );
+    // 숫자가 아닌 limit("abc")은 기본값으로 (그대로 두면 take: NaN으로 Prisma 오류 500이 난다)
+    const requested = Number.isFinite(options.limit) ? Math.floor(options.limit as number) : DEFAULT_LIMIT;
+    const limit = Math.min(Math.max(requested, 1), MAX_LIMIT);
 
     const rows = await this.prisma.notification.findMany({
       where: {
@@ -77,7 +76,7 @@ export class NotificationsService {
     });
 
     if (!notification) {
-      throw new NotFoundException('Notification not found');
+      throw new NotFoundException('알림을 찾을 수 없습니다.');
     }
 
     if (notification.isRead) {

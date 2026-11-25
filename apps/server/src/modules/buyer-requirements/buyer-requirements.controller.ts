@@ -8,6 +8,8 @@ import {
   Body,
   Query,
   UseGuards,
+  NotFoundException,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { BuyerRequirementsService } from './buyer-requirements.service';
@@ -16,6 +18,11 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+
+/** 주소의 id가 uuid 꼴이 아니면(잘못된 링크) DB 오류(500) 대신 "찾을 수 없습니다"로 답한다 */
+const requirementIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new NotFoundException('희망 조건을 찾을 수 없습니다.'),
+});
 
 @ApiTags('구매 희망조건')
 @ApiBearerAuth()
@@ -96,7 +103,7 @@ export class BuyerRequirementsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
+  findOne(@Param('id', requirementIdPipe) id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.service.findOne(id, user.officeId);
   }
 
@@ -136,7 +143,7 @@ export class BuyerRequirementsController {
 
   @Patch(':id/priority')
   reorder(
-    @Param('id') id: string,
+    @Param('id', requirementIdPipe) id: string,
     @Body() dto: { priorityRank: number },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -145,7 +152,7 @@ export class BuyerRequirementsController {
 
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', requirementIdPipe) id: string,
     @Body() dto: Record<string, unknown>,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -154,7 +161,7 @@ export class BuyerRequirementsController {
 
   @Patch(':id/status')
   updateStatus(
-    @Param('id') id: string,
+    @Param('id', requirementIdPipe) id: string,
     @Body() dto: { status: string },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -162,7 +169,7 @@ export class BuyerRequirementsController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
+  remove(@Param('id', requirementIdPipe) id: string, @CurrentUser() user: CurrentUserPayload) {
     return this.service.remove(id, user.officeId);
   }
 }

@@ -174,4 +174,47 @@ describe('PropertyContactsService', () => {
 
     expect(prisma.propertyContact.create).not.toHaveBeenCalled();
   });
+
+  it('만들 때 본문의 officeId 같은 칸으로 사무소·매물을 바꾸지 못한다', async () => {
+    const { prisma, service } = createService();
+    prisma.property.findFirst.mockResolvedValue({ id: PROPERTY_ID });
+    prisma.contact.findFirst.mockResolvedValue({ id: CONTACT_ID });
+    prisma.propertyContact.create.mockResolvedValue(propertyContact());
+
+    await service.create(OFFICE_ID, {
+      propertyId: PROPERTY_ID,
+      contactId: CONTACT_ID,
+      role: 'owner',
+      officeId: 'other-office',
+      createdAt: '2020-01-01',
+    } as never);
+
+    expect(prisma.propertyContact.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { officeId: OFFICE_ID, propertyId: PROPERTY_ID, contactId: CONTACT_ID, role: 'owner' },
+      }),
+    );
+  });
+
+  it('고칠 때 연락처·매물·사무소 칸은 받지 않는다', async () => {
+    const { prisma, service } = createService();
+    prisma.propertyContact.findFirst.mockResolvedValue({
+      id: PROPERTY_CONTACT_ID,
+      propertyId: PROPERTY_ID,
+      isPrimary: false,
+      status: 'active',
+    });
+    prisma.propertyContact.update.mockResolvedValue(propertyContact());
+
+    await service.update(PROPERTY_CONTACT_ID, OFFICE_ID, {
+      memo: '메모',
+      contactId: 'other-office-contact',
+      propertyId: 'other-property',
+      officeId: 'other-office',
+    } as never);
+
+    expect(prisma.propertyContact.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { memo: '메모', isPrimary: false } }),
+    );
+  });
 });

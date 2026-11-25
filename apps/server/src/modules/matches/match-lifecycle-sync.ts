@@ -7,6 +7,7 @@ import { MatchClosedReason, MatchStage } from '@estate-erp/shared';
  * 규칙
  * - 본계약 이후: 같은 거래 조건(Listing)의 다른 진행 중 매칭 종료 (other_buyer_contracted)
  * - 의뢰 종료: 그 의뢰 거래 조건들의 진행 중 매칭 종료 (intake_closed)
+ * - 희망 조건 완료 · 구매 의뢰 종료: 그 조건(의뢰)의 진행 중 매칭 종료 (buyer_closed). 보류는 닫지 않는다.
  * - 거래 취소: 거래를 만든 매칭은 종료 (deal_cancelled),
  *   그 거래가 자동 종료한 매칭은 종료 직전 단계로 되살린다.
  *   사용자가 직접 종료한 매칭, 다른 거래가 종료한 매칭, 구매 조건이 끝난 손님 매칭은 그대로 둔다.
@@ -85,6 +86,47 @@ export function closeOpenMatchesForIntake(
     },
     MatchClosedReason.INTAKE_CLOSED,
     input.dealId ?? null,
+  );
+}
+
+/**
+ * 희망 조건 완료(다른 곳에서 구함 등): 그 조건의 진행 중 매칭을 종료한다 (buyer_closed).
+ * 매물 쪽 의뢰 종료(closeOpenMatchesForIntake)와 짝이다. 거래로 넘긴 매칭은 거래관리가 맡으므로 그대로 둔다.
+ * 다시 열 때 되살리지 않는다 — 매물 의뢰를 다시 열 때도 닫힌 매칭은 그대로다. 필요한 매칭은 사람이 하나씩 다시 시작한다.
+ */
+export function closeOpenMatchesForBuyerRequirement(
+  tx: Tx,
+  input: { officeId: string; buyerReqId: string },
+) {
+  return closeMatches(
+    tx,
+    {
+      officeId: input.officeId,
+      buyerReqId: input.buyerReqId,
+      stage: { notIn: SETTLED_MATCH_STAGES },
+    },
+    MatchClosedReason.BUYER_CLOSED,
+    null,
+  );
+}
+
+/**
+ * 구매 의뢰 종료: 그 의뢰에 담긴 모든 희망 조건의 진행 중 매칭을 종료한다 (buyer_closed).
+ * 희망 조건 완료와 같은 이유 · 같은 규칙이다(거래로 넘긴 매칭은 그대로, 다시 열어도 되살리지 않는다).
+ */
+export function closeOpenMatchesForBuyerIntake(
+  tx: Tx,
+  input: { officeId: string; buyerIntakeId: string },
+) {
+  return closeMatches(
+    tx,
+    {
+      officeId: input.officeId,
+      buyerRequirement: { buyerIntakeId: input.buyerIntakeId },
+      stage: { notIn: SETTLED_MATCH_STAGES },
+    },
+    MatchClosedReason.BUYER_CLOSED,
+    null,
   );
 }
 

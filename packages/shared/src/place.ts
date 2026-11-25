@@ -102,3 +102,46 @@ export function compareUnitSpaces(a: UnitSpace, b: UnitSpace): number {
   if (floorDiff !== 0) return floorDiff;
   return (a.name ?? '').localeCompare(b.name ?? '', 'ko', { numeric: true });
 }
+
+/**
+ * 동의 표기. "101" → "101동", "101동" · "A동" · "상가동" → 그대로.
+ * 동 구분이 없는 건물(placeholder 동, 이름이 "-"이거나 빈 것)은 빈 글이다 — 화면에 "-"를 찍지 않는다.
+ */
+export function formatDongLabel(
+  name: string | null | undefined,
+  isPlaceholder?: boolean | null,
+): string {
+  const trimmed = name?.trim();
+  if (isPlaceholder || !trimmed || trimmed === '-') return '';
+  if (trimmed.endsWith('동')) return trimmed;
+  // 숫자·영문 한두 글자로 된 이름에만 "동"을 붙인다 (101, 101-1, A, B2)
+  return /^[A-Za-z]{0,2}\d*(?:-\d+)?$/.test(trimmed) ? `${trimmed}동` : trimmed;
+}
+
+export interface PlaceParts {
+  /** 단지·건물 이름. 문맥에 이미 있으면 넘기지 않는다 */
+  siteName?: string | null;
+  dongName?: string | null;
+  /** 동 구분이 없는 건물에 둔 동인지 (Dong.isPlaceholder) */
+  dongIsPlaceholder?: boolean | null;
+  unit?: UnitSpace | null;
+}
+
+/**
+ * 한 집을 가리키는 글. 화면 · 문서 · 알림이 모두 이 모양을 쓴다.
+ *   "고덕그라시움 102동 2203호" (단지 + 동 + 호)
+ *   "102동 2203호"            (siteName을 넘기지 않았을 때)
+ *   "고덕빌라 201호"           (동 구분 없는 건물)
+ *   "○○상가 2층"              (호 없이 층인 공간)
+ * 손으로 "102 2203"처럼 이어 붙이지 않는다 — 동이 100개가 넘는 단지에서는 어느 집인지 알 수 없다.
+ */
+export function formatPlaceLabel(parts: PlaceParts | null | undefined): string {
+  if (!parts) return '';
+  return [
+    parts.siteName?.trim() ?? '',
+    formatDongLabel(parts.dongName, parts.dongIsPlaceholder),
+    formatUnitLabel(parts.unit),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}

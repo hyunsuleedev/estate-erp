@@ -65,8 +65,8 @@ model AdvertisementComparison {
 }
 
 /// 비교를 읽을 때마다의 시장 상태 한 줄. 경쟁 광고 줄 하나하나가 아니라 요약만 남긴다.
-/// 화면의 "경쟁 대비"는 이 표가 아니라 최신 비교 줄과 지금 광고 가격으로 볼 때 계산한다
-/// (직접 반영으로 가격을 고치면 바로 달라져야 한다). 이 표는 그때 본 것의 기록이다.
+/// 화면의 "경쟁 대비"는 이 표가 아니라 최신 비교 줄과 마지막 네이버 수집 당시 가격(ownAdvertisement)으로
+/// 계산한다(ownAdvertisement가 없을 때만 advertised* 사용). 이 표는 그때 본 것의 기록이다.
 model AdvertisementComparisonRecord {
   id              String   @id @default(uuid()) @db.Uuid
   officeId        String   @map("office_id") @db.Uuid

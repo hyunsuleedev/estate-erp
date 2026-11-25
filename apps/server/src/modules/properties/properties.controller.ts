@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PropertiesService } from './properties.service';
+import { assertCanDeleteListing } from '../listings/listing-input';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
@@ -109,6 +110,7 @@ export class PropertiesController {
     @Param('id') id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
+    assertCanDeleteListing(user.role ?? null);
     return this.propertiesService.remove(id, user.officeId);
   }
 }

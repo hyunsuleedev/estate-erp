@@ -2,7 +2,9 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -18,6 +20,11 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { USER_ROLES } from '../auth/auth.types';
 import { EmployeesService } from './employees.service';
+
+/** 주소의 직원 id가 uuid 모양이 아니면 DB까지 가지 않고 "없음"으로 답한다 (예전에는 500) */
+const employeeIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new NotFoundException('직원을 찾을 수 없습니다.'),
+});
 
 @ApiTags('직원')
 @ApiBearerAuth()
@@ -38,7 +45,7 @@ export class EmployeesController {
   @Roles(...USER_ROLES)
   @UseGuards(RolesGuard)
   async findOne(
-    @Param('id') id: string,
+    @Param('id', employeeIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.employeesService.forViewer(
@@ -74,7 +81,7 @@ export class EmployeesController {
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   async update(
-    @Param('id') id: string,
+    @Param('id', employeeIdPipe) id: string,
     @Body()
     dto: {
       name?: string;
@@ -100,7 +107,7 @@ export class EmployeesController {
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   async updateStatus(
-    @Param('id') id: string,
+    @Param('id', employeeIdPipe) id: string,
     @Body() dto: { isActive: boolean },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -114,7 +121,7 @@ export class EmployeesController {
   @Roles('owner', 'manager')
   @UseGuards(RolesGuard)
   async updateRole(
-    @Param('id') id: string,
+    @Param('id', employeeIdPipe) id: string,
     @Body() dto: { role: string },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -133,7 +140,7 @@ export class EmployeesController {
   @UseGuards(RolesGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   resetPassword(
-    @Param('id') id: string,
+    @Param('id', employeeIdPipe) id: string,
     @Body() dto: { newPassword: string },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -143,10 +150,14 @@ export class EmployeesController {
   @Get(':id/performance')
   @Roles(...USER_ROLES)
   @UseGuards(RolesGuard)
-  getPerformance(
-    @Param('id') id: string,
+  async getPerformance(
+    @Param('id', employeeIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.employeesService.getPerformance(id, user.officeId);
+    const perf = await this.employeesService.getPerformance(id, user.officeId);
+    if (user.role === 'agent' && user.userId !== id) {
+      return { ...perf, commissionAmountTotal: 0 };
+    }
+    return perf;
   }
 }

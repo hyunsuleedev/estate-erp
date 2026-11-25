@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { uuidParam } from './finance-params';
 import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -36,11 +37,17 @@ export class SettlementController {
     return this.service.listMine(user.officeId, user.userId);
   }
 
+  /** 아직 확정하지 않은 다음 정산의 내 몫 (본인 줄만, 바뀔 수 있음) */
+  @Get('mine/preview')
+  previewMine(@CurrentUser() user: CurrentUserPayload) {
+    return this.service.previewMine(user.officeId, user.userId);
+  }
+
   // 담당 배분에는 직원 몫(%)이 함께 나오므로 대표만 본다
   @Get('deals/:dealId/participants')
   @Roles('owner')
   @UseGuards(RolesGuard)
-  getParticipants(@CurrentUser() user: CurrentUserPayload, @Param('dealId') dealId: string) {
+  getParticipants(@CurrentUser() user: CurrentUserPayload, @Param('dealId', uuidParam('거래')) dealId: string) {
     return this.service.getParticipants(user.officeId, dealId);
   }
 
@@ -49,7 +56,7 @@ export class SettlementController {
   @UseGuards(RolesGuard)
   setParticipants(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('dealId') dealId: string,
+    @Param('dealId', uuidParam('거래')) dealId: string,
     @Body() body: { items: Array<{ userId: string; sharePercent: number; ratio?: number | null }> },
   ) {
     return this.service.setParticipants(user.officeId, dealId, body?.items);
@@ -60,7 +67,7 @@ export class SettlementController {
   @UseGuards(RolesGuard)
   markPaid(
     @CurrentUser() user: CurrentUserPayload,
-    @Param('lineId') lineId: string,
+    @Param('lineId', uuidParam('정산 내역')) lineId: string,
     @Body() body: { paidAt?: string },
   ) {
     return this.service.markPaid(user.officeId, lineId, user.userId, body?.paidAt);
@@ -69,7 +76,7 @@ export class SettlementController {
   @Post('lines/:lineId/unpay')
   @Roles('owner')
   @UseGuards(RolesGuard)
-  unmarkPaid(@CurrentUser() user: CurrentUserPayload, @Param('lineId') lineId: string) {
+  unmarkPaid(@CurrentUser() user: CurrentUserPayload, @Param('lineId', uuidParam('정산 내역')) lineId: string) {
     return this.service.unmarkPaid(user.officeId, lineId);
   }
 

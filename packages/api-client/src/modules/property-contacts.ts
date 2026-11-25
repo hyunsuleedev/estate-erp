@@ -10,6 +10,9 @@ export interface PropertyContact {
   isResident: boolean;
   isPrimary: boolean;
   status: string;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  sourceDealId?: string | null;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
@@ -26,6 +29,11 @@ export interface PropertyContact {
     unit?: {
       id: string;
       name: string | null;
+      floor?: number | null;
+      floorEnd?: number | null;
+      floorLabel?: string | null;
+      /** 연락처의 연결 매물 조회는 동까지 준다 */
+      dong?: { id: string; name: string; isPlaceholder: boolean } | null;
     } | null;
   };
 }

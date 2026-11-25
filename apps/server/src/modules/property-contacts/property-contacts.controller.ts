@@ -53,6 +53,9 @@ export class PropertyContactsController {
       shareRatio?: number;
       isResident?: boolean;
       isPrimary?: boolean;
+      startedAt?: string | null;
+      endedAt?: string | null;
+      sourceDealId?: string | null;
       memo?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
@@ -71,6 +74,9 @@ export class PropertyContactsController {
       shareRatio?: number;
       isResident?: boolean;
       isPrimary?: boolean;
+      startedAt?: string | null;
+      endedAt?: string | null;
+      sourceDealId?: string | null;
       memo?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
@@ -88,6 +94,9 @@ export class PropertyContactsController {
       isResident?: boolean;
       isPrimary?: boolean;
       status?: string;
+      startedAt?: string | null;
+      endedAt?: string | null;
+      sourceDealId?: string | null;
       memo?: string;
     },
     @CurrentUser() user: CurrentUserPayload,

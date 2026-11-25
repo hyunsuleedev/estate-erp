@@ -30,10 +30,10 @@ import {
 
 const taskInclude = {
   contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
-  property: { include: { site: true, unit: true } },
+  property: { include: { site: true, unit: { include: { dong: true } } } },
   listing: true,
   consultation: true,
-} as const;
+} satisfies Prisma.TaskInclude;
 
 const dealInclude = {
   listing: {
@@ -41,7 +41,11 @@ const dealInclude = {
       property: {
         include: {
           site: true,
-          unit: true,
+          unit: {
+            include: {
+              dong: true,
+            },
+          },
         },
       },
     },
@@ -49,7 +53,19 @@ const dealInclude = {
   buyerContact: true,
   sellerContact: true,
   contract: true,
-} as const;
+  payments: {
+    where: { status: { not: 'cancelled' } },
+    select: {
+      id: true,
+      kind: true,
+      sequence: true,
+      scheduledAmount: true,
+      scheduledDate: true,
+      status: true,
+    },
+    orderBy: [{ sequence: 'asc' }, { scheduledDate: 'asc' }],
+  },
+} satisfies Prisma.DealInclude;
 
 const consultationInclude = {
   contact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
@@ -94,11 +110,57 @@ const employeeDetailInclude = {
     where: { status: 'active' },
     include: {
       buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
+      preferredSites: {
+        include: { site: { select: { id: true, name: true, type: true } } },
+        orderBy: { priority: 'asc' },
+        take: 3,
+      },
+      preferredRegions: {
+        include: {
+          province: { select: { code: true, name: true } },
+          district: { select: { code: true, name: true } },
+          ward: { select: { code: true, name: true } },
+        },
+        take: 3,
+      },
+      _count: { select: { matches: true, consultations: true } },
     },
     orderBy: [{ nextContactDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
     take: EMPLOYEE_DETAIL_LIST_LIMIT,
   },
+  assignedProjects: {
+    where: { archivedAt: null },
+    select: {
+      id: true,
+      title: true,
+      memo: true,
+      createdAt: true,
+      updatedAt: true,
+      primaryContact: { select: { id: true, name: true } },
+      steps: {
+        select: {
+          id: true,
+          doneAt: true,
+          listingIntakeId: true,
+          buyerIntakeId: true,
+          dealId: true,
+        },
+      },
+      _count: {
+        select: {
+          listingIntakes: true,
+          buyerIntakes: true,
+          steps: true,
+          comments: true,
+        },
+      },
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: 20,
+  },
+  // 취소한 거래는 진행·미정산·참여 수수료 어디에도 세지 않는다(거래관리의 진행 목록과 같은 기준)
   dealParticipants: {
+    where: { deal: { isCancelled: false } },
     include: {
       deal: {
         include: dealInclude,
@@ -108,14 +170,40 @@ const employeeDetailInclude = {
     orderBy: [{ settlementStatus: 'desc' }, { createdAt: 'desc' }],
     take: EMPLOYEE_DETAIL_LIST_LIMIT,
   },
+  settlementLines: {
+    select: {
+      id: true,
+      employmentType: true,
+      withholdTax: true,
+      targetWon: true,
+      shareWon: true,
+      baseWon: true,
+      adjustWon: true,
+      carryInWon: true,
+      withholdingWon: true,
+      netWon: true,
+      carryOutWon: true,
+      paidAt: true,
+      settlement: {
+        select: {
+          id: true,
+          month: true,
+          timing: true,
+          confirmedAt: true,
+        },
+      },
+    },
+    orderBy: { settlement: { month: 'desc' } },
+    take: 6,
+  },
   consultations: {
     include: consultationInclude,
     orderBy: { createdAt: 'desc' },
-    take: 10,
+    take: 25,
   },
   activityLogs: {
     orderBy: { createdAt: 'desc' },
-    take: 20,
+    take: 35,
   },
 } satisfies Prisma.UserInclude;
 
@@ -125,6 +213,24 @@ type EmployeeDetail = Prisma.UserGetPayload<{
 
 const USER_LICENSE_TYPES = ['broker_owner', 'broker_associate', 'assistant'] as const;
 const USER_PAY_TYPES = ['fixed', 'mixed', 'commission_only'] as const;
+
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const DAY_MS = 86_400_000;
+const MAX_ATTENTION_ITEMS_PER_EMPLOYEE = 15;
+
+export interface EmployeeAttentionItem {
+  kind: 'task' | 'buyer';
+  id: string;
+  title: string;
+  dueDate: string;
+}
+
+function kstDayStartUtc(now: Date = new Date()): Date {
+  const kst = new Date(now.getTime() + KST_OFFSET_MS);
+  return new Date(
+    Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - KST_OFFSET_MS,
+  );
+}
 
 /** Auth0 아이디·비밀번호 연결이 받는 아이디 규칙(1~30자, 영문·숫자와 일부 기호). */
 const LOGIN_ID_MAX_LENGTH = 30;
@@ -157,13 +263,31 @@ export class EmployeesService {
       include: {
         assignedTasks: {
           where: { status: { notIn: ['completed', 'cancelled'] } },
-          select: { id: true },
+          select: { id: true, title: true, dueDate: true },
+          orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
         },
         assignedRequirements: {
           where: { status: 'active' },
-          select: { id: true },
+          select: {
+            id: true,
+            nextContactDate: true,
+            buyerIntake: {
+              select: {
+                contacts: {
+                  select: {
+                    isPrimary: true,
+                    contact: { select: { name: true } },
+                  },
+                  orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+                  take: 1,
+                },
+              },
+            },
+          },
+          orderBy: [{ nextContactDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
         },
         dealParticipants: {
+          where: { deal: { isCancelled: false } },
           include: {
             deal: {
               select: {
@@ -183,13 +307,67 @@ export class EmployeesService {
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
+        _count: {
+          select: { consultations: true },
+        },
       },
       orderBy: [{ role: 'asc' }, { name: 'asc' }],
     });
 
+    const kstTodayStart = kstDayStartUtc();
+    const kstTodayMs = kstTodayStart.getTime();
+    const kstTomorrowMs = kstTodayMs + DAY_MS;
+
     return employees.map((employee) => {
       const latestConsultationAt = employee.consultations[0]?.createdAt ?? null;
       const latestActivityAt = employee.activityLogs[0]?.createdAt ?? null;
+
+      let overdueTaskCount = 0;
+      const attentionItems: EmployeeAttentionItem[] = [];
+      for (const task of employee.assignedTasks) {
+        if (!task.dueDate) continue;
+        const dueMs = new Date(task.dueDate).getTime();
+        if (dueMs < kstTodayMs) overdueTaskCount += 1;
+        if (dueMs < kstTomorrowMs) {
+          attentionItems.push({
+            kind: 'task',
+            id: task.id,
+            title: task.title,
+            dueDate: new Date(task.dueDate).toISOString(),
+          });
+        }
+      }
+
+      let overdueBuyerCount = 0;
+      for (const requirement of employee.assignedRequirements) {
+        if (!requirement.nextContactDate) continue;
+        const contactMs = new Date(requirement.nextContactDate).getTime();
+        if (contactMs < kstTodayMs) overdueBuyerCount += 1;
+        if (contactMs < kstTomorrowMs) {
+          const contactName =
+            requirement.buyerIntake?.contacts?.[0]?.contact?.name ?? '고객';
+          attentionItems.push({
+            kind: 'buyer',
+            id: requirement.id,
+            title: contactName,
+            dueDate: new Date(requirement.nextContactDate).toISOString(),
+          });
+        }
+      }
+
+      attentionItems.sort(
+        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+      );
+
+      let commissionAmountTotal = 0;
+      let unsettledCommissionTotal = 0;
+      for (const participant of employee.dealParticipants) {
+        const amount = participant.commissionAmount ?? 0;
+        commissionAmountTotal += amount;
+        if (participant.settlementStatus !== 'settled') {
+          unsettledCommissionTotal += amount;
+        }
+      }
 
       return {
         id: employee.id,
@@ -219,7 +397,14 @@ export class EmployeesService {
           unsettledDealCount: employee.dealParticipants.filter(
             (participant) => participant.settlementStatus !== 'settled',
           ).length,
+          overdueTaskCount,
+          overdueBuyerCount,
+          unsettledCommissionTotal,
+          consultationCount:
+            employee._count?.consultations ?? employee.consultations.length,
+          commissionAmountTotal,
         },
+        attentionItems: attentionItems.slice(0, MAX_ATTENTION_ITEMS_PER_EMPLOYEE),
         latestActivityAt:
           latestActivityAt && latestConsultationAt
             ? latestActivityAt > latestConsultationAt
@@ -237,7 +422,7 @@ export class EmployeesService {
     });
 
     if (!employee) {
-      throw new NotFoundException('Employee not found');
+      throw new NotFoundException('직원을 찾을 수 없습니다.');
     }
 
     return this.enrichEmployee(employee);
@@ -266,7 +451,7 @@ export class EmployeesService {
     });
 
     if (!office) {
-      throw new NotFoundException('Office not found');
+      throw new NotFoundException('사무소를 찾을 수 없습니다.');
     }
 
     const activeUserCount = await this.prisma.user.count({
@@ -276,6 +461,11 @@ export class EmployeesService {
       throw new BadRequestException(
         `최대 사용자 수(${office.maxUsers}명)를 초과했습니다. 플랜을 업그레이드하거나 비활성 처리 후 추가하세요.`,
       );
+    }
+
+    const name = typeof dto.name === 'string' ? dto.name.trim() : '';
+    if (!name) {
+      throw new BadRequestException('이름을 입력해 주세요.');
     }
 
     const role = dto.role ?? 'agent';
@@ -303,7 +493,7 @@ export class EmployeesService {
 
     const email = this.normalizeNullableEmail(dto.email);
     const auth0User = await this.auth0
-      .createUser({ username: loginId, password: dto.password, name: dto.name })
+      .createUser({ username: loginId, password: dto.password, name })
       .catch((error: unknown) => {
         throw this.toAuth0HttpError(error, '직원 계정을 만들지 못했습니다.');
       });
@@ -314,7 +504,7 @@ export class EmployeesService {
           officeId: actor.officeId,
           loginId,
           email,
-          name: dto.name,
+          name,
           phone: dto.phone,
           role,
           licenseType,
@@ -357,6 +547,9 @@ export class EmployeesService {
       withholdTax?: boolean;
     },
   ) {
+    if (dto.name !== undefined && (typeof dto.name !== 'string' || !dto.name.trim())) {
+      throw new BadRequestException('이름을 입력해 주세요.');
+    }
     const target = await this.findOne(id, actor.officeId);
     this.assertCanManageTarget(actor.role, target.role);
     // 급여와 배분율은 사장님만 정한다. 매니저는 직원의 이름·연락처·자격만 고칠 수 있다.
@@ -406,7 +599,7 @@ export class EmployeesService {
     const employee = await this.prisma.user.update({
       where: { id },
       data: {
-        name: dto.name,
+        name: dto.name?.trim(),
         phone: dto.phone,
         email: dto.email === undefined ? undefined : this.normalizeNullableEmail(dto.email),
         licenseType:
@@ -436,7 +629,7 @@ export class EmployeesService {
   ) {
     // 본문이 비었거나 "false" 같은 문자열이면 어느 쪽으로도 처리하지 않는다.
     if (typeof isActive !== 'boolean') {
-      throw new BadRequestException('isActive는 true 또는 false여야 합니다.');
+      throw new BadRequestException('계정 사용 여부는 켬 또는 끔이어야 합니다.');
     }
 
     const target = await this.findOne(id, actor.officeId);
@@ -452,7 +645,7 @@ export class EmployeesService {
           tx,
           actor.officeId,
           id,
-          '마지막 owner 계정은 비활성화할 수 없습니다.',
+          '마지막 대표 계정은 비활성화할 수 없습니다. 다른 사람을 먼저 대표로 지정해 주세요.',
         );
         return tx.user.update({
           where: { id },
@@ -510,7 +703,7 @@ export class EmployeesService {
           tx,
           actor.officeId,
           id,
-          '마지막 owner 계정의 역할은 바꿀 수 없습니다. 다른 사람을 먼저 owner로 지정해 주세요.',
+          '마지막 대표 계정의 역할은 바꿀 수 없습니다. 다른 사람을 먼저 대표로 지정해 주세요.',
         );
       }
       return tx.user.update({
@@ -538,7 +731,7 @@ export class EmployeesService {
     this.assertCanManageTarget(actor.role, target.role);
 
     if (!target.id) {
-      throw new NotFoundException('Employee not found');
+      throw new NotFoundException('직원을 찾을 수 없습니다.');
     }
 
     if (typeof newPassword !== 'string' || !newPassword) {
@@ -587,8 +780,14 @@ export class EmployeesService {
     });
 
     if (!target) {
-      throw new NotFoundException('Employee not found');
+      throw new NotFoundException('직원을 찾을 수 없습니다.');
     }
+
+    const kstTodayStart = kstDayStartUtc();
+    const kstTodayMs = kstTodayStart.getTime();
+    const thirtyDaysAgo = new Date(kstTodayMs - 29 * DAY_MS);
+    const twentyEightDaysAgoMs = kstTodayMs - 27 * DAY_MS;
+    const twentyEightDaysAgo = new Date(twentyEightDaysAgoMs);
 
     const [
       activeTaskCount,
@@ -596,6 +795,9 @@ export class EmployeesService {
       activeDealParticipants,
       consultationCount,
       commissionAggregate,
+      completedTaskCount30d,
+      recentConsultations30d,
+      recentActivities28d,
     ] = await Promise.all([
       this.prisma.task.count({
         where: {
@@ -615,6 +817,7 @@ export class EmployeesService {
         where: {
           officeId,
           userId: id,
+          deal: { isCancelled: false },
         },
         select: {
           settlementStatus: true,
@@ -625,10 +828,62 @@ export class EmployeesService {
         where: { officeId, createdById: id },
       }),
       this.prisma.dealParticipant.aggregate({
-        where: { officeId, userId: id },
+        where: { officeId, userId: id, deal: { isCancelled: false } },
         _sum: { commissionAmount: true },
       }),
+      this.prisma.task.count({
+        where: {
+          officeId,
+          assignedToId: id,
+          status: 'completed',
+          updatedAt: { gte: thirtyDaysAgo },
+        },
+      }),
+      this.prisma.consultation.findMany({
+        where: {
+          officeId,
+          createdById: id,
+          createdAt: { gte: thirtyDaysAgo },
+        },
+        select: { type: true, createdAt: true },
+      }),
+      this.prisma.activityLog.findMany({
+        where: {
+          officeId,
+          userId: id,
+          createdAt: { gte: twentyEightDaysAgo },
+        },
+        select: { createdAt: true },
+      }),
     ]);
+
+    const consultationByType30d = { phone: 0, visit: 0, online: 0 };
+    const weeklyLabels = ['3주 전', '2주 전', '지난주', '이번 주'] as const;
+    const weeklyActivity = weeklyLabels.map((label) => ({
+      label,
+      consultations: 0,
+      activities: 0,
+    }));
+
+    for (const consultation of recentConsultations30d) {
+      if (consultation.type === 'phone') consultationByType30d.phone += 1;
+      else if (consultation.type === 'visit') consultationByType30d.visit += 1;
+      else if (consultation.type === 'online') consultationByType30d.online += 1;
+
+      const ts = new Date(consultation.createdAt).getTime();
+      const bucket = Math.floor((ts - twentyEightDaysAgoMs) / (7 * DAY_MS));
+      if (bucket >= 0 && bucket < weeklyActivity.length) {
+        weeklyActivity[bucket].consultations += 1;
+      }
+    }
+
+    for (const activity of recentActivities28d) {
+      const ts = new Date(activity.createdAt).getTime();
+      const bucket = Math.floor((ts - twentyEightDaysAgoMs) / (7 * DAY_MS));
+      if (bucket >= 0 && bucket < weeklyActivity.length) {
+        weeklyActivity[bucket].activities += 1;
+      }
+    }
 
     return {
       activeTaskCount,
@@ -636,18 +891,26 @@ export class EmployeesService {
       activeDealCount: activeDealParticipants.filter(
         (participant) => participant.deal.stage !== 'closed',
       ).length,
+      closedDealCount: activeDealParticipants.filter((participant) =>
+        ['completed', 'closed'].includes(participant.deal.stage),
+      ).length,
       unsettledDealCount: activeDealParticipants.filter(
         (participant) => participant.settlementStatus !== 'settled',
       ).length,
       consultationCount,
       commissionAmountTotal:
         commissionAggregate._sum.commissionAmount ?? 0,
+      completedTaskCount30d,
+      consultationCount30d: recentConsultations30d.length,
+      consultationByType30d,
+      weeklyActivity,
     };
   }
 
   /**
-   * 급여 설정(급여 유형·기본급·개인 배분율)은 사장님과 본인만 본다.
+   * 급여 설정(급여 유형·기본급·개인 배분율)과 월별 정산 내역은 사장님과 본인만 본다.
    * 그 밖의 사람(매니저, 다른 중개사)에게 나가는 응답에서는 값을 비우고 payVisible을 false로 둔다.
+   * 중개사가 다른 직원을 조회할 때는 수수료 집계·긴급 업무/고객 상세 목록·거래 참여 수수료도 가린다.
    * 서비스 안에서 쓰는 값은 그대로이고, 컨트롤러가 응답을 내보내기 직전에 이것을 거친다.
    */
   forViewer<
@@ -658,20 +921,57 @@ export class EmployeesService {
       commissionRate: number | null;
       employmentType?: string | null;
       withholdTax?: boolean | null;
+      counts?: Record<string, number | undefined>;
+      attentionItems?: EmployeeAttentionItem[];
+      recentSettlementLines?: unknown[];
+      dealParticipants?: Array<
+        {
+          commissionAmount?: number | null;
+          commissionRate?: unknown;
+        } & Record<string, unknown>
+      >;
     },
   >(viewer: CurrentUserPayload, employee: T): T & { payVisible: boolean } {
     if (viewer.role === 'owner' || viewer.userId === employee.id) {
       return { ...employee, payVisible: true };
     }
-    return {
+    const redacted = {
       ...employee,
       payType: null,
       baseSalary: null,
       commissionRate: null,
       employmentType: null,
       withholdTax: null,
+      ...(employee.recentSettlementLines !== undefined
+        ? { recentSettlementLines: [] }
+        : {}),
       payVisible: false,
     };
+    if (viewer.role === 'agent') {
+      return {
+        ...redacted,
+        ...(employee.counts
+          ? {
+              counts: {
+                ...employee.counts,
+                commissionAmountTotal: 0,
+                unsettledCommissionTotal: 0,
+              },
+            }
+          : {}),
+        ...(employee.attentionItems ? { attentionItems: [] } : {}),
+        ...(employee.dealParticipants
+          ? {
+              dealParticipants: employee.dealParticipants.map((participant) => ({
+                ...participant,
+                commissionAmount: null,
+                commissionRate: null,
+              })),
+            }
+          : {}),
+      } as T & { payVisible: boolean };
+    }
+    return redacted;
   }
 
   private enrichEmployee(employee: EmployeeDetail) {
@@ -684,6 +984,48 @@ export class EmployeesService {
     const activeDeals = employee.dealParticipants.filter(
       (participant) => participant.deal.stage !== 'closed',
     );
+    const assignedProjects = (employee.assignedProjects ?? []).map((project) => ({
+      ...project,
+      completedStepCount: project.steps.filter((step) => Boolean(step.doneAt)).length,
+      totalStepCount: project.steps.length,
+    }));
+    const recentSettlementLines = (employee.settlementLines ?? []).map((line) => ({
+      id: line.id,
+      month: line.settlement.month,
+      timing: line.settlement.timing,
+      confirmedAt: line.settlement.confirmedAt,
+      employmentType: line.employmentType,
+      withholdTax: line.withholdTax,
+      targetWon: line.targetWon,
+      shareWon: line.shareWon,
+      baseWon: line.baseWon,
+      adjustWon: line.adjustWon,
+      carryInWon: line.carryInWon,
+      withholdingWon: line.withholdingWon,
+      netWon: line.netWon,
+      carryOutWon: line.carryOutWon,
+      paidAt: line.paidAt,
+    }));
+    const kstTodayMs = kstDayStartUtc().getTime();
+
+    const overdueTaskCount = activeTasks.filter(
+      (task) => task.dueDate != null && new Date(task.dueDate).getTime() < kstTodayMs,
+    ).length;
+    const overdueBuyerCount = activeRequirements.filter(
+      (requirement) =>
+        requirement.nextContactDate != null &&
+        new Date(requirement.nextContactDate).getTime() < kstTodayMs,
+    ).length;
+
+    let commissionAmountTotal = 0;
+    let unsettledCommissionTotal = 0;
+    for (const participant of employee.dealParticipants) {
+      const amount = participant.commissionAmount ?? 0;
+      commissionAmountTotal += amount;
+      if (participant.settlementStatus !== 'settled') {
+        unsettledCommissionTotal += amount;
+      }
+    }
 
     return {
       id: employee.id,
@@ -702,22 +1044,30 @@ export class EmployeesService {
         employee.commissionRate === null ? null : Number(employee.commissionRate),
       employmentType: employee.employmentType,
       withholdTax: employee.withholdTax,
+      lastLoginAt: employee.lastLoginAt ?? null,
       createdAt: employee.createdAt,
       updatedAt: employee.updatedAt,
       office: employee.office,
       counts: {
         activeTaskCount: activeTasks.length,
         activeBuyerRequirementCount: activeRequirements.length,
+        activeProjectCount: assignedProjects.length,
         activeDealCount: activeDeals.length,
         unsettledDealCount: employee.dealParticipants.filter(
           (participant) => participant.settlementStatus !== 'settled',
         ).length,
+        overdueTaskCount,
+        overdueBuyerCount,
+        unsettledCommissionTotal,
+        commissionAmountTotal,
       },
       assignedTasks: employee.assignedTasks,
       assignedBuyerRequirements: employee.assignedRequirements.map(
         withBuyerRequirementContact,
       ),
+      assignedProjects,
       dealParticipants: employee.dealParticipants,
+      recentSettlementLines,
       recentConsultations: employee.consultations,
       recentActivities: employee.activityLogs,
     };
@@ -771,7 +1121,7 @@ export class EmployeesService {
 
   private assertCanManageTarget(actorRole: string, targetRole: string) {
     if (actorRole === 'manager' && targetRole !== 'agent') {
-      throw new ForbiddenException('manager는 일반 agent만 관리할 수 있습니다.');
+      throw new ForbiddenException('매니저는 중개사 계정만 관리할 수 있습니다.');
     }
   }
 
@@ -781,11 +1131,11 @@ export class EmployeesService {
     }
 
     if (actorRole === 'manager' && nextRole !== 'agent') {
-      throw new ForbiddenException('manager는 agent 계정만 생성/변경할 수 있습니다.');
+      throw new ForbiddenException('매니저는 중개사 계정만 만들거나 바꿀 수 있습니다.');
     }
 
     if (nextRole === 'owner' && actorRole !== 'owner') {
-      throw new ForbiddenException('owner 권한은 owner만 부여할 수 있습니다.');
+      throw new ForbiddenException('대표 역할은 대표만 줄 수 있습니다.');
     }
   }
 

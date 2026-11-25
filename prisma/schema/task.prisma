@@ -26,29 +26,38 @@ model Task {
   listingIntakeId String? @map("listing_intake_id") @db.Uuid
   listingId       String? @map("listing_id") @db.Uuid
   consultationId  String? @map("consultation_id") @db.Uuid
+  buyerIntakeId   String? @map("buyer_intake_id") @db.Uuid
   buyerReqId      String? @map("buyer_req_id") @db.Uuid
   matchId         String? @map("match_id") @db.Uuid
   dealId          String? @map("deal_id") @db.Uuid
   contractId      String? @map("contract_id") @db.Uuid
 
+  /// 이 업무가 속한 프로젝트. 위의 연결 칸(연락처·의뢰·거래)으로는 대표 고객도 의뢰도 없는 빈
+  /// 프로젝트에 업무를 적을 수 없어서 프로젝트를 직접 가리킨다(사용자 결정, 2026-11-22).
+  /// 프로젝트를 풀어도 업무는 남는다 — 서비스가 이 칸만 비운 뒤 프로젝트를 지운다.
+  projectId String? @map("project_id") @db.Uuid
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office                     Office                      @relation(fields: [officeId], references: [id])
+  // 복합 FK라 다른 사무소의 프로젝트는 DB가 막는다.
+  project                    Project?                    @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Restrict)
   assignedTo                 User?                       @relation("TaskAssignee", fields: [assignedToId], references: [id])
   createdBy                  User?                       @relation("TaskCreator", fields: [createdById], references: [id])
   assignedBy                 User?                       @relation("TaskAssigner", fields: [assignedById], references: [id])
-  contact                    Contact?                    @relation(fields: [contactId], references: [id])
+  contact                    Contact?                    @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
   property                   Property?                   @relation(fields: [propertyId], references: [id])
   listingIntake              ListingIntake?              @relation(fields: [listingIntakeId], references: [id])
   listing                    Listing?                    @relation(fields: [listingId], references: [id])
   consultation               Consultation?               @relation(fields: [consultationId], references: [id])
+  buyerIntake                BuyerIntake?                @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Restrict)
   buyerRequirement           BuyerRequirement?           @relation(fields: [buyerReqId], references: [id])
   match                      Match?                      @relation(fields: [matchId], references: [id])
   deal                       Deal?                       @relation(fields: [dealId], references: [id])
   contract                   Contract?                   @relation(fields: [contractId], references: [id])
-  /// 이 업무가 광고 변경 요청이면 무엇을 무엇으로 바꾸는지
-  advertisementChangeRequest AdvertisementChangeRequest?
+  /// 이 업무가 광고 변경 요청이면 무엇을 무엇으로 바꾸는지 (묶음 업무는 여러 건)
+  advertisementChangeRequests AdvertisementChangeRequest[]
 
   @@index([officeId, status, dueDate])
   @@index([officeId, assignedToId])
@@ -59,10 +68,12 @@ model Task {
   @@index([listingIntakeId])
   @@index([listingId])
   @@index([consultationId])
+  @@index([officeId, buyerIntakeId])
   @@index([buyerReqId])
   @@index([matchId])
   @@index([dealId])
   @@index([contractId])
+  @@index([officeId, projectId])
   @@map("tasks")
 }
 
@@ -86,6 +97,8 @@ model CalendarEvent {
   propertyId      String? @map("property_id") @db.Uuid
   listingIntakeId String? @map("listing_intake_id") @db.Uuid
   listingId       String? @map("listing_id") @db.Uuid
+  buyerIntakeId   String? @map("buyer_intake_id") @db.Uuid
+  projectId       String? @map("project_id") @db.Uuid
   contactId       String? @map("contact_id") @db.Uuid
   matchId         String? @map("match_id") @db.Uuid
   dealId          String? @map("deal_id") @db.Uuid
@@ -98,13 +111,17 @@ model CalendarEvent {
   property      Property?      @relation(fields: [propertyId], references: [id])
   listingIntake ListingIntake? @relation(fields: [listingIntakeId], references: [id])
   listing       Listing?       @relation(fields: [listingId], references: [id])
-  contact       Contact?       @relation(fields: [contactId], references: [id])
+  buyerIntake   BuyerIntake?   @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Restrict)
+  project       Project?       @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Restrict)
+  contact       Contact?       @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
   match         Match?         @relation(fields: [matchId], references: [id])
   deal          Deal?          @relation(fields: [dealId], references: [id])
 
   @@index([officeId, start])
   @@index([officeId, userId])
   @@index([listingIntakeId])
+  @@index([officeId, buyerIntakeId])
+  @@index([officeId, projectId])
   @@map("calendar_events")
 }
 

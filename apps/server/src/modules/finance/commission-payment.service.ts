@@ -14,6 +14,42 @@ export interface DistributionInput {
   shareRatio: number;
 }
 
+/** 청구를 보는 사람. 직원(agent)은 자기가 담당으로 배정된 거래의 청구만 본다. */
+export interface FinanceViewer {
+  userId: string;
+  role: string;
+}
+
+/** 대표·매니저만 사무소 전체 청구를 본다. 모르는 역할은 중개사(agent)와 같이 좁힌다. */
+export const seesAllPayments = (viewer?: FinanceViewer) =>
+  !viewer || viewer.role === 'owner' || viewer.role === 'manager';
+
+/**
+ * 청구 조회를 좁히는 조건. 직원은 거래의 담당 배정(정산 배분에 쓰는 DealParticipant.sharePercent)에
+ * 자기가 들어 있는 거래의 청구만 본다. 공동 담당이면 둘 다 본다. 배정이 없는 거래의 청구는 보이지 않는다.
+ * viewer 를 넘기지 않은 내부 호출(정산 계산 등)은 좁히지 않는다.
+ */
+export function paymentScopeFor(viewer?: FinanceViewer): Prisma.CommissionPaymentWhereInput {
+  if (seesAllPayments(viewer)) return {};
+  return {
+    deal: {
+      participants: { some: { userId: (viewer as FinanceViewer).userId, sharePercent: { not: null } } },
+    },
+  };
+}
+
+/** 직원에게는 손님 전화번호를 주지 않는다 (금액·상태·이름만) */
+function withoutPayerPhones<T extends { payerContact?: { id: string; name: string } | null }>(
+  rows: T[],
+  viewer?: FinanceViewer,
+): T[] {
+  if (seesAllPayments(viewer)) return rows;
+  return rows.map((row) => ({
+    ...row,
+    payerContact: row.payerContact ? { id: row.payerContact.id, name: row.payerContact.name } : null,
+  }));
+}
+
 const EDITABLE_PAYMENT_STATUSES = new Set([
   'draft',
   'pending',
@@ -25,9 +61,9 @@ const EDITABLE_PAYMENT_STATUSES = new Set([
 export class CommissionPaymentService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listByDeal(officeId: string, dealId: string) {
-    return this.prisma.commissionPayment.findMany({
-      where: { officeId, dealId },
+  async listByDeal(officeId: string, dealId: string, viewer?: FinanceViewer) {
+    const rows = await this.prisma.commissionPayment.findMany({
+      where: { officeId, dealId, ...paymentScopeFor(viewer) },
       include: {
         payerContact: { select: { id: true, name: true, phones: contactPhonesSelectOrdered } },
         distributions: {
@@ -39,13 +75,15 @@ export class CommissionPaymentService {
       },
       orderBy: { createdAt: 'asc' },
     });
+    return withoutPayerPhones(rows, viewer);
   }
 
-  async listByOffice(officeId: string, filters: { status?: string }) {
-    return this.prisma.commissionPayment.findMany({
+  async listByOffice(officeId: string, filters: { status?: string }, viewer?: FinanceViewer) {
+    const rows = await this.prisma.commissionPayment.findMany({
       where: {
         officeId,
         ...(filters.status ? { status: filters.status } : {}),
+        ...paymentScopeFor(viewer),
       },
       include: {
         deal: {
@@ -75,6 +113,7 @@ export class CommissionPaymentService {
       },
       orderBy: { dueDate: 'asc' },
     });
+    return withoutPayerPhones(rows, viewer);
   }
 
   /**
@@ -124,28 +163,50 @@ export class CommissionPaymentService {
       where: { id: paymentId, officeId },
       select: { id: true },
     });
-    if (!payment) throw new NotFoundException();
+    if (!payment) throw new NotFoundException('청구를 찾지 못했습니다.');
     return this.prisma.commissionReceipt.findMany({
       where: { officeId, paymentId },
       orderBy: [{ receivedAt: 'asc' }, { createdAt: 'asc' }],
     });
   }
 
-  /** 입금 한 건을 원 단위(부가세 포함)로 기록한다. */
+  /**
+   * 입금 한 건을 통장에 들어온 금액 그대로(원) 기록한다.
+   * vat='included'(기본): 부가세를 포함해 받은 돈이다. 부가세를 뺀 금액을 청구액과 비교한다.
+   * vat='none': 부가세 없이 받은 돈이다(간이과세 등). 받은 금액 전부를 수수료로 본다.
+   */
   async addReceipt(
     paymentId: string,
     officeId: string,
     userId: string | null,
-    data: { amountWon: number; receivedAt?: string; method?: string; memo?: string },
+    data: {
+      amountWon: number;
+      receivedAt?: string;
+      method?: string;
+      memo?: string;
+      vat?: 'included' | 'none';
+    },
   ) {
     if (!Number.isInteger(data.amountWon) || data.amountWon <= 0) {
       throw new BadRequestException('받은 금액은 0보다 큰 정수(원)여야 합니다.');
     }
+    if (data.vat !== undefined && data.vat !== 'included' && data.vat !== 'none') {
+      throw new BadRequestException('부가세 포함 여부가 올바르지 않습니다.');
+    }
+    if (data.method && !RECEIPT_METHODS.has(data.method)) {
+      throw new BadRequestException('받은 방법이 올바르지 않습니다.');
+    }
+    const vatIncluded = data.vat !== 'none';
     const receivedAt = parseMoneyDate(data.receivedAt);
     return this.prisma.$transaction(async (tx) => {
       const payment = await lockPayment(tx, paymentId, officeId);
+      const before = await sumReceipts(tx, paymentId);
+      const left = payment.expectedAmount * WON_PER_MANWON - before.supplyWon;
+      let supplyWon = vatIncluded ? withoutVat(data.amountWon) : data.amountWon;
+      // 남은 돈을 부가세까지 다 받았으면 반올림 차이로 1원이 남거나 넘치지 않게 맞춘다
+      if (vatIncluded && left > 0 && Math.abs(supplyWon - left) <= 1) supplyWon = left;
       await this.appendReceipt(tx, payment, {
-        supplyWon: withoutVat(data.amountWon),
+        supplyWon,
         amountWon: data.amountWon,
         receivedAt,
         method: data.method,
@@ -173,8 +234,13 @@ export class CommissionPaymentService {
     return this.prisma.$transaction(async (tx) => {
       await lockPayment(tx, paymentId, officeId, { anyStatus: true });
       const before = await sumReceipts(tx, paymentId);
+      if (before.amountWon <= 0) {
+        throw new ConflictException('받은 돈이 없어 돌려줄 수 없습니다.');
+      }
       if (data.amountWon > before.amountWon) {
-        throw new ConflictException('받은 돈보다 많이 돌려줄 수 없습니다.');
+        throw new ConflictException(
+          `받은 돈보다 많이 돌려줄 수 없습니다. 돌려줄 수 있는 금액은 ${before.amountWon.toLocaleString('ko-KR')}원입니다.`,
+        );
       }
       await tx.commissionReceipt.create({
         data: {
@@ -183,8 +249,11 @@ export class CommissionPaymentService {
           kind: 'refund',
           receivedAt,
           amountWon: -data.amountWon,
+          // 받은 돈의 부가세 비율대로 뺀다 (부가세 없이 받은 돈이면 전부가 수수료다).
           // 전부 돌려주면 남는 금액이 정확히 0이 되게 한다 (반올림 차이를 남기지 않는다)
-          supplyWon: -(data.amountWon === before.amountWon ? before.supplyWon : withoutVat(data.amountWon)),
+          supplyWon: -(data.amountWon === before.amountWon
+            ? before.supplyWon
+            : Math.round((data.amountWon * before.supplyWon) / before.amountWon)),
           memo: data.memo,
           createdById: userId,
         },
@@ -202,7 +271,7 @@ export class CommissionPaymentService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       const receipt = await tx.commissionReceipt.findFirst({ where: { id: receiptId, officeId } });
-      if (!receipt) throw new NotFoundException();
+      if (!receipt) throw new NotFoundException('입금 기록을 찾지 못했습니다.');
       await lockPayment(tx, receipt.paymentId, officeId, { anyStatus: true });
       const { count } = await tx.commissionReceipt.updateMany({
         where: { id: receiptId, officeId, voidedAt: null, settlementId: null },
@@ -218,6 +287,14 @@ export class CommissionPaymentService {
       const after = await sumReceipts(tx, receipt.paymentId);
       if (after.amountWon < 0) {
         throw new ConflictException('이 입금을 취소하면 돌려준 돈이 받은 돈보다 많아집니다.');
+      }
+      // 돌려준 돈 기록을 취소하면 받은 돈이 다시 늘어난다. 입금과 같은 상한(청구액)을 넘지 않게 한다.
+      const payment = await tx.commissionPayment.findUniqueOrThrow({
+        where: { id: receipt.paymentId },
+        select: { expectedAmount: true },
+      });
+      if (after.supplyWon > payment.expectedAmount * WON_PER_MANWON) {
+        throw new ConflictException('이 기록을 취소하면 받은 돈이 청구액보다 많아집니다.');
       }
       return refreshPaymentFromReceipts(tx, receipt.paymentId);
     });
@@ -238,8 +315,11 @@ export class CommissionPaymentService {
     const before = await sumReceipts(tx, payment.id);
     const limit = payment.expectedAmount * WON_PER_MANWON;
     if (before.supplyWon + input.supplyWon > limit) {
+      const left = Math.max(0, limit - before.supplyWon);
       throw new ConflictException(
-        `남은 금액보다 많습니다. 더 받을 수 있는 금액은 부가세를 빼고 ${(limit - before.supplyWon).toLocaleString('ko-KR')}원입니다.`,
+        left === 0
+          ? '이 청구는 이미 다 받았습니다.'
+          : `남은 금액보다 많습니다. 더 받을 수 있는 금액은 부가세 포함 ${withVat(left).toLocaleString('ko-KR')}원(부가세 빼고 ${left.toLocaleString('ko-KR')}원)입니다.`,
       );
     }
     await tx.commissionReceipt.create({
@@ -257,15 +337,24 @@ export class CommissionPaymentService {
     });
   }
 
+  /**
+   * 남은 수수료를 받지 않기로 한다. 대표만 부른다(컨트롤러). 매니저·중개사는 조정 요청(면제)을 올리고 대표가 승인한다.
+   * 할인·대손 승인과 같은 규칙을 돌아가지 않게, 받을 돈이 남은 청구만 된다.
+   */
   async waive(id: string, officeId: string, note?: string) {
-    const payment = await this.prisma.commissionPayment.findFirst({
-      where: { id, officeId },
-    });
-    if (!payment) throw new NotFoundException();
-
-    return this.prisma.commissionPayment.update({
-      where: { id },
-      data: { status: 'waived', note },
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await lockPayment(tx, id, officeId, { anyStatus: true });
+      if (!['pending', 'partial', 'overdue'].includes(payment.status)) {
+        throw new ConflictException(`${statusName(payment.status)} 상태의 청구는 면제할 수 없습니다.`);
+      }
+      const current = await tx.commissionPayment.findUniqueOrThrow({ where: { id } });
+      return tx.commissionPayment.update({
+        where: { id },
+        data: {
+          status: 'waived',
+          note: note?.trim() ? `${current.note ? current.note + ' · ' : ''}면제: ${note.trim()}` : current.note,
+        },
+      });
     });
   }
 
@@ -281,10 +370,10 @@ export class CommissionPaymentService {
     const payment = await this.prisma.commissionPayment.findFirst({
       where: { id, officeId },
     });
-    if (!payment) throw new NotFoundException();
+    if (!payment) throw new NotFoundException('청구를 찾지 못했습니다.');
     if (payment.status !== 'draft') {
       throw new ConflictException(
-        `draft 상태가 아닌 청구 (${payment.status}) 는 확정할 수 없습니다.`,
+        `${statusName(payment.status)} 상태의 청구는 확정할 수 없습니다. 작성 중인 청구만 확정합니다.`,
       );
     }
     return this.prisma.commissionPayment.update({
@@ -296,25 +385,131 @@ export class CommissionPaymentService {
     });
   }
 
+  /**
+   * 현금영수증·세금계산서를 발행했다고 기록한다. 실제 발행은 홈택스 등에서 하고, 여기에는 번호와 날짜만 남긴다.
+   * kind='cash_receipt'는 taxInvoiceStatus 칸에 'cash_receipt'로 적는다 (칸을 새로 만들지 않고 값으로 구분).
+   */
   async issueTaxInvoice(
     id: string,
     officeId: string,
-    data: { taxInvoiceNo: string; taxInvoiceDate?: string },
+    data: { taxInvoiceNo: string; taxInvoiceDate?: string; kind?: 'tax_invoice' | 'cash_receipt' },
   ) {
+    const kind = data.kind ?? 'tax_invoice';
+    if (kind !== 'tax_invoice' && kind !== 'cash_receipt') {
+      throw new BadRequestException('발행 종류가 올바르지 않습니다.');
+    }
+    const number = typeof data.taxInvoiceNo === 'string' ? data.taxInvoiceNo.trim() : '';
+    if (!number) {
+      throw new BadRequestException(
+        kind === 'cash_receipt' ? '현금영수증 승인번호를 적어 주세요.' : '세금계산서 번호를 적어 주세요.',
+      );
+    }
+    const issuedAt = data.taxInvoiceDate ? new Date(data.taxInvoiceDate) : new Date();
+    if (Number.isNaN(issuedAt.getTime())) throw new BadRequestException('날짜 형식이 올바르지 않습니다.');
+    if (issuedAt.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+      throw new BadRequestException('앞날의 날짜로는 기록할 수 없습니다.');
+    }
     const payment = await this.prisma.commissionPayment.findFirst({
       where: { id, officeId },
     });
-    if (!payment) throw new NotFoundException();
+    if (!payment) throw new NotFoundException('청구를 찾지 못했습니다.');
+    // 이미 기록한 것을 덮어쓰지 않는다. 잘못 적었으면 기록을 지운 뒤 다시 적는다.
+    const { count } = await this.prisma.commissionPayment.updateMany({
+      where: { id, officeId, taxInvoiceStatus: 'none' },
+      data: {
+        taxInvoiceStatus: kind === 'cash_receipt' ? 'cash_receipt' : 'issued',
+        taxInvoiceNo: number,
+        taxInvoiceDate: issuedAt,
+      },
+    });
+    if (count === 0) throw new ConflictException('이미 발행을 기록한 청구입니다.');
+    return this.prisma.commissionPayment.findUniqueOrThrow({ where: { id } });
+  }
 
+  /** 잘못 적은 현금영수증·세금계산서 기록을 지운다. */
+  async clearTaxInvoice(id: string, officeId: string) {
+    const payment = await this.prisma.commissionPayment.findFirst({ where: { id, officeId } });
+    if (!payment) throw new NotFoundException('청구를 찾지 못했습니다.');
     return this.prisma.commissionPayment.update({
       where: { id },
-      data: {
-        taxInvoiceStatus: 'issued',
-        taxInvoiceNo: data.taxInvoiceNo,
-        taxInvoiceDate: data.taxInvoiceDate
-          ? new Date(data.taxInvoiceDate)
-          : new Date(),
-      },
+      data: { taxInvoiceStatus: 'none', taxInvoiceNo: null, taxInvoiceDate: null },
+    });
+  }
+
+  /**
+   * 공동중개 상대와 그 몫을 주고받았다고 기록한다(분배 한 줄 = 한 사무소의 몫).
+   * 다 받은 청구(또는 받은 뒤 면제한 청구)만 된다. 일부만 받았을 때 기록하면 나중에 들어온 돈의 몫이 빠진다.
+   * 기록할 때 실제로 주고받은 금액(받은 돈 × 비율, 만원)을 shareAmount 에 굳힌다.
+   */
+  async settleDistribution(
+    distributionId: string,
+    officeId: string,
+    data: { settledAt?: string; memo?: string },
+  ) {
+    const settledAt = parseMoneyDate(data.settledAt);
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.commissionDistribution.findFirst({
+        where: { id: distributionId, officeId },
+        select: { id: true, paymentId: true },
+      });
+      if (!row) throw new NotFoundException('분배를 찾지 못했습니다.');
+      await lockPayment(tx, row.paymentId, officeId, { anyStatus: true });
+      const payment = await tx.commissionPayment.findUniqueOrThrow({
+        where: { id: row.paymentId },
+        include: { distributions: { orderBy: { createdAt: 'asc' } } },
+      });
+      const done = payment.status === 'collected' || payment.status === 'waived';
+      const received = await sumReceipts(tx, payment.id);
+      if (!done || received.supplyWon <= 0) {
+        throw new ConflictException('수수료를 다 받은 청구만 공동중개 정산을 기록할 수 있습니다.');
+      }
+      const target = payment.distributions.find((d) => d.id === distributionId);
+      if (!target) throw new NotFoundException('분배를 찾지 못했습니다.');
+      if (target.recipientType === 'our_office' && payment.collectedByOffice === 'us') {
+        throw new BadRequestException('우리가 받은 돈의 우리 몫은 주고받을 돈이 아닙니다.');
+      }
+      if (target.recipientType === 'partner_broker' && payment.collectedByOffice !== 'us') {
+        throw new BadRequestException('상대가 받은 돈의 상대 몫은 주고받을 돈이 아닙니다.');
+      }
+      // 받은 돈(만원, 청구액까지)을 비율대로 나눈다. 화면의 계산(shareRowAmounts)과 같은 규칙: 줄마다 내림, 나머지는 우리 몫.
+      const receivedManwon = Math.min(payment.expectedAmount, Math.round(received.supplyWon / WON_PER_MANWON));
+      const amounts = payment.distributions.map((d) => Math.floor((receivedManwon * Number(d.shareRatio)) / 100));
+      const remainder = receivedManwon - amounts.reduce((sum, value) => sum + value, 0);
+      if (remainder !== 0) {
+        const ourIndex = payment.distributions.findIndex((d) => d.recipientType === 'our_office');
+        amounts[ourIndex >= 0 ? ourIndex : 0] += remainder;
+      }
+      const amount = amounts[payment.distributions.indexOf(target)];
+      const { count } = await tx.commissionDistribution.updateMany({
+        where: { id: distributionId, officeId, status: 'pending' },
+        data: {
+          status: 'settled',
+          settledAt,
+          settlementMemo: data.memo?.trim() || null,
+          shareAmount: amount,
+        },
+      });
+      if (count === 0) throw new ConflictException('이미 정산을 기록했습니다.');
+      return tx.commissionDistribution.findUniqueOrThrow({ where: { id: distributionId } });
+    });
+  }
+
+  /** 공동중개 정산 기록을 되돌린다. 금액은 지금 청구액 기준으로 다시 계산해 둔다. */
+  async unsettleDistribution(distributionId: string, officeId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.commissionDistribution.findFirst({
+        where: { id: distributionId, officeId },
+        include: { payment: { select: { expectedAmount: true } } },
+      });
+      if (!row) throw new NotFoundException('분배를 찾지 못했습니다.');
+      if (row.status !== 'settled') throw new ConflictException('정산을 기록하지 않은 몫입니다.');
+      await tx.commissionDistribution.update({
+        where: { id: distributionId },
+        data: { status: 'pending', settledAt: null, settlementMemo: null },
+      });
+      // 금액은 다른 분배 줄과 같은 규칙(줄마다 내림, 남는 만원은 우리 몫)으로 지금 청구액에서 다시 나눈다
+      await recomputeShareAmounts(tx, row.paymentId);
+      return tx.commissionDistribution.findUniqueOrThrow({ where: { id: distributionId } });
     });
   }
 
@@ -334,10 +529,10 @@ export class CommissionPaymentService {
       where: { id, officeId },
       include: { distributions: true },
     });
-    if (!payment) throw new NotFoundException();
+    if (!payment) throw new NotFoundException('청구를 찾지 못했습니다.');
     if (!EDITABLE_PAYMENT_STATUSES.has(payment.status)) {
       throw new ConflictException(
-        `수금이 ${payment.status} 상태라 분배를 수정할 수 없습니다.`,
+        `${statusName(payment.status)} 상태의 청구라 분배를 바꿀 수 없습니다.`,
       );
     }
     if (payment.distributions.some((d) => d.status === 'settled')) {
@@ -449,7 +644,7 @@ export class CommissionPaymentService {
         !item.partnerBrokerId
       ) {
         throw new BadRequestException(
-          '파트너 중개 분배는 partnerBrokerId 가 필요합니다.',
+          '상대 중개사를 골라 주세요.',
         );
       }
     }
@@ -512,6 +707,43 @@ export class CommissionPaymentService {
   }
 }
 
+/* ───────── 분배 금액 다시 계산 ───────── */
+
+/**
+ * 청구액이 바뀐 뒤 분배 줄의 금액(shareAmount, 만원)을 같은 규칙으로 다시 정한다.
+ * 규칙(computeDistributionRows · 화면 shareRowAmounts 와 같음): 줄마다 청구액 × 비율을 내림하고,
+ * 남는 만원은 우리 사무소 줄(없으면 첫 줄)에 더한다. 이미 정산을 기록한 줄은 실제로 주고받은 금액이라 그대로 둔다.
+ * 할인 승인처럼 청구액만 바꾸고 이것을 빼먹으면 거래의 수수료 요약(우리 몫)이 청구액보다 커진다.
+ */
+export function shareAmountsFor(
+  expectedAmount: number,
+  rows: Array<{ recipientType: string; shareRatio: number | { toString(): string }; shareAmount: number; status: string }>,
+): number[] {
+  const open = (row: (typeof rows)[number]) => row.status !== 'settled';
+  const amounts = rows.map((row) =>
+    open(row) ? Math.floor((expectedAmount * Number(row.shareRatio.toString())) / 100) : row.shareAmount,
+  );
+  const remainder = expectedAmount - amounts.reduce((sum, value) => sum + value, 0);
+  if (remainder !== 0) {
+    const ourIndex = rows.findIndex((row) => row.recipientType === 'our_office' && open(row));
+    const target = ourIndex >= 0 ? ourIndex : rows.findIndex(open);
+    if (target >= 0) amounts[target] = Math.max(0, amounts[target] + remainder);
+  }
+  return amounts;
+}
+
+export async function recomputeShareAmounts(tx: Prisma.TransactionClient, paymentId: string) {
+  const payment = await tx.commissionPayment.findUniqueOrThrow({
+    where: { id: paymentId },
+    include: { distributions: { orderBy: { createdAt: 'asc' } } },
+  });
+  const amounts = shareAmountsFor(payment.expectedAmount, payment.distributions);
+  for (const [index, row] of payment.distributions.entries()) {
+    if (row.status === 'settled' || row.shareAmount === amounts[index]) continue;
+    await tx.commissionDistribution.update({ where: { id: row.id }, data: { shareAmount: amounts[index] } });
+  }
+}
+
 /* ───────── 입금 기록에서 청구의 받은 금액을 다시 계산한다 ───────── */
 
 export const WON_PER_MANWON = 10_000;
@@ -519,8 +751,22 @@ export const WON_PER_MANWON = 10_000;
 const withVat = (supplyWon: number) => Math.round(supplyWon * 1.1);
 const withoutVat = (amountWon: number) => Math.round(amountWon / 1.1);
 
+/** 화면에 보이는 청구 상태 이름 (안내 문구에 내부 값을 그대로 쓰지 않는다) */
+export const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  draft: '작성 중',
+  pending: '수금 대기',
+  partial: '부분 수금',
+  collected: '수금 완료',
+  overdue: '연체',
+  waived: '면제',
+  cancelled: '취소',
+};
+const statusName = (status: string) => PAYMENT_STATUS_LABEL[status] ?? status;
+
 /** 돈을 받을 수 있는 청구 상태 */
 const COLLECTABLE_STATUSES = new Set(['pending', 'partial', 'overdue', 'collected']);
+/** 받은 방법. 화면의 '기타'는 other 로 보낸다. */
+const RECEIPT_METHODS = new Set(['transfer', 'cash', 'card', 'other', 'etc']);
 
 export interface LockedPayment {
   id: string;
@@ -552,9 +798,9 @@ export async function lockPayment(
     Array<{ id: string; office_id: string; status: string; expected_amount: number }>
   >`SELECT id, office_id, status, expected_amount FROM commission_payments WHERE id = ${id}::uuid AND office_id = ${officeId}::uuid FOR UPDATE`;
   const row = rows[0];
-  if (!row) throw new NotFoundException();
+  if (!row) throw new NotFoundException('청구를 찾지 못했습니다.');
   if (!options.anyStatus && !COLLECTABLE_STATUSES.has(row.status)) {
-    throw new ConflictException(`이 상태(${row.status})의 청구에는 입금을 기록할 수 없습니다.`);
+    throw new ConflictException(`${statusName(row.status)} 상태의 청구에는 입금을 기록할 수 없습니다.`);
   }
   return { id: row.id, officeId: row.office_id, status: row.status, expectedAmount: row.expected_amount };
 }
@@ -575,20 +821,31 @@ export async function sumReceipts(tx: Prisma.TransactionClient, paymentId: strin
 export async function refreshPaymentFromReceipts(tx: Prisma.TransactionClient, paymentId: string) {
   const payment = await tx.commissionPayment.findUniqueOrThrow({ where: { id: paymentId } });
   const sum = await sumReceipts(tx, paymentId);
+  // 돌려준 돈을 빼기 전의 받은 돈. 다 받은 뒤 일부를 돌려줘도 손님이 그만큼 다시 낼 돈이 생기는 것이 아니므로
+  // 다 받았는지는 이 금액으로 정한다 (예전에는 돌려주면 '부분수금'으로 돌아가 연체·독촉 목록에 올랐다).
+  const gross = await tx.commissionReceipt.aggregate({
+    where: { paymentId, voidedAt: null, kind: 'receipt' },
+    _sum: { supplyWon: true },
+  });
+  const grossSupplyWon = gross._sum.supplyWon ?? 0;
   const latest = await tx.commissionReceipt.findFirst({
     where: { paymentId, voidedAt: null, kind: 'receipt' },
     orderBy: [{ receivedAt: 'desc' }, { createdAt: 'desc' }],
   });
+  // 규칙(한 문장): 돌려준 돈을 뺀 받은 돈이 0이면 수금 대기로 돌아가고, 0보다 크면 돌려주기 전에 받은 돈으로
+  // 다 받았는지 정한다 — 다 받은 뒤 일부만 돌려준 청구는 수금 완료로 남아 연체·독촉 목록에 오르지 않는다.
   let status = payment.status;
   if (COLLECTABLE_STATUSES.has(payment.status)) {
-    if (sum.supplyWon >= payment.expectedAmount * WON_PER_MANWON) status = 'collected';
-    else if (sum.supplyWon > 0) status = 'partial';
-    else status = 'pending';
+    if (sum.supplyWon <= 0) status = 'pending';
+    else if (grossSupplyWon >= payment.expectedAmount * WON_PER_MANWON) status = 'collected';
+    else status = 'partial';
   }
   return tx.commissionPayment.update({
     where: { id: paymentId },
     data: {
-      actualAmount: sum.supplyWon > 0 ? Math.round(sum.supplyWon / WON_PER_MANWON) : null,
+      // 받았다가 전부 돌려줬으면 0 (null 이면 화면이 '다 받음'의 청구액으로 읽는다)
+      actualAmount:
+        sum.supplyWon > 0 ? Math.round(sum.supplyWon / WON_PER_MANWON) : grossSupplyWon > 0 ? 0 : null,
       paidAt: sum.supplyWon > 0 ? (latest?.receivedAt ?? payment.paidAt) : null,
       method: latest?.method ?? payment.method,
       status,

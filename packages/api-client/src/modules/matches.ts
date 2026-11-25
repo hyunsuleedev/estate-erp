@@ -1,7 +1,7 @@
 import type { RequestFn } from '../client.js';
 import type { BuyerRequirement } from './buyer-requirements.js';
 import type { CalendarEvent } from './calendar-events.js';
-import type { Listing } from './listings.js';
+import type { Listing, ListingIntakeSummary, ListingOccupyingDeal } from './listings.js';
 import type { Property } from './properties.js';
 
 /** Match 응답에 동봉되는 Deal 연결 요약 (dealLinkage) */
@@ -9,7 +9,20 @@ export interface MatchDealLink {
   id: string;
   stage: string;
   isCancelled: boolean;
+  /** 거래를 만든 시각. 끝난 거래의, 거래 전환 전에 잡아 둔 임장을 가릴 때 쓴다. */
+  createdAt?: string | null;
 }
+
+/** 매칭에 실린 매물 의뢰의 거래 조건들. 같은 집의 다른 조건(매매 ↔ 전세)에 진행 중인 거래가 있는지 본다. */
+export interface MatchIntakeListing {
+  id: string;
+  transactionType: string;
+  deals?: ListingOccupyingDeal[];
+}
+
+export type MatchListing = Omit<Listing, 'intake'> & {
+  intake?: ListingIntakeSummary & { listings?: MatchIntakeListing[] };
+};
 
 export interface Match {
   id: string;
@@ -33,7 +46,7 @@ export interface Match {
   createdAt: string;
   updatedAt: string;
   property?: Property;
-  listing?: Listing;
+  listing?: MatchListing;
   buyerRequirement?: BuyerRequirement;
   calendarEvents?: CalendarEvent[];
   deals?: MatchDealLink[];

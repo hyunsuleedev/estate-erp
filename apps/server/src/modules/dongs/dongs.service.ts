@@ -11,7 +11,7 @@ export class DongsService {
 
   async findAll(officeId: string, siteId: string) {
     if (!siteId) {
-      throw new BadRequestException('siteId is required');
+      throw new BadRequestException('단지를 골라 주세요.');
     }
 
     await this.findAccessibleSite(siteId, officeId);
@@ -42,7 +42,7 @@ export class DongsService {
         },
       },
     });
-    if (!dong) throw new NotFoundException('Dong not found');
+    if (!dong) throw new NotFoundException('동을 찾을 수 없습니다.');
     return dong;
   }
 
@@ -52,14 +52,15 @@ export class DongsService {
   ) {
     await this.findEditableSite(dto.siteId, officeId);
 
+    // 요청 본문을 펼치지 않는다 — officeId 같은 칸을 요청으로 바꾸지 못하게
     return this.prisma.dong.create({
-      data: { officeId, ...dto },
+      data: { officeId, siteId: dto.siteId, name: dto.name },
     });
   }
 
   async update(id: string, officeId: string, dto: { name?: string }) {
     await this.findOwnedDong(id, officeId);
-    return this.prisma.dong.update({ where: { id }, data: dto });
+    return this.prisma.dong.update({ where: { id }, data: { name: dto.name } });
   }
 
   async remove(id: string, officeId: string) {
@@ -76,7 +77,7 @@ export class DongsService {
     });
 
     if (!site) {
-      throw new NotFoundException('Site not found');
+      throw new NotFoundException('단지를 찾을 수 없습니다.');
     }
 
     return site;
@@ -91,7 +92,7 @@ export class DongsService {
     });
 
     if (!site) {
-      throw new NotFoundException('Site not found');
+      throw new NotFoundException('단지를 찾을 수 없습니다.');
     }
 
     return site;
@@ -106,7 +107,7 @@ export class DongsService {
     });
 
     if (!dong) {
-      throw new NotFoundException('Dong not found');
+      throw new NotFoundException('동을 찾을 수 없습니다.');
     }
 
     return dong;

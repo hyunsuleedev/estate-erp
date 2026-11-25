@@ -56,10 +56,10 @@ export async function resolveAdvertisementLink(
       where: { id: listingId, officeId },
       select: { id: true, propertyId: true, transactionType: true },
     });
-    if (!listing) throw new NotFoundException("Listing not found");
+    if (!listing) throw new NotFoundException("선택한 매물을 찾을 수 없습니다. 매물이 삭제되었는지 확인해 주세요.");
     if (propertyId && propertyId !== listing.propertyId) {
       throw new BadRequestException(
-        "listingId and propertyId point at different properties",
+        "고른 매물과 관리 공간이 서로 다른 집입니다. 매물을 다시 골라 주세요.",
       );
     }
     propertyId = listing.propertyId;
@@ -71,10 +71,10 @@ export async function resolveAdvertisementLink(
       where: { id: propertyId, officeId },
       select: { id: true, siteId: true },
     });
-    if (!property) throw new NotFoundException("Property not found");
+    if (!property) throw new NotFoundException("관리 공간을 찾을 수 없습니다. 삭제되었는지 확인해 주세요.");
     if (siteId && siteId !== property.siteId) {
       throw new BadRequestException(
-        "propertyId and siteId point at different sites",
+        "고른 관리 공간과 단지가 서로 다릅니다. 다시 골라 주세요.",
       );
     }
     siteId = property.siteId;
@@ -83,7 +83,7 @@ export async function resolveAdvertisementLink(
       where: { id: siteId, OR: [{ isPublic: true }, { officeId }] },
       select: { id: true },
     });
-    if (!site) throw new NotFoundException("Site not found");
+    if (!site) throw new NotFoundException("단지를 찾을 수 없습니다.");
   }
 
   return { listingId, propertyId, siteId, transactionType };
@@ -118,19 +118,19 @@ export function assertValidAdvertisementRawFields(fields: AdvertisementRawFields
     !ADVERTISEMENT_TRANSACTION_TYPES.has(fields.transactionType)
   ) {
     throw new BadRequestException(
-      "transactionType must be sale, jeonse, or monthly",
+      "거래유형은 매매·전세·월세 중 하나여야 합니다.",
     );
   }
   if (
     fields.floorExposure != null &&
     !ADVERTISEMENT_FLOOR_EXPOSURES.has(fields.floorExposure)
   ) {
-    throw new BadRequestException("floorExposure must be exact or band");
+    throw new BadRequestException("층 노출은 ‘정확한 층 공개’ 또는 ‘구간만 공개’ 중 하나여야 합니다.");
   }
   if (
     fields.rawAreaM2 != null &&
     (!Number.isFinite(fields.rawAreaM2) || fields.rawAreaM2 <= 0)
   ) {
-    throw new BadRequestException("rawAreaM2 must be a positive number");
+    throw new BadRequestException("면적은 0보다 큰 수여야 합니다.");
   }
 }

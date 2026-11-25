@@ -69,6 +69,10 @@ export const OCCUPYING_DEALS_SELECT = {
     id: true,
     stage: true,
     stageChangedAt: true,
+    // 끝난 매물의 목록·상세에 내놓은 가격 대신 거래가를 보인다
+    agreedPrice: true,
+    agreedDeposit: true,
+    agreedMonthlyRent: true,
   },
 } satisfies Prisma.Listing$dealsArgs;
 

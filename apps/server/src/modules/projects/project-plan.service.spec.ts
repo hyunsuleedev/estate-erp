@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { ProjectPlanService } from './project-plan.service';
@@ -84,6 +85,12 @@ function setup(options: {
       })),
     },
     deal: { findFirst: jest.fn(async () => options.deal ?? null) },
+    task: {
+      updateMany: jest.fn(async (args: { data: { projectId?: string | null } }) => {
+        calls.push(`task.updateMany(case=${String(args.data.projectId)})`);
+        return { count: 0 };
+      }),
+    },
     contact: {
       findFirst: jest.fn(async (args: { where: { id: string } }) =>
         args.where.id === 'contact-missing' ? null : { id: args.where.id },
@@ -234,6 +241,224 @@ describe('ProjectPlanService', () => {
     ]);
   });
 
+  it('매물 의뢰 단계는 지금 거래와 함께 가장 최근에 취소된 거래 하나를 준다 (새 거래가 위, 취소 줄은 아래)', async () => {
+    const { tx } = setup();
+    const deal = (id: string, createdAt: string, cancelledAt: string | null) => ({
+      id,
+      stage: 'preContract',
+      isCancelled: cancelledAt !== null,
+      cancelledAt: cancelledAt ? new Date(cancelledAt) : null,
+      cancelReason: cancelledAt ? `${id} 사유` : null,
+      transactionType: 'sale',
+      agreedPrice: 158000,
+      agreedDeposit: null,
+      agreedMonthlyRent: null,
+      createdAt: new Date(createdAt),
+      buyerContact: { name: '매수인' },
+      sellerContact: { name: '매도인' },
+      listing: null,
+      payments: [],
+      contract: null,
+    });
+    const project = (deals: ReturnType<typeof deal>[]) => ({
+      id: PROJECT_ID,
+      title: null,
+      memo: null,
+      archivedAt: null,
+      createdAt: new Date('2026-11-01T00:00:00Z'),
+      updatedAt: new Date('2026-11-01T00:00:00Z'),
+      primaryContact: null,
+      assignedTo: null,
+      _count: { comments: 0 },
+      steps: [
+        {
+          id: 'step-1',
+          sortOrder: 1,
+          title: '매도',
+          targetDate: null,
+          memo: null,
+          doneAt: null,
+          buyerIntake: null,
+          deal: null,
+          listingIntake: {
+            id: 'listing-1',
+            propertyId: 'property-1',
+            lifecycleStatus: 'open',
+            closedReason: null,
+            property: {
+              site: { name: '고덕그라시움' },
+              unit: { name: '2203', floor: 22, floorEnd: null, floorLabel: null, dong: { name: '102', isPlaceholder: false } },
+              propertyContacts: [],
+            },
+            listings: [
+              { id: 'l1', transactionType: 'sale', price: 158000, deposit: null, monthlyRent: null, isPaused: false, _count: { matches: 0 }, deals },
+            ],
+          },
+        },
+      ],
+    });
+    const findFirst = jest.fn();
+    const service = new ProjectPlanService({ ...tx, project: { ...tx.project, findFirst } } as never);
+
+    // 취소된 거래 둘(나중에 취소한 것이 위)과 그 뒤에 새로 만든 거래
+    findFirst.mockResolvedValueOnce(
+      project([
+        deal('new', '2026-11-21T00:00:00Z', null),
+        deal('old-cancel', '2026-11-01T00:00:00Z', '2026-11-05T00:00:00Z'),
+        deal('late-cancel', '2026-11-10T00:00:00Z', '2026-11-20T00:00:00Z'),
+      ]),
+    );
+    const withNew = await service.findOne(PROJECT_ID, OFFICE_ID);
+    expect(withNew.steps[0].deal?.id).toBe('new');
+    expect(withNew.steps[0].cancelledDeal).toMatchObject({
+      id: 'late-cancel',
+      isCancelled: true,
+      cancelReason: 'late-cancel 사유',
+    });
+    // 주소는 공용 formatPlaceLabel 모양이다.
+    expect(withNew.steps[0].listingIntake?.label).toBe('고덕그라시움 102동 2203호');
+
+    // 취소만 있고 새 거래가 없으면 지금 거래는 없고 취소 줄만 남는다.
+    findFirst.mockResolvedValueOnce(project([deal('only-cancel', '2026-11-10T00:00:00Z', '2026-11-20T00:00:00Z')]));
+    const cancelledOnly = await service.findOne(PROJECT_ID, OFFICE_ID);
+    expect(cancelledOnly.steps[0].deal).toBeNull();
+    expect(cancelledOnly.steps[0].cancelledDeal?.id).toBe('only-cancel');
+
+    // 취소된 거래가 없으면 null.
+    findFirst.mockResolvedValueOnce(project([deal('new', '2026-11-21T00:00:00Z', null)]));
+    expect((await service.findOne(PROJECT_ID, OFFICE_ID)).steps[0].cancelledDeal).toBeNull();
+  });
+
+  it('매물 의뢰 · 구매 의뢰로 그 의뢰를 담은 프로젝트를 찾는다 (매물 상세 · 희망 조건 화면에서)', async () => {
+    const { tx } = setup();
+    const findMany = jest.fn(async () => []);
+    const prisma = {
+      ...tx,
+      project: { ...tx.project, findMany, count: jest.fn(async () => 0) },
+      $transaction: jest.fn(),
+    };
+    const service = new ProjectPlanService(prisma as never);
+    await service.findAll(OFFICE_ID, { status: 'all', listingIntakeId: 'li-1' });
+    expect(findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { officeId: OFFICE_ID, AND: [{ listingIntakes: { some: { id: 'li-1' } } }] },
+      }),
+    );
+    await service.findAll(OFFICE_ID, { status: 'all', buyerIntakeId: 'bi-1' });
+    expect(findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { officeId: OFFICE_ID, AND: [{ buyerIntakes: { some: { id: 'bi-1' } } }] },
+      }),
+    );
+  });
+
+  it('목록 필터(담당 여럿 · 담당 없음 · 내 프로젝트 · 의뢰 · 대표 고객 · 시작 기간 · 이름순)를 서버에서 건다', async () => {
+    const { tx } = setup();
+    const findMany = jest.fn(async () => []);
+    const count = jest.fn(async () => 0);
+    const prisma = { ...tx, project: { ...tx.project, findMany, count }, $transaction: jest.fn() };
+    const service = new ProjectPlanService(prisma as never);
+    await service.findAll(OFFICE_ID, {
+      assignedToIds: ['user-1', 'none'],
+      mineUserId: 'me',
+      intakes: ['listing', 'none'],
+      primary: 'empty',
+      createdFrom: '2026-11-01',
+      createdTo: '2026-11-30',
+      sort: 'title',
+    });
+    const args = (findMany.mock.calls[0] as unknown as [
+      { where: { AND: unknown[] }; orderBy: unknown[] },
+    ])[0];
+    expect(args.where.AND).toEqual([
+      { OR: [{ assignedToId: { in: ['user-1'] } }, { assignedToId: null }] },
+      { assignedToId: 'me' },
+      {
+        OR: [
+          { listingIntakes: { some: {} } },
+          { listingIntakes: { none: {} }, buyerIntakes: { none: {} } },
+        ],
+      },
+      { primaryContactId: null },
+      // 한국 날짜로 자른다: 11월 1일 0시(KST)부터 12월 1일 0시(KST) 전까지
+      {
+        createdAt: {
+          gte: new Date('2026-10-31T15:00:00.000Z'),
+          lt: new Date('2026-11-30T15:00:00.000Z'),
+        },
+      },
+    ]);
+    // 이름순은 오름차순이 기본이고 이름 없는 프로젝트는 뒤로
+    expect(args.orderBy).toEqual([{ title: { sort: 'asc', nulls: 'last' } }, { id: 'asc' }]);
+    expect(count).toHaveBeenCalled();
+
+    await expect(service.findAll(OFFICE_ID, { statuses: ['done'] })).rejects.toThrow(
+      '상태는 준비 · 진행 중 · 마무리 중에서 고르세요.',
+    );
+    await expect(service.findAll(OFFICE_ID, { intakes: ['deal'] })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(service.findAll(OFFICE_ID, { createdFrom: '11/01' })).rejects.toThrow(
+      '시작 날짜가 올바르지 않습니다.',
+    );
+    await expect(
+      service.findAll(OFFICE_ID, { createdFrom: '2026-12-01', createdTo: '2026-11-01' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('상태(계산한 값)로 거르면 맞는 것만 세고 그 안에서 쪽을 자른다', async () => {
+    const { tx } = setup();
+    const row = (id: string, steps: Array<{ done: boolean }>) => ({
+      id,
+      title: id,
+      memo: null,
+      archivedAt: null,
+      createdAt: new Date('2026-11-01T00:00:00Z'),
+      updatedAt: new Date('2026-11-01T00:00:00Z'),
+      primaryContact: null,
+      assignedTo: null,
+      _count: { comments: 0 },
+      comments: [],
+      steps: steps.map((step, index) => ({
+        id: `${id}-s${index}`,
+        sortOrder: index + 1,
+        title: `단계 ${index + 1}`,
+        targetDate: null,
+        memo: null,
+        doneAt: step.done ? new Date('2026-11-02T00:00:00Z') : null,
+        listingIntake: null,
+        buyerIntake: null,
+        deal: null,
+      })),
+    });
+    const findMany = jest.fn(async () => [
+      row('empty-1', []),
+      row('going-1', [{ done: true }, { done: false }]),
+      row('wrap-1', [{ done: true }]),
+      row('empty-2', []),
+      row('going-2', [{ done: false }]),
+    ]);
+    const count = jest.fn(async () => 99);
+    const prisma = { ...tx, project: { ...tx.project, findMany, count }, $transaction: jest.fn() };
+    const service = new ProjectPlanService(prisma as never);
+
+    const first = await service.findAll(OFFICE_ID, { statuses: ['active', 'preparing'], limit: 3 });
+    expect(first.total).toBe(4);
+    expect(first.items.map((item) => item.id)).toEqual(['empty-1', 'going-1', 'empty-2']);
+    expect(first.nextOffset).toBe(3);
+    // 전체 수는 count가 아니라 걸러 낸 수다
+    expect(count).not.toHaveBeenCalled();
+    const second = await service.findAll(OFFICE_ID, {
+      statuses: ['active', 'preparing'],
+      limit: 3,
+      offset: 3,
+    });
+    expect(second.items.map((item) => item.id)).toEqual(['going-2']);
+    expect(second.nextOffset).toBeNull();
+    const wrapping = await service.findAll(OFFICE_ID, { statuses: ['wrapping'] });
+    expect(wrapping.items.map((item) => item.id)).toEqual(['wrap-1']);
+  });
+
   it('끝낸 프로젝트만, 또는 담당 직원으로 거를 수 있고 모르는 status는 거절한다', async () => {
     const { tx } = setup();
     const findMany = jest.fn(async () => []);
@@ -246,7 +471,7 @@ describe('ProjectPlanService', () => {
     await service.findAll(OFFICE_ID, { status: 'archived', assignedToId: 'user-1' });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { officeId: OFFICE_ID, archivedAt: { not: null }, assignedToId: 'user-1' },
+        where: { officeId: OFFICE_ID, archivedAt: { not: null }, AND: [{ assignedToId: 'user-1' }] },
       }),
     );
     await expect(service.findAll(OFFICE_ID, { status: 'closed' })).rejects.toBeInstanceOf(
@@ -350,6 +575,71 @@ describe('ProjectPlanService', () => {
     });
   });
 
+  it('다른 손님을 고르면 그 사람(같은 사무소)의 담을 수 있는 의뢰만 후보로 준다', async () => {
+    const { tx } = setup();
+    const calls: Record<string, unknown> = {};
+    const buyerIntakeContact = { findMany: jest.fn(async () => [{ contactId: 'c1' }]) };
+    const prisma = {
+      ...tx,
+      buyerIntakeContact,
+      propertyContact: { findMany: jest.fn(async () => []) },
+      listingIntake: {
+        findMany: jest.fn(async (args: { where: unknown }) => {
+          calls.listing = args.where;
+          return [];
+        }),
+      },
+      buyerIntake: {
+        findMany: jest.fn(async (args: { where: unknown }) => {
+          calls.buyer = args.where;
+          return [];
+        }),
+      },
+      deal: { findMany: jest.fn(async () => []) },
+    };
+    const service = new ProjectPlanService(prisma as never);
+    await service.findCandidates(PROJECT_ID, OFFICE_ID, { contactId: 'spouse' });
+
+    // 프로젝트 사람들이 아니라 고른 사람 한 명으로 찾는다.
+    expect(buyerIntakeContact.findMany).not.toHaveBeenCalled();
+    expect(calls.buyer).toMatchObject({ contacts: { some: { contactId: { in: ['spouse'] } } } });
+    expect(calls.listing).toMatchObject({
+      property: { propertyContacts: { some: { contactId: { in: ['spouse'] } } } },
+    });
+    // 다른 사무소(없는) 연락처는 거절한다.
+    await expect(
+      service.findCandidates(PROJECT_ID, OFFICE_ID, { contactId: 'contact-missing' }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('연락처로 거르면 대표 고객이거나 담긴 의뢰의 당사자인 프로젝트만 준다', async () => {
+    const { tx } = setup();
+    const findMany = jest.fn(async () => []);
+    const prisma = {
+      ...tx,
+      project: { ...tx.project, findMany, count: jest.fn(async () => 0) },
+      $transaction: jest.fn(),
+    };
+    await new ProjectPlanService(prisma as never).findAll(OFFICE_ID, {
+      status: 'all',
+      contactId: 'c1',
+    });
+    const where = (findMany.mock.calls[0] as unknown as [{ where: Record<string, unknown> }])[0]
+      .where;
+    expect(where).not.toHaveProperty('archivedAt');
+    expect(where).toMatchObject({
+      AND: [
+        {
+          OR: [
+            { primaryContactId: 'c1' },
+            { buyerIntakes: { some: { contacts: { some: { contactId: 'c1' } } } } },
+            expect.objectContaining({ listingIntakes: expect.anything() }),
+          ],
+        },
+      ],
+    });
+  });
+
   it('의뢰 없이 대표 고객만 정해도 프로젝트를 연다', async () => {
     const { service, tx, calls } = setup();
     await service.create(OFFICE_ID, { primaryContactId: 'contact-1', assignedToId: 'user-1' });
@@ -385,12 +675,28 @@ describe('ProjectPlanService', () => {
     );
   });
 
-  it('대표 고객도 의뢰도 없으면 프로젝트를 만들지 않는다', async () => {
-    const { service, tx } = setup();
-    await expect(service.create(OFFICE_ID, { title: '빈 프로젝트' })).rejects.toBeInstanceOf(
-      BadRequestException,
+  it('아무것도 없이도 빈 프로젝트를 연다 (작업 공간) — 담당을 보내지 않으면 만든 사람이 담당이다', async () => {
+    const empty = setup();
+    await empty.service.create(OFFICE_ID, {}, 'user-creator');
+    expect(empty.tx.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          officeId: OFFICE_ID,
+          title: null,
+          memo: null,
+          primaryContactId: null,
+          assignedToId: 'user-creator',
+        }),
+      }),
     );
-    expect(tx.project.create).not.toHaveBeenCalled();
+    expect(empty.calls).toEqual(['case.create']);
+
+    // 담당 없음을 골랐으면(null) 만든 사람으로 채우지 않는다.
+    const unassigned = setup();
+    await unassigned.service.create(OFFICE_ID, { assignedToId: null }, 'user-creator');
+    expect(unassigned.tx.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ assignedToId: null }) }),
+    );
   });
 
   it('고른 의뢰를 접수 순서대로 프로젝트에 담고 의뢰마다 단계를 만든다', async () => {
@@ -411,7 +717,7 @@ describe('ProjectPlanService', () => {
       `buyerIntake.update(case=${PROJECT_ID})`,
       'step.create(전세 구매 의뢰#1)',
       `listingIntake.update(case=${PROJECT_ID})`,
-      'step.create(고덕그라시움 101동 3501 매물 의뢰#1)',
+      'step.create(고덕그라시움 101동 3501호 매물 의뢰#1)',
     ]);
   });
 
@@ -533,15 +839,85 @@ describe('ProjectPlanService', () => {
     });
   });
 
-  it('묶음을 풀 때 단계를 먼저 지우고 의뢰를 뺀 뒤 프로젝트를 지운다', async () => {
-    const { service, calls } = setup();
-    await service.remove(PROJECT_ID, OFFICE_ID);
+  it('묶음을 풀 때 단계를 먼저 지우고 의뢰와 업무를 뺀 뒤 프로젝트를 지운다', async () => {
+    const { service, calls, tx } = setup();
+    await service.remove(PROJECT_ID, OFFICE_ID, 'owner');
+    // 업무는 프로젝트가 없어져도 남는다. 연결만 끊는다(FK가 지우기를 막으므로 프로젝트보다 먼저).
     expect(calls).toEqual([
       'step.deleteMany',
       'listingIntake.updateMany(case=null)',
       'buyerIntake.updateMany(case=null)',
+      'task.updateMany(case=null)',
       'case.delete',
     ]);
+    expect(tx.task.updateMany).toHaveBeenCalledWith({
+      where: { officeId: OFFICE_ID, projectId: PROJECT_ID },
+      data: { projectId: null },
+    });
+  });
+
+  it('프로젝트 풀기는 대표 · 매니저만 한다 (풀면 남의 코멘트까지 지워진다)', async () => {
+    const manager = setup();
+    await manager.service.remove(PROJECT_ID, OFFICE_ID, 'manager');
+    expect(manager.calls).toContain('case.delete');
+
+    // 내용이 있는 프로젝트(코멘트가 있음)는 중개사가 담당이어도 못 푼다.
+    const agent = setup();
+    agent.tx.project.findFirst.mockResolvedValue({
+      id: PROJECT_ID,
+      title: null,
+      memo: null,
+      primaryContactId: null,
+      assignedToId: 'agent-1',
+      _count: { steps: 0, comments: 2, tasks: 0 },
+    } as never);
+    const attempt = agent.service.remove(PROJECT_ID, OFFICE_ID, 'agent', 'agent-1');
+    await expect(attempt).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(agent.service.remove(PROJECT_ID, OFFICE_ID, 'agent', 'agent-1')).rejects.toThrow(
+      '프로젝트 풀기는 대표·매니저만 할 수 있습니다. 정리하려면 끝내기를 쓰세요.',
+    );
+    // 아무것도 지우지 않는다.
+    expect(agent.calls).toEqual([]);
+  });
+
+  it('아무것도 적지 않은 빈 프로젝트는 담당(만든 사람)이 지울 수 있다 — 남의 빈 프로젝트는 못 지운다', async () => {
+    const emptyProject = (assignedToId: string | null) => ({
+      id: PROJECT_ID,
+      title: null,
+      memo: null,
+      primaryContactId: null,
+      assignedToId,
+      _count: { steps: 0, comments: 0, tasks: 0 },
+    });
+    const own = setup();
+    own.tx.project.findFirst.mockResolvedValue(emptyProject('agent-1') as never);
+    await own.service.remove(PROJECT_ID, OFFICE_ID, 'agent', 'agent-1');
+    expect(own.calls).toContain('case.delete');
+
+    const others = setup();
+    others.tx.project.findFirst.mockResolvedValue(emptyProject('someone-else') as never);
+    await expect(
+      others.service.remove(PROJECT_ID, OFFICE_ID, 'agent', 'agent-1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(others.calls).toEqual([]);
+
+    // 업무를 하나라도 적었으면 빈 프로젝트가 아니다.
+    const withTask = setup();
+    withTask.tx.project.findFirst.mockResolvedValue({
+      ...emptyProject('agent-1'),
+      _count: { steps: 0, comments: 0, tasks: 1 },
+    } as never);
+    await expect(
+      withTask.service.remove(PROJECT_ID, OFFICE_ID, 'agent', 'agent-1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(withTask.calls).toEqual([]);
+
+    // 이름 하나만 적어도 빈 프로젝트가 아니다.
+    const titled = setup();
+    titled.tx.project.findFirst.mockResolvedValue({ ...emptyProject('agent-1'), title: '갈아타기' } as never);
+    await expect(
+      titled.service.remove(PROJECT_ID, OFFICE_ID, 'agent', 'agent-1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('의뢰를 가리키는 단계를 지우면 그 의뢰도 프로젝트에서 빠진다', async () => {

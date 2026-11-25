@@ -1,11 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { DONE_DEAL_STAGES, formatUnitName } from '@estate-erp/shared';
+import { DONE_DEAL_STAGES, formatPlaceLabel } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   appendIntakeStep,
@@ -19,6 +20,9 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   monthly: '월세',
 };
 
+/** 프로젝트를 풀 수 있는 역할 (코멘트를 남의 것까지 지울 수 있는 역할과 같다) */
+const PROJECT_REMOVER_ROLES = ['owner', 'manager'];
+
 const MAX_TITLE_LENGTH = 100;
 const MAX_MEMO_LENGTH = 2_000;
 const MAX_STEPS_PER_PROJECT = 50;
@@ -26,13 +30,35 @@ const MAX_STEPS_PER_PROJECT = 50;
 const DEFAULT_PROJECT_PAGE = 50;
 const MAX_PROJECT_PAGE = 100;
 const PROJECT_LIST_STATUSES = ['open', 'archived', 'all'];
-const PROJECT_LIST_SORTS = ['updated', 'created'];
+const PROJECT_LIST_SORTS = ['updated', 'created', 'title'];
+/** 목록에서 고를 수 있는 계산한 상태 (끝낸 것은 보기 탭으로 고른다) */
+const PROJECT_DERIVED_STATUSES = ['preparing', 'active', 'wrapping'];
+const PROJECT_INTAKE_FILTERS = ['listing', 'buyer', 'none'];
+const PROJECT_PRIMARY_FILTERS = ['set', 'empty'];
+/** 상태(계산한 값)로 거를 때 한 번에 읽어 계산하는 프로젝트 수의 상한 */
+const STATUS_FILTER_SCAN_LIMIT = 2_000;
+
+/**
+ * 목록 한 줄의 상태 (화면의 getProjectStatus와 같은 계산): 끝냈으면 archived, 단계가 없으면 preparing(준비),
+ * 단계가 모두 끝났으면 wrapping(마무리), 아니면 active(진행 중).
+ */
+export function projectListStatus(item: {
+  archivedAt: Date | string | null;
+  stepCount: number;
+  doneStepCount: number;
+}) {
+  if (item.archivedAt) return 'archived';
+  if (item.stepCount === 0) return 'preparing';
+  return item.doneStepCount >= item.stepCount ? 'wrapping' : 'active';
+}
 
 /** 단계가 가리키는 거래에서 읽는 것. 금액은 표시용이고 자금 계산은 하지 않는다. */
 const dealFlowSelect = {
   id: true,
   stage: true,
   isCancelled: true,
+  cancelledAt: true,
+  cancelReason: true,
   transactionType: true,
   agreedPrice: true,
   agreedDeposit: true,
@@ -121,7 +147,8 @@ const caseDetailInclude = {
               deposit: true,
               monthlyRent: true,
               isPaused: true,
-              _count: { select: { matches: true } },
+              // 진행 중인 매칭만 센다(상세 화면의 "매칭 N"과 같은 기준). 종료된 것은 따로 보인다.
+              _count: { select: { matches: { where: { stage: { not: 'closed' } } } } },
               deals: {
                 orderBy: { createdAt: 'desc' as const },
                 select: dealFlowSelect,
@@ -147,7 +174,7 @@ const caseDetailInclude = {
               id: true,
               status: true,
               transactionType: true,
-              _count: { select: { matches: true } },
+              _count: { select: { matches: { where: { stage: { not: 'closed' } } } } },
             },
           },
           deals: {
@@ -177,21 +204,17 @@ interface PropertyLabelSource {
   } | null;
 }
 
+/** 집을 부르는 글: "고덕그라시움 102동 2203호" (공용 formatPlaceLabel — 화면 · 문서와 같은 모양) */
 function propertyLabel(property: PropertyLabelSource | null | undefined) {
   if (!property) return null;
-  const dong = property.unit?.dong;
-  return [
-    property.site.name,
-    dong && !dong.isPlaceholder
-      ? dong.name.endsWith('동')
-        ? dong.name
-        : `${dong.name}동`
-      : null,
-    // 호가 없는 공간은 층이 이름이다
-    formatUnitName(property.unit) || null,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  return (
+    formatPlaceLabel({
+      siteName: property.site.name,
+      dongName: property.unit?.dong?.name,
+      dongIsPlaceholder: property.unit?.dong?.isPlaceholder,
+      unit: property.unit,
+    }) || null
+  );
 }
 
 function presentDeal(deal: DealFlowRow) {
@@ -211,7 +234,21 @@ function presentDeal(deal: DealFlowRow) {
     balanceDate:
       balance?.scheduledDate ?? deal.contract?.statedBalanceDate ?? null,
     balancePaidAt: balance?.paidAt ?? null,
+    /** 취소한 거래만: 취소한 때와 사유 */
+    cancelledAt: deal.isCancelled ? deal.cancelledAt : null,
+    cancelReason: deal.isCancelled ? deal.cancelReason : null,
   };
+}
+
+/**
+ * 한 의뢰에서 가장 최근에 취소된 거래. 가계약까지 갔다가 깨진 것은 이어받는 직원이 꼭 알아야 하는
+ * 맥락이라, 지금 거래가 따로 있어도 함께 보여 준다(새 거래가 위, 취소 줄은 그 아래).
+ */
+function latestCancelledDeal(deals: DealFlowRow[]) {
+  const cancelled = deals.filter((deal) => deal.isCancelled);
+  if (cancelled.length === 0) return null;
+  const when = (deal: DealFlowRow) => (deal.cancelledAt ?? deal.createdAt).getTime();
+  return cancelled.reduce((latest, deal) => (when(deal) > when(latest) ? deal : latest));
 }
 
 /** 한 의뢰의 현재 거래: 취소되지 않은 거래 중 가장 최근 것. */
@@ -248,20 +285,17 @@ export class ProjectPlanService {
       listingIntakeIds?: string[];
       buyerIntakeIds?: string[];
     },
+    /** 만드는 사람. 담당을 따로 정하지 않았으면(undefined) 이 사람이 담당이 된다(거래와 같다). */
+    creatorId: string | null = null,
   ) {
     const listingIntakeIds = [...new Set(dto.listingIntakeIds ?? [])];
     const buyerIntakeIds = [...new Set(dto.buyerIntakeIds ?? [])];
     const primaryContactId = dto.primaryContactId ?? null;
-    const assignedToId = dto.assignedToId ?? null;
-    // 누구의 일인지는 있어야 한다: 대표 고객을 정하거나, 사람이 딸린 의뢰를 담는다.
-    if (
-      listingIntakeIds.length + buyerIntakeIds.length === 0 &&
-      !primaryContactId
-    ) {
-      throw new BadRequestException(
-        '대표 고객을 정하거나 프로젝트에 담을 의뢰를 하나 이상 고르세요.',
-      );
-    }
+    // 담당: 보내지 않았으면 만든 사람, null을 보냈으면 담당 없음.
+    const assignedToId =
+      dto.assignedToId === undefined ? creatorId : dto.assignedToId;
+    // 프로젝트는 작업 공간이다(사용자 결정, 2026-11-22): 이름 · 대표 고객 · 의뢰가 모두 없어도 연다.
+    // Notion의 새 페이지처럼 빈 채로 만들고 나중에 채운다. 그래서 "누구의 일인지" 검사를 두지 않는다.
     if (listingIntakeIds.length + buyerIntakeIds.length > MAX_STEPS_PER_PROJECT) {
       throw new BadRequestException(
         `한 프로젝트에는 의뢰를 ${MAX_STEPS_PER_PROJECT}개까지 담을 수 있습니다.`,
@@ -309,7 +343,29 @@ export class ProjectPlanService {
       status?: string;
       search?: string;
       assignedToId?: string;
+      /** 담당이 이 직원들인 것만. "none"은 담당 없음 */
+      assignedToIds?: string[];
+      /** "내 프로젝트": 담당이 이 사람(요청한 사람)인 것만 */
+      mineUserId?: string;
+      /** 계산한 상태로 거른다: preparing(준비) · active(진행 중) · wrapping(마무리). 끝낸 것(archived)은 status로 고른다 */
+      statuses?: string[];
+      /** 담긴 의뢰: listing(매물 의뢰 있음) · buyer(구매 의뢰 있음) · none(의뢰 없음). 여럿이면 하나라도 맞으면 */
+      intakes?: string[];
+      /** 대표 고객: set(있음) · empty(비어 있음) */
+      primary?: string;
+      /** 시작(만든 날)의 범위. YYYY-MM-DD, 한국 날짜로 자른다(끝 날 포함) */
+      createdFrom?: string;
+      createdTo?: string;
+      /** 이 사람이 대표 고객이거나 담긴 의뢰의 당사자인 프로젝트만 (연락처 화면에서 그 손님의 프로젝트를 볼 때) */
+      contactId?: string;
+      /** 이 매물 의뢰를 담은 프로젝트만 (매물 상세에서). 한 의뢰는 한 프로젝트에만 담기므로 0~1건이다. */
+      listingIntakeId?: string;
+      /** 이 구매 의뢰를 담은 프로젝트만 (희망 조건 화면에서). 0~1건이다. */
+      buyerIntakeId?: string;
+      /** updated(최근 고친 순, 기본) · created(시작 순) · title(이름 순) */
       sort?: string;
+      /** asc · desc. 기본은 updated · created가 desc, title이 asc */
+      order?: string;
       offset?: number;
       limit?: number;
     } = {},
@@ -320,7 +376,11 @@ export class ProjectPlanService {
     }
     const sort = query.sort ?? 'updated';
     if (!PROJECT_LIST_SORTS.includes(sort)) {
-      throw new BadRequestException('sort 값이 올바르지 않습니다.');
+      throw new BadRequestException('정렬 기준이 올바르지 않습니다.');
+    }
+    const order = (query.order ?? (sort === 'title' ? 'asc' : 'desc')) as 'asc' | 'desc';
+    if (order !== 'asc' && order !== 'desc') {
+      throw new BadRequestException('정렬 방향이 올바르지 않습니다.');
     }
     const offset = query.offset ?? 0;
     const limit = query.limit ?? DEFAULT_PROJECT_PAGE;
@@ -333,123 +393,255 @@ export class ProjectPlanService {
     ) {
       throw new BadRequestException('offset·limit 값이 올바르지 않습니다.');
     }
+    const statuses = query.statuses ?? [];
+    if (statuses.some((value) => !PROJECT_DERIVED_STATUSES.includes(value))) {
+      throw new BadRequestException('상태는 준비 · 진행 중 · 마무리 중에서 고르세요.');
+    }
+    const intakes = query.intakes ?? [];
+    if (intakes.some((value) => !PROJECT_INTAKE_FILTERS.includes(value))) {
+      throw new BadRequestException('의뢰 조건이 올바르지 않습니다.');
+    }
+    if (query.primary && !PROJECT_PRIMARY_FILTERS.includes(query.primary)) {
+      throw new BadRequestException('대표 고객 조건이 올바르지 않습니다.');
+    }
+    const createdFrom = this.parseKoreanDay(query.createdFrom, '시작');
+    const createdTo = this.parseKoreanDay(query.createdTo, '시작');
+    if (createdFrom && createdTo && createdFrom > createdTo) {
+      throw new BadRequestException('시작 기간의 앞 날짜가 뒤 날짜보다 늦습니다.');
+    }
+
     const search = query.search?.trim();
+    // 조건마다 AND에 하나씩 넣는다(같은 칸 OR끼리 서로 덮어쓰지 않게).
+    const and: Prisma.ProjectWhereInput[] = [];
+    if (query.assignedToId) and.push({ assignedToId: query.assignedToId });
+    const assignees = query.assignedToIds ?? [];
+    if (assignees.length > 0) {
+      const ids = assignees.filter((value) => value !== 'none');
+      and.push({
+        OR: [
+          ...(ids.length > 0 ? [{ assignedToId: { in: ids } }] : []),
+          ...(assignees.includes('none') ? [{ assignedToId: null }] : []),
+        ],
+      });
+    }
+    if (query.mineUserId) and.push({ assignedToId: query.mineUserId });
+    if (intakes.length > 0) {
+      and.push({
+        OR: intakes.map((value): Prisma.ProjectWhereInput =>
+          value === 'listing'
+            ? { listingIntakes: { some: {} } }
+            : value === 'buyer'
+              ? { buyerIntakes: { some: {} } }
+              : { listingIntakes: { none: {} }, buyerIntakes: { none: {} } },
+        ),
+      });
+    }
+    if (query.primary === 'set') and.push({ primaryContactId: { not: null } });
+    if (query.primary === 'empty') and.push({ primaryContactId: null });
+    if (createdFrom || createdTo) {
+      and.push({
+        createdAt: {
+          ...(createdFrom ? { gte: createdFrom } : {}),
+          // 끝 날을 포함한다: 그다음 날 0시(한국) 전까지
+          ...(createdTo ? { lt: new Date(createdTo.getTime() + 24 * 60 * 60 * 1000) } : {}),
+        },
+      });
+    }
+    if (query.listingIntakeId) {
+      and.push({ listingIntakes: { some: { id: query.listingIntakeId } } });
+    }
+    if (query.buyerIntakeId) {
+      and.push({ buyerIntakes: { some: { id: query.buyerIntakeId } } });
+    }
+    if (query.contactId) {
+      and.push({
+        OR: [
+          { primaryContactId: query.contactId },
+          {
+            buyerIntakes: {
+              some: { contacts: { some: { contactId: query.contactId } } },
+            },
+          },
+          {
+            listingIntakes: {
+              some: {
+                property: {
+                  propertyContacts: {
+                    some: {
+                      status: 'active',
+                      role: { in: OWNER_ROLES },
+                      contactId: query.contactId,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      });
+    }
+    if (search) {
+      and.push({
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          {
+            primaryContact: {
+              name: { contains: search, mode: 'insensitive' },
+            },
+          },
+          {
+            buyerIntakes: {
+              some: {
+                contacts: {
+                  some: {
+                    contact: {
+                      name: { contains: search, mode: 'insensitive' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          {
+            listingIntakes: {
+              some: {
+                property: {
+                  propertyContacts: {
+                    some: {
+                      status: 'active',
+                      role: { in: OWNER_ROLES },
+                      contact: {
+                        name: { contains: search, mode: 'insensitive' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      });
+    }
     const where: Prisma.ProjectWhereInput = {
       officeId,
       ...(status === 'open' ? { archivedAt: null } : {}),
       ...(status === 'archived' ? { archivedAt: { not: null } } : {}),
-      ...(query.assignedToId ? { assignedToId: query.assignedToId } : {}),
-      ...(search
-        ? {
-            OR: [
-              { title: { contains: search, mode: 'insensitive' } },
-              {
-                primaryContact: {
-                  name: { contains: search, mode: 'insensitive' },
-                },
-              },
-              {
-                buyerIntakes: {
-                  some: {
-                    contacts: {
-                      some: {
-                        contact: {
-                          name: { contains: search, mode: 'insensitive' },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-              {
-                listingIntakes: {
-                  some: {
-                    property: {
-                      propertyContacts: {
-                        some: {
-                          status: 'active',
-                          role: { in: OWNER_ROLES },
-                          contact: {
-                            name: { contains: search, mode: 'insensitive' },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            ],
-          }
-        : {}),
+      ...(and.length > 0 ? { AND: and } : {}),
     };
+    const orderBy: Prisma.ProjectOrderByWithRelationInput[] = [
+      sort === 'title'
+        ? { title: { sort: order, nulls: 'last' } }
+        : sort === 'created'
+          ? { createdAt: order }
+          : { updatedAt: order },
+      // 같은 값이면 id로 순서를 고정한다(쪽을 넘길 때 줄이 겹치거나 빠지지 않게).
+      { id: 'asc' },
+    ];
+    const include = {
+      ...caseDetailInclude,
+      comments: {
+        orderBy: [{ createdAt: 'desc' as const }, { id: 'desc' as const }],
+        take: 1,
+        select: {
+          body: true,
+          createdAt: true,
+          author: { select: { name: true } },
+        },
+      },
+    } satisfies Prisma.ProjectInclude;
+
+    // 상태(준비 · 진행 중 · 마무리)는 저장하지 않고 단계 · 거래에서 계산하는 값이라 SQL로 거를 수 없다.
+    // 그래서 상태로 거를 때는 다른 조건에 맞는 프로젝트를 한 번에 읽어 계산한 뒤 거르고 쪽을 자른다.
+    // 한 사무소의 열린 프로젝트는 많아야 수백 건이라 감당할 수 있다. 한 번에 읽는 상한은
+    // STATUS_FILTER_SCAN_LIMIT이고, 넘으면(그럴 일은 드물다) 앞의 그만큼 안에서만 거른다.
+    const filterByStatus = statuses.length > 0 && status !== 'archived';
+    if (filterByStatus) {
+      const scanned = await this.prisma.project.findMany({
+        where,
+        orderBy,
+        take: STATUS_FILTER_SCAN_LIMIT,
+        include,
+      });
+      const matched = scanned
+        .map((project) => this.toListItem(project))
+        .filter((item) => statuses.includes(projectListStatus(item)));
+      const items = matched.slice(offset, offset + limit);
+      return {
+        total: matched.length,
+        nextOffset: offset + items.length < matched.length ? offset + items.length : null,
+        items,
+      };
+    }
+
     const [total, projects] = await Promise.all([
       this.prisma.project.count({ where }),
       this.prisma.project.findMany({
         where,
-        // 같은 시각이면 id로 순서를 고정한다(쪽을 넘길 때 줄이 겹치거나 빠지지 않게).
-        orderBy: [
-          sort === 'created' ? { createdAt: 'desc' } : { updatedAt: 'desc' },
-          { id: 'asc' },
-        ],
+        orderBy,
         skip: offset,
         take: limit,
-        include: {
-          ...caseDetailInclude,
-          comments: {
-            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-            take: 1,
-            select: {
-              body: true,
-              createdAt: true,
-              author: { select: { name: true } },
-            },
-          },
-        },
+        include,
       }),
     ]);
     return {
       total,
       /** 다음 쪽의 offset. 더 없으면 null. */
       nextOffset: offset + projects.length < total ? offset + projects.length : null,
-      items: projects.map((project) => {
-        const detail = this.present(project);
-        const nextStep = detail.steps.find((step) => !step.done) ?? null;
-        const latestComment = project.comments[0] ?? null;
-        return {
-          id: detail.id,
-          title: detail.title,
-          memo: detail.memo,
-          archivedAt: detail.archivedAt,
-          createdAt: detail.createdAt,
-          updatedAt: detail.updatedAt,
-          primaryContact: detail.primaryContact,
-          assignedTo: detail.assignedTo,
-          /** 대표 고객. 정하지 않았으면 담긴 의뢰의 첫 당사자. 둘 다 없으면 null. */
-          customerName: detail.people[0]?.name ?? null,
-          peopleCount: detail.people.length,
-          buyerIntakeCount: detail.steps.filter(
-            (step) => step.kind === 'buyer_intake',
-          ).length,
-          listingIntakeCount: detail.steps.filter(
-            (step) => step.kind === 'listing_intake',
-          ).length,
-          stepCount: detail.steps.length,
-          doneStepCount: detail.steps.filter((step) => step.done).length,
-          firstStepTitle: detail.steps[0]?.title ?? null,
-          /** 아직 끝나지 않은 첫 단계. 모두 끝났거나 단계가 없으면 null. */
-          nextStepTitle: nextStep?.title ?? null,
-          nextStepTargetDate: nextStep?.targetDate ?? null,
-          commentCount: detail.commentCount,
-          latestComment: latestComment
-            ? {
-                body: latestComment.body,
-                createdAt: latestComment.createdAt,
-                authorName: latestComment.author?.name ?? null,
-              }
-            : null,
-        };
-      }),
+      items: projects.map((project) => this.toListItem(project)),
     };
+  }
+
+  /** 목록의 한 줄: 진행 계획을 읽어 "몇 단계 중 몇 단계가 끝났나"를 계산한다(저장하지 않는다). */
+  private toListItem(
+    project: CaseDetail & {
+      comments: Array<{ body: string; createdAt: Date; author: { name: string } | null }>;
+    },
+  ) {
+    const detail = this.present(project);
+    const nextStep = detail.steps.find((step) => !step.done) ?? null;
+    const latestComment = project.comments[0] ?? null;
+    return {
+      id: detail.id,
+      title: detail.title,
+      memo: detail.memo,
+      archivedAt: detail.archivedAt,
+      createdAt: detail.createdAt,
+      updatedAt: detail.updatedAt,
+      primaryContact: detail.primaryContact,
+      assignedTo: detail.assignedTo,
+      /** 대표 고객. 정하지 않았으면 담긴 의뢰의 첫 당사자. 둘 다 없으면 null. */
+      customerName: detail.people[0]?.name ?? null,
+      peopleCount: detail.people.length,
+      buyerIntakeCount: detail.steps.filter((step) => step.kind === 'buyer_intake').length,
+      listingIntakeCount: detail.steps.filter((step) => step.kind === 'listing_intake').length,
+      stepCount: detail.steps.length,
+      doneStepCount: detail.steps.filter((step) => step.done).length,
+      firstStepTitle: detail.steps[0]?.title ?? null,
+      /** 아직 끝나지 않은 첫 단계. 모두 끝났거나 단계가 없으면 null. */
+      nextStepTitle: nextStep?.title ?? null,
+      nextStepTargetDate: nextStep?.targetDate ?? null,
+      commentCount: detail.commentCount,
+      latestComment: latestComment
+        ? {
+            body: latestComment.body,
+            createdAt: latestComment.createdAt,
+            authorName: latestComment.author?.name ?? null,
+          }
+        : null,
+    };
+  }
+
+  /** "2026-11-22" → 그날 0시(한국 시각). 없으면 null, 모양이 틀리면 400. */
+  private parseKoreanDay(value: string | undefined, label: string) {
+    if (!value) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      throw new BadRequestException(`${label} 날짜가 올바르지 않습니다.`);
+    }
+    const date = new Date(`${value}T00:00:00+09:00`);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException(`${label} 날짜가 올바르지 않습니다.`);
+    }
+    return date;
   }
 
   async findOne(id: string, officeId: string) {
@@ -504,10 +696,45 @@ export class ProjectPlanService {
     return this.findOne(id, officeId);
   }
 
-  /** 묶음을 푼다. 의뢰와 거래는 그대로 남고 프로젝트와 진행 계획, 프로젝트에 적은 코멘트가 없어진다. */
-  async remove(id: string, officeId: string) {
+  /**
+   * 프로젝트를 푼다. 의뢰와 거래, 프로젝트에 적은 업무는 그대로 남고(업무는 프로젝트 연결만 끊긴다)
+   * 프로젝트와 진행 계획, 프로젝트에 적은 코멘트가 없어진다.
+   *
+   * 대표 · 매니저만 한다: 풀면 남이 적은 코멘트까지 지워지므로, 중개사가 하면 "남의 코멘트는 지우지 못한다"는
+   * 규칙을 프로젝트 삭제로 돌아가게 된다. 직원은 되돌릴 수 있는 끝내기로 정리한다.
+   * 예외: 아무것도 적지 않은 빈 프로젝트는 담당(만든 사람)이 지울 수 있다.
+   */
+  async remove(id: string, officeId: string, role: string, userId: string | null = null) {
     await this.prisma.$transaction(async (tx) => {
       await this.assertCase(tx, officeId, id);
+      if (!PROJECT_REMOVER_ROLES.includes(role)) {
+        // 예외: 아무것도 적지 않은 빈 프로젝트(이름 · 대표 고객 · 메모 · 단계 · 코멘트 · 업무가 모두 없음)는 담당인
+        // 사람(만든 사람)이 지울 수 있다. "프로젝트 열기"로 빈 프로젝트가 바로 만들어지므로 잘못 연 것을 치우는 길이다.
+        // 지워질 남의 코멘트가 없으니 "남의 코멘트는 지우지 못한다"는 규칙을 돌아가지 않는다.
+        const project = await tx.project.findFirst({
+          where: { id, officeId },
+          select: {
+            title: true,
+            memo: true,
+            primaryContactId: true,
+            assignedToId: true,
+            _count: { select: { steps: true, comments: true, tasks: true } },
+          },
+        });
+        const empty =
+          project !== null &&
+          !project.title &&
+          !project.memo &&
+          !project.primaryContactId &&
+          project._count.steps === 0 &&
+          project._count.comments === 0 &&
+          project._count.tasks === 0;
+        if (!empty || !userId || project?.assignedToId !== userId) {
+          throw new ForbiddenException(
+            '프로젝트 풀기는 대표·매니저만 할 수 있습니다. 정리하려면 끝내기를 쓰세요.',
+          );
+        }
+      }
       // 단계가 의뢰의 (프로젝트, 의뢰) 조합을 가리키므로 단계부터 지워야 의뢰를 뺄 수 있다.
       await tx.projectStep.deleteMany({
         where: { officeId, projectId: id },
@@ -517,6 +744,11 @@ export class ProjectPlanService {
         data: { projectId: null },
       });
       await tx.buyerIntake.updateMany({
+        where: { officeId, projectId: id },
+        data: { projectId: null },
+      });
+      // 업무는 프로젝트가 없어져도 해야 할 일로 남는다. 연결만 끊는다.
+      await tx.task.updateMany({
         where: { officeId, projectId: id },
         data: { projectId: null },
       });
@@ -723,8 +955,22 @@ export class ProjectPlanService {
    * 한다)와, 이 프로젝트의 의뢰 단계에 나오지 않는 거래. 제안일 뿐이고 담는 것은
    * 사용자가 한다.
    */
-  async findCandidates(id: string, officeId: string) {
+  async findCandidates(
+    id: string,
+    officeId: string,
+    options: { contactId?: string } = {},
+  ) {
     await this.assertCase(this.prisma, officeId, id);
+    // 사용자가 고른 다른 손님의 의뢰를 찾을 때(부부 · 공동명의처럼 이 프로젝트 사람이 아닌 명의):
+    // 그 사람 한 명의 의뢰만 본다. 담는 것은 사용자가 한다.
+    if (options.contactId) {
+      const contact = await this.prisma.contact.findFirst({
+        where: { id: options.contactId, officeId },
+        select: { id: true },
+      });
+      if (!contact) throw new NotFoundException('손님을 찾을 수 없습니다.');
+      return this.readCandidates(id, officeId, [contact.id]);
+    }
     const [project, buyerContacts, ownerContacts] = await Promise.all([
       this.prisma.project.findFirst({
         where: { id, officeId },
@@ -744,12 +990,46 @@ export class ProjectPlanService {
       }),
     ]);
     // 대표 고객만 정하고 연 프로젝트도 그 사람의 의뢰를 담을 수 있어야 한다.
-    const contactIds = [
+    const baseContactIds = [
       ...new Set([
         ...(project?.primaryContactId ? [project.primaryContactId] : []),
         ...[...buyerContacts, ...ownerContacts].map((item) => item.contactId),
       ]),
     ];
+    let contactIds = baseContactIds;
+    if (baseContactIds.length > 0 && this.prisma.partyMember) {
+      const householdMemberships = await this.prisma.partyMember.findMany({
+        where: {
+          officeId,
+          contactId: { in: baseContactIds },
+          partyKind: 'household',
+          status: 'active',
+        },
+        select: { partyId: true },
+      });
+      if (householdMemberships.length > 0) {
+        const siblings = await this.prisma.partyMember.findMany({
+          where: {
+            officeId,
+            partyId: { in: householdMemberships.map((m) => m.partyId) },
+            status: 'active',
+          },
+          select: { contactId: true },
+        });
+        contactIds = Array.from(
+          new Set([...baseContactIds, ...siblings.map((item) => item.contactId)]),
+        );
+      }
+    }
+    return this.readCandidates(id, officeId, contactIds);
+  }
+
+  /** 그 사람들의, 이 프로젝트에 담을 수 있는 의뢰와 거래. */
+  private async readCandidates(
+    id: string,
+    officeId: string,
+    contactIds: string[],
+  ) {
     if (contactIds.length === 0) {
       return { listingIntakes: [], buyerIntakes: [], deals: [] };
     }
@@ -769,10 +1049,12 @@ export class ProjectPlanService {
             },
           },
         },
-        orderBy: { receivedAt: 'desc' },
+        // 방금 등록한 의뢰가 맨 위에 오게 만든 순서로(프로젝트에서 "새 매물 의뢰 등록"을 하고 돌아왔을 때).
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
         take: 30,
         select: {
           id: true,
+          createdAt: true,
           lifecycleStatus: true,
           property: {
             select: {
@@ -798,10 +1080,11 @@ export class ProjectPlanService {
           ],
           contacts: { some: { contactId: { in: contactIds } } },
         },
-        orderBy: { receivedAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
         take: 30,
         select: {
           id: true,
+          createdAt: true,
           lifecycleStatus: true,
           contacts: {
             orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
@@ -839,6 +1122,7 @@ export class ProjectPlanService {
       listingIntakes: listingIntakes.map((intake) => ({
         id: intake.id,
         label: propertyLabel(intake.property) ?? '매물 의뢰',
+        createdAt: intake.createdAt,
         lifecycleStatus: intake.lifecycleStatus,
         transactionTypes: [
           ...new Set(intake.listings.map((item) => item.transactionType)),
@@ -847,6 +1131,7 @@ export class ProjectPlanService {
       buyerIntakes: buyerIntakes.map((intake) => ({
         id: intake.id,
         label: intake.contacts[0]?.contact.name ?? '구매 의뢰',
+        createdAt: intake.createdAt,
         lifecycleStatus: intake.lifecycleStatus,
         transactionTypes: [
           ...new Set(
@@ -1195,9 +1480,13 @@ export class ProjectPlanService {
               right.createdAt.getTime() - left.createdAt.getTime(),
           ),
       );
+      const cancelledDeal = latestCancelledDeal(
+        intake.listings.flatMap((listing) => listing.deals),
+      );
       return {
         ...base,
         kind: 'listing_intake' as const,
+        cancelledDeal: cancelledDeal ? presentDeal(cancelledDeal) : null,
         done: isDealDone(deal),
         doneAt: null,
         listingIntake: {
@@ -1227,9 +1516,11 @@ export class ProjectPlanService {
     if (step.buyerIntake) {
       const intake = step.buyerIntake;
       const deal = currentDeal(intake.deals);
+      const cancelledDeal = latestCancelledDeal(intake.deals);
       return {
         ...base,
         kind: 'buyer_intake' as const,
+        cancelledDeal: cancelledDeal ? presentDeal(cancelledDeal) : null,
         done: isDealDone(deal),
         doneAt: null,
         listingIntake: null,
@@ -1256,6 +1547,7 @@ export class ProjectPlanService {
       return {
         ...base,
         kind: 'deal' as const,
+        cancelledDeal: null,
         done: isDealDone(step.deal),
         doneAt: null,
         listingIntake: null,
@@ -1267,6 +1559,7 @@ export class ProjectPlanService {
     return {
       ...base,
       kind: 'manual' as const,
+      cancelledDeal: null,
       done: step.doneAt !== null,
       doneAt: step.doneAt,
       listingIntake: null,

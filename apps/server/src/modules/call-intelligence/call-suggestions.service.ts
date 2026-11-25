@@ -568,7 +568,8 @@ export class CallSuggestionsService {
         matchId: payload.matchId ?? undefined,
       },
       context.userId,
-      { id: context.suggestionId },
+      // 담당은 사람이 고른 것이 아니라 녹음한 직원이다. 그 직원이 퇴사·차단됐으면 400 대신 미배정으로 만든다.
+      { id: context.suggestionId, dropUnavailableAssignee: true },
     ));
   }
 

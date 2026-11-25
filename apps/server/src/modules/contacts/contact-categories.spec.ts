@@ -58,6 +58,19 @@ describe('contactCategoryWhere', () => {
             },
           },
         },
+        {
+          contractParties: {
+            some: {
+              side: { in: ['one', 'two'] },
+              contract: {
+                deal: {
+                  isCancelled: false,
+                  stage: { notIn: ['completed', 'closed'] },
+                },
+              },
+            },
+          },
+        },
       ],
     });
   });
@@ -97,7 +110,7 @@ describe('deriveContactRoles', () => {
           },
         ],
         propertyContacts: [{ role: 'co_owner' }, { role: 'lawyer' }],
-        tenants: [{ id: 't1' }],
+        leaseTenancies: [{ id: 't1' }],
         dealsAsSeller: [{ id: 'd1' }],
       }),
     ).toEqual([

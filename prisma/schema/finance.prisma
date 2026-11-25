@@ -74,7 +74,7 @@ model CommissionPayment {
 
   office       Office   @relation(fields: [officeId], references: [id])
   deal         Deal     @relation(fields: [dealId], references: [id])
-  payerContact Contact? @relation("CommissionPayer", fields: [payerContactId], references: [id])
+  payerContact Contact? @relation("CommissionPayer", fields: [officeId, payerContactId], references: [officeId, id], onDelete: Restrict)
 
   distributions CommissionDistribution[]
   adjustments   CommissionAdjustment[]

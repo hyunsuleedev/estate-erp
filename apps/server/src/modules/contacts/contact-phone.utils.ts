@@ -36,6 +36,18 @@ export function normalizePhone(phone: string): string {
   return digits;
 }
 
+/**
+ * 검색어가 전화번호를 찾는 말일 때만 숫자를 돌려준다.
+ * 숫자 · 공백 · 하이픈 · 괄호 · 점 · +만 있고 숫자가 3자리 이상이면 번호 검색이다("5678", "010-12", "02 555").
+ * 글자가 섞이면("그라시움 101동", "김철수 010") 번호로는 찾지 않는다 — 101이 든 번호의 손님이 딸려 나오지 않게.
+ */
+export function phoneSearchDigits(search: string): string | null {
+  const trimmed = search.trim();
+  if (!/^[\d\s\-().+]+$/.test(trimmed)) return null;
+  const digits = normalizePhone(trimmed);
+  return digits.length >= 3 ? digits : null;
+}
+
 export function getPrimaryPhone(contact?: { phones?: ContactPhoneLike[] | null } | null): string | null {
   const phones = contact?.phones ?? [];
   const primary = phones.find((phone) => phone.isPrimary) ?? phones[0];

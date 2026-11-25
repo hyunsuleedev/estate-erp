@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { formatUnitName } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OfficeExpenseService } from './office-expense.service';
+import { monthRange } from './settlement-calc';
+import { kstMonthOf, loadOurCollections } from './our-collections';
+
+const WON_PER_MANWON = 10_000;
+const monthKey = (year: number, month: number) => `${year}-${String(month).padStart(2, '0')}`;
 
 export interface PipelineDeal {
   id: string;
@@ -36,11 +42,18 @@ export interface PipelineDeal {
 }
 
 export interface CashflowSummary {
+  /** 그 달에 들어온 수수료 (만원, 부가세 뺀 금액, 돌려준 돈은 뺌). 입금 기록의 받은 날로 센다. */
   collected: number;
   pending: number;
   overdue: number;
   expected: number;
   monthlyExpense: number;
+  /**
+   * 그 달 수금 가운데 공동중개 상대에게 넘겨줄 몫 (만원). 우리가 수금한 청구의 상대 분배 비율만큼이다.
+   * 보냈는지와 상관없이 우리 돈이 아니라 순이익에서 뺀다.
+   */
+  partnerShare: number;
+  /** 수금 − 공동중개 줄 몫 − 고정비 */
   netProfit: number;
   taxInvoicePending: number;
   pipeline: {
@@ -54,6 +67,8 @@ export interface CashflowSummary {
   monthlyTrend: Array<{
     month: string;
     collected: number;
+    /** 상대에게 넘겨줄 몫 (만원) */
+    partnerShare: number;
     expense: number;
     net: number;
   }>;
@@ -86,8 +101,10 @@ export class CashflowService {
     year: number,
     month: number,
   ): Promise<CashflowSummary> {
-    const startOfMonth = new Date(year, month - 1, 1);
-    const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+    // 한국 시각의 달 경계
+    const range = monthRange(monthKey(year, month));
+    const startOfMonth = range.start;
+    const endOfMonth = new Date(range.end.getTime() - 1);
 
     // 활성 거래 + 이번 달 closed
     const deals = await this.prisma.deal.findMany({
@@ -135,7 +152,6 @@ export class CashflowService {
       orderBy: { createdAt: 'desc' },
     });
 
-    let collected = 0;
     let pending = 0;
     let overdue = 0;
     let taxInvoicePending = 0;
@@ -174,7 +190,8 @@ export class CashflowService {
         agreedPrice: deal.agreedPrice,
         siteName: prop?.site.name ?? null,
         dongName: prop?.unit?.dong?.name ?? null,
-        unitName: prop?.unit?.name ?? null,
+        // 이름 없는 공간(상가 2층 등)은 층으로 적는다
+            unitName: prop?.unit ? formatUnitName(prop.unit) || null : null,
         transactionType: deal.transactionType,
         commissionTotal: billed,
         buyerContactName: deal.buyerContact?.name ?? null,
@@ -190,7 +207,11 @@ export class CashflowService {
           status: p.status,
           taxInvoiceStatus: p.taxInvoiceStatus,
         })),
-        participants: deal.participants.map((dp) => ({
+        // 담당 = 맡은 비중이 있는 사람 (수금 원장·거래 화면과 같은 기준, 옛 거래는 배정된 사람)
+        participants: (deal.participants.some((dp) => dp.sharePercent != null)
+          ? deal.participants.filter((dp) => dp.sharePercent != null)
+          : deal.participants
+        ).map((dp) => ({
           id: dp.id,
           userName: dp.user.name,
           role: dp.role,
@@ -202,17 +223,16 @@ export class CashflowService {
       pipelineDeals.push(pDeal);
 
       for (const payment of deal.commissionPayments) {
-        if (payment.status === 'collected' || payment.status === 'partial') {
-          collected += payment.actualAmount ?? 0;
-        }
-        if (payment.status === 'pending') {
+        // 공동중개 상대가 수금하는 청구는 우리가 받을 돈·연체가 아니다 (그 안의 우리 몫은 공동중개 정산으로 받는다)
+        const ours = payment.collectedByOffice !== 'partner';
+        if (ours && payment.status === 'pending') {
           if (payment.dueDate && payment.dueDate < now) {
             overdue += payment.expectedAmount;
           } else {
             pending += payment.expectedAmount;
           }
         }
-        if (payment.status === 'overdue') {
+        if (ours && payment.status === 'overdue') {
           overdue += payment.expectedAmount;
         }
         if (
@@ -227,8 +247,8 @@ export class CashflowService {
       const dealCommission = billed;
       const hasOverdue = deal.commissionPayments.some(
         (p) =>
-          p.status === 'overdue' ||
-          (p.status === 'pending' && p.dueDate && p.dueDate < now),
+          p.collectedByOffice !== 'partner' &&
+          (p.status === 'overdue' || (p.status === 'pending' && p.dueDate && p.dueDate < now)),
       );
       const allCollected =
         deal.commissionPayments.length > 0 &&
@@ -263,8 +283,12 @@ export class CashflowService {
     const expected = pending + pipelineCounts.preparing.amount;
     const monthlyExpense = await this.expenseService.getMonthlyTotal(officeId);
 
-    // 월별 추이 (최근 6개월)
-    const monthlyTrend = await this.getMonthlyTrend(officeId, year, month, 6);
+    // 월별 추이 (최근 6개월). 맨 끝이 고른 달이다.
+    // 예전에는 진행 중인 거래 전체의 받은 금액을 '수금'으로 내려 달과 상관없는 누계였다.
+    const monthlyTrend = await this.getMonthlyTrend(officeId, year, month, 6, monthlyExpense);
+    const last = monthlyTrend[monthlyTrend.length - 1];
+    const collected = last?.collected ?? 0;
+    const partnerShare = last?.partnerShare ?? 0;
 
     return {
       collected,
@@ -272,7 +296,8 @@ export class CashflowService {
       overdue,
       expected,
       monthlyExpense,
-      netProfit: collected - monthlyExpense,
+      partnerShare,
+      netProfit: collected - partnerShare - monthlyExpense,
       taxInvoicePending,
       pipeline: pipelineCounts,
       deals: pipelineDeals,
@@ -280,53 +305,46 @@ export class CashflowService {
     };
   }
 
+  /**
+   * 달마다 우리 통장에 들어온 수수료 (만원). 우리가 수금한 청구의 입금 기록(받은 날) +
+   * 상대가 수금한 청구에서 받은 우리 몫(받음 기록 날짜)을 한국 시각의 달로 모은다 (loadOurCollections 한 곳에서 정함).
+   * 부가세를 뺀 금액이고, 돌려준 돈은 돌려준 달에서 뺀다.
+   */
   private async getMonthlyTrend(
     officeId: string,
     year: number,
     month: number,
     months: number,
+    monthlyExpense: number,
   ) {
-    const trend: Array<{
-      month: string;
-      collected: number;
-      expense: number;
-      net: number;
-    }> = [];
-
-    const monthlyExpense = await this.expenseService.getMonthlyTotal(officeId);
-
+    const keys: string[] = [];
     for (let i = months - 1; i >= 0; i--) {
-      const d = new Date(year, month - 1 - i, 1);
-      const startOfM = new Date(d.getFullYear(), d.getMonth(), 1);
-      const endOfM = new Date(
-        d.getFullYear(),
-        d.getMonth() + 1,
-        0,
-        23,
-        59,
-        59,
-        999,
-      );
-
-      const result = await this.prisma.commissionPayment.aggregate({
-        where: {
-          officeId,
-          status: { in: ['collected', 'partial'] },
-          paidAt: { gte: startOfM, lte: endOfM },
-        },
-        _sum: { actualAmount: true },
-      });
-
-      const col = result._sum.actualAmount ?? 0;
-      const label = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      trend.push({
-        month: label,
-        collected: col,
-        expense: monthlyExpense,
-        net: col - monthlyExpense,
-      });
+      const d = new Date(Date.UTC(year, month - 1 - i, 1));
+      keys.push(monthKey(d.getUTCFullYear(), d.getUTCMonth() + 1));
     }
-
-    return trend;
+    const collections = await loadOurCollections(this.prisma, officeId, {
+      from: monthRange(keys[0]).start,
+      to: monthRange(keys[keys.length - 1]).end,
+    });
+    const sums = new Map<string, { won: number; partnerWon: number }>();
+    for (const c of collections) {
+      const key = kstMonthOf(c.at);
+      const sum = sums.get(key) ?? { won: 0, partnerWon: 0 };
+      sum.won += c.won;
+      sum.partnerWon += c.partnerWon;
+      sums.set(key, sum);
+    }
+    // 원으로 더한 뒤 만원으로 바꾼다 (수금과 줄 몫 각각)
+    return keys.map((key) => {
+      const collected = Math.round((sums.get(key)?.won ?? 0) / WON_PER_MANWON);
+      const partnerShare = Math.round((sums.get(key)?.partnerWon ?? 0) / WON_PER_MANWON);
+      return {
+        month: key,
+        collected,
+        partnerShare,
+        expense: monthlyExpense,
+        net: collected - partnerShare - monthlyExpense,
+      };
+    });
   }
 }

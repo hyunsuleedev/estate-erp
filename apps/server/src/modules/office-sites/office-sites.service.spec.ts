@@ -7,9 +7,11 @@ describe('OfficeSitesService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
         update: jest.fn(),
+        upsert: jest.fn().mockResolvedValue({ id: 'office-site-1' }),
       },
       site: {
         findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue({ id: 'site-1', officeId: 'office-1' }),
       },
       ward: {
         findUnique: jest.fn().mockResolvedValue({ code: '1174010200' }),
@@ -69,7 +71,9 @@ describe('OfficeSitesService', () => {
       ['apartment', undefined, false],
       ['apartment', 1, true],
       ['villa', 3, false],
-      ['house', undefined, false],
+      // 다가구도 호실을 나눌 수 있게 동 구분 없는 동 하나를 둔다
+      ['house', undefined, true],
+      ['house', 2, false],
       ['land', 1, false],
     ] as const)('placeholder dong for %s with totalDongs=%s: %s', async (type, totalDongs, expected) => {
       const { service, tx } = createService();
@@ -150,7 +154,7 @@ describe('OfficeSitesService', () => {
   it('rejects a blank site search', async () => {
     const { service, prisma } = createService();
 
-    await expect(service.searchCentralSites('   ', 'office-1')).rejects.toThrow('q is required');
+    await expect(service.searchCentralSites('   ', 'office-1')).rejects.toThrow('검색어를 입력해 주세요.');
     expect(prisma.site.findMany).not.toHaveBeenCalled();
   });
 
@@ -191,5 +195,43 @@ describe('OfficeSitesService', () => {
         data: { isFavorite: true },
       }),
     );
+  });
+
+  // 2026-11-22 검토: 본문의 officeId가 앞의 값을 덮어 다른 사무소의 관리단지 목록에 줄이 생겼다
+  it('adds a managed site only to the requesting office, whatever the body says', async () => {
+    const { service, prisma } = createService();
+
+    await service.add('office-1', {
+      siteId: 'site-1',
+      officeId: 'another-office',
+      id: 'chosen-id',
+    } as never);
+
+    const call = prisma.officeSite.upsert.mock.calls[0][0];
+    expect(call.where).toEqual({ officeId_siteId: { officeId: 'office-1', siteId: 'site-1' } });
+    expect(call.create).toEqual({
+      officeId: 'office-1',
+      siteId: 'site-1',
+      memo: undefined,
+      isFavorite: undefined,
+    });
+    expect(call.create).not.toHaveProperty('id');
+    expect(call.update).not.toHaveProperty('officeId');
+  });
+
+  it('changes only the memo and pin of a managed site', async () => {
+    const { service, prisma } = createService();
+    prisma.officeSite.findFirst.mockResolvedValue({ id: 'office-site-1', officeId: 'office-1' });
+
+    await service.update('office-site-1', 'office-1', {
+      memo: '메모',
+      officeId: 'another-office',
+      siteId: 'site-2',
+    } as never);
+
+    const { data } = prisma.officeSite.update.mock.calls[0][0];
+    expect(data).toEqual({ memo: '메모', isFavorite: undefined });
+    expect(data).not.toHaveProperty('officeId');
+    expect(data).not.toHaveProperty('siteId');
   });
 });

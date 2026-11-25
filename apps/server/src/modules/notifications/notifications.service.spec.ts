@@ -115,7 +115,7 @@ describe('NotificationsService', () => {
 
     await expect(
       service.markRead('notification-1', 'office-1', 'other-user'),
-    ).rejects.toThrow('Notification not found');
+    ).rejects.toThrow('알림을 찾을 수 없습니다.');
     expect(prisma.notification.update).not.toHaveBeenCalled();
   });
 

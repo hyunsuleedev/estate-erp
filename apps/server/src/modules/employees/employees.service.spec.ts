@@ -45,6 +45,12 @@ function setup(
     auth0Id?: string | null;
     target?: Record<string, unknown> | null;
     activeOwners?: number;
+    employees?: Array<Record<string, unknown>>;
+    completedTaskCount30d?: number;
+    consultations30d?: Array<{ type: string; createdAt: Date }>;
+    activities28d?: Array<{ createdAt: Date }>;
+    dealParticipants?: Array<{ settlementStatus: string; deal: { stage: string } }>;
+    commissionSum?: number | null;
   } = {},
 ) {
   const auth0Id = options.auth0Id === undefined ? 'auth0|emp-1' : options.auth0Id;
@@ -72,6 +78,7 @@ function setup(
       ),
       // 대상 직원은 항상 { id, officeId }로 찾는다(다른 사무소 직원은 없는 것으로 본다).
       findFirst: jest.fn(async () => target),
+      findMany: jest.fn(async () => options.employees ?? []),
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) =>
         employeeRow(data),
       ),
@@ -79,6 +86,27 @@ function setup(
         calls.push(`db.update ${Object.keys(data).sort().join(',')}`);
         return employeeRow({ ...(target ?? {}), ...data });
       }),
+    },
+    task: {
+      count: jest.fn(async ({ where }: { where?: { status?: unknown } }) =>
+        where?.status === 'completed' ? (options.completedTaskCount30d ?? 0) : 0,
+      ),
+    },
+    buyerRequirement: {
+      count: jest.fn().mockResolvedValue(0),
+    },
+    dealParticipant: {
+      findMany: jest.fn(async () => options.dealParticipants ?? []),
+      aggregate: jest.fn(async () => ({
+        _sum: { commissionAmount: options.commissionSum ?? 0 },
+      })),
+    },
+    consultation: {
+      count: jest.fn().mockResolvedValue(0),
+      findMany: jest.fn(async () => options.consultations30d ?? []),
+    },
+    activityLog: {
+      findMany: jest.fn(async () => options.activities28d ?? []),
     },
   };
   function transactionClient(): unknown {
@@ -382,7 +410,7 @@ describe('EmployeesService account management (Auth0)', () => {
       });
       await expect(
         service.updateStatus('owner-1', owner, false),
-      ).rejects.toThrow('마지막 owner 계정은 비활성화할 수 없습니다');
+      ).rejects.toThrow('마지막 대표 계정은 비활성화할 수 없습니다');
       expect(prisma.user.update).not.toHaveBeenCalled();
       // 확인은 사무소 잠금을 잡은 뒤, 변경과 같은 트랜잭션에서 한다.
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
@@ -428,6 +456,8 @@ describe('EmployeesService account management (Auth0)', () => {
         { nextContactDate: { sort: 'asc', nulls: 'last' } },
         { createdAt: 'desc' },
       ]);
+      // 취소한 거래는 진행·미정산 어디에도 세지 않는다
+      expect(include.dealParticipants.where).toEqual({ deal: { isCancelled: false } });
       // 미정산 거래가 먼저
       expect(include.dealParticipants.orderBy).toEqual([
         { settlementStatus: 'desc' },
@@ -579,7 +609,7 @@ describe('EmployeesService account management (Auth0)', () => {
         });
         await expect(
           service.updateRole('owner-1', owner, role),
-        ).rejects.toThrow('마지막 owner 계정의 역할은 바꿀 수 없습니다');
+        ).rejects.toThrow('마지막 대표 계정의 역할은 바꿀 수 없습니다');
         expect(prisma.user.update).not.toHaveBeenCalled();
         expect(prisma.user.count).toHaveBeenCalledWith({
           where: {
@@ -624,6 +654,284 @@ describe('EmployeesService account management (Auth0)', () => {
       await service.updateStatus('emp-1', owner, false);
       expect(calls[0]).toBe('db.lockOffice');
       expect(calls[1]).toBe('db.update isActive,tokensValidAfter');
+    });
+  });
+
+  describe('findAll ops hub metrics and privacy', () => {
+    function kstDayDates() {
+      const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+      const nowKst = new Date(Date.now() + KST_OFFSET_MS);
+      const kstMidnightUtcMs =
+        Date.UTC(nowKst.getUTCFullYear(), nowKst.getUTCMonth(), nowKst.getUTCDate()) -
+        KST_OFFSET_MS;
+      return {
+        yesterdayLate: new Date(kstMidnightUtcMs - 60_000), // 전날 23:59 KST
+        todayEarly: new Date(kstMidnightUtcMs + 60_000), // 오늘 00:01 KST
+        todayNoon: new Date(kstMidnightUtcMs + 12 * 60 * 60 * 1000), // 오늘 12:00 KST
+        tomorrowStart: new Date(kstMidnightUtcMs + 24 * 60 * 60 * 1000), // 내일 00:00 KST
+      };
+    }
+
+    it('computes overdue counts, commission sums, consultation count, and sorted attention items using KST day boundaries', async () => {
+      const { yesterdayLate, todayEarly, todayNoon, tomorrowStart } = kstDayDates();
+
+      const { service } = setup({
+        employees: [
+          employeeRow({
+            id: 'emp-1',
+            payType: 'mixed',
+            baseSalary: 250,
+            commissionRate: 55,
+            employmentType: 'freelancer',
+            withholdTax: true,
+            assignedTasks: [
+              { id: 't-late', title: '계약서 검토', dueDate: yesterdayLate },
+              { id: 't-today', title: '오늘 잔금 확인', dueDate: todayNoon },
+              { id: 't-tomorrow', title: '내일 일정', dueDate: tomorrowStart },
+              { id: 't-none', title: '기한 없는 업무', dueDate: null },
+            ],
+            assignedRequirements: [
+              {
+                id: 'b-late',
+                nextContactDate: yesterdayLate,
+                buyerIntake: { contacts: [{ isPrimary: true, contact: { name: '오세훈' } }] },
+              },
+              {
+                id: 'b-today',
+                nextContactDate: todayEarly,
+                buyerIntake: { contacts: [{ isPrimary: true, contact: { name: '윤서영' } }] },
+              },
+              {
+                id: 'b-tomorrow',
+                nextContactDate: tomorrowStart,
+                buyerIntake: { contacts: [{ isPrimary: true, contact: { name: '장민혁' } }] },
+              },
+            ],
+            dealParticipants: [
+              { settlementStatus: 'unsettled', commissionAmount: 540, deal: { id: 'd-1', stage: 'contract' } },
+              { settlementStatus: 'settled', commissionAmount: 720, deal: { id: 'd-2', stage: 'closed' } },
+              { settlementStatus: 'unsettled', commissionAmount: null, deal: { id: 'd-3', stage: 'interim' } },
+            ],
+            consultations: [{ id: 'c-1', createdAt: todayNoon }],
+            activityLogs: [{ id: 'a-1', createdAt: todayEarly }],
+            _count: { consultations: 42 },
+          }),
+        ],
+      });
+
+      const list = await service.findAll('office-1');
+      expect(list).toHaveLength(1);
+      const item = list[0];
+      expect(item.counts).toEqual({
+        activeTaskCount: 4,
+        activeBuyerRequirementCount: 3,
+        activeDealCount: 2,
+        unsettledDealCount: 2,
+        overdueTaskCount: 1,
+        overdueBuyerCount: 1,
+        unsettledCommissionTotal: 540,
+        consultationCount: 42,
+        commissionAmountTotal: 1260,
+      });
+      expect(item.attentionItems.map((a) => `${a.kind}:${a.id}:${a.title}`)).toEqual([
+        'task:t-late:계약서 검토',
+        'buyer:b-late:오세훈',
+        'buyer:b-today:윤서영',
+        'task:t-today:오늘 잔금 확인',
+      ]);
+      expect(item.latestActivityAt).toEqual(todayNoon);
+    });
+
+    it('redacts other employees commission totals and attention items for agents while keeping manager visibility', async () => {
+      const { todayEarly } = kstDayDates();
+      const { service } = setup({
+        employees: [
+          employeeRow({
+            id: 'emp-1',
+            payType: 'mixed',
+            baseSalary: 250,
+            commissionRate: 60,
+            employmentType: 'freelancer',
+            withholdTax: true,
+            assignedTasks: [{ id: 't-1', title: '대외비 고객 업무', dueDate: todayEarly }],
+            assignedRequirements: [],
+            dealParticipants: [
+              { settlementStatus: 'unsettled', commissionAmount: 450, deal: { id: 'd-1', stage: 'contract' } },
+            ],
+            _count: { consultations: 15 },
+          }),
+        ],
+      });
+
+      const [row] = await service.findAll('office-1');
+
+      // owner sees everything + pay
+      const asOwner = service.forViewer(owner, row);
+      expect(asOwner.payVisible).toBe(true);
+      expect(asOwner.commissionRate).toBe(60);
+      expect(asOwner.counts.commissionAmountTotal).toBe(450);
+      expect(asOwner.counts.unsettledCommissionTotal).toBe(450);
+      expect(asOwner.attentionItems).toHaveLength(1);
+
+      // manager sees ops hub totals/attention but not pay
+      const asManager = service.forViewer(manager, row);
+      expect(asManager.payVisible).toBe(false);
+      expect(asManager.payType).toBeNull();
+      expect(asManager.commissionRate).toBeNull();
+      expect(asManager.counts.commissionAmountTotal).toBe(450);
+      expect(asManager.attentionItems).toHaveLength(1);
+
+      // self (agent viewing own row) sees own pay, commissions, attention
+      const selfViewer = { userId: 'emp-1', officeId: 'office-1', role: 'agent' };
+      const asSelf = service.forViewer(selfViewer, row);
+      expect(asSelf.payVisible).toBe(true);
+      expect(asSelf.commissionRate).toBe(60);
+      expect(asSelf.counts.commissionAmountTotal).toBe(450);
+      expect(asSelf.attentionItems).toHaveLength(1);
+
+      // another agent sees neither pay nor other employee's commission sums nor attention items
+      const otherAgent = { userId: 'emp-2', officeId: 'office-1', role: 'agent' };
+      const asOtherAgent = service.forViewer(otherAgent, row);
+      expect(asOtherAgent.payVisible).toBe(false);
+      expect(asOtherAgent.payType).toBeNull();
+      expect(asOtherAgent.counts.commissionAmountTotal).toBe(0);
+      expect(asOtherAgent.counts.unsettledCommissionTotal).toBe(0);
+      expect(asOtherAgent.attentionItems).toEqual([]);
+    });
+
+    it('enriches findOne with projects, lastLoginAt, and settlement lines while gating pay visibility via forViewer', async () => {
+      const loginAt = new Date('2026-11-22T01:00:00Z');
+      const confirmedAt = new Date('2026-11-05T03:00:00Z');
+      const { service } = setup({
+        target: employeeRow({
+          id: 'emp-1',
+          lastLoginAt: loginAt,
+          assignedProjects: [
+            {
+              id: 'proj-1',
+              title: '김민수 고객 갈아타기',
+              memo: '메모',
+              createdAt: new Date('2026-11-01T00:00:00Z'),
+              updatedAt: new Date('2026-11-20T00:00:00Z'),
+              primaryContact: { id: 'c-1', name: '김민수' },
+              steps: [
+                { id: 's-1', doneAt: new Date('2026-11-10T00:00:00Z'), listingIntakeId: null, buyerIntakeId: null, dealId: null },
+                { id: 's-2', doneAt: null, listingIntakeId: null, buyerIntakeId: 'bi-1', dealId: null },
+              ],
+              _count: { listingIntakes: 1, buyerIntakes: 1, steps: 2, comments: 1 },
+            },
+          ],
+          dealParticipants: [
+            {
+              id: 'dp-1',
+              role: 'buying_agent',
+              side: 'buyer',
+              commissionAmount: 350,
+              commissionRate: 50,
+              settlementStatus: 'unsettled',
+              settlementDate: null,
+              deal: { id: 'deal-1', stage: 'contracted', transactionType: 'sale', payments: [] },
+            },
+          ],
+          settlementLines: [
+            {
+              id: 'sl-1',
+              employmentType: 'freelancer',
+              withholdTax: true,
+              targetWon: 3500000,
+              shareWon: 1750000,
+              baseWon: 2000000,
+              adjustWon: 0,
+              carryInWon: 0,
+              withholdingWon: 123750,
+              netWon: 3626250,
+              carryOutWon: 0,
+              paidAt: confirmedAt,
+              settlement: {
+                id: 'set-1',
+                month: '2026-10',
+                timing: 'closed',
+                confirmedAt,
+              },
+            },
+          ],
+        }),
+      });
+
+      const detail = await service.findOne('emp-1', 'office-1');
+      expect(detail.lastLoginAt).toEqual(loginAt);
+      expect(detail.counts.activeProjectCount).toBe(1);
+      expect(detail.assignedProjects[0]).toMatchObject({
+        id: 'proj-1',
+        completedStepCount: 1,
+        totalStepCount: 2,
+      });
+      expect(detail.recentSettlementLines[0]).toMatchObject({
+        id: 'sl-1',
+        month: '2026-10',
+        netWon: 3626250,
+      });
+
+      const asOwner = service.forViewer(owner, detail);
+      expect(asOwner.payVisible).toBe(true);
+      expect(asOwner.recentSettlementLines).toHaveLength(1);
+      expect(asOwner.dealParticipants[0].commissionAmount).toBe(350);
+
+      const asSelf = service.forViewer({ userId: 'emp-1', officeId: 'office-1', role: 'agent' }, detail);
+      expect(asSelf.payVisible).toBe(true);
+      expect(asSelf.recentSettlementLines).toHaveLength(1);
+
+      const asManager = service.forViewer(manager, detail);
+      expect(asManager.payVisible).toBe(false);
+      expect(asManager.recentSettlementLines).toEqual([]);
+      expect(asManager.dealParticipants[0].commissionAmount).toBe(350);
+
+      const asOtherAgent = service.forViewer({ userId: 'emp-2', officeId: 'office-1', role: 'agent' }, detail);
+      expect(asOtherAgent.payVisible).toBe(false);
+      expect(asOtherAgent.recentSettlementLines).toEqual([]);
+      expect(asOtherAgent.dealParticipants[0].commissionAmount).toBeNull();
+      expect(asOtherAgent.dealParticipants[0].commissionRate).toBeNull();
+    });
+
+    it('computes 30d scorecard metrics and 4-week activity buckets in getPerformance', async () => {
+      const { todayNoon } = kstDayDates();
+      const twoWeeksAgo = new Date(todayNoon.getTime() - 10 * 86_400_000);
+      const { service } = setup({
+        completedTaskCount30d: 7,
+        dealParticipants: [
+          { settlementStatus: 'unsettled', deal: { stage: 'contracted' } },
+          { settlementStatus: 'settled', deal: { stage: 'completed' } },
+          { settlementStatus: 'settled', deal: { stage: 'closed' } },
+        ],
+        commissionSum: 1480,
+        consultations30d: [
+          { type: 'phone', createdAt: todayNoon },
+          { type: 'visit', createdAt: todayNoon },
+          { type: 'online', createdAt: twoWeeksAgo },
+        ],
+        activities28d: [
+          { createdAt: todayNoon },
+          { createdAt: todayNoon },
+          { createdAt: twoWeeksAgo },
+        ],
+      });
+
+      const perf = await service.getPerformance('emp-1', 'office-1');
+      expect(perf).toMatchObject({
+        activeDealCount: 2,
+        closedDealCount: 2,
+        unsettledDealCount: 1,
+        completedTaskCount30d: 7,
+        consultationCount30d: 3,
+        commissionAmountTotal: 1480,
+        consultationByType30d: { phone: 1, visit: 1, online: 1 },
+      });
+      expect(perf.weeklyActivity).toEqual([
+        { label: '3주 전', consultations: 0, activities: 0 },
+        { label: '2주 전', consultations: 0, activities: 0 },
+        { label: '지난주', consultations: 1, activities: 1 },
+        { label: '이번 주', consultations: 2, activities: 2 },
+      ]);
     });
   });
 });

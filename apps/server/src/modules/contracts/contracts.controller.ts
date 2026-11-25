@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -19,6 +21,14 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { ContractsService } from './contracts.service';
 import { ReplaceContractPartiesDto } from './dto/contract-party.dto';
+
+/** 주소의 id 형식이 틀리면 DB까지 가지 않고 400으로 돌려준다 (그대로 두면 500이 난다). */
+const ContractIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new BadRequestException('잘못된 계약서 주소입니다.'),
+});
+const DocumentIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new BadRequestException('잘못된 문서 주소입니다.'),
+});
 
 @ApiTags('계약')
 @ApiBearerAuth()
@@ -233,7 +243,7 @@ export class ContractsController {
    */
   @Put(':id/parties')
   replaceParties(
-    @Param('id') id: string,
+    @Param('id', ContractIdPipe) id: string,
     @Body() dto: ReplaceContractPartiesDto,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -251,7 +261,7 @@ export class ContractsController {
    */
   @Post(':id/copy')
   copyContract(
-    @Param('id') id: string,
+    @Param('id', ContractIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.contractsService.copyContract(id, user.officeId, user.userId);
@@ -263,8 +273,8 @@ export class ContractsController {
    */
   @Post(':id/documents/:documentId/copy')
   copyDocument(
-    @Param('id') id: string,
-    @Param('documentId') documentId: string,
+    @Param('id', ContractIdPipe) id: string,
+    @Param('documentId', DocumentIdPipe) documentId: string,
     @Body() dto: { title?: string },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -279,7 +289,7 @@ export class ContractsController {
 
   @Get(':id/documents')
   listDocuments(
-    @Param('id') id: string,
+    @Param('id', ContractIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.contractsService.listDocuments(id, user.officeId);
@@ -287,8 +297,8 @@ export class ContractsController {
 
   @Get(':id/documents/:documentId/revisions')
   listDocumentRevisions(
-    @Param('id') id: string,
-    @Param('documentId') documentId: string,
+    @Param('id', ContractIdPipe) id: string,
+    @Param('documentId', DocumentIdPipe) documentId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.contractsService.listDocumentRevisions(id, documentId, user.officeId);
@@ -296,8 +306,8 @@ export class ContractsController {
 
   @Post(':id/documents/:documentId/revisions/:revisionId/apply')
   applyDocumentRevision(
-    @Param('id') id: string,
-    @Param('documentId') documentId: string,
+    @Param('id', ContractIdPipe) id: string,
+    @Param('documentId', DocumentIdPipe) documentId: string,
     @Param('revisionId') revisionId: string,
     @Body() dto: { contentHash: string },
     @CurrentUser() user: CurrentUserPayload,
@@ -314,7 +324,7 @@ export class ContractsController {
 
   @Post(':id/sale-contract-draft/prepare')
   prepareSaleContractDraft(
-    @Param('id') id: string,
+    @Param('id', ContractIdPipe) id: string,
     @Body()
     dto: {
       actualAgreementAt?: string;
@@ -335,7 +345,7 @@ export class ContractsController {
 
   @Get(':id/sale-contract-draft/validate')
   validateSaleContractDraft(
-    @Param('id') id: string,
+    @Param('id', ContractIdPipe) id: string,
     @Query('revisionId') revisionId: string | undefined,
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -344,7 +354,7 @@ export class ContractsController {
 
   @Post(':id/documents')
   createDocument(
-    @Param('id') id: string,
+    @Param('id', ContractIdPipe) id: string,
     @Body()
     dto: {
       templateId?: string;
@@ -377,8 +387,8 @@ export class ContractsController {
 
   @Patch(':id/documents/:documentId')
   updateDocument(
-    @Param('id') id: string,
-    @Param('documentId') documentId: string,
+    @Param('id', ContractIdPipe) id: string,
+    @Param('documentId', DocumentIdPipe) documentId: string,
     @Body()
     dto: {
       templateId?: string | null;
@@ -416,8 +426,8 @@ export class ContractsController {
    */
   @Delete(':id/documents/:documentId')
   removeDocument(
-    @Param('id') id: string,
-    @Param('documentId') documentId: string,
+    @Param('id', ContractIdPipe) id: string,
+    @Param('documentId', DocumentIdPipe) documentId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.contractsService.removeDocument(id, documentId, user.officeId);
@@ -425,7 +435,7 @@ export class ContractsController {
 
   @Get(':id')
   findOne(
-    @Param('id') id: string,
+    @Param('id', ContractIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.contractsService.findOne(id, user.officeId);
@@ -436,7 +446,7 @@ export class ContractsController {
    */
   @Delete(':id')
   remove(
-    @Param('id') id: string,
+    @Param('id', ContractIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.contractsService.remove(id, user.officeId);
@@ -473,7 +483,7 @@ export class ContractsController {
 
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ContractIdPipe) id: string,
     @Body()
     dto: {
       transactionType?: string;

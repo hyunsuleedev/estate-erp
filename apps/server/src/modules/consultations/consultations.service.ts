@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   contactPhonesSelectOrdered,
   normalizePhone,
+  phoneSearchDigits,
   withPrimaryContactPhone,
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
@@ -19,10 +20,12 @@ import {
 } from '../listings/listing-state';
 import { parseCallRecordingFileName } from '@estate-erp/shared';
 import { CallIntelligenceService } from '../call-intelligence/call-intelligence.service';
+import { assertLinksInOffice, isUuid, type LinkField } from '../tasks/linked-records';
 
 export interface ConsultationSearchQuery {
   q?: string;
   contactId?: string;
+  scope?: 'self' | 'party';
   propertyId?: string;
   siteId?: string;
   dongId?: string;
@@ -32,6 +35,8 @@ export interface ConsultationSearchQuery {
   matchId?: string;
   buyerIntakeId?: string;
   buyerReqId?: string;
+  dealId?: string;
+  projectId?: string;
   context?:
     | 'property'
     | 'listingIntake'
@@ -73,6 +78,53 @@ const CONSULTATION_RECORDING_SELECT = {
 type ConsultationRecordingRow = Prisma.CallRecordingGetPayload<{
   select: typeof CONSULTATION_RECORDING_SELECT;
 }>;
+
+/** 상담이 가리킬 수 있는 연결 칸. 모두 같은 사무소의 것이어야 한다 (업무·일정과 같은 검사) */
+const CONSULTATION_LINK_FIELDS: LinkField[] = [
+  { key: 'propertyId', model: 'property', object: '매물을' },
+  { key: 'listingIntakeId', model: 'listingIntake', object: '매물 의뢰를' },
+  { key: 'listingId', model: 'listing', object: '매물 조건을' },
+  { key: 'matchId', model: 'match', object: '매칭을' },
+  { key: 'buyerIntakeId', model: 'buyerIntake', object: '구매 의뢰를' },
+  { key: 'buyerReqId', model: 'buyerRequirement', object: '희망 조건을' },
+  { key: 'dealId', model: 'deal', object: '거래를' },
+  { key: 'projectId', model: 'project', object: '프로젝트를' },
+  { key: 'callRecordingId', model: 'callRecording', object: '통화 녹음을' },
+];
+
+/** 상담 방식. 화면의 "전화 · 방문 · 문자·온라인"과 같다. */
+const CONSULTATION_TYPES = ['phone', 'visit', 'online'];
+/** 컴퓨터 시계가 조금 빠른 경우까지는 "지금"으로 받는다 */
+const CONSULTED_AT_FUTURE_SLACK_MS = 10 * 60 * 1000;
+
+function requireConsultationType(type: unknown): string {
+  if (typeof type !== 'string' || !CONSULTATION_TYPES.includes(type)) {
+    throw new BadRequestException('상담 방식은 전화 · 방문 · 문자·온라인 가운데 하나를 고르세요.');
+  }
+  return type;
+}
+
+function requireConsultationContent(content: unknown): string {
+  const trimmed = typeof content === 'string' ? content.trim() : '';
+  if (!trimmed) throw new BadRequestException('상담 내용을 입력하세요.');
+  return trimmed;
+}
+
+/**
+ * 상담한 때. 비우면 지금이다. 지난 일을 나중에 적을 수 있게 과거는 받고, 앞날은 받지 않는다.
+ * 상담 목록과 화면의 일시는 모두 createdAt을 읽으므로 이 값을 createdAt에 넣는다.
+ */
+function parseConsultedAt(value: unknown): Date | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestException('상담 일시를 알아볼 수 없습니다.');
+  }
+  if (date.getTime() > Date.now() + CONSULTED_AT_FUTURE_SLACK_MS) {
+    throw new BadRequestException('앞으로의 날짜로는 상담을 적을 수 없습니다. 약속은 업무나 일정으로 남기세요.');
+  }
+  return date;
+}
 
 function summarizeRecording(
   recording: ConsultationRecordingRow | null,
@@ -171,6 +223,20 @@ export class ConsultationsService {
         transactionType: true,
       },
     },
+    deal: {
+      select: {
+        id: true,
+        stage: true,
+        transactionType: true,
+        isCancelled: true,
+      },
+    },
+    project: {
+      select: {
+        id: true,
+        title: true,
+      },
+    },
     createdBy: { select: { id: true, name: true } },
     callRecording: { select: CONSULTATION_RECORDING_SELECT },
   };
@@ -178,7 +244,14 @@ export class ConsultationsService {
   async findAll(officeId: string, query: ConsultationSearchQuery = {}) {
     const filters: Prisma.ConsultationWhereInput[] = [{ officeId }];
 
-    if (query.contactId) filters.push({ contactId: query.contactId });
+    if (query.contactId) {
+      if (query.scope === 'party') {
+        const contactIds = await this.expandPartyContactIds(officeId, query.contactId);
+        filters.push({ contactId: { in: contactIds } });
+      } else {
+        filters.push({ contactId: query.contactId });
+      }
+    }
     if (query.propertyId) filters.push({ propertyId: query.propertyId });
     if (query.siteId) filters.push({ property: { siteId: query.siteId } });
     if (query.dongId) filters.push({ property: { unit: { dongId: query.dongId } } });
@@ -190,6 +263,8 @@ export class ConsultationsService {
       filters.push({ buyerIntakeId: query.buyerIntakeId });
     }
     if (query.buyerReqId) filters.push({ buyerReqId: query.buyerReqId });
+    if (query.dealId) filters.push({ dealId: query.dealId });
+    if (query.projectId) filters.push({ projectId: query.projectId });
     if (query.type) filters.push({ type: query.type });
     if (query.createdById) filters.push({ createdById: query.createdById });
     if (query.recording === 'with') filters.push({ callRecordingId: { not: null } });
@@ -217,7 +292,8 @@ export class ConsultationsService {
 
     const q = query.q?.trim();
     if (q) {
-      const canonicalPhone = normalizePhone(q);
+      // 글자가 섞인 검색어("그라시움 101동")의 숫자로 전화번호를 찾지 않는다
+      const canonicalPhone = phoneSearchDigits(q);
       filters.push({
         OR: [
           { content: { contains: q, mode: 'insensitive' } },
@@ -258,6 +334,44 @@ export class ConsultationsService {
     };
   }
 
+  private async expandPartyContactIds(officeId: string, contactId: string): Promise<string[]> {
+    const ids = new Set<string>([contactId]);
+    const [memberships, orgParty] = await Promise.all([
+      this.prisma.partyMember.findMany({
+        where: { officeId, contactId, status: 'active' },
+        select: { partyId: true },
+      }),
+      this.prisma.party.findFirst({
+        where: { officeId, kind: 'organization', organizationContactId: contactId },
+        select: { id: true },
+      }),
+    ]);
+    const partyIds = Array.from(
+      new Set([
+        ...memberships.map((item) => item.partyId),
+        ...(orgParty ? [orgParty.id] : []),
+      ]),
+    );
+    if (partyIds.length === 0) return Array.from(ids);
+    const [parties, members] = await Promise.all([
+      this.prisma.party.findMany({
+        where: { officeId, id: { in: partyIds }, organizationContactId: { not: null } },
+        select: { organizationContactId: true },
+      }),
+      this.prisma.partyMember.findMany({
+        where: { officeId, partyId: { in: partyIds }, status: 'active' },
+        select: { contactId: true },
+      }),
+    ]);
+    for (const party of parties) {
+      if (party.organizationContactId) ids.add(party.organizationContactId);
+    }
+    for (const member of members) {
+      ids.add(member.contactId);
+    }
+    return Array.from(ids);
+  }
+
   private buildContextFilter(context: NonNullable<ConsultationSearchQuery['context']>): Prisma.ConsultationWhereInput {
     if (context === 'property') return { propertyId: { not: null } };
     if (context === 'listingIntake') return { listingIntakeId: { not: null } };
@@ -295,7 +409,7 @@ export class ConsultationsService {
       where: { id, officeId },
       include: this.defaultInclude,
     });
-    if (!consultation) throw new NotFoundException('Consultation not found');
+    if (!consultation) throw new NotFoundException('상담 기록을 찾을 수 없습니다.');
     return toConsultationResponse(consultation);
   }
 
@@ -313,8 +427,12 @@ export class ConsultationsService {
       matchId?: string;
       buyerIntakeId?: string;
       buyerReqId?: string;
+      dealId?: string;
+      projectId?: string;
       /** 통화 녹음 연결 (통화 → 상담 전환) */
       callRecordingId?: string;
+      /** 상담한 때. 비우면 지금 */
+      consultedAt?: string;
     },
   ) {
     const {
@@ -324,15 +442,31 @@ export class ConsultationsService {
       matchId,
       buyerIntakeId,
       buyerReqId,
+      dealId,
+      projectId,
       callRecordingId,
-      ...rest
+      consultedAt,
+      contactId,
+      purpose,
     } = dto;
+    if (typeof contactId !== 'string' || !contactId) {
+      throw new BadRequestException('상담한 고객을 고르세요.');
+    }
+    const type = requireConsultationType(dto.type);
+    const content = requireConsultationContent(dto.content);
+    const createdAt = parseConsultedAt(consultedAt);
 
+    if (!isUuid(contactId)) throw new NotFoundException('연락처를 찾을 수 없습니다.');
     const contact = await this.prisma.contact.findFirst({
-      where: { id: dto.contactId, officeId },
+      where: { id: contactId, officeId },
       select: { id: true },
     });
-    if (!contact) throw new NotFoundException('Contact not found');
+    if (!contact) throw new NotFoundException('연락처를 찾을 수 없습니다.');
+
+    // 연결 칸(매물 · 의뢰 · 매칭 · 희망 조건 · 녹음)이 이 사무소의 것인지 저장 전에 확인한다.
+    // 이 칸들의 FK는 id만 가리켜 DB가 다른 사무소의 행을 막지 못하고, 막지 않으면 응답(include)에
+    // 남의 사무소 단지 이름 · 매물 가격 · 의뢰 상태가 실린다.
+    await assertLinksInOffice(this.prisma, officeId, dto, CONSULTATION_LINK_FIELDS);
 
     let resolvedBuyerIntakeId = buyerIntakeId || undefined;
     if (buyerReqId) {
@@ -341,14 +475,14 @@ export class ConsultationsService {
         select: { id: true, buyerIntakeId: true },
       });
       if (!requirement) {
-        throw new NotFoundException('BuyerRequirement not found');
+        throw new NotFoundException('희망 조건을 찾을 수 없습니다.');
       }
       if (
         resolvedBuyerIntakeId &&
         resolvedBuyerIntakeId !== requirement.buyerIntakeId
       ) {
         throw new BadRequestException(
-          'BuyerRequirement가 지정한 BuyerIntake와 일치하지 않습니다.',
+          '고른 희망 조건이 고른 구매 의뢰에 속해 있지 않습니다.',
         );
       }
       resolvedBuyerIntakeId = requirement.buyerIntakeId;
@@ -357,7 +491,7 @@ export class ConsultationsService {
         where: { id: resolvedBuyerIntakeId, officeId },
         select: { id: true },
       });
-      if (!intake) throw new NotFoundException('BuyerIntake not found');
+      if (!intake) throw new NotFoundException('구매 의뢰를 찾을 수 없습니다.');
     }
 
     if (resolvedBuyerIntakeId) {
@@ -371,7 +505,7 @@ export class ConsultationsService {
       });
       if (!participant) {
         throw new BadRequestException(
-          '상담 연락처를 BuyerIntake 참여자로 먼저 연결해야 합니다.',
+          '이 고객은 고른 구매 의뢰의 고객이 아닙니다. 구매 의뢰에 고객을 먼저 넣어 주세요.',
         );
       }
     }
@@ -382,26 +516,48 @@ export class ConsultationsService {
         where: { id: callRecordingId, officeId },
         select: { id: true },
       });
-      if (!recording) throw new NotFoundException('Recording not found');
+      if (!recording) throw new NotFoundException('통화 녹음을 찾을 수 없습니다.');
     }
 
-    return this.prisma.consultation
-      .create({
-        data: {
+    const created = await this.prisma.consultation.create({
+      data: {
+        officeId,
+        createdById: userId,
+        contactId,
+        type,
+        content,
+        ...(purpose ? { purpose } : {}),
+        ...(createdAt ? { createdAt } : {}),
+        propertyId: propertyId || undefined,
+        listingIntakeId: listingIntakeId || undefined,
+        listingId: listingId || undefined,
+        matchId: matchId || undefined,
+        buyerIntakeId: resolvedBuyerIntakeId,
+        buyerReqId: buyerReqId || undefined,
+        dealId: dealId || undefined,
+        projectId: projectId || undefined,
+        callRecordingId: callRecordingId || undefined,
+      },
+      include: this.defaultInclude,
+    });
+
+    // 이 사람과 나눈 상담은 그 사람이 손님인 진행 중 희망 조건의 "최근 연락"이기도 하다.
+    // 예전에는 희망 조건 화면에서 적은 상담만 반영돼, 연락처에서 상담을 적으면 희망 조건에는 "최근 연락 없음"으로 남았다.
+    // 더 최근 값은 덮지 않는다(한 문장으로 비교해 쓴다). 상담은 이미 저장됐으므로 여기서 실패해도 요청은 성공으로 둔다.
+    const contactedAt = created.createdAt;
+    await this.prisma.buyerRequirement
+      .updateMany({
+        where: {
           officeId,
-          createdById: userId,
-          ...rest,
-          propertyId: propertyId || undefined,
-          listingIntakeId: listingIntakeId || undefined,
-          listingId: listingId || undefined,
-          matchId: matchId || undefined,
-          buyerIntakeId: resolvedBuyerIntakeId,
-          buyerReqId: buyerReqId || undefined,
-          callRecordingId: callRecordingId || undefined,
+          status: { not: 'completed' },
+          buyerIntake: { contacts: { some: { contactId } } },
+          OR: [{ lastContactDate: null }, { lastContactDate: { lt: contactedAt } }],
         },
-        include: this.defaultInclude,
+        data: { lastContactDate: contactedAt },
       })
-      .then(toConsultationResponse);
+      .catch(() => undefined);
+
+    return toConsultationResponse(created);
   }
 
   async update(
@@ -410,12 +566,19 @@ export class ConsultationsService {
     dto: {
       type?: string;
       content?: string;
+      /** 상담한 때를 고친다 (지난 일만) */
+      consultedAt?: string;
     },
   ) {
     await this.findOne(id, officeId);
+    const createdAt = parseConsultedAt(dto.consultedAt);
     return this.prisma.consultation.update({
       where: { id },
-      data: dto,
+      data: {
+        ...(dto.type !== undefined && { type: requireConsultationType(dto.type) }),
+        ...(dto.content !== undefined && { content: requireConsultationContent(dto.content) }),
+        ...(createdAt && { createdAt }),
+      },
       include: this.defaultInclude,
     }).then(toConsultationResponse);
   }
@@ -529,7 +692,7 @@ export class ConsultationsService {
           contact: { select: { phones: contactPhonesSelectOrdered } },
         },
       });
-      if (!consultation) throw new NotFoundException('Consultation not found');
+      if (!consultation) throw new NotFoundException('상담 기록을 찾을 수 없습니다.');
 
       const created = await tx.callRecording.create({
         data: {
@@ -582,7 +745,7 @@ export class ConsultationsService {
         where: { id: contactId, officeId },
         select: { id: true },
       });
-      if (!contact) throw new NotFoundException('Contact not found');
+      if (!contact) throw new NotFoundException('연락처를 찾을 수 없습니다.');
       return contact.id;
     }
     if (!phoneNumber) return null;
@@ -605,7 +768,7 @@ export class ConsultationsService {
     const recording = await this.prisma.callRecording.findFirst({
       where: { id, officeId },
     });
-    if (!recording) throw new NotFoundException('Recording not found');
+    if (!recording) throw new NotFoundException('통화 녹음을 찾을 수 없습니다.');
     if (recording.sttStatus === 'processing') {
       // 이미 분석 중이면 중복 업로드 방지
       return {
@@ -695,7 +858,7 @@ export class ConsultationsService {
       where: { id, officeId },
       select: { id: true, content: true },
     });
-    if (!consultation) throw new NotFoundException('Recording not found');
+    if (!consultation) throw new NotFoundException('통화 녹음을 찾을 수 없습니다.');
 
     return {
       id: consultation.id,
@@ -742,7 +905,7 @@ export class ConsultationsService {
 
     const q = query.q?.trim();
     if (q) {
-      const normalized = normalizePhone(q);
+      const normalized = phoneSearchDigits(q);
       filters.push({
         OR: [
           { contact: { name: { contains: q, mode: 'insensitive' } } },
@@ -846,7 +1009,7 @@ export class ConsultationsService {
         },
       },
     });
-    if (!recording) throw new NotFoundException('Recording not found');
+    if (!recording) throw new NotFoundException('통화 녹음을 찾을 수 없습니다.');
     // 제안 카드에 보여줄 대상 이름 (매물·고객 요청·매칭 등)
     const suggestionLabels = await this.callIntelligence.describeSuggestionTargets(
       officeId,
@@ -870,7 +1033,7 @@ export class ConsultationsService {
       where: { id, officeId },
       select: { id: true },
     });
-    if (!recording) throw new NotFoundException('Recording not found');
+    if (!recording) throw new NotFoundException('통화 녹음을 찾을 수 없습니다.');
 
     if (dto.contactId !== undefined) {
       if (dto.contactId) {
@@ -878,7 +1041,7 @@ export class ConsultationsService {
           where: { id: dto.contactId, officeId },
           select: { id: true },
         });
-        if (!contact) throw new NotFoundException('Contact not found');
+        if (!contact) throw new NotFoundException('연락처를 찾을 수 없습니다.');
       }
       const before = await this.prisma.callRecording.findUnique({
         where: { id },

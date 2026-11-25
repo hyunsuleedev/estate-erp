@@ -8,8 +8,9 @@
 // ============================================================
 
 model ListingAdvertisementSnapshotSession {
-  id       String @id @default(uuid()) @db.Uuid
-  officeId String @map("office_id") @db.Uuid
+  id          String  @id @default(uuid()) @db.Uuid
+  officeId    String  @map("office_id") @db.Uuid
+  cpAccountId String? @map("cp_account_id") @db.Uuid
 
   channel String // esiljang, budongsanbank 등. Reader provider와 동일해야 한다.
   scope   String @default("active_advertisements")
@@ -38,13 +39,14 @@ model ListingAdvertisementSnapshotSession {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office                 Office                             @relation(fields: [officeId], references: [id])
+  cpAccount              OfficeCpAccount?                   @relation(fields: [cpAccountId], references: [id], onDelete: SetNull)
   startedBy              User                               @relation("ListingAdvertisementSnapshotStartedBy", fields: [startedById], references: [id])
   completedBy            User?                              @relation("ListingAdvertisementSnapshotCompletedBy", fields: [completedById], references: [id])
   items                  ListingAdvertisementSnapshotItem[]
   advertisementHistories ListingAdvertisementHistory[]
 
-  @@unique([officeId, channel, manifestHash], map: "listing_ad_snapshot_session_identity_key")
   @@index([officeId, channel, status], map: "listing_ad_snapshot_session_channel_status_idx")
+  @@index([officeId, channel, cpAccountId, status], map: "listing_ad_snapshot_session_account_status_idx")
   @@index([officeId, createdAt], map: "listing_ad_snapshot_session_created_idx")
   @@map("listing_advertisement_snapshot_sessions")
 }

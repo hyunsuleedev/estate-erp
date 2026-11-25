@@ -75,6 +75,16 @@ function setup(suggestion: Record<string, unknown>) {
 }
 
 describe('CallSuggestionsService', () => {
+  it('does not fail when the agent who recorded the call has left — the task service may leave it unassigned', async () => {
+    const { service, tasks } = setup({ type: 'task', payload: { title: '퇴사한 직원의 통화에서 나온 업무' } });
+
+    await service.accept('suggestion-1', 'office-1', 'owner-1');
+
+    const options = tasks.create.mock.calls[0][3];
+    // 녹음한 직원(시스템이 정한 담당)이 일하는 직원이 아니면 400 대신 미배정으로 만들라고 알린다
+    expect(options).toEqual({ id: 'suggestion-1', dropUnavailableAssignee: true });
+  });
+
   it('creates an AI task assigned to the agent who took the call and links it to the call consultation', async () => {
     const { service, tasks, prisma } = setup({
       type: 'task',
@@ -96,8 +106,9 @@ describe('CallSuggestionsService', () => {
         listingId: LISTING,
       }),
       'owner-1',
-      // 제안 id를 새 할 일의 id로 써서 다시 반영해도 한 건만 생긴다
-      { id: 'suggestion-1' },
+      // 제안 id를 새 업무의 id로 써서 다시 반영해도 한 건만 생긴다.
+      // 담당(녹음한 직원)이 퇴사·차단됐으면 400 대신 미배정으로 만들도록 업무 서비스에 알린다.
+      { id: 'suggestion-1', dropUnavailableAssignee: true },
     );
     expect(result).toMatchObject({ status: 'accepted', appliedEntityType: 'task', appliedEntityId: 'task-1' });
     // 처음 상태가 pending(또는 오래 멈춘 applying)일 때만 처리를 잡는다

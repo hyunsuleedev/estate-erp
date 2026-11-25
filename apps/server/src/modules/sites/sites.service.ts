@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { createPrivateSiteRecord, type PrivateSiteData } from './private-site';
 import {
   contactPhonesIncludeOrdered,
   withPrimaryPhone,
@@ -14,6 +15,7 @@ import {
   NON_CLOSED_INTAKE_WHERE,
   OCCUPYING_DEALS_SELECT,
 } from '../listings/listing-state';
+import { presentPropertyLease, propertyLeaseInclude } from '../tenants/tenants.service';
 
 interface SiteWriteDto {
   type?: string;
@@ -109,12 +111,12 @@ export class SitesService {
                         },
                         include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
                       },
-                      tenants: {
+                      leases: {
                         where: {
                           ...(officeId ? { officeId } : {}),
                           status: 'residing',
                         },
-                        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+                        include: propertyLeaseInclude,
                       },
                       consultations: {
                         where: officeId ? { officeId } : undefined,
@@ -142,7 +144,7 @@ export class SitesService {
           : {}),
       },
     });
-    if (!site) throw new NotFoundException('Site not found');
+    if (!site) throw new NotFoundException('단지를 찾을 수 없습니다.');
     return this.withContactPhones(site);
   }
 
@@ -174,7 +176,7 @@ export class SitesService {
         _count: { select: { dongs: true, units: true, properties: { where: { officeId } } } },
       },
     });
-    if (!site) throw new NotFoundException('Site not found');
+    if (!site) throw new NotFoundException('단지를 찾을 수 없습니다.');
 
     const defaultDongId = site.dongs[0]?.id ?? null;
     const units = defaultDongId
@@ -208,9 +210,9 @@ export class SitesService {
               where: { officeId, role: 'owner', status: 'active' },
               include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
             },
-            tenants: {
+            leases: {
               where: { officeId, status: 'residing' },
-              include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+              include: propertyLeaseInclude,
             },
             consultations: {
               where: { officeId },
@@ -239,7 +241,8 @@ export class SitesService {
   private withContactPhones<T>(site: T): T {
     const hydrateProperty = (property: {
       propertyContacts?: Array<{ contact?: { phones?: [] } | null }>;
-      tenants?: Array<{ contact?: { phones?: [] } | null }>;
+      leases?: Parameters<typeof presentPropertyLease>[0][];
+      tenants?: unknown[];
       consultations?: Array<{ contact?: { phones?: [] } | null }>;
     }) => {
       if (property.propertyContacts) {
@@ -248,11 +251,10 @@ export class SitesService {
           contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
         }));
       }
-      if (property.tenants) {
-        property.tenants = property.tenants.map((tenant) => ({
-          ...tenant,
-          contact: tenant.contact ? withPrimaryPhone(tenant.contact) : tenant.contact,
-        }));
+      if (property.leases) {
+        const presented = property.leases.map((lease) => presentPropertyLease(lease));
+        property.leases = presented;
+        property.tenants = presented;
       }
       if (property.consultations) {
         property.consultations = property.consultations.map((consultation) => ({
@@ -303,11 +305,8 @@ export class SitesService {
       metadata?: Record<string, unknown> | null;
     },
   ) {
-    const data: Prisma.SiteUncheckedCreateInput = {
-      officeId,
-      // 사무소가 만드는 단지는 언제나 비공개 — 기본값에 맡기지 않고 명시한다
-      isPublic: false,
-      isLocked: false,
+    // 받는 칸만 골라 넣는다(본문의 officeId·isPublic은 쓰지 않는다). 소유 사무소·비공개는 createPrivateSiteRecord가 고정한다
+    const data: PrivateSiteData = {
       type: dto.type,
       name: dto.name,
       wardCode: dto.wardCode,
@@ -335,15 +334,14 @@ export class SitesService {
             : (dto.metadata as Prisma.InputJsonValue),
     };
 
-    return this.prisma.site.create({
-      data,
-    });
+    // 관리단지 화면의 직접 등록과 같은 함수: 단독·다가구 등에는 동 구분 없는 동을 함께 만든다
+    return this.prisma.$transaction((tx) => createPrivateSiteRecord(tx, officeId, data));
   }
 
   async update(id: string, officeId: string, dto: SiteWriteDto) {
     const site = await this.findEditableSite(id, officeId);
-    if (site.isLocked) throw new ForbiddenException('Central data cannot be modified');
-    if (site.officeId === null) throw new ForbiddenException('Central data cannot be modified');
+    if (site.isLocked) throw new ForbiddenException('공공 단지 정보는 고칠 수 없습니다.');
+    if (site.officeId === null) throw new ForbiddenException('공공 단지 정보는 고칠 수 없습니다.');
     const data: Prisma.SiteUncheckedUpdateInput = {
       type: dto.type,
       name: dto.name,
@@ -377,8 +375,8 @@ export class SitesService {
 
   async remove(id: string, officeId: string) {
     const site = await this.findEditableSite(id, officeId);
-    if (site.isLocked) throw new ForbiddenException('Central data cannot be deleted');
-    if (site.officeId === null) throw new ForbiddenException('Central data cannot be deleted');
+    if (site.isLocked) throw new ForbiddenException('공공 단지는 지울 수 없습니다.');
+    if (site.officeId === null) throw new ForbiddenException('공공 단지는 지울 수 없습니다.');
     return this.prisma.site.delete({ where: { id } });
   }
 
@@ -391,7 +389,7 @@ export class SitesService {
     });
 
     if (!site) {
-      throw new NotFoundException('Site not found');
+      throw new NotFoundException('단지를 찾을 수 없습니다.');
     }
 
     return site;

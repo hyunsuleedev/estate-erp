@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -24,6 +25,9 @@ import {
 } from './projects.service';
 import { ProjectPlanService } from './project-plan.service';
 import { ProjectCommentsService } from './project-comments.service';
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @ApiTags('고객 원장')
 @ApiBearerAuth()
@@ -105,28 +109,70 @@ export class ProjectsController {
     });
   }
 
-  /** 프로젝트 목록. 고객 원장에 줄이 없는 프로젝트도 여기서 연다. */
+  /**
+   * 프로젝트 목록. 고객 원장에 줄이 없는 프로젝트도 여기서 연다.
+   * 여럿을 고르는 조건(statuses · assignedToIds · intakes)은 쉼표로 잇는다. total은 조건에 맞는 전체 수다.
+   */
   @Get()
   findAll(
     @Query('status') status: string,
     @Query('search') search: string,
     @Query('assignedToId') assignedToId: string,
+    @Query('assignedToIds') assignedToIds: string,
+    @Query('mine') mine: string,
+    @Query('statuses') statuses: string,
+    @Query('intakes') intakes: string,
+    @Query('primary') primary: string,
+    @Query('createdFrom') createdFrom: string,
+    @Query('createdTo') createdTo: string,
+    @Query('contactId') contactId: string,
+    @Query('listingIntakeId') listingIntakeId: string,
+    @Query('buyerIntakeId') buyerIntakeId: string,
     @Query('sort') sort: string,
+    @Query('order') order: string,
     @Query('offset') offset: string,
     @Query('limit') limit: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
+    for (const value of [contactId, listingIntakeId, buyerIntakeId, assignedToId]) {
+      if (value && !UUID_PATTERN.test(value)) {
+        throw new BadRequestException('찾을 id가 올바르지 않습니다.');
+      }
+    }
+    const list = (value: string) =>
+      value
+        ? value
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : undefined;
+    const assignees = list(assignedToIds);
+    if (assignees?.some((value) => value !== 'none' && !UUID_PATTERN.test(value))) {
+      throw new BadRequestException('담당 조건이 올바르지 않습니다.');
+    }
     return this.plan.findAll(user.officeId, {
       status: status || undefined,
       search: search || undefined,
       assignedToId: assignedToId || undefined,
+      assignedToIds: assignees,
+      // "내 프로젝트": 담당이 요청한 사람인 것
+      mineUserId: mine === 'true' || mine === '1' ? user.userId : undefined,
+      statuses: list(statuses),
+      intakes: list(intakes),
+      primary: primary || undefined,
+      createdFrom: createdFrom || undefined,
+      createdTo: createdTo || undefined,
+      contactId: contactId || undefined,
+      listingIntakeId: listingIntakeId || undefined,
+      buyerIntakeId: buyerIntakeId || undefined,
       sort: sort || undefined,
+      order: order || undefined,
       offset: offset ? Number(offset) : undefined,
       limit: limit ? Number(limit) : undefined,
     });
   }
 
-  /** 프로젝트를 연다. 대표 고객만 정해 열거나, 고른 의뢰들을 묶어 연다. */
+  /** 프로젝트를 연다. 아무것도 없이 빈 채로도 연다(작업 공간). 담당을 보내지 않으면 만든 사람이 담당이다. */
   @Post()
   create(
     @Body()
@@ -140,7 +186,7 @@ export class ProjectsController {
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.plan.create(user.officeId, dto ?? {});
+    return this.plan.create(user.officeId, dto ?? {}, user.userId);
   }
 
   @Get(':id')
@@ -167,13 +213,13 @@ export class ProjectsController {
     return this.plan.update(id, user.officeId, dto ?? {});
   }
 
-  /** 묶음을 푼다. 의뢰와 거래는 남는다. */
+  /** 프로젝트를 푼다(대표 · 매니저만). 의뢰와 거래는 남는다. */
   @Delete(':id')
   remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.plan.remove(id, user.officeId);
+    return this.plan.remove(id, user.officeId, user.role, user.userId);
   }
 
   // ─── 코멘트 ──────────────────────────────────────────────────
@@ -220,13 +266,22 @@ export class ProjectsController {
     return this.comments.remove(id, commentId, user);
   }
 
-  /** 이 프로젝트에 더 담을 만한 의뢰·거래 제안. */
+  /**
+   * 이 프로젝트에 더 담을 만한 의뢰·거래 제안. contactId를 주면 그 손님(이 프로젝트 사람이 아니어도)의
+   * 담을 수 있는 의뢰·거래를 준다.
+   */
   @Get(':id/candidates')
   findCandidates(
     @Param('id', ParseUUIDPipe) id: string,
+    @Query('contactId') contactId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.plan.findCandidates(id, user.officeId);
+    if (contactId && !UUID_PATTERN.test(contactId)) {
+      throw new BadRequestException('손님 id가 올바르지 않습니다.');
+    }
+    return this.plan.findCandidates(id, user.officeId, {
+      contactId: contactId || undefined,
+    });
   }
 
   @Post(':id/intakes')

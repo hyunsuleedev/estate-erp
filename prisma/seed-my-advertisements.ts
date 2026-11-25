@@ -263,15 +263,15 @@ function observedFloorExposure(
 async function assertReservedArticleNumbersAreSafe(
   officeId: string,
   expectedExternalIds: Map<string, string>,
-  expectedOfficeAdvertisementIds: Map<string, string>,
+  expectedComparisonIds: Map<string, string>,
 ) {
   const articleNos = [...expectedExternalIds.keys()];
-  const [externalRows, officeRows] = await Promise.all([
+  const [externalRows, comparisonRows] = await Promise.all([
     prisma.externalListing.findMany({
       where: { officeId, source: "naver", articleNo: { in: articleNos } },
       select: { id: true, articleNo: true },
     }),
-    prisma.officeAdvertisement.findMany({
+    prisma.advertisementComparison.findMany({
       where: { officeId, articleNo: { in: articleNos } },
       select: { id: true, articleNo: true },
     }),
@@ -286,12 +286,12 @@ async function assertReservedArticleNumbersAreSafe(
     );
   }
 
-  const officeConflict = officeRows.find(
-    (row) => expectedOfficeAdvertisementIds.get(row.articleNo) !== row.id,
+  const comparisonConflict = comparisonRows.find(
+    (row) => expectedComparisonIds.get(row.articleNo) !== row.id,
   );
-  if (officeConflict) {
+  if (comparisonConflict) {
     throw new Error(
-      `데모용 네이버 매물번호 ${officeConflict.articleNo}가 기존 광고 비교 데이터에 사용 중입니다.`,
+      `데모용 네이버 매물번호 ${comparisonConflict.articleNo}가 기존 광고 비교 데이터에 사용 중입니다.`,
     );
   }
 }
@@ -354,7 +354,7 @@ async function main() {
       where: { id: advertisementId },
       select: { listingId: true },
     });
-    const existingListing = existingAdvertisement
+    const existingListing = existingAdvertisement?.listingId
       ? listingById.get(existingAdvertisement.listingId)
       : undefined;
     const preferredListing = listingById.get(scenario.preferredListingId);
@@ -385,7 +385,7 @@ async function main() {
   }
 
   const expectedExternalIds = new Map<string, string>();
-  const expectedOfficeAdvertisementIds = new Map<string, string>();
+  const expectedComparisonIds = new Map<string, string>();
   scenarios.forEach((scenario, scenarioIndex) => {
     if (
       scenario.analysis === "comparison_pending" ||
@@ -409,11 +409,11 @@ async function main() {
           `${scenario.key}:${advertisementIndex}`,
         ),
       );
-      expectedOfficeAdvertisementIds.set(
+      expectedComparisonIds.set(
         articleNo,
         deterministicUuid(
           officeId,
-          "office-advertisement",
+          "advertisement-comparison",
           `${scenario.key}:${advertisementIndex}`,
         ),
       );
@@ -422,7 +422,7 @@ async function main() {
   await assertReservedArticleNumbersAreSafe(
     officeId,
     expectedExternalIds,
-    expectedOfficeAdvertisementIds,
+    expectedComparisonIds,
   );
 
   const now = new Date();
@@ -434,6 +434,32 @@ async function main() {
 
   await prisma.$transaction(
     async (tx) => {
+      const cpAccountByChannel = new Map<string, string>();
+      for (const ch of ["esiljang", "budongsanbank"] as const) {
+        const account = await tx.officeCpAccount.upsert({
+          where: {
+            officeId_channel_accountKey: {
+              officeId,
+              channel: ch,
+              accountKey: `demo-${ch}`,
+            },
+          },
+          create: {
+            id: deterministicUuid(officeId, "cp-account", ch),
+            officeId,
+            channel: ch,
+            accountKey: `demo-${ch}`,
+            accountName: `${channelLabel(ch)} 데모 계정`,
+            lastSyncedAt: now,
+          },
+          update: {
+            accountName: `${channelLabel(ch)} 데모 계정`,
+            lastSyncedAt: now,
+          },
+        });
+        cpAccountByChannel.set(ch, account.id);
+      }
+
       for (
         let scenarioIndex = 0;
         scenarioIndex < scenarios.length;
@@ -466,16 +492,23 @@ async function main() {
             ? null
             : minutesAgo(now, 10 + scenarioIndex * 3);
         const amounts = advertisedAmounts(listing);
+        const cpAccountId = cpAccountByChannel.get(scenario.channel) ?? null;
+        const floorExposure =
+          scenario.analysis === "exposure_review" ? "band" : "exact";
 
         await tx.listingAdvertisement.upsert({
           where: { id: listingAdvertisementId },
           create: {
             id: listingAdvertisementId,
             officeId,
+            cpAccountId,
             listingId: listing.id,
+            propertyId: listing.propertyId,
+            siteId: listing.property.siteId,
+            transactionType: listing.transactionType,
+            floorExposure,
             channel: scenario.channel,
             status: "active",
-            source: "cp_sync",
             ...amounts,
             startedAt,
             endedAt: null,
@@ -491,10 +524,14 @@ async function main() {
           },
           update: {
             officeId,
+            cpAccountId,
             listingId: listing.id,
+            propertyId: listing.propertyId,
+            siteId: listing.property.siteId,
+            transactionType: listing.transactionType,
+            floorExposure,
             channel: scenario.channel,
             status: "active",
-            source: "cp_sync",
             ...amounts,
             startedAt,
             endedAt: null,
@@ -524,6 +561,9 @@ async function main() {
           const data = {
             officeId,
             listingAdvertisementId,
+            status: "active",
+            naverArticleNo: ownArticleNo,
+            floorExposure,
             advertisedPrice: raised(amounts.advertisedPrice),
             advertisedDeposit: raised(amounts.advertisedDeposit),
             advertisedMonthlyRent: amounts.advertisedMonthlyRent,
@@ -532,10 +572,10 @@ async function main() {
           };
           const id = deterministicUuid(
             officeId,
-            "listing-advertisement-price-history",
+            "listing-advertisement-history",
             `${scenario.key}:${observation.key}`,
           );
-          await tx.listingAdvertisementPriceHistory.upsert({
+          await tx.listingAdvertisementHistory.upsert({
             where: { id },
             create: { id, ...data },
             update: data,
@@ -601,54 +641,13 @@ async function main() {
           },
         });
 
-        const officeGroupId = deterministicUuid(
-          officeId,
-          "office-advertisement-group",
-          scenario.key,
-        );
         const observedRelatedMin = Math.min(...competitorPrimaryAmounts);
         const observedRelatedMax = Math.max(...competitorPrimaryAmounts);
-        // 월세는 보증금 scalar만으로 최저/최고를 표현하지 않는다.
-        const relatedMin =
-          scenario.transactionType === "monthly" ? null : observedRelatedMin;
-        const relatedMax =
-          scenario.transactionType === "monthly" ? null : observedRelatedMax;
         const ownObservedAmounts = observedAmounts(
           scenario.transactionType,
           ownAmount,
           listing.monthlyRent,
         );
-        const officeGroup = await tx.officeAdvertisementGroup.upsert({
-          where: { listingAdvertisementId },
-          create: {
-            id: officeGroupId,
-            officeId,
-            listingAdvertisementId,
-            memo: null,
-            ownPrice: ownObservedAmounts.price,
-            ownDeposit: ownObservedAmounts.deposit,
-            ownMonthlyRent: ownObservedAmounts.monthlyRent,
-            relatedPriceMin: relatedMin,
-            relatedPriceMax: relatedMax,
-            relatedCount: competitorPrimaryAmounts.length,
-            firstSeenAt: startedAt,
-            lastSeenAt: observedAt,
-            lastSyncedAt: observedAt,
-          },
-          update: {
-            officeId,
-            memo: null,
-            ownPrice: ownObservedAmounts.price,
-            ownDeposit: ownObservedAmounts.deposit,
-            ownMonthlyRent: ownObservedAmounts.monthlyRent,
-            relatedPriceMin: relatedMin,
-            relatedPriceMax: relatedMax,
-            relatedCount: competitorPrimaryAmounts.length,
-            firstSeenAt: startedAt,
-            lastSeenAt: observedAt,
-            lastSyncedAt: observedAt,
-          },
-        });
 
         const allPrimaryAmounts = [ownAmount, ...competitorPrimaryAmounts];
         const allRankings =
@@ -685,7 +684,7 @@ async function main() {
           const realtorName = isMine
             ? `${office.name}공인중개사사무소`
             : competitorNames[advertisementIndex - 1];
-          const floorExposure = observedFloorExposure(
+          const observedFloor = observedFloorExposure(
             scenario,
             advertisementIndex,
             listing.property.unit.floor,
@@ -695,9 +694,9 @@ async function main() {
             "external-listing",
             `${scenario.key}:${advertisementIndex}`,
           );
-          const officeAdvertisementId = deterministicUuid(
+          const comparisonId = deterministicUuid(
             officeId,
-            "office-advertisement",
+            "advertisement-comparison",
             `${scenario.key}:${advertisementIndex}`,
           );
 
@@ -726,7 +725,7 @@ async function main() {
                 : "동일 호실 비교 광고",
               detailDescription: `${DEMO_TAG} 네이버 비교 Skill 데모 관측`,
               articleConfirmYmd,
-              floorInfo: floorExposure.floorInfo,
+              floorInfo: observedFloor.floorInfo,
               exclusiveAreaM2:
                 listing.property.unit.siteUnitType?.exclusiveAreaM2 ?? null,
               supplyAreaM2:
@@ -776,7 +775,7 @@ async function main() {
                 : "동일 호실 비교 광고",
               detailDescription: `${DEMO_TAG} 네이버 비교 Skill 데모 관측`,
               articleConfirmYmd,
-              floorInfo: floorExposure.floorInfo,
+              floorInfo: observedFloor.floorInfo,
               exclusiveAreaM2:
                 listing.property.unit.siteUnitType?.exclusiveAreaM2 ?? null,
               supplyAreaM2:
@@ -806,16 +805,15 @@ async function main() {
             },
           });
 
-          await tx.officeAdvertisement.upsert({
-            where: { id: officeAdvertisementId },
+          await tx.advertisementComparison.upsert({
+            where: { id: comparisonId },
             create: {
-              id: officeAdvertisementId,
+              id: comparisonId,
               officeId,
-              groupId: officeGroup.id,
+              advertisementId: listingAdvertisementId,
               articleNo,
               sourceUrl,
               isMine,
-              isMain: isMine,
               isActive: true,
               articleName: `${listing.property.site.name} ${transactionLabel(
                 scenario.transactionType,
@@ -829,8 +827,8 @@ async function main() {
               ranking: allRankings[advertisementIndex],
               sameAddrCnt: allPrimaryAmounts.length,
               articleConfirmYmd,
-              floorInfo: floorExposure.floorInfo,
-              floorExposureMode: floorExposure.floorExposureMode,
+              floorInfo: observedFloor.floorInfo,
+              floorExposureMode: observedFloor.floorExposureMode,
               verificationTypeCode: "OWNER",
               seango: !isMine && advertisementIndex === 1,
               epju: isMine && scenario.ranking === 1,
@@ -844,11 +842,10 @@ async function main() {
             },
             update: {
               officeId,
-              groupId: officeGroup.id,
+              advertisementId: listingAdvertisementId,
               articleNo,
               sourceUrl,
               isMine,
-              isMain: isMine,
               isActive: true,
               articleName: `${listing.property.site.name} ${transactionLabel(
                 scenario.transactionType,
@@ -862,8 +859,8 @@ async function main() {
               ranking: allRankings[advertisementIndex],
               sameAddrCnt: allPrimaryAmounts.length,
               articleConfirmYmd,
-              floorInfo: floorExposure.floorInfo,
-              floorExposureMode: floorExposure.floorExposureMode,
+              floorInfo: observedFloor.floorInfo,
+              floorExposureMode: observedFloor.floorExposureMode,
               verificationTypeCode: "OWNER",
               seango: !isMine && advertisementIndex === 1,
               epju: isMine && scenario.ranking === 1,
@@ -878,23 +875,68 @@ async function main() {
           });
         }
 
+        const recordId = deterministicUuid(
+          officeId,
+          "advertisement-comparison-record",
+          scenario.key,
+        );
+        await tx.advertisementComparisonRecord.upsert({
+          where: { id: recordId },
+          create: {
+            id: recordId,
+            officeId,
+            advertisementId: listingAdvertisementId,
+            observedAt,
+            ownVisible: true,
+            ownRanking: allRankings[0],
+            totalCount: allPrimaryAmounts.length,
+            ownPrice: ownObservedAmounts.price,
+            ownDeposit: ownObservedAmounts.deposit,
+            ownMonthlyRent: ownObservedAmounts.monthlyRent,
+            lowestCompetitorAmount:
+              scenario.transactionType === "monthly" ? null : observedRelatedMin,
+            lowerPricedCount: scenario.analysis === "price_review" ? 1 : 0,
+            ownFloorExposure: floorExposure,
+            exactFloorCompetitorCount: scenario.analysis === "exposure_review" ? 1 : 2,
+            signal:
+              scenario.analysis === "price_review"
+                ? "lower_price_competitor"
+                : scenario.analysis === "exposure_review"
+                  ? "floor_exposure_disadvantage"
+                  : "competitive",
+            changes: [],
+          },
+          update: {
+            observedAt,
+            ownVisible: true,
+            ownRanking: allRankings[0],
+            totalCount: allPrimaryAmounts.length,
+            ownPrice: ownObservedAmounts.price,
+            ownDeposit: ownObservedAmounts.deposit,
+            ownMonthlyRent: ownObservedAmounts.monthlyRent,
+            lowestCompetitorAmount:
+              scenario.transactionType === "monthly" ? null : observedRelatedMin,
+            lowerPricedCount: scenario.analysis === "price_review" ? 1 : 0,
+            ownFloorExposure: floorExposure,
+            exactFloorCompetitorCount: scenario.analysis === "exposure_review" ? 1 : 2,
+            signal:
+              scenario.analysis === "price_review"
+                ? "lower_price_competitor"
+                : scenario.analysis === "exposure_review"
+                  ? "floor_exposure_disadvantage"
+                  : "competitive",
+            changes: [],
+          },
+        });
+
         const mainExternalListingId = deterministicUuid(
           officeId,
           "external-listing",
           `${scenario.key}:0`,
         );
-        const mainOfficeAdvertisementId = deterministicUuid(
-          officeId,
-          "office-advertisement",
-          `${scenario.key}:0`,
-        );
         await tx.externalListingGroup.update({
           where: { id: externalGroup.id },
           data: { mainExternalListingId },
-        });
-        await tx.officeAdvertisementGroup.update({
-          where: { id: officeGroup.id },
-          data: { mainAdvertisementId: mainOfficeAdvertisementId },
         });
       }
     },
@@ -914,28 +956,31 @@ async function main() {
           },
         },
       },
-      officeAdvertisementGroup: {
-        include: { mainAdvertisement: true },
-      },
+      comparisons: true,
     },
     orderBy: { createdAt: "asc" },
   });
 
   console.log(`\n✅ ${office.name} 내 광고 관리 데모 데이터 준비 완료`);
   console.table(
-    inserted.map((advertisement) => ({
-      CP: channelLabel(advertisement.channel as Scenario["channel"]),
-      상태: advertisement.status,
-      거래: transactionLabel(
-        advertisement.listing.transactionType as Scenario["transactionType"],
-      ),
-      단지: advertisement.listing.property.site.name,
-      동: advertisement.listing.property.unit?.dong.name ?? "-",
-      호: advertisement.listing.property.unit?.name ?? "-",
-      순위:
-        advertisement.officeAdvertisementGroup?.mainAdvertisement?.ranking ??
-        "대기",
-    })),
+    inserted.map((advertisement) => {
+      const own = advertisement.comparisons.find(
+        (c) => c.articleNo === advertisement.naverArticleNo,
+      );
+      return {
+        CP: channelLabel(advertisement.channel as Scenario["channel"]),
+        상태: advertisement.status,
+        거래: advertisement.listing
+          ? transactionLabel(
+              advertisement.listing.transactionType as Scenario["transactionType"],
+            )
+          : "-",
+        단지: advertisement.listing?.property.site.name ?? "-",
+        동: advertisement.listing?.property.unit?.dong.name ?? "-",
+        호: advertisement.listing?.property.unit?.name ?? "-",
+        순위: own?.ranking ?? "대기",
+      };
+    }),
   );
   console.log(
     `광고 ${inserted.length}건 · 네이버 비교 완료 ${

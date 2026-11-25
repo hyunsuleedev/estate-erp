@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
   Patch,
   Delete,
   Param,
+  ParseUUIDPipe,
   Body,
   Query,
   UseGuards,
@@ -16,6 +18,11 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+
+/** 주소의 id 형식이 틀리면 DB까지 가지 않고 400으로 돌려준다 (그대로 두면 uuid 변환 오류로 500이 난다). */
+const EventIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new BadRequestException('잘못된 일정 주소입니다.'),
+});
 
 @ApiTags('캘린더')
 @ApiBearerAuth()
@@ -38,7 +45,7 @@ export class CalendarEventsController {
 
   @Get(':id')
   findOne(
-    @Param('id') id: string,
+    @Param('id', EventIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.calendarEventsService.findOne(id, user.officeId);
@@ -55,12 +62,16 @@ export class CalendarEventsController {
       start: string;
       end?: string;
       color?: string;
+      /** 담당 직원. 비우면 만든 사람 */
+      userId?: string;
       propertyId?: string;
       listingIntakeId?: string;
       listingId?: string;
       contactId?: string;
+      buyerIntakeId?: string;
       matchId?: string;
       dealId?: string;
+      projectId?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -73,33 +84,43 @@ export class CalendarEventsController {
    */
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', EventIdPipe) id: string,
     @Body()
     dto: {
       title?: string;
-      description?: string;
+      description?: string | null;
       type?: string;
       allDay?: boolean;
       start?: string;
-      end?: string;
-      color?: string;
+      end?: string | null;
+      color?: string | null;
+      /** 담당 직원 바꾸기 */
+      userId?: string;
       propertyId?: string | null;
       listingIntakeId?: string | null;
       listingId?: string | null;
       contactId?: string | null;
+      buyerIntakeId?: string | null;
       matchId?: string | null;
       dealId?: string | null;
+      projectId?: string | null;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.calendarEventsService.update(id, user.officeId, dto);
+    return this.calendarEventsService.update(id, user.officeId, dto, {
+      userId: user.userId,
+      role: user.role,
+    });
   }
 
   @Delete(':id')
   remove(
-    @Param('id') id: string,
+    @Param('id', EventIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.calendarEventsService.remove(id, user.officeId);
+    return this.calendarEventsService.remove(id, user.officeId, {
+      userId: user.userId,
+      role: user.role,
+    });
   }
 }

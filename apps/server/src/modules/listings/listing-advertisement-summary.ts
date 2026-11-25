@@ -6,6 +6,14 @@ export const ACTIVE_LISTING_ADVERTISEMENT_WHERE = {
   status: ListingAdvertisementStatus.ACTIVE,
 } satisfies Prisma.ListingAdvertisementWhereInput;
 
+/** 매물·의뢰 목록에서 현재 광고와 함께 내려 주는 미완료 변경 요청 조회 조건. */
+export const ACTIVE_LISTING_ADVERTISEMENT_OPEN_REQUESTS_INCLUDE = {
+  changeRequests: {
+    where: { status: { in: ['requested', 'in_progress', 'executed'] } },
+    orderBy: { createdAt: 'desc' as const },
+  },
+} satisfies Prisma.ListingAdvertisementInclude;
+
 /**
  * Prisma 내부 관계명 `advertisements`를 목록 API의 현재 광고 필드로 변환한다.
  * 상세 API는 이 변환을 거치지 않으므로 `advertisements` 전체를 이력으로 유지한다.

@@ -56,6 +56,7 @@ describe('OfficeAdvertisementsService', () => {
       $queryRaw: jest.fn(),
       $executeRaw: jest.fn(),
     };
+    prisma.listingAdvertisement.findMany.mockResolvedValue([]);
     prisma.$transaction = jest.fn(async (work: (tx: any) => unknown) =>
       work(prisma),
     );
@@ -297,7 +298,7 @@ describe('OfficeAdvertisementsService', () => {
       observedAt,
     );
     expect(set?.observedAt).toBe(observedAt);
-    expect(set?.mainAdvertisement?.articleNo).toBe('N1');
+    expect(set?.ownAdvertisement?.articleNo).toBe('N1');
     expect(set?.advertisements.map((item) => item.articleNo)).toEqual(['N1', 'C1']);
 
     // 재광고로 번호가 N1 → N2가 됐다: 받아 둔 비교의 N2 줄이 내 광고다 (자기 자신과 견주지 않는다)
@@ -307,7 +308,7 @@ describe('OfficeAdvertisementsService', () => {
       row('C1', { ranking: 1 }),
     ] as never;
     const readvertised = toComparisonSet('N2', stored, observedAt);
-    expect(readvertised?.mainAdvertisement).toEqual(
+    expect(readvertised?.ownAdvertisement).toEqual(
       expect.objectContaining({ articleNo: 'N2', isMine: true }),
     );
     expect(
@@ -315,12 +316,8 @@ describe('OfficeAdvertisementsService', () => {
     ).toEqual(['C1']);
 
     // 번호를 잘못 적었다가 바로잡았다: 옛 번호 W는 원래 남의 광고였고, 바로잡은 뒤에는 경쟁 광고로 돌아간다
-    const corrected = toComparisonSet(
-      'N1',
-      [row('W', { ranking: 1 }), row('N1', { ranking: 2 })] as never,
-      observedAt,
-    );
-    expect(corrected?.mainAdvertisement?.articleNo).toBe('N1');
+    const corrected = toComparisonSet('N1', [row('W', { ranking: 1 }), row('N1', { ranking: 2 })] as never, observedAt);
+    expect(corrected?.ownAdvertisement?.articleNo).toBe('N1');
     expect(
       corrected?.advertisements.filter((item) => !item.isMine).map((item) => item.articleNo),
     ).toEqual(['W']);
@@ -329,5 +326,17 @@ describe('OfficeAdvertisementsService', () => {
       toComparisonSet('W', [row('W', { ranking: 1 }), row('N1', { ranking: 2 })] as never, observedAt)
         ?.advertisements.filter((item) => item.isMine).map((item) => item.articleNo),
     ).toEqual(['W']);
+
+    // 다중 계정 사무소: 다른 계정의 활성 광고 번호(N-SISTER)도 자동으로 isMine=true로 잡힌다
+    const sister = toComparisonSet(
+      'N1',
+      [row('N1', { ranking: 1 }), row('N-SISTER', { ranking: 2 }), row('C1', { ranking: 3 })] as never,
+      observedAt,
+      new Set(['N1', 'N-SISTER']),
+    );
+    expect(sister?.advertisements.filter((item) => item.isMine).map((item) => item.articleNo)).toEqual([
+      'N1',
+      'N-SISTER',
+    ]);
   });
 });

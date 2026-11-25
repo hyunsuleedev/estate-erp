@@ -1,6 +1,6 @@
 import { createPublicListingsApi } from './modules/public-listings.js';
 import type { ApiClientConfig } from "./types.js";
-import { ApiError } from "./types.js";
+import { ApiError, ApiNetworkError } from "./types.js";
 import { createAuthApi } from "./modules/auth.js";
 import { createPropertiesApi } from "./modules/properties.js";
 import { createListingIntakesApi } from "./modules/listing-intakes.js";
@@ -21,7 +21,7 @@ import { createProjectsApi } from "./modules/projects.js";
 import { createBuyerRequirementsApi } from "./modules/buyer-requirements.js";
 import { createCalendarEventsApi } from "./modules/calendar-events.js";
 import { createPropertyContactsApi } from "./modules/property-contacts.js";
-import { createContactRelationsApi } from "./modules/contact-relations.js";
+import { createPartiesApi } from "./modules/parties.js";
 import { createTenantsApi } from "./modules/tenants.js";
 import { createOfficeSitesApi } from "./modules/office-sites.js";
 import { createEmployeesApi } from "./modules/employees.js";
@@ -38,7 +38,6 @@ import { createServiceVendorsApi } from "./modules/service-vendors.js";
 import { createNotificationsApi } from "./modules/notifications.js";
 import { createNoticesApi } from "./modules/notices.js";
 import { createNetworkApi } from "./modules/network.js";
-import { createDashboardApi } from "./modules/dashboard.js";
 import { createActivityLogsApi } from "./modules/activity-logs.js";
 import { createCtiApi } from "./modules/cti.js";
 
@@ -100,7 +99,14 @@ export async function request<T>(
   }
 
   const token = (await config.getToken?.()) ?? null;
-  const res = await executeRequest(config, url, method, body, token);
+  let res: Response;
+  try {
+    res = await executeRequest(config, url, method, body, token);
+  } catch (error) {
+    // fetch는 서버에 닿지 못하면 TypeError를 던진다. 그 밖의 오류(요청 취소 등)는 그대로 올린다.
+    if (error instanceof TypeError) throw new ApiNetworkError(error);
+    throw error;
+  }
 
   if (res.status === 401) {
     config.onAuthFailure?.({ hadBearer: Boolean(token) });
@@ -145,7 +151,7 @@ export function createApiClient(config: ApiClientConfig) {
     buyerRequirements: createBuyerRequirementsApi(req),
     calendarEvents: createCalendarEventsApi(req),
     propertyContacts: createPropertyContactsApi(req),
-    contactRelations: createContactRelationsApi(req),
+    parties: createPartiesApi(req),
     tenants: createTenantsApi(req),
     officeSites: createOfficeSitesApi(req),
     employees: createEmployeesApi(req),
@@ -162,7 +168,6 @@ export function createApiClient(config: ApiClientConfig) {
     notifications: createNotificationsApi(req),
     notices: createNoticesApi(req),
     network: createNetworkApi(req),
-    dashboard: createDashboardApi(req),
     activityLogs: createActivityLogsApi(req),
     cti: createCtiApi(req),
   };

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { ContractTransactionType, CONTRACT_TRANSACTION_TYPE_LABELS, CONTRACT_DOCUMENT_KIND_SET, createResidentialSaleAgreementDraft, mergeResidentialSaleAgreementMetadata, readResidentialSaleAgreement, sanitizeContractRichTextValue, validateResidentialSaleAgreement, type ResidentialSaleAgreementDraft, formatUnitName } from '@estate-erp/shared';
@@ -12,9 +12,50 @@ import {
   decryptContractPartyField,
   encryptContractPartyField,
 } from './contract-party-crypto.util';
-import { normalizePhone } from '../contacts/contact-phone.utils';
+import { normalizePhone, withPrimaryPhone } from '../contacts/contact-phone.utils';
 
 const CONTRACT_TRANSACTION_TYPES = new Set<string>(Object.values(ContractTransactionType));
+
+/**
+ * 이름 모르는 번호로 저장한 연락처의 임시 이름 ("미확인 5678").
+ * TODO: 연락처 모듈의 공용 판별 함수가 정해지면 그것을 쓴다.
+ */
+const UNCONFIRMED_CONTACT_NAME = /^미확인 \d{4}$/;
+
+/** 문서 metadata 에서 서식 엔진의 입력 칸 묶음을 꺼낸다 (documentEngine.fields → engine.fields → fields). */
+function readDocumentEngineFields(
+  metadata: Prisma.InputJsonValue | undefined,
+): Record<string, unknown> | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const record = metadata as Record<string, unknown>;
+  for (const key of ['documentEngine', 'engine'] as const) {
+    const container = record[key];
+    if (container && typeof container === 'object' && !Array.isArray(container)) {
+      const fields = (container as Record<string, unknown>).fields;
+      if (fields && typeof fields === 'object' && !Array.isArray(fields)) {
+        return fields as Record<string, unknown>;
+      }
+    }
+  }
+  const legacy = record.fields;
+  return legacy && typeof legacy === 'object' && !Array.isArray(legacy)
+    ? (legacy as Record<string, unknown>)
+    : null;
+}
+
+function fieldText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '';
+}
+
+/** 계약서 상태: 작성중 → 서명완료 → 계약금 완료 → 잔금 완료 → 등기 완료, 그리고 취소 */
+const CONTRACT_STATUSES = new Set<string>([
+  'draft',
+  'signed',
+  'depositPaid',
+  'balancePaid',
+  'registered',
+  'cancelled',
+]);
 
 /** 레거시 DMLS001Q01 Date_Clsf 대응 — 날짜 검색 기준 컬럼 */
 const CONTRACT_DATE_FIELDS = [
@@ -103,25 +144,32 @@ const contractInclude = {
           },
         },
       },
-      buyerContact: { include: contactWithPhonesInclude },
-      sellerContact: { include: contactWithPhonesInclude },
     },
   },
-  buyerContact: { include: contactWithPhonesInclude },
-  sellerContact: { include: contactWithPhonesInclude },
   documents: {
     include: contractDocumentInclude,
     // 레거시 Orde(탭 순서) → Cntr_Clsf_Orde(동일 서식 반복 순번) 정렬
     orderBy: [{ sortOrder: 'asc' }, { kindOrder: 'asc' }, { createdAt: 'asc' }],
   },
-  parties: true,
+  parties: {
+    include: {
+      contact: { include: contactWithPhonesInclude },
+    },
+  },
 } satisfies Prisma.ContractInclude;
 
 type ContractWithRelations = Prisma.ContractGetPayload<{
   include: typeof contractInclude;
 }>;
 
-type ContractPartyRecord = Prisma.ContractPartyGetPayload<Record<string, never>>;
+type ContractPartyRecord = Prisma.ContractPartyGetPayload<Record<string, never>> & {
+  contact?: {
+    id: string;
+    kind?: string;
+    name: string;
+    phones: Array<{ phone: string; label?: string; isPrimary: boolean }>;
+  } | null;
+};
 
 /** 기존 당사자 행의 보존 대상 정보 — 이름 일치 검증 + 저장된 idNumber(암호문) */
 type ExistingPartyIdNumber = {
@@ -398,7 +446,7 @@ export class ContractsService {
     });
 
     if (!contract) {
-      throw new NotFoundException('Contract not found');
+      throw new NotFoundException('계약서를 찾을 수 없습니다.');
     }
 
     return this.enrichContract(contract);
@@ -409,16 +457,39 @@ export class ContractsService {
       ? await this.prisma.deal.findFirst({
           where: { id: dto.dealId, officeId },
           include: {
-            listing: true,
-            buyerContact: true,
-            sellerContact: true,
+            listing: {
+              include: {
+                property: {
+                  include: {
+                    propertyContacts: {
+                      where: { status: 'active', role: { in: ['owner', 'co_owner'] } },
+                      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+                      select: { contactId: true },
+                    },
+                  },
+                },
+              },
+            },
+            buyerIntake: {
+              include: {
+                contacts: {
+                  orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+                  select: { contactId: true },
+                },
+              },
+            },
             contract: { select: { id: true } },
+            payments: {
+              where: { status: { not: 'cancelled' } },
+              orderBy: [{ sequence: 'asc' }],
+              select: { kind: true, scheduledAmount: true, scheduledDate: true },
+            },
           },
         })
       : null;
 
     if (dto.dealId && !deal) {
-      throw new NotFoundException('Deal not found');
+      throw new NotFoundException('거래를 찾을 수 없습니다.');
     }
 
     if (deal?.contract) {
@@ -431,9 +502,22 @@ export class ContractsService {
       throw new BadRequestException('거래 유형이 지정되지 않았습니다.');
     }
     this.assertContractTransactionType(transactionType);
+    if (dto.status !== undefined && !CONTRACT_STATUSES.has(dto.status)) {
+      throw new BadRequestException('계약서 상태를 다시 골라 주세요.');
+    }
 
-    const buyerContactId = dto.buyerContactId ?? deal?.buyerContactId ?? null;
-    const sellerContactId = dto.sellerContactId ?? deal?.sellerContactId ?? null;
+    // 보낸 연락처가 우리 사무소 것인지 본다 (다른 사무소 손님의 이름·전화번호가 계약서에 실리지 않게)
+    await this.assertContactsInOffice(officeId, [dto.buyerContactId, dto.sellerContactId]);
+    const buyerContactId =
+      dto.buyerContactId ??
+      deal?.buyerContactId ??
+      deal?.buyerIntake?.contacts?.[0]?.contactId ??
+      null;
+    const sellerContactId =
+      dto.sellerContactId ??
+      deal?.sellerContactId ??
+      deal?.listing?.property?.propertyContacts?.[0]?.contactId ??
+      null;
 
     if (deal && (!buyerContactId || !sellerContactId)) {
       throw new BadRequestException('거래 당사자가 연결된 뒤 계약서를 생성할 수 있습니다.');
@@ -462,72 +546,164 @@ export class ContractsService {
       );
     }
 
-    const contract = await this.prisma.contract.create({
-      data: {
-        officeId,
-        dealId: dto.dealId ?? null,
-        transactionType,
-        buyerContactId,
-        sellerContactId,
-        totalPrice,
-        monthlyRent: periodicRent,
-        status: dto.status ?? 'draft',
-        contractDate: this.toDate(dto.contractDate),
-        statedDeposit: dto.statedDeposit,
-        statedInterimPayment: dto.statedInterimPayment,
-        statedInterimDate: this.toDate(dto.statedInterimDate),
-        statedBalance: dto.statedBalance,
-        statedBalanceDate: this.toDate(dto.statedBalanceDate),
-        moveInDate: this.toDate(dto.moveInDate),
-        leaseStartDate: this.toDate(dto.leaseStartDate),
-        leaseEndDate: this.toDate(dto.leaseEndDate),
-        // 특약(rich text HTML)은 방어적 새니타이즈 후 저장 (plain text 는 그대로)
-        specialTerms: sanitizeContractRichTextValue(
-          dto.specialTerms ?? deal?.specialTerms ?? undefined,
-        ),
-        attachments: dto.attachments ?? [],
-        memo: dto.memo,
-      },
-      include: this.contractInclude,
+    // 거래에 이미 넣은 대금 일정·입주일을 계약서의 처음 값으로 옮긴다 (같은 것을 두 번 입력하지 않게).
+    // 보낸 값이 있으면 그 값이 먼저다.
+    const scheduled = deal ? this.statedAmountsFromDealPayments(deal.payments ?? []) : null;
+
+    const contract = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.contract.create({
+        data: {
+          officeId,
+          dealId: dto.dealId ?? null,
+          transactionType,
+          totalPrice,
+          monthlyRent: periodicRent,
+          status: dto.status ?? 'draft',
+          contractDate: this.toDate(dto.contractDate),
+          statedDeposit: dto.statedDeposit ?? scheduled?.deposit,
+          statedInterimPayment: dto.statedInterimPayment ?? scheduled?.interim,
+          statedInterimDate: this.toDate(dto.statedInterimDate) ?? scheduled?.interimDate,
+          statedBalance: dto.statedBalance ?? scheduled?.balance,
+          statedBalanceDate: this.toDate(dto.statedBalanceDate) ?? scheduled?.balanceDate,
+          moveInDate: this.toDate(dto.moveInDate) ?? deal?.agreedMoveInDate ?? undefined,
+          leaseStartDate: this.toDate(dto.leaseStartDate),
+          leaseEndDate: this.toDate(dto.leaseEndDate),
+          // 특약(rich text HTML)은 방어적 새니타이즈 후 저장 (plain text 는 그대로)
+          specialTerms: sanitizeContractRichTextValue(
+            dto.specialTerms ?? deal?.specialTerms ?? undefined,
+          ),
+          attachments: dto.attachments ?? [],
+          memo: dto.memo,
+        },
+        include: this.contractInclude,
+      });
+
+      const seedIds = Array.from(
+        new Set([sellerContactId, buyerContactId].filter((value): value is string => Boolean(value))),
+      );
+      if (seedIds.length > 0) {
+        const contacts = await tx.contact.findMany({
+          where: { officeId, id: { in: seedIds } },
+          include: contactWithPhonesInclude,
+        });
+        const contactMap = new Map(contacts.map((contact) => [contact.id, contact]));
+        const isLease =
+          transactionType === ContractTransactionType.JEONSE ||
+          transactionType === ContractTransactionType.MONTHLY ||
+          transactionType === ContractTransactionType.YEARLY;
+        const seededParties: ContractPartyRecord[] = [];
+        for (const [side, contactId] of [
+          ['one', sellerContactId],
+          ['two', buyerContactId],
+        ] as const) {
+          if (!contactId) continue;
+          const contact = contactMap.get(contactId);
+          if (!contact) continue;
+          const primaryPhone = this.primaryPhone(contact.phones ?? []);
+          const mobilePhone =
+            contact.phones?.find((item) => item.label === 'mobile')?.phone ?? primaryPhone;
+          const createdParty = await tx.contractParty.create({
+            data: {
+              officeId,
+              contractId: created.id,
+              side,
+              subId: 1,
+              role: side === 'one' ? (isLease ? 'lessor' : 'seller') : isLease ? 'lessee' : 'buyer',
+              name: contact.name,
+              phone: primaryPhone ? encryptContractPartyField(primaryPhone) : null,
+              mobilePhone: mobilePhone ? encryptContractPartyField(mobilePhone) : null,
+              contactId: contact.id,
+            },
+            include: { contact: { include: contactWithPhonesInclude } },
+          });
+          if (createdParty) {
+            seededParties.push(createdParty as ContractPartyRecord);
+          }
+        }
+        if (seededParties.length > 0) {
+          created.parties = seededParties as typeof created.parties;
+        }
+      }
+
+      return created;
     });
 
     return this.enrichContract(contract as ContractWithRelations);
   }
 
   async update(id: string, officeId: string, dto: ContractUpdateDto) {
-    await this.findOne(id, officeId);
+    const existing = await this.findOne(id, officeId);
+    await this.assertContactsInOffice(officeId, [dto.buyerContactId, dto.sellerContactId]);
+
+    if (dto.status !== undefined && !CONTRACT_STATUSES.has(dto.status)) {
+      throw new BadRequestException('계약서 상태를 다시 골라 주세요.');
+    }
+    // 초안을 넘어서는 상태(서명완료·입금·등기)로 바꿀 때는 당사자 이름이 확인돼 있어야 한다.
+    // 이름 모르는 번호로 저장한 연락처("미확인 5678")가 계약서 당사자로 남지 않게 한다.
+    if (dto.status !== undefined && dto.status !== 'draft' && dto.status !== 'cancelled') {
+      await this.assertPartyNamesConfirmed(id, officeId, dto);
+    }
 
     if (dto.transactionType !== undefined) {
       this.assertContractTransactionType(dto.transactionType);
     }
 
-    const contract = await this.prisma.contract.update({
-      where: { id },
-      data: {
-        transactionType: dto.transactionType,
-        buyerContactId: dto.buyerContactId,
-        sellerContactId: dto.sellerContactId,
-        totalPrice: dto.totalPrice,
-        monthlyRent: dto.monthlyRent,
-        status: dto.status,
-        contractDate: this.toNullableDate(dto.contractDate),
-        statedDeposit: dto.statedDeposit,
-        statedInterimPayment: dto.statedInterimPayment,
-        statedInterimDate: this.toNullableDate(dto.statedInterimDate),
-        statedBalance: dto.statedBalance,
-        statedBalanceDate: this.toNullableDate(dto.statedBalanceDate),
-        moveInDate: this.toNullableDate(dto.moveInDate),
-        leaseStartDate: this.toNullableDate(dto.leaseStartDate),
-        leaseEndDate: this.toNullableDate(dto.leaseEndDate),
-        // 특약(rich text HTML)은 방어적 새니타이즈 후 저장 (plain text 는 그대로)
-        specialTerms: sanitizeContractRichTextValue(dto.specialTerms),
-        attachments: dto.attachments,
-        memo: dto.memo,
-      },
-      include: this.contractInclude,
+    const contract = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.contract.update({
+        where: { id },
+        data: {
+          transactionType: dto.transactionType,
+          totalPrice: dto.totalPrice,
+          monthlyRent: dto.monthlyRent,
+          status: dto.status,
+          contractDate: this.toNullableDate(dto.contractDate),
+          statedDeposit: dto.statedDeposit,
+          statedInterimPayment: dto.statedInterimPayment,
+          statedInterimDate: this.toNullableDate(dto.statedInterimDate),
+          statedBalance: dto.statedBalance,
+          statedBalanceDate: this.toNullableDate(dto.statedBalanceDate),
+          moveInDate: this.toNullableDate(dto.moveInDate),
+          leaseStartDate: this.toNullableDate(dto.leaseStartDate),
+          leaseEndDate: this.toNullableDate(dto.leaseEndDate),
+          // 특약(rich text HTML)은 방어적 새니타이즈 후 저장 (plain text 는 그대로)
+          specialTerms: sanitizeContractRichTextValue(dto.specialTerms),
+          attachments: dto.attachments,
+          memo: dto.memo,
+        },
+        include: this.contractInclude,
+      });
+
+      const txType = dto.transactionType ?? existing.transactionType;
+      const isLease =
+        txType === ContractTransactionType.JEONSE ||
+        txType === ContractTransactionType.MONTHLY ||
+        txType === ContractTransactionType.YEARLY;
+      for (const [side, contactId] of [
+        ['one', dto.sellerContactId],
+        ['two', dto.buyerContactId],
+      ] as const) {
+        if (contactId === undefined) continue;
+        await this.syncPrimarySidePartyContact(tx, {
+          officeId,
+          contractId: id,
+          side,
+          role: side === 'one' ? (isLease ? 'lessor' : 'seller') : isLease ? 'lessee' : 'buyer',
+          contactId,
+        });
+      }
+
+      if (dto.sellerContactId !== undefined || dto.buyerContactId !== undefined) {
+        const refreshed = await tx.contractParty.findMany({
+          where: { contractId: id, officeId },
+          include: { contact: { include: contactWithPhonesInclude } },
+        });
+        updated.parties = refreshed as typeof updated.parties;
+      }
+
+      return updated;
     });
 
-    return this.enrichContract(contract);
+    return this.enrichContract(contract as ContractWithRelations);
   }
 
   /**
@@ -546,7 +722,7 @@ export class ContractsService {
     });
 
     if (!contract) {
-      throw new NotFoundException('Contract not found');
+      throw new NotFoundException('계약서를 찾을 수 없습니다.');
     }
 
     for (const party of dto.parties) {
@@ -844,7 +1020,7 @@ export class ContractsService {
     });
 
     if (!template) {
-      throw new NotFoundException('Office print template not found');
+      throw new NotFoundException('인쇄 양식을 찾을 수 없습니다.');
     }
 
     const nextType = dto.type ?? template.type;
@@ -881,7 +1057,7 @@ export class ContractsService {
     });
 
     if (!template) {
-      throw new NotFoundException('Office print template not found');
+      throw new NotFoundException('인쇄 양식을 찾을 수 없습니다.');
     }
 
     if (template.isDefault) {
@@ -952,7 +1128,7 @@ export class ContractsService {
     });
 
     if (!template) {
-      throw new NotFoundException('Contract clause template not found');
+      throw new NotFoundException('특약 문구를 찾을 수 없습니다.');
     }
 
     const nextType = dto.type ?? template.type;
@@ -994,7 +1170,7 @@ export class ContractsService {
     });
 
     if (!template) {
-      throw new NotFoundException('Contract clause template not found');
+      throw new NotFoundException('특약 문구를 찾을 수 없습니다.');
     }
 
     if (template.isDefault) {
@@ -1137,7 +1313,7 @@ export class ContractsService {
       orderBy: revisionId ? undefined : { revisionNo: 'desc' },
     });
     if (revisionId && !revision) {
-      throw new NotFoundException('Contract document revision not found');
+      throw new NotFoundException('문서의 이전 판을 찾을 수 없습니다.');
     }
 
     const agreement = readResidentialSaleAgreement(
@@ -1181,7 +1357,7 @@ export class ContractsService {
     });
 
     if (!revision) {
-      throw new NotFoundException('Contract document revision not found');
+      throw new NotFoundException('문서의 이전 판을 찾을 수 없습니다.');
     }
     if (expectedContentHash && revision.contentHash !== expectedContentHash) {
       throw new BadRequestException(
@@ -1280,7 +1456,7 @@ export class ContractsService {
       dto.kindOrder ??
       (kind ? await this.nextDocumentKindOrder(contractId, officeId, kind) : 1);
 
-    return this.prisma.contractDocument.create({
+    const created = await this.prisma.contractDocument.create({
       data: {
         officeId,
         contractId,
@@ -1307,6 +1483,97 @@ export class ContractsService {
       },
       include: contractDocumentInclude,
     });
+
+    const summarySync = await this.syncContractSummaryFromDocument(
+      contractId,
+      officeId,
+      contract.transactionType,
+      category,
+      metadata,
+    );
+    return { ...created, summarySync };
+  }
+
+  /**
+   * 계약서 문서(category 'contract')를 저장하면 그 문서의 금액·날짜 칸으로 계약서 요약
+   * (목록·옆 패널의 총액, 계약금, 중도금, 잔금, 잔금일 D-day)을 맞춘다. 같은 값이 두 곳에서
+   * 다르게 보이지 않게 하기 위해서다.
+   *
+   * - 문서 칸이 비어 있으면 요약을 지우지 않는다. 값이 있을 때만 덮는다.
+   * - 읽지 못한 값(숫자가 아닌 금액, 날짜 형식이 아닌 날짜)은 요약을 그대로 두고 unreadable 로 알린다.
+   * - 거래(Deal)의 대금 일정은 건드리지 않는다. 다르면 화면이 알려 주고 사람이 맞춘다.
+   * - 부속 서식(확인설명서 등)은 주 계약서 값을 이어 받아 쓰므로 요약을 바꾸지 않는다.
+   */
+  private async syncContractSummaryFromDocument(
+    contractId: string,
+    officeId: string,
+    transactionType: string,
+    category: string | null | undefined,
+    metadata: Prisma.InputJsonValue | undefined,
+  ): Promise<{ updated: string[]; unreadable: string[] }> {
+    const result = { updated: [] as string[], unreadable: [] as string[] };
+    if (category !== 'contract') return result;
+    const fields = readDocumentEngineFields(metadata);
+    if (!fields) return result;
+
+    const data: Prisma.ContractUpdateInput = {};
+    const readAmount = (key: string, label: string) => {
+      const text = fieldText(fields[key]).replace(/,/g, '');
+      if (!text) return undefined;
+      if (!/^\d+$/.test(text) || Number(text) > 2_147_483_647) {
+        result.unreadable.push(label);
+        return undefined;
+      }
+      return Number(text);
+    };
+    const readDate = (key: string, label: string) => {
+      const text = fieldText(fields[key]);
+      if (!text) return undefined;
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(text) : new Date(NaN);
+      if (Number.isNaN(date.getTime())) {
+        result.unreadable.push(label);
+        return undefined;
+      }
+      return date;
+    };
+    const put = <K extends keyof Prisma.ContractUpdateInput>(
+      target: K,
+      label: string,
+      value: Prisma.ContractUpdateInput[K] | undefined,
+    ) => {
+      if (value === undefined) return;
+      data[target] = value;
+      result.updated.push(label);
+    };
+
+    const isLease = ['jeonse', 'monthly', 'yearly', 'sublease'].includes(transactionType);
+    if (transactionType === 'sale') put('totalPrice', '매매대금', readAmount('salePrice', '매매대금'));
+    if (isLease) put('totalPrice', '보증금', readAmount('deposit', '보증금'));
+    if (transactionType === 'monthly' || transactionType === 'sublease') {
+      put('monthlyRent', '차임', readAmount('monthlyRent', '차임'));
+    }
+    if (transactionType === 'yearly') put('monthlyRent', '연 차임', readAmount('annualRent', '연 차임'));
+    put('statedDeposit', '계약금', readAmount('downPayment', '계약금'));
+
+    // 중도금이 두 번이면 합해서 적고 날짜는 1차로 둔다 (요약 칸이 하나다)
+    const interim1 = readAmount('interimPayment', '중도금');
+    const interim2 = readAmount('interimPayment2', '2차 중도금');
+    if (interim1 !== undefined || interim2 !== undefined) {
+      put('statedInterimPayment', '중도금', (interim1 ?? 0) + (interim2 ?? 0));
+    }
+    put('statedInterimDate', '중도금일', readDate('interimPaymentDate', '중도금일'));
+    put('statedBalance', '잔금', readAmount('balancePayment', '잔금'));
+    put('statedBalanceDate', '잔금일', readDate('balancePaymentDate', '잔금일'));
+    put('contractDate', '계약일', readDate('contractDate', '계약일'));
+    if (isLease) {
+      put('leaseStartDate', '임대 시작일', readDate('leaseStartDate', '임대 시작일'));
+      put('leaseEndDate', '임대 종료일', readDate('leaseEndDate', '임대 종료일'));
+    }
+
+    if (Object.keys(data).length > 0) {
+      await this.prisma.contract.updateMany({ where: { id: contractId, officeId }, data });
+    }
+    return result;
   }
 
   async updateDocument(
@@ -1320,6 +1587,7 @@ export class ContractsService {
       select: {
         id: true,
         status: true,
+        category: true,
         metadata: true,
         template: { select: { code: true } },
         contract: { select: { transactionType: true } },
@@ -1327,7 +1595,7 @@ export class ContractsService {
     });
 
     if (!document) {
-      throw new NotFoundException('Contract document not found');
+      throw new NotFoundException('문서를 찾을 수 없습니다.');
     }
 
     const nextTemplate = dto.templateId
@@ -1350,7 +1618,7 @@ export class ContractsService {
       metadata: metadata ?? document.metadata,
     });
 
-    return this.prisma.contractDocument.update({
+    const updated = await this.prisma.contractDocument.update({
       where: { id: documentId },
       data: {
         templateId: dto.templateId,
@@ -1373,6 +1641,15 @@ export class ContractsService {
       },
       include: contractDocumentInclude,
     });
+
+    const summarySync = await this.syncContractSummaryFromDocument(
+      contractId,
+      officeId,
+      document.contract.transactionType,
+      dto.category ?? document.category,
+      metadata,
+    );
+    return { ...updated, summarySync };
   }
 
   /**
@@ -1399,7 +1676,7 @@ export class ContractsService {
     });
 
     if (!source) {
-      throw new NotFoundException('Contract document not found');
+      throw new NotFoundException('문서를 찾을 수 없습니다.');
     }
 
     const sortOrder = await this.nextDocumentSortOrder(contractId, officeId);
@@ -1454,7 +1731,7 @@ export class ContractsService {
     });
 
     if (!contract) {
-      throw new NotFoundException('Contract not found');
+      throw new NotFoundException('계약서를 찾을 수 없습니다.');
     }
 
     const allDocuments = contract.documents ?? [];
@@ -1517,7 +1794,26 @@ export class ContractsService {
   async remove(id: string, officeId: string) {
     await this.assertContract(id, officeId);
 
-    await this.prisma.contract.delete({ where: { id } });
+    // 중도금/잔금 이후 거래는 계약서가 있어야 한다(거래 단계 규칙). 그 계약서를 지우면 규칙이 깨진다.
+    const linked = await this.prisma.contract.findFirst({
+      where: { id, officeId },
+      select: { deal: { select: { stage: true, isCancelled: true } } },
+    });
+    if (
+      linked?.deal &&
+      !linked.deal.isCancelled &&
+      ['settling', 'completed', 'closed'].includes(linked.deal.stage)
+    ) {
+      throw new ConflictException(
+        '중도금/잔금 이후 단계의 거래에 연결된 계약서는 지울 수 없습니다. 거래 단계를 본계약으로 되돌린 뒤 지우거나, 거래를 취소해 주세요.',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      // 업무는 남기고 계약서 연결만 끊는다 (그대로 두면 FK 때문에 지워지지 않는다)
+      await tx.task.updateMany({ where: { contractId: id, officeId }, data: { contractId: null } });
+      await tx.contract.delete({ where: { id } });
+    });
 
     return { id, deleted: true };
   }
@@ -1533,7 +1829,7 @@ export class ContractsService {
     });
 
     if (!document) {
-      throw new NotFoundException('Contract document not found');
+      throw new NotFoundException('문서를 찾을 수 없습니다.');
     }
 
     await this.prisma.contractDocument.delete({ where: { id: documentId } });
@@ -1554,7 +1850,7 @@ export class ContractsService {
     });
 
     if (!document) {
-      throw new NotFoundException('Contract document not found');
+      throw new NotFoundException('문서를 찾을 수 없습니다.');
     }
 
     return document;
@@ -1567,7 +1863,7 @@ export class ContractsService {
     });
 
     if (!contract) {
-      throw new NotFoundException('Contract not found');
+      throw new NotFoundException('계약서를 찾을 수 없습니다.');
     }
 
     return contract;
@@ -1622,16 +1918,8 @@ export class ContractsService {
         conditions: '',
         explanationDeliveredAt: actualAgreementAt,
       },
-      seller: {
-        contactId: contract.sellerContact?.id ?? null,
-        name: contract.sellerContact?.name ?? '',
-        phone: this.primaryPhone(contract.sellerContact?.phones ?? []),
-      },
-      buyer: {
-        contactId: contract.buyerContact?.id ?? null,
-        name: contract.buyerContact?.name ?? '',
-        phone: this.primaryPhone(contract.buyerContact?.phones ?? []),
-      },
+      seller: this.resolveAgreementSideParty(contract.parties ?? [], 'one'),
+      buyer: this.resolveAgreementSideParty(contract.parties ?? [], 'two'),
       brokerage: {
         officeName: contract.office.name,
         registrationNo: contract.office.licenseNo ?? '',
@@ -1807,13 +2095,25 @@ export class ContractsService {
 
     // 당사자: side(one→two→office) → subId 정렬, 대리인은 parentId 로 중첩
     const parties = this.buildPartiesTree(
-      contract.parties ?? [],
+      (contract.parties ?? []) as ContractPartyRecord[],
       this.shouldMaskIdNumbers(contract.statedBalanceDate),
     );
+    const primarySellerParty = parties.find((party) => party.side === 'one') ?? null;
+    const primaryBuyerParty = parties.find((party) => party.side === 'two') ?? null;
+    const sellerContact = primarySellerParty?.contact
+      ? withPrimaryPhone(primarySellerParty.contact)
+      : null;
+    const buyerContact = primaryBuyerParty?.contact
+      ? withPrimaryPhone(primaryBuyerParty.contact)
+      : null;
 
     return {
       ...contract,
       parties,
+      sellerContactId: primarySellerParty?.contactId ?? null,
+      buyerContactId: primaryBuyerParty?.contactId ?? null,
+      sellerContact,
+      buyerContact,
       documentCount: activeDocuments.length,
       missingDocumentCount: missingTemplates.length,
       requiredDocuments: requiredTemplates.map((template) => template.title),
@@ -2098,12 +2398,13 @@ export class ContractsService {
     }
 
     if (searchField === 'party' || searchField === 'all') {
-      // 신규 ContractParty.name + 기존 대표 당사자(buyer/sellerContact.name) 모두
-      clauses.push(
-        { parties: { some: { name: contains } } },
-        { buyerContact: { name: contains } },
-        { sellerContact: { name: contains } },
-      );
+      clauses.push({
+        parties: {
+          some: {
+            OR: [{ name: contains }, { contact: { name: contains } }],
+          },
+        },
+      });
     }
 
     if (searchField === 'phone' || searchField === 'all') {
@@ -2115,39 +2416,25 @@ export class ContractsService {
         contains: canonicalPhone,
         mode: 'insensitive' as const,
       };
-      clauses.push(
-        {
-          parties: {
-            some: {
-              OR: [
-                { phone: contains },
-                { mobilePhone: contains },
-                ...(canonicalPhone
-                  ? [{
+      clauses.push({
+        parties: {
+          some: {
+            OR: [
+              { phone: contains },
+              { mobilePhone: contains },
+              ...(canonicalPhone
+                ? [
+                    {
                       contact: {
                         phones: { some: { phone: canonicalContains } },
                       },
-                    }]
-                  : []),
-              ],
-            },
+                    },
+                  ]
+                : []),
+            ],
           },
         },
-        ...(canonicalPhone
-          ? [
-              {
-                buyerContact: {
-                  phones: { some: { phone: canonicalContains } },
-                },
-              },
-              {
-                sellerContact: {
-                  phones: { some: { phone: canonicalContains } },
-                },
-              },
-            ]
-          : []),
-      );
+      });
     }
 
     if (searchField === 'partnerOffice' || searchField === 'all') {
@@ -2395,7 +2682,7 @@ export class ContractsService {
     });
 
     if (!contract) {
-      throw new NotFoundException('Contract not found');
+      throw new NotFoundException('계약서를 찾을 수 없습니다.');
     }
 
     return contract;
@@ -2411,7 +2698,7 @@ export class ContractsService {
     });
 
     if (!template) {
-      throw new NotFoundException('Contract document template not found');
+      throw new NotFoundException('문서 서식을 찾을 수 없습니다.');
     }
 
     return template;
@@ -2444,8 +2731,191 @@ export class ContractsService {
     );
   }
 
+  /** 연락처 id가 우리 사무소의 것인지 확인한다. 비운 값은 통과. */
+  private async assertContactsInOffice(officeId: string, ids: Array<string | null | undefined>) {
+    const contactIds = [...new Set(ids.filter((value): value is string => Boolean(value)))];
+    if (contactIds.length === 0) return;
+    if (contactIds.some((value) => !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value))) {
+      throw new BadRequestException('고른 연락처를 다시 골라 주세요.');
+    }
+    const owned = await this.prisma.contact.count({ where: { officeId, id: { in: contactIds } } });
+    if (owned !== contactIds.length) {
+      throw new NotFoundException('고른 연락처를 찾을 수 없습니다.');
+    }
+  }
+
+  /** 계약서의 매도(임)인·매수(임)인 연락처 이름이 임시 이름("미확인 5678")이면 막는다. */
+  private async assertPartyNamesConfirmed(
+    id: string,
+    officeId: string,
+    dto: { buyerContactId?: string; sellerContactId?: string },
+  ) {
+    const parties = await this.prisma.contractParty.findMany({
+      where: {
+        contractId: id,
+        officeId,
+        side: { in: ['one', 'two'] },
+        parentId: null,
+      },
+      select: { side: true, name: true, contactId: true },
+    });
+
+    const overrideMap = new Map<string, string | undefined>([
+      ['one', dto.sellerContactId],
+      ['two', dto.buyerContactId],
+    ]);
+    const contactIds = Array.from(
+      new Set(
+        [
+          dto.sellerContactId,
+          dto.buyerContactId,
+          ...parties
+            .filter((party) => overrideMap.get(party.side) === undefined)
+            .map((party) => party.contactId),
+        ].filter((value): value is string => Boolean(value)),
+      ),
+    );
+    const unconfirmedManualName = parties.some(
+      (party) =>
+        overrideMap.get(party.side) === undefined &&
+        !party.contactId &&
+        UNCONFIRMED_CONTACT_NAME.test(party.name.trim()),
+    );
+    if (unconfirmedManualName) {
+      throw new BadRequestException(
+        '이름이 확인되지 않은 연락처입니다. 연락처에서 이름을 먼저 넣어 주세요.',
+      );
+    }
+    if (contactIds.length === 0) return;
+    const contacts = await this.prisma.contact.findMany({
+      where: { officeId, id: { in: contactIds } },
+      select: { name: true },
+    });
+    if (contacts.some((contact) => UNCONFIRMED_CONTACT_NAME.test(contact.name.trim()))) {
+      throw new BadRequestException(
+        '이름이 확인되지 않은 연락처입니다. 연락처에서 이름을 먼저 넣어 주세요.',
+      );
+    }
+  }
+
+  private resolveAgreementSideParty(parties: ContractPartyRecord[], side: 'one' | 'two') {
+    const party = parties
+      .filter((item) => item.side === side && !item.parentId)
+      .sort((a, b) => a.subId - b.subId)[0];
+    if (!party) {
+      return { contactId: null, name: '', phone: '' };
+    }
+    const decryptedMobile =
+      (decryptContractPartyField(party.mobilePhone) as string | null) ?? null;
+    const decryptedPhone =
+      (decryptContractPartyField(party.phone) as string | null) ?? null;
+    return {
+      contactId: party.contactId ?? null,
+      name: party.name || party.contact?.name || '',
+      phone:
+        decryptedMobile ||
+        decryptedPhone ||
+        this.primaryPhone(party.contact?.phones ?? []),
+    };
+  }
+
+  private async syncPrimarySidePartyContact(
+    tx: Prisma.TransactionClient,
+    params: {
+      officeId: string;
+      contractId: string;
+      side: 'one' | 'two';
+      role: string;
+      contactId: string | null;
+    },
+  ) {
+    const existingRoot = await tx.contractParty.findFirst({
+      where: {
+        officeId: params.officeId,
+        contractId: params.contractId,
+        side: params.side,
+        parentId: null,
+      },
+      orderBy: { subId: 'asc' },
+    });
+    if (!params.contactId) {
+      if (existingRoot) {
+        await tx.contractParty.update({
+          where: { id: existingRoot.id },
+          data: { contactId: null },
+        });
+      }
+      return;
+    }
+    const contact = await tx.contact.findFirst({
+      where: { id: params.contactId, officeId: params.officeId },
+      include: contactWithPhonesInclude,
+    });
+    if (!contact) return;
+    const primaryPhone = this.primaryPhone(contact.phones ?? []);
+    const mobilePhone =
+      contact.phones?.find((item) => item.label === 'mobile')?.phone ?? primaryPhone;
+    const encryptedPhone = primaryPhone ? encryptContractPartyField(primaryPhone) : null;
+    const encryptedMobile = mobilePhone ? encryptContractPartyField(mobilePhone) : null;
+    if (existingRoot) {
+      await tx.contractParty.update({
+        where: { id: existingRoot.id },
+        data: {
+          contactId: contact.id,
+          name: contact.name,
+          phone: encryptedPhone ?? existingRoot.phone,
+          mobilePhone: encryptedMobile ?? existingRoot.mobilePhone,
+        },
+      });
+    } else {
+      await tx.contractParty.create({
+        data: {
+          officeId: params.officeId,
+          contractId: params.contractId,
+          side: params.side,
+          subId: 1,
+          role: params.role,
+          name: contact.name,
+          phone: encryptedPhone,
+          mobilePhone: encryptedMobile,
+          contactId: contact.id,
+        },
+      });
+    }
+  }
+
+  /**
+   * 거래의 대금 일정 → 계약서 명목 금액. 계약금은 계약금 줄(없으면 가계약금),
+   * 중도금은 차수를 더하고 날짜는 첫 차수, 잔금은 잔금 줄. 일정이 없으면 비운다.
+   */
+  private statedAmountsFromDealPayments(
+    payments: Array<{ kind: string; scheduledAmount: number; scheduledDate: Date | null }>,
+  ) {
+    const sum = (kind: string) =>
+      payments
+        .filter((payment) => payment.kind === kind)
+        .reduce((total, payment) => total + payment.scheduledAmount, 0);
+    const first = (kind: string) => payments.find((payment) => payment.kind === kind);
+    const deposit = sum('contract') || sum('pre_contract');
+    const interim = sum('interim');
+    const balance = sum('balance');
+    return {
+      deposit: deposit || undefined,
+      interim: interim || undefined,
+      interimDate: first('interim')?.scheduledDate ?? undefined,
+      balance: balance || undefined,
+      balanceDate: first('balance')?.scheduledDate ?? undefined,
+    };
+  }
+
   private toDate(value?: string) {
-    return value ? new Date(value) : undefined;
+    if (!value) return undefined;
+    const date = new Date(value);
+    // 형식이 틀린 날짜는 DB까지 가면 500이 난다
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('날짜 형식이 잘못되었습니다.');
+    }
+    return date;
   }
 
   private toNullableDate(value?: string | null) {
@@ -2453,7 +2923,7 @@ export class ContractsService {
       return null;
     }
 
-    return value ? new Date(value) : undefined;
+    return this.toDate(value ?? undefined);
   }
 
   private assertContractTransactionType(transactionType: string) {

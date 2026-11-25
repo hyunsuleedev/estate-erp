@@ -21,16 +21,25 @@ import {
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
 import { RealtimeService } from '../../realtime/realtime.service';
+import { buildPropertySearchWhere } from '../properties/property-search';
 import {
   buildIntakeConfirmationWhere,
   buildListingAvailabilityWhere,
   NON_CLOSED_INTAKE_WHERE,
   OCCUPYING_DEALS_SELECT,
 } from './listing-state';
+import { presentPropertyLease, propertyLeaseInclude } from '../tenants/tenants.service';
 import {
+  ACTIVE_LISTING_ADVERTISEMENT_OPEN_REQUESTS_INCLUDE,
   ACTIVE_LISTING_ADVERTISEMENT_WHERE,
   withActiveAdvertisementSummary,
 } from './listing-advertisement-summary';
+import {
+  assertCanDeleteListing,
+  assertValidListingMoney,
+  normalizeListingMoveIn,
+  pickUpdatableListingFields,
+} from './listing-input';
 
 const VALID_TRANSACTION_TYPES: ReadonlySet<string> = new Set(
   Object.values(TransactionType),
@@ -206,13 +215,13 @@ export class ListingsService {
       query.confirmationState &&
       !VALID_CONFIRMATION_STATES.has(query.confirmationState)
     ) {
-      throw new BadRequestException('Invalid confirmation state');
+      throw new BadRequestException('알 수 없는 확인 상태입니다.');
     }
     if (
       query.availability &&
       !VALID_LISTING_AVAILABILITIES.has(query.availability)
     ) {
-      throw new BadRequestException('Invalid listing availability');
+      throw new BadRequestException('알 수 없는 매물 상태입니다.');
     }
 
     const filters: Prisma.ListingWhereInput[] = [{ officeId }];
@@ -317,6 +326,7 @@ export class ListingsService {
 
     if (query.search) {
       const canonicalPhone = normalizePhone(query.search);
+      const propertySearch = buildPropertySearchWhere(query.search);
       filters.push({
         OR: [
           { property: { site: { name: { contains: query.search, mode: 'insensitive' } } } },
@@ -382,6 +392,8 @@ export class ListingsService {
               }]
             : []),
           { memo: { contains: query.search, mode: 'insensitive' } },
+          // "108동 1505호"·"고덕그라시움 108동"처럼 낱말을 나눠 적어도 찾게(단지·동·호를 낱말마다 본다)
+          ...(propertySearch ? [{ property: propertySearch }] : []),
         ],
       });
     }
@@ -422,8 +434,8 @@ export class ListingsService {
                 },
               },
               propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
-              tenants: {
-                include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+              leases: {
+                include: propertyLeaseInclude,
                 orderBy: { createdAt: 'desc' },
               },
               listings: {
@@ -461,6 +473,7 @@ export class ListingsService {
                   advertisements: {
                     where: ACTIVE_LISTING_ADVERTISEMENT_WHERE,
                     orderBy: { createdAt: 'desc' },
+                    include: ACTIVE_LISTING_ADVERTISEMENT_OPEN_REQUESTS_INCLUDE,
                   },
                 },
               },
@@ -469,6 +482,7 @@ export class ListingsService {
           advertisements: {
             where: ACTIVE_LISTING_ADVERTISEMENT_WHERE,
             orderBy: { createdAt: 'desc' },
+            include: ACTIVE_LISTING_ADVERTISEMENT_OPEN_REQUESTS_INCLUDE,
           },
           priceHistories: {
             orderBy: { createdAt: 'desc' },
@@ -598,8 +612,8 @@ export class ListingsService {
               },
             },
             propertyContacts: { include: { contact: { include: { phones: contactPhonesIncludeOrdered } } } },
-            tenants: {
-              include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
+            leases: {
+              include: propertyLeaseInclude,
               orderBy: { createdAt: 'desc' },
             },
             listings: {
@@ -609,6 +623,7 @@ export class ListingsService {
                 deals: OCCUPYING_DEALS_SELECT,
                 advertisements: {
                   orderBy: { createdAt: 'desc' },
+                  include: ACTIVE_LISTING_ADVERTISEMENT_OPEN_REQUESTS_INCLUDE,
                 },
               },
             },
@@ -616,6 +631,7 @@ export class ListingsService {
         },
         advertisements: {
           orderBy: { createdAt: 'desc' },
+          include: ACTIVE_LISTING_ADVERTISEMENT_OPEN_REQUESTS_INCLUDE,
         },
         matches: true,
         deals: true,
@@ -631,15 +647,17 @@ export class ListingsService {
     });
 
     if (!listing) {
-      throw new NotFoundException('Listing not found');
+      throw new NotFoundException('거래 조건을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
     return this.withContactPhones(listing);
   }
 
-  async create(officeId: string, dto: ListingCreateDto) {
+  async create(officeId: string, input: ListingCreateDto) {
+    const dto = normalizeListingMoveIn(input);
     this.assertValidTransactionType(dto.transactionType);
     this.assertValidMaintenanceFeeIncludes(dto.maintenanceFeeIncludes);
+    assertValidListingMoney(dto);
 
     // Verify the property exists and belongs to this office
     const property = await this.prisma.property.findFirst({
@@ -647,7 +665,7 @@ export class ListingsService {
     });
 
     if (!property) {
-      throw new NotFoundException('Property not found');
+      throw new NotFoundException('매물을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
     const intake = await this.resolveNonClosedIntakeForCreate(
@@ -696,13 +714,16 @@ export class ListingsService {
   }
 
   async update(id: string, officeId: string, dto: ListingUpdateDto) {
-    const { expectedUpdatedAt, ...patch } = dto;
+    const { expectedUpdatedAt } = dto;
+    // 요청 본문을 그대로 쓰면 officeId·propertyId·intakeId 같은 칸까지 바뀐다 — 고칠 수 있는 칸만 받는다.
+    const patch = normalizeListingMoveIn(pickUpdatableListingFields(dto));
+    assertValidListingMoney(patch);
     const existingListing = await this.prisma.listing.findFirst({
       where: { id, officeId },
     });
 
     if (!existingListing) {
-      throw new NotFoundException('Listing not found');
+      throw new NotFoundException('거래 조건을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
     const nextTransactionType =
@@ -774,10 +795,63 @@ export class ListingsService {
     return listing;
   }
 
-  async remove(id: string, officeId: string) {
-    const listing = await this.findOne(id, officeId);
+  /**
+   * 거래 조건 하나를 지운다. 가격 이력은 함께 지운다(가격 이력은 조건 없이 남을 수 없다).
+   * 매칭·거래·공동중개망 공유가 걸린 조건은 지우지 않는다 — 그 기록이 가리킬 곳을 잃기 때문이다.
+   * 의뢰의 마지막 조건이었고 프로젝트에 담기지 않은 의뢰면 의뢰도 지운다.
+   * 조건 없는 빈 의뢰가 목록에 "활성" 줄로 남아 지울 방법이 없던 문제 때문이다.
+   * (상담·업무·일정은 의뢰 연결만 풀리고 매물·연락처 연결은 남는다)
+   */
+  async remove(id: string, officeId: string, role?: string | null) {
+    assertCanDeleteListing(role);
 
-    const deleted = await this.prisma.listing.delete({ where: { id } });
+    const { listing, deleted, intakeRemoved } = await this.prisma.$transaction(async (tx) => {
+      // 줄을 잠그고 그 뒤에 검사한다. 검사와 삭제 사이에 거래·매칭이 생기면 FK(SET NULL)로
+      // 매물 연결이 조용히 끊기기 때문이다. 잠근 동안 다른 요청의 거래 만들기는 기다렸다가 실패한다.
+      await tx.$executeRaw`SELECT id FROM listings WHERE id = ${id}::uuid AND office_id = ${officeId}::uuid FOR UPDATE`;
+      const found = await tx.listing.findFirst({
+        where: { id, officeId },
+        select: {
+          id: true,
+          propertyId: true,
+          intakeId: true,
+          intake: { select: { projectId: true } },
+          _count: {
+            select: { matches: true, deals: true, networkSharedProperties: true },
+          },
+        },
+      });
+
+      if (!found) {
+        throw new NotFoundException('거래 조건을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
+      }
+      if (found._count.deals > 0) {
+        throw new ConflictException(
+          '거래가 연결된 거래 조건은 지울 수 없습니다. 매물을 종료로 바꿔 주세요.',
+        );
+      }
+      if (found._count.matches > 0) {
+        throw new ConflictException(
+          '매칭된 손님이 있는 거래 조건은 지울 수 없습니다. 매칭을 먼저 정리하거나 매물을 종료로 바꿔 주세요.',
+        );
+      }
+      if (found._count.networkSharedProperties > 0) {
+        throw new ConflictException(
+          '공동중개망에 공유한 거래 조건은 지울 수 없습니다. 공유를 먼저 내려 주세요.',
+        );
+      }
+
+      await tx.priceHistory.deleteMany({ where: { officeId, listingId: id } });
+      const removed = await tx.listing.delete({ where: { id } });
+      const remaining = await tx.listing.count({
+        where: { officeId, intakeId: found.intakeId },
+      });
+      const removeIntake = remaining === 0 && !found.intake.projectId;
+      if (removeIntake) {
+        await tx.listingIntake.delete({ where: { id: found.intakeId } });
+      }
+      return { listing: found, deleted: removed, intakeRemoved: removeIntake };
+    });
 
     this.realtime?.emitListingUpdated({
       officeId,
@@ -786,7 +860,7 @@ export class ListingsService {
       intakeId: listing.intakeId,
     });
 
-    return deleted;
+    return { ...deleted, intakeRemoved };
   }
 
   private resolveSortField(sortBy?: string) {
@@ -802,7 +876,8 @@ export class ListingsService {
     const property = draft.property as
       | {
           propertyContacts?: Array<{ contact?: { phones?: [] } | null }>;
-          tenants?: Array<{ contact?: { phones?: [] } | null }>;
+          leases?: Parameters<typeof presentPropertyLease>[0][];
+          tenants?: unknown[];
         }
       | undefined;
     if (property?.propertyContacts) {
@@ -811,11 +886,10 @@ export class ListingsService {
         contact: propertyContact.contact ? withPrimaryPhone(propertyContact.contact) : propertyContact.contact,
       }));
     }
-    if (property?.tenants) {
-      property.tenants = property.tenants.map((tenant) => ({
-        ...tenant,
-        contact: tenant.contact ? withPrimaryPhone(tenant.contact) : tenant.contact,
-      }));
+    if (property?.leases) {
+      const presented = property.leases.map((lease) => presentPropertyLease(lease));
+      property.leases = presented;
+      property.tenants = presented;
     }
     return listing;
   }
@@ -835,7 +909,7 @@ export class ListingsService {
 
   private assertValidTransactionType(transactionType: string) {
     if (!VALID_TRANSACTION_TYPES.has(transactionType as TransactionType)) {
-      throw new BadRequestException('Invalid transactionType');
+      throw new BadRequestException('거래유형은 매매·전세·월세 중 하나여야 합니다.');
     }
   }
 
@@ -844,7 +918,7 @@ export class ListingsService {
     for (const slug of includes) {
       if (!VALID_MAINTENANCE_FEE_INCLUDES.has(slug)) {
         throw new BadRequestException(
-          `Invalid maintenanceFeeIncludes slug: ${slug}`,
+          `알 수 없는 관리비 포함 항목입니다: ${slug}`,
         );
       }
     }
@@ -899,7 +973,7 @@ export class ListingsService {
       });
 
       if (!intake) {
-        throw new NotFoundException('Non-closed ListingIntake not found');
+        throw new NotFoundException('진행 중인 의뢰를 찾을 수 없습니다.');
       }
 
       return intake;
@@ -952,14 +1026,14 @@ export class ListingsService {
 
   private assertValidIntakeLifecycleStatus(lifecycleStatus: string) {
     if (!VALID_INTAKE_LIFECYCLE_STATUSES.has(lifecycleStatus)) {
-      throw new BadRequestException('Invalid intake lifecycle status');
+      throw new BadRequestException('알 수 없는 의뢰 상태입니다.');
     }
   }
 
   private parseExpectedUpdatedAt(value: Date | string) {
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) {
-      throw new BadRequestException('expectedUpdatedAt must be a valid date');
+      throw new BadRequestException('수정 시각이 올바르지 않습니다. 화면을 새로 고친 뒤 다시 시도해 주세요.');
     }
     return date;
   }

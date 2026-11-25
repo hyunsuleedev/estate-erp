@@ -119,6 +119,9 @@ export function createBuyerIntakesApi(request: RequestFn) {
         body: dto,
       }),
 
+    remove: (id: string) =>
+      request<void>(`/buyer-intakes/${id}`, { method: "DELETE" }),
+
     addContact: (id: string, dto: BuyerIntakeContactInput) =>
       request<BuyerIntake>(`/buyer-intakes/${id}/contacts`, {
         method: "POST",

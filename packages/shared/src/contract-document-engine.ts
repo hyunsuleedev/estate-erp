@@ -1,3 +1,4 @@
+// i18n-ignore-file — 계약서·서식에 인쇄되거나 문서와 함께 저장되는 글이다. 화면 언어가 영어여도 한글로 둔다(apps/desktop/scripts/i18n/core.mjs).
 /**
  * 계약 문서 엔진 (순수 TS — React 없음).
  *

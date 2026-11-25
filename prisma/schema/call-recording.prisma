@@ -46,7 +46,7 @@ model CallRecording {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   office        Office                 @relation(fields: [officeId], references: [id])
-  contact       Contact?               @relation(fields: [contactId], references: [id])
+  contact       Contact?               @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
   user          User                   @relation(fields: [userId], references: [id])
   messages      CallRecordingMessage[]
   consultations Consultation[]
@@ -140,11 +140,13 @@ model CallActionSuggestion {
   office       Office        @relation(fields: [officeId], references: [id])
   recording    CallRecording @relation(fields: [recordingId], references: [id], onDelete: Cascade)
   consultation Consultation? @relation(fields: [consultationId], references: [id], onDelete: SetNull)
+  contact      Contact?      @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
   resolvedBy   User?         @relation("CallSuggestionResolver", fields: [resolvedById], references: [id])
 
   @@index([officeId, status, createdAt])
   @@index([recordingId, seq])
   @@index([consultationId])
+  @@index([officeId, contactId])
   @@index([officeId, targetType, targetId, status])
   @@map("call_action_suggestions")
 }

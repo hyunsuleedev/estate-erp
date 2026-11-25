@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Optional,
+} from '@nestjs/common';
 import {
   IntakeCheckResult,
   IntakeClosedReason,
@@ -23,7 +28,7 @@ import { DongsService } from '../dongs/dongs.service';
 import { UnitsService } from '../units/units.service';
 import { OfficeSitesService } from '../office-sites/office-sites.service';
 import { PropertyContactsService } from '../property-contacts/property-contacts.service';
-import { ContactRelationsService } from '../contact-relations/contact-relations.service';
+import { PartiesService } from '../parties/parties.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { EmployeesService } from '../employees/employees.service';
 import { OfficesService } from '../offices/offices.service';
@@ -39,6 +44,7 @@ import { PublicDocumentsService } from '../public-documents/public-documents.ser
 import { PropertyPhotosService } from '../property-photos/property-photos.service';
 import { ListingAdvertisementsService } from '../listing-advertisements/listing-advertisements.service';
 import { AdvertisementChangeRequestsService } from '../listing-advertisements/advertisement-change-requests.service';
+import { OfficeCpAccountsService } from '../listing-advertisements/office-cp-accounts.service';
 import { ListingAdvertisementSnapshotsService } from '../listing-advertisement-snapshots/listing-advertisement-snapshots.service';
 import {
   OfficeAdvertisementsService,
@@ -55,6 +61,23 @@ export interface ToolCallResult {
   content: Array<{ type: 'text'; text: string }>;
   isError: boolean;
   [key: string]: unknown;
+}
+
+/**
+ * 캐시플로우 요약에서 고정비와 그것으로 계산한 순이익을 뺀다.
+ * 고정비 화면을 내렸으므로(2026-11-22) 외부 AI에도 같은 범위만 준다. 서비스의 계산과 표는 남아 있다.
+ */
+const EXPENSE_FIELD = /expense|netprofit|^net$/i;
+function stripExpenseFields(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripExpenseFields);
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => !EXPENSE_FIELD.test(key))
+        .map(([key, child]) => [key, stripExpenseFields(child)]),
+    );
+  }
+  return value;
 }
 
 interface McpContext {
@@ -167,7 +190,7 @@ export class McpToolsService {
     private readonly units: UnitsService,
     private readonly officeSites: OfficeSitesService,
     private readonly propertyContacts: PropertyContactsService,
-    private readonly contactRelations: ContactRelationsService,
+    private readonly parties: PartiesService,
     private readonly tenants: TenantsService,
     private readonly employees: EmployeesService,
     private readonly offices: OfficesService,
@@ -181,6 +204,7 @@ export class McpToolsService {
     private readonly listingIntakes: ListingIntakesService,
     private readonly listingAdvertisementSnapshots: ListingAdvertisementSnapshotsService,
     private readonly advertisementChangeRequests: AdvertisementChangeRequestsService,
+    @Optional() private readonly officeCpAccounts?: OfficeCpAccountsService,
   ) {
     this.registerAll();
   }
@@ -941,17 +965,35 @@ export class McpToolsService {
     // CP 광고 원장 (ListingAdvertisements)
     // ═══════════════════════════════════════════════════════════
     this.add(
+      'list_office_cp_accounts',
+      '사무소에 등록된 CP(이실장, 부동산뱅크 등) 로그인 계정 목록과 계정별 활성 광고 수를 조회합니다. accountKey는 CP 로그인 아이디이며 비밀번호는 서버에 저장되지 않습니다.',
+      obj({
+        channel: str('CP사 slug로 거르기 (선택)'),
+        includeInactive: bool('비활성 계정 포함 여부'),
+      }),
+      async (a, c) => {
+        if (!this.officeCpAccounts) {
+          throw new BadRequestException('OfficeCpAccountsService is not available');
+        }
+        return this.officeCpAccounts.findAll(c.officeId, {
+          channel: a.channel as string | undefined,
+          includeInactive: a.includeInactive as boolean | undefined,
+        });
+      },
+    );
+
+    this.add(
       'find_listing_advertisements',
-      'CP 광고 원장(ListingAdvertisement)을 검색합니다. 각 row는 한 번의 연속된 실제 게재이고, endedAt은 완전한 스냅샷에서 관측 종료된 시각입니다. 광고는 매물 없이도 있을 수 있고, 각 row의 linkLevel이 연결 단계입니다(listing=매물까지, property=관리매물까지, site=건물까지, none=연결 없음). 매물이 없는 광고는 link=no_listing으로 모아 사용자에게 "매물로 등록할까요?"를 물을 때 씁니다. changeRequests에는 이 광고에 걸린 변경 요청과 반영 여부(fulfilled)가 들어 있습니다.',
+      'CP 광고 원장(ListingAdvertisement)을 검색합니다. 각 row는 한 번의 연속된 실제 게재이고, endedAt은 완전한 스냅샷에서 관측 종료된 시각입니다. syncState는 manual(수동 관리) / synced(CP 확인됨) / manual_override(직접 수정 후 CP 미확인)입니다. 광고는 매물 없이도 있을 수 있고, 각 row의 linkLevel이 연결 단계입니다(listing=매물까지, property=관리매물까지, site=건물까지, none=연결 없음). 매물이 없는 광고는 link=no_listing으로 모아 사용자에게 "매물로 등록할까요?"를 물을 때 씁니다. changeRequests에는 이 광고에 걸린 변경 요청과 반영 여부(fulfilled)가 들어 있습니다.',
       obj({
         listingId: str('매물 ID'),
         propertyId: str('관리매물 ID'),
+        cpAccountId: str('CP 계정 ID'),
         link: strEnum('연결 단계로 거르기', ['listing', 'no_listing', 'no_property', 'no_site']),
         requests: strEnum('pending이면 처리되지 않은 변경 요청이 걸린 광고만', ['pending']),
         channel: str('CP사 slug (esiljang, budongsanbank 등)'),
         status: strEnum('광고 생명주기', ['active', 'ended']),
-        source: strEnum('광고 원장 출처', ['manual', 'cp_sync']),
-        search: str('검색어 (CP사, CP/네이버 광고번호, URL, 단지명 등)'),
+        search: str('검색어 (CP사, 계정 ID/별칭, CP/네이버 광고번호, URL, 단지명 등)'),
         sortBy: strEnum('정렬 필드', [
           'createdAt',
           'updatedAt',
@@ -965,11 +1007,11 @@ export class McpToolsService {
         this.listingAdvertisements.findAll(c.officeId, {
           listingId: a.listingId as string,
           propertyId: a.propertyId as string,
+          cpAccountId: a.cpAccountId as string,
           link: a.link as 'listing' | 'no_listing' | 'no_property' | 'no_site',
           requests: a.requests === 'pending' ? 'pending' : undefined,
           channel: a.channel as string,
           status: a.status as string,
-          source: a.source as string,
           search: a.search as string,
           sortBy: a.sortBy as
             | 'createdAt'
@@ -995,12 +1037,14 @@ export class McpToolsService {
 
     this.add(
       'create_listing_advertisement',
-      'CP에서 실제로 관측한 광고(ListingAdvertisement)를 넣습니다. 한 줄 = 한 광고입니다: 같은 매물 · 같은 채널(매물이 없으면 같은 관리 공간 · 채널 · 거래유형, 그것도 없으면 같은 CP 광고 번호)의 광고가 이미 있으면 새 줄을 만들지 않고 그 줄을 고쳐 돌려줍니다 — 재광고(네이버 번호가 바뀜)와 내려갔다 다시 올라온 것은 같은 줄의 변화이고, 지나간 상태는 이력에 쌓입니다. 작성·승인 대기 요청이나 동기화 오류 row를 만들지 않습니다. 매물 없이도 만들 수 있습니다: listingId·propertyId·siteId 중 아는 가장 깊은 단계 하나만 주면 위 단계는 서버가 채우고, 아무것도 모르면 CP 원문(raw*)만 넣습니다. 층과 가격이 같다는 것만으로 같은 집이라고 추정해 연결하지 마세요.',
+      'CP에서 실제로 관측하거나 수동으로 기록할 광고(ListingAdvertisement)를 넣습니다. 같은 사무소의 서로 다른 CP 계정(cpAccountId/accountKey)은 같은 매물·채널에 각자 광고를 올릴 수 있습니다. 매물 없이도 만들 수 있습니다: listingId·propertyId·siteId 중 아는 가장 깊은 단계 하나만 주면 위 단계는 서버가 채우고, 아무것도 모르면 CP 원문(raw*)만 넣습니다.',
       obj(
         {
           listingId: str('매물 ID (어느 의뢰의 광고인지까지 아는 경우)'),
           propertyId: str('관리매물 ID (호실까지만 아는 경우)'),
           siteId: str('단지·건물 ID (건물까지만 아는 경우)'),
+          cpAccountId: str('CP 계정 ID (선택)'),
+          accountKey: str('CP 로그인 아이디 (선택, 전달 시 계정을 자동 연결)'),
           transactionType: strEnum('거래유형 (매물에 연결되면 매물의 값을 따른다)', ['sale', 'jeonse', 'monthly']),
           rawJibunAddress: str('CP에 적힌 지번주소 원문'),
           rawRoadAddress: str('CP에 적힌 도로명주소 원문'),
@@ -1012,9 +1056,8 @@ export class McpToolsService {
           floorExposure: strEnum('광고의 층 노출 방식 (exact=정확한 층, band=저·중·고)', ['exact', 'band']),
           channel: str('CP사 slug (esiljang, budongsanbank 등)'),
           status: strEnum('광고 생명주기', ['active', 'ended']),
-          source: strEnum('광고 원장 출처', ['manual', 'cp_sync']),
-          advertisedPrice: num('광고 매매가/전세가 (만원)'),
-          advertisedDeposit: num('광고 보증금 (만원)'),
+          advertisedPrice: num('광고 매매가 (만원, 매매 전용)'),
+          advertisedDeposit: num('광고 전세가 또는 월세 보증금 (만원)'),
           advertisedMonthlyRent: num('광고 월세 (만원)'),
           startedAt: str('광고 시작일 (ISO)'),
           endedAt: str('광고 관측 종료 시각 (ISO, 예정 종료일 아님)'),
@@ -1033,6 +1076,8 @@ export class McpToolsService {
           listingId: a.listingId as string | undefined,
           propertyId: a.propertyId as string | undefined,
           siteId: a.siteId as string | undefined,
+          cpAccountId: a.cpAccountId as string | undefined,
+          accountKey: a.accountKey as string | undefined,
           transactionType: a.transactionType as string | undefined,
           rawJibunAddress: a.rawJibunAddress as string | undefined,
           rawRoadAddress: a.rawRoadAddress as string | undefined,
@@ -1044,7 +1089,6 @@ export class McpToolsService {
           floorExposure: a.floorExposure as string | undefined,
           channel: a.channel as string,
           status: a.status as string,
-          source: a.source as string,
           advertisedPrice: a.advertisedPrice as number | null,
           advertisedDeposit: a.advertisedDeposit as number | null,
           advertisedMonthlyRent: a.advertisedMonthlyRent as number | null,
@@ -1062,10 +1106,12 @@ export class McpToolsService {
 
     this.add(
       'update_listing_advertisement',
-      'CP 광고 원장(ListingAdvertisement)을 수정합니다 — "직접 변경"입니다: 이미 CP에서 바뀐 것을 기록에 맞출 때만 쓰세요. CP에서 바꿔 달라는 요청은 create_advertisement_change_request로 만듭니다. 완전한 CP 수집 성공 후 더 이상 반환되지 않은 광고만 status=ended로 전환하세요. 수집 실패 시 기존 row를 변경하지 않습니다. 종료된 광고가 다시 올라왔으면 status=active로 되돌립니다(새 광고로 넣지 않습니다). 재광고로 네이버 번호가 바뀌었으면 naverArticleNo를 새 번호로 고칩니다 — 게재 상태 · 네이버 번호 · 가격의 변화는 이력에 남습니다. 연결은 link_listing_advertisement로 바꿉니다.',
+      'CP 광고 원장(ListingAdvertisement)을 수정합니다 — "직접 변경"입니다: 이미 CP에서 바뀐 것을 기록에 맞출 때만 쓰세요(lastSyncedAt 없이 가격·상태·층노출 등을 고치면 manual_override 상태가 됩니다). CP에서 바꿔 달라는 요청은 create_advertisement_change_request로 만듭니다. 연결은 link_listing_advertisement로 바꿉니다.',
       obj(
         {
           id: str('광고 원장 ID'),
+          cpAccountId: str('CP 계정 ID'),
+          accountKey: str('CP 로그인 아이디'),
           transactionType: strEnum('거래유형 (매물에 연결되면 매물의 값을 따른다)', ['sale', 'jeonse', 'monthly']),
           rawJibunAddress: str('CP에 적힌 지번주소 원문'),
           rawRoadAddress: str('CP에 적힌 도로명주소 원문'),
@@ -1075,12 +1121,10 @@ export class McpToolsService {
           rawFloorText: str('CP의 층 표기 원문 (예: 12/25, 저/25, B1)'),
           rawAreaM2: num('CP에 적힌 면적 (m²)'),
           floorExposure: strEnum('광고의 층 노출 방식 (exact=정확한 층, band=저·중·고)', ['exact', 'band']),
-
           channel: str('CP사 slug (esiljang, budongsanbank 등)'),
           status: strEnum('광고 생명주기', ['active', 'ended']),
-          source: strEnum('광고 원장 출처', ['manual', 'cp_sync']),
-          advertisedPrice: num('광고 매매가/전세가 (만원)'),
-          advertisedDeposit: num('광고 보증금 (만원)'),
+          advertisedPrice: num('광고 매매가 (만원, 매매 전용)'),
+          advertisedDeposit: num('광고 전세가 또는 월세 보증금 (만원)'),
           advertisedMonthlyRent: num('광고 월세 (만원)'),
           startedAt: str('광고 시작일 (ISO)'),
           endedAt: str('광고 관측 종료 시각 (ISO, 예정 종료일 아님)'),
@@ -1096,6 +1140,8 @@ export class McpToolsService {
       ),
       async (a, c) =>
         this.listingAdvertisements.update(a.id as string, c.officeId, {
+          cpAccountId: a.cpAccountId as string | undefined,
+          accountKey: a.accountKey as string | undefined,
           transactionType: a.transactionType as string | undefined,
           rawJibunAddress: a.rawJibunAddress as string | undefined,
           rawRoadAddress: a.rawRoadAddress as string | undefined,
@@ -1107,7 +1153,6 @@ export class McpToolsService {
           floorExposure: a.floorExposure as string | undefined,
           channel: a.channel as string,
           status: a.status as string,
-          source: a.source as string,
           advertisedPrice: a.advertisedPrice as number | null,
           advertisedDeposit: a.advertisedDeposit as number | null,
           advertisedMonthlyRent: a.advertisedMonthlyRent as number | null,
@@ -1125,7 +1170,7 @@ export class McpToolsService {
 
     this.add(
       'link_listing_advertisement',
-      '광고를 우리 데이터에 연결하거나 연결을 풉니다. listingId·propertyId·siteId 중 아는 가장 깊은 단계 하나만 주면 위 단계는 서버가 채웁니다(매물 → 관리매물 → 건물). propertyId만 주면 매물 연결은 풀리고, 셋 다 비우면 모두 풀립니다. 호실은 알지만 관리매물이 없으면 find_or_create_property로 먼저 만드세요. 같은 호실에 같은 거래유형의 열린 매물이 하나일 때만 매물까지 연결하고, 여럿이거나 없으면 관리매물까지만 연결한 뒤 사용자에게 물으세요.',
+      '광고를 우리 데이터에 연결하거나 연결을 푼다. listingId·propertyId·siteId 중 아는 가장 깊은 단계 하나만 주면 위 단계는 서버가 채웁니다(매물 → 관리매물 → 건물). propertyId만 주면 매물 연결은 풀리고, 셋 다 비우면 모두 풀립니다.',
       obj(
         {
           id: str('광고 원장 ID'),
@@ -1145,50 +1190,93 @@ export class McpToolsService {
 
     this.add(
       'find_advertisement_change_requests',
-      '처리되지 않은 광고 변경 요청 목록입니다. 사용자가 "CP에서 이렇게 바꿔 달라"고 한 일이고, 각 요청은 광고 업무(task)와 짝입니다. 실행하려면 claim_task로 그 업무를 가져간 뒤 CP에서 바꾸고, 끝나면 update_task로 완료 처리하세요. 광고 값은 직접 고치지 말고 다음 수집(스냅샷)에서 확인되게 두세요.',
-      obj({ advertisementId: str('특정 광고의 요청만') }),
+      '처리되지 않은(또는 지정 상태의) 광고 변경 요청 목록입니다. 각 요청은 publish(신규 게재) · update(조건 변경) · readvertise(재광고) · takedown(내리기) 액션과 cpAccount 정보를 담고 묶음 업무(Task)에 연결됩니다. 실행 시 update_advertisement_change_request로 in_progress/executed/failed를 보고하고, 최종 verified는 complete_listing_advertisement_snapshot이 자동 검증합니다.',
+      obj({
+        advertisementId: str('특정 광고의 요청만'),
+        listingId: str('특정 매물의 요청만 (신규 게재 포함)'),
+        channel: str('CP사 slug'),
+        cpAccountId: str('CP 계정 ID'),
+        accountKey: str('CP 로그인 아이디 (channel과 함께 지정)'),
+        status: strEnum('요청 상태 필터', [
+          'requested',
+          'in_progress',
+          'executed',
+          'verified',
+          'failed',
+          'cancelled',
+        ]),
+        includeClosed: bool('완료·취소 요청 포함 여부'),
+      }),
       async (a, c) =>
         this.advertisementChangeRequests.findOpen(c.officeId, {
           advertisementId: a.advertisementId as string | undefined,
+          listingId: a.listingId as string | undefined,
+          channel: a.channel as string | undefined,
+          cpAccountId: a.cpAccountId as string | undefined,
+          accountKey: a.accountKey as string | undefined,
+          status: a.status as string | undefined,
+          includeClosed: a.includeClosed as boolean | undefined,
         }),
     );
 
     this.add(
       'create_advertisement_change_request',
-      '광고를 CP에서 바꿔 달라는 요청을 만듭니다. 광고 업무(task, category=advertisement)가 함께 생기고 광고 값은 바뀌지 않습니다. kind: price(가격 변경, toValue에 price/deposit/monthlyRent 중 바꿀 것만, 만원) / floor_exposure(층 노출 변경, toValue.floorExposure = exact|band) / readvertise(재광고: 게재 중이면 다시 올려 날짜를 새로 받기, 종료된 광고면 다시 올리기) / takedown(광고 내리기). 이미 CP에서 바꾼 것을 기록만 맞출 때는 update_listing_advertisement를 쓰세요.',
+      '광고를 CP에 새로 올리거나(publish) 바꿔 달라는 요청(update / readvertise / takedown)을 만듭니다. action=publish이면 listingId+channel 필수, 나머지는 advertisementId 필수입니다.',
       obj(
         {
-          advertisementId: str('광고 원장 ID'),
-          kind: strEnum('요청 종류', ['price', 'floor_exposure', 'readvertise', 'takedown']),
-          toValue: {
+          action: strEnum('요청 작업', ['publish', 'update', 'readvertise', 'takedown']),
+          advertisementId: str('광고 원장 ID (update/readvertise/takedown일 때 필수)'),
+          listingId: str('매물 ID (publish일 때 필수)'),
+          channel: str('CP사 slug (publish일 때 필수)'),
+          cpAccountId: str('CP 계정 ID (선택)'),
+          accountKey: str('CP 로그인 아이디 (선택)'),
+          targetValue: {
             type: 'object',
-            description: '바꿀 값. price: { price?, deposit?, monthlyRent? } (만원) / floor_exposure: { floorExposure }',
+            description: '목표 조건: { price?, deposit?, monthlyRent?, floorExposure?: "exact"|"band" } (가격은 만원 단위, 전세는 deposit)',
             additionalProperties: true,
           },
-          memo: str('업무에 함께 적을 말'),
+          memo: str('요청사항'),
           dueDate: str('기한 (ISO)'),
-          assignedToId: str('맡길 직원 ID. 비우면 담당자 없이 등록되어 에이전트가 가져간다'),
+          assignedToId: str('맡길 직원 ID. 비우면 담당자 없이 등록'),
         },
-        ['advertisementId', 'kind'],
+        ['action'],
       ),
       async (a, c) =>
-        this.advertisementChangeRequests.create(
-          c.officeId,
-          c.userId,
-          a.advertisementId as string,
-          {
-            kind: a.kind as string,
-            toValue: a.toValue as Record<string, unknown> | undefined,
-            memo: a.memo as string | undefined,
-            dueDate: a.dueDate as string | undefined,
-            assignedToId: a.assignedToId as string | undefined,
-          },
-        ),
+        this.advertisementChangeRequests.createSingle(c.officeId, c.userId, {
+          action: a.action as string,
+          advertisementId: a.advertisementId as string | undefined,
+          listingId: a.listingId as string | undefined,
+          channel: a.channel as string | undefined,
+          cpAccountId: a.cpAccountId as string | undefined,
+          accountKey: a.accountKey as string | undefined,
+          targetValue: a.targetValue as Record<string, unknown> | undefined,
+          memo: a.memo as string | undefined,
+          dueDate: a.dueDate as string | undefined,
+          assignedToId: a.assignedToId as string | undefined,
+        }),
+    );
+
+    this.add(
+      'update_advertisement_change_request',
+      '에이전트나 담당자가 광고 변경 요청의 진행 상태(in_progress / executed / failed)를 보고합니다. verified 전이는 complete_listing_advertisement_snapshot에서 실제 CP 관측값으로 검증된 후 자동으로 일어납니다.',
+      obj(
+        {
+          id: str('요청 ID'),
+          status: strEnum('상태', ['requested', 'in_progress', 'executed', 'failed', 'cancelled']),
+          failureReason: str('실패 사유 (status=failed일 때 필수)'),
+        },
+        ['id', 'status'],
+      ),
+      async (a, c) =>
+        this.advertisementChangeRequests.updateStatus(c.officeId, a.id as string, {
+          status: a.status as 'requested' | 'in_progress' | 'executed' | 'failed' | 'cancelled',
+          failureReason: a.failureReason as string | undefined,
+        }),
     );
 
     this.add(
       'cancel_advertisement_change_request',
-      '처리되지 않은 광고 변경 요청을 거둡니다(연결된 업무가 취소됩니다).',
+      '처리되지 않은 광고 변경 요청을 거둡니다(묶음 업무의 모든 요청이 취소되면 업무도 취소됩니다).',
       obj({ id: str('요청 ID') }, ['id']),
       async (a, c) =>
         this.advertisementChangeRequests.cancel(c.officeId, a.id as string),
@@ -1207,11 +1295,12 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'begin_listing_advertisement_snapshot',
-      'Reader가 저장한 완전한 CP 광고 JSON의 메타데이터로 가져오기 세션을 시작합니다. 원본 항목은 아직 광고 원장에 반영되지 않습니다.',
+      'Reader가 저장한 완전한 CP 광고 JSON의 메타데이터로 계정별 가져오기 세션을 시작합니다. accountKey(CP 로그인 아이디, 비밀번호 제외)가 필수입니다.',
       obj(
         {
           channel: str('CP사 slug. snapshot provider와 동일해야 함'),
           provider: str('Reader snapshot provider'),
+          accountKey: str('수집한 CP 로그인 아이디 (비밀번호 절대 금지)'),
           scope: strEnum('Reader 수집 범위', ['active_advertisements']),
           observedAt: str('스냅샷 관측 시각 (ISO timestamp)'),
           expectedTotal: {
@@ -1235,6 +1324,7 @@ export class McpToolsService {
         [
           'channel',
           'provider',
+          'accountKey',
           'scope',
           'observedAt',
           'expectedTotal',
@@ -1248,6 +1338,7 @@ export class McpToolsService {
         this.listingAdvertisementSnapshots.begin(c.officeId, c.userId, {
           channel: a.channel as string,
           provider: a.provider as string,
+          accountKey: a.accountKey as string,
           scope: a.scope as string,
           observedAt: a.observedAt as string,
           expectedTotal: a.expectedTotal as number | null,
@@ -1387,8 +1478,8 @@ export class McpToolsService {
                       realtorName: str('등록 중개사명'),
                       realtorId: str('등록 중개사 ID'),
                       representativeTelNo: str('대표 번호'),
-                      price: num('매매가/전세가 (만원)'),
-                      deposit: num('보증금 (만원)'),
+                      price: num('매매가 (만원, 매매 전용)'),
+                      deposit: num('전세가 또는 월세 보증금 (만원)'),
                       monthlyRent: num('월세 (만원)'),
                       ranking: num('노출 순위'),
                       sameAddrCnt: num('같은 주소 매물 수'),
@@ -1578,14 +1669,23 @@ export class McpToolsService {
       'find_deals',
       '거래 목록. 매물, 매수인/매도인 정보 포함.',
       obj({}),
-      async (_a, c) => this.deals.findAll(c.officeId),
+      // 화면과 같은 기준: 중개사에게는 담당 거래에만 수수료 청구·요약을 싣는다.
+      async (_a, c) =>
+        this.deals.findAll(c.officeId, false, {
+          userId: c.userId,
+          role: c.role ?? 'agent',
+        }),
     );
 
     this.add(
       'get_deal',
       '거래 상세.',
       obj({ id: str('거래 ID') }, ['id']),
-      async (a, c) => this.deals.findOne(a.id as string, c.officeId),
+      async (a, c) =>
+        this.deals.findOne(a.id as string, c.officeId, {
+          userId: c.userId,
+          role: c.role ?? 'agent',
+        }),
     );
 
     this.add(
@@ -1614,7 +1714,10 @@ export class McpToolsService {
           agreedMonthlyRent: a.agreedMonthlyRent as number | undefined,
           specialTerms: a.specialTerms as string | undefined,
           memo: a.memo as string | undefined,
-        }),
+        },
+        // 만든 사람을 넘겨야 거래의 담당이 채워진다(비면 직원 정산에 "담당이 정해지지 않음"으로 나온다).
+        c.userId ? { userId: c.userId, role: c.role ?? 'agent' } : undefined,
+        ),
     );
 
     this.add(
@@ -1911,12 +2014,14 @@ export class McpToolsService {
         ]),
         category: str('업무 카테고리 (광고작업은 advertisement)'),
         assignedToId: str('담당자 ID'),
+        projectId: str('프로젝트 ID (그 프로젝트에 적은 업무만)'),
       }),
       async (a, c) =>
         this.tasks.findAll(c.officeId, {
           status: a.status as string | undefined,
           category: a.category as string | undefined,
           assignedToId: a.assignedToId as string | undefined,
+          projectId: a.projectId as string | undefined,
         }),
       ['tasks:read'],
     );
@@ -1950,6 +2055,7 @@ export class McpToolsService {
           matchId: str('관련 매칭 ID'),
           dealId: str('관련 거래 ID'),
           contractId: str('관련 계약 ID'),
+          projectId: str('이 업무를 적어 둘 프로젝트 ID'),
         },
         ['title'],
       ),
@@ -1973,6 +2079,7 @@ export class McpToolsService {
             matchId: a.matchId as string,
             dealId: a.dealId as string,
             contractId: a.contractId as string,
+            projectId: a.projectId as string,
           },
           c.userId,
         ),
@@ -2219,22 +2326,22 @@ export class McpToolsService {
     );
 
     // ═══════════════════════════════════════════════════════════
-    // 연락처 관계 (Contact Relations)
+    // 세대·법인 소속 (Parties)
     // ═══════════════════════════════════════════════════════════
     this.add(
-      'find_contact_relations',
-      '연락처의 관계 목록 (가족, 법무사 등).',
+      'find_contact_parties',
+      '연락처의 세대 구성원 및 법인 소속 목록.',
       obj({ contactId: str('연락처 ID') }, ['contactId']),
       async (a, c) =>
-        this.contactRelations.findByContact(c.officeId, a.contactId as string),
+        this.parties.findByContact(c.officeId, a.contactId as string),
     );
 
     // ═══════════════════════════════════════════════════════════
-    // 세입자 (Tenants)
+    // 세입자 · 임대차 (Property Leases / Tenants)
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_tenants',
-      '매물의 세입자 목록.',
+      '매물의 임대차(세입자) 목록.',
       obj({ propertyId: str('매물 ID') }, ['propertyId']),
       async (a, c) =>
         this.tenants.findByProperty(c.officeId, a.propertyId as string),
@@ -2242,7 +2349,7 @@ export class McpToolsService {
 
     this.add(
       'find_expiring_contracts',
-      '임대 계약 만료 임박 세입자 목록.',
+      '임대 계약 만료 임박 임대차(세입자) 목록.',
       obj({ withinDays: num('일수 (기본 90)') }),
       async (a, c) =>
         this.tenants.findExpiringContracts(
@@ -2253,11 +2360,12 @@ export class McpToolsService {
 
     this.add(
       'create_tenant',
-      '세입자를 등록합니다.',
+      '임대차 및 세입자를 등록합니다.',
       obj(
         {
           propertyId: str('매물 ID'),
           contactId: str('연락처 ID'),
+          role: str('임차인 역할 (tenant | co_tenant | resident)'),
           deposit: num('보증금 (만원)'),
           monthlyRent: num('월세 (만원)'),
           contractStart: str('계약 시작일'),
@@ -2270,6 +2378,7 @@ export class McpToolsService {
         this.tenants.create(c.officeId, {
           propertyId: a.propertyId as string,
           contactId: a.contactId as string,
+          role: (a.role as string | undefined) ?? undefined,
           deposit: a.deposit as number,
           monthlyRent: a.monthlyRent as number,
           contractStart: a.contractStart as string,
@@ -2281,15 +2390,31 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     // 직원 (Employees) — 읽기만
     // ═══════════════════════════════════════════════════════════
-    this.add('find_employees', '직원 목록.', obj({}), async (_a, c) =>
-      this.employees.findAll(c.officeId),
-    );
+    // 급여·배분율은 화면과 같은 기준으로 가린다(대표와 본인만 본다). 서비스를 바로 부르면 그대로 나간다.
+    const asEmployeeViewer = (c: McpContext) =>
+      ({
+        userId: c.userId,
+        officeId: c.officeId,
+        role: c.role ?? 'agent',
+      }) as Parameters<EmployeesService['forViewer']>[0];
+
+    this.add('find_employees', '직원 목록.', obj({}), async (_a, c) => {
+      const viewer = asEmployeeViewer(c);
+      const employees = await this.employees.findAll(c.officeId);
+      return employees.map((employee) =>
+        this.employees.forViewer(viewer, employee),
+      );
+    });
 
     this.add(
       'get_employee',
       '직원 상세.',
       obj({ id: str('직원 ID') }, ['id']),
-      async (a, c) => this.employees.findOne(a.id as string, c.officeId),
+      async (a, c) =>
+        this.employees.forViewer(
+          asEmployeeViewer(c),
+          await this.employees.findOne(a.id as string, c.officeId),
+        ),
     );
 
     this.add(
@@ -2318,24 +2443,44 @@ export class McpToolsService {
       'find_commission_payments',
       '수수료 수금 내역. 사무소 전체 또는 거래별.',
       obj({ dealId: str('거래 ID'), status: str('상태 필터') }),
-      async (a, c) =>
-        a.dealId
-          ? this.commissionPayments.listByDeal(c.officeId, a.dealId as string)
-          : this.commissionPayments.listByOffice(c.officeId, {
-              status: a.status as string,
-            }),
+      async (a, c) => {
+        // 화면과 같은 기준: 중개사(agent)는 담당으로 배정된 거래의 청구만, 전화번호 없이 받는다.
+        const viewer = c.userId
+          ? { userId: c.userId, role: c.role ?? 'agent' }
+          : undefined;
+        return a.dealId
+          ? this.commissionPayments.listByDeal(
+              c.officeId,
+              a.dealId as string,
+              viewer,
+            )
+          : this.commissionPayments.listByOffice(
+              c.officeId,
+              { status: a.status as string },
+              viewer,
+            );
+      },
     );
 
     this.add(
       'get_cashflow_summary',
-      '월별 캐시플로우 요약 (수금, 고정비, 순이익).',
+      '월별 캐시플로우 요약 (수금, 공동중개 줄 몫, 받을 돈).',
       obj({ year: num('연도'), month: num('월') }, ['year', 'month']),
-      async (a, c) =>
-        this.cashflow.getSummary(
+      async (a, c) => {
+        // 화면의 캐시플로우와 같은 권한: 고정비·순이익은 대표·매니저만 본다.
+        if (!['owner', 'manager'].includes(c.role ?? 'agent')) {
+          throw new ForbiddenException(
+            '캐시플로우 요약은 대표·매니저만 볼 수 있습니다.',
+          );
+        }
+        const summary = await this.cashflow.getSummary(
           c.officeId,
           a.year as number,
           a.month as number,
-        ),
+        );
+        // 고정비와 순이익은 2026-11-22에 화면에서 내렸다(직원 정산에 쓰이지 않는다). 도구도 같은 값만 준다.
+        return stripExpenseFields(summary);
+      },
     );
 
     // ═══════════════════════════════════════════════════════════

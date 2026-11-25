@@ -24,9 +24,16 @@ export class CashflowController {
     @Query('year') yearStr?: string,
     @Query('month') monthStr?: string,
   ) {
-    const now = new Date();
-    const year = yearStr ? parseInt(yearStr, 10) : now.getFullYear();
-    const month = monthStr ? parseInt(monthStr, 10) : now.getMonth() + 1;
+    // 비어 있거나 잘못된 값이면 한국 시각의 이번 달을 쓴다
+    const [nowYear, nowMonth] = new Date(Date.now() + 9 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 7)
+      .split('-')
+      .map(Number);
+    const y = yearStr ? parseInt(yearStr, 10) : NaN;
+    const m = monthStr ? parseInt(monthStr, 10) : NaN;
+    const year = Number.isInteger(y) && y >= 2000 && y <= 2100 ? y : nowYear;
+    const month = Number.isInteger(m) && m >= 1 && m <= 12 ? m : nowMonth;
     return this.service.getSummary(user.officeId, year, month);
   }
 }

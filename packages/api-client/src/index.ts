@@ -1,6 +1,10 @@
 export { createApiClient } from "./client.js";
 export type { ApiClient, RequestFn } from "./client.js";
-export { ApiError } from "./types.js";
+export {
+  ApiError,
+  ApiNetworkError,
+  API_NETWORK_ERROR_MESSAGE,
+} from "./types.js";
 export type {
   ApiClientConfig,
   AuthFailureContext,
@@ -33,8 +37,8 @@ export type {
   ListingIntakeSummary,
   ListingOccupyingDeal,
   ListingAdvertisement,
-  ListingAdvertisementSource,
   ListingAdvertisementStatus,
+  OfficeCpAccount,
   ListingPriceHistory,
   ListingFilterSite,
   ListingsFilter,
@@ -45,11 +49,17 @@ export type {
   ListingAdvertisementsFilter,
   ListingAdvertisementWithListing,
   ListingAdvertisementActionContext,
+  ListingAdvertisementTimelineChangeRequest,
   AdvertisementLinkLevel,
-  AdvertisementChangeKind,
+  AdvertisementChangeAction,
+  AdvertisementChangeRequestStatus,
   AdvertisementChangeRequest,
   LinkListingAdvertisementDto,
   CreateAdvertisementChangeRequestDto,
+  CreateAdvertisementChangeRequestsBatchDto,
+  UpdateAdvertisementChangeRequestStatusDto,
+  UpsertOfficeCpAccountDto,
+  UpdateOfficeCpAccountDto,
   ListingAdvertisementPriceHistory,
   ListingAdvertisementTimeline,
   AdvertisementComparisonRecord,
@@ -110,11 +120,13 @@ export type {
 } from "./modules/units.js";
 export type {
   Task,
+  TaskAdvertisementChangeRequestSummary,
   TaskAssignee,
   TaskBuyerRequirementSummary,
   TaskContact,
   TaskConsultationSummary,
   TaskContractSummary,
+  TaskProjectRef,
   TaskDealSummary,
   TaskListingIntakeSummary,
   TaskListingSummary,
@@ -131,7 +143,7 @@ export type {
   UpdateMatchAgreedTermsDto,
   UpdateMatchMemoDto,
 } from "./modules/matches.js";
-export type { Deal, CreateDealDto } from "./modules/deals.js";
+export type { Deal, CreateDealDto, DealPropertyTransitionPreview, ApplyDealPropertyTransitionDto } from "./modules/deals.js";
 export type {
   Contract,
   ContractClauseTemplate,
@@ -205,6 +217,8 @@ export type {
   ProjectListFilter,
   ProjectListStatus,
   ProjectListSort,
+  ProjectDerivedStatus,
+  ProjectIntakeFilter,
   ProjectPerson,
   ProjectPrimaryContact,
   ProjectComment,
@@ -241,16 +255,24 @@ export type {
   UpdatePropertyContactDto,
 } from "./modules/property-contacts.js";
 export type {
-  ContactRelation,
-  ContactRelationsByContact,
-  CreateContactRelationDto,
-  CreateContactRelationWithNewContactDto,
-  UpdateContactRelationDto,
-} from "./modules/contact-relations.js";
+  Party,
+  PartyMember,
+  PartyMemberContactSummary,
+  PartiesByContact,
+  AddHouseholdMemberDto,
+  AddOrganizationMemberDto,
+  UpdatePartyDto,
+  UpdatePartyMemberDto,
+} from "./modules/parties.js";
 export type {
   Tenant,
+  PropertyLease,
+  PropertyLeaseTenant,
   CreateTenantDto,
+  CreateTenantWithNewContactDto,
   UpdateTenantDto,
+  AddLeaseTenantDto,
+  UpdateLeaseTenantDto,
 } from "./modules/tenants.js";
 export type { OfficeSite, RegisterPrivateSiteDto } from "./modules/office-sites.js";
 export type {
@@ -359,8 +381,11 @@ export type {
   TaxInvoiceStatus,
   OfficeExpenseTemplate,
   PartnerBroker,
+  PartnerBrokerContact,
   CreatePartnerBrokerDto,
   UpdatePartnerBrokerDto,
+  CreatePartnerBrokerContactDto,
+  UpdatePartnerBrokerContactDto,
   PipelineDeal,
   PipelineDealPayment,
   PipelineDealParticipant,
@@ -390,11 +415,6 @@ export type {
   NotificationCreatedEvent,
 } from "./modules/notifications.js";
 export type { Notice, NoticeList } from "./modules/notices.js";
-export type {
-  DashboardSummary,
-  DashboardThisMonth,
-  DashboardCounts,
-} from "./modules/dashboard.js";
 export type {
   ActivityLog,
   ActivityLogAction,
@@ -432,6 +452,8 @@ export type {
   CallLogsResponse,
   CtiLookupResult,
   CtiLookupVendorContact,
+  CtiLookupPartnerBrokerContact,
+  CtiLookupPartySummary,
   CtiLookupProperty,
   IngestCallEventResult,
   UpdateCallLogDto,

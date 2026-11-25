@@ -6,17 +6,21 @@ const TENANT_SCOPED_MODELS = new Set([
   "User",
   "OfficeSite",
   "Contact",
+  "ContactPhone",
   "ContactGroup",
   "ContactGroupMember",
   "ContactTag",
   "ContactTagAssignment",
-  "ContactRelation",
+  "Party",
+  "PartyMember",
   "PropertyContact",
-  "Tenant",
+  "PropertyLease",
+  "PropertyLeaseTenant",
   "Property",
   "ListingIntake",
   "Listing",
   "PublicListing",
+  "OfficeCpAccount",
   "ListingAdvertisement",
   "AdvertisementChangeRequest",
   "ListingAdvertisementHistory",
@@ -61,6 +65,8 @@ const TENANT_SCOPED_MODELS = new Set([
   // 데이터라 자동 officeId 주입 대상이 아니다 (NetworkInquiry는 officeId 컬럼 자체가
   // 없고 fromOfficeId만 있다). 접근 제어는 modules/network의 방 멤버십(status=approved)
   // 검사로 서비스 레벨에서 강제한다.
+  "PartnerBroker",
+  "PartnerBrokerContact",
 ]);
 
 const AUDITED_MODELS = new Set([
@@ -69,8 +75,11 @@ const AUDITED_MODELS = new Set([
   "Listing",
   "PublicListing",
   "Contact",
+  "Party",
+  "PartyMember",
   "PropertyContact",
-  "Tenant",
+  "PropertyLease",
+  "PropertyLeaseTenant",
   "BuyerIntake",
   "BuyerIntakeContact",
   "Project",
@@ -90,6 +99,8 @@ const AUDITED_MODELS = new Set([
   "CommissionReceipt",
   "Settlement",
   "SettlementLine",
+  "PartnerBroker",
+  "PartnerBrokerContact",
 ]);
 
 const AUDITED_OPERATIONS = new Set<PrismaOperation>([

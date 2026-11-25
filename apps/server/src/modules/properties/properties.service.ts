@@ -3,8 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { SiteType } from '@estate-erp/shared';
+import { IntakeLifecycleStatus, SiteType } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
+import { buildPropertySearchWhere } from './property-search';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   contactPhonesIncludeOrdered,
@@ -16,6 +17,7 @@ import {
   NON_CLOSED_INTAKE_WHERE,
   OCCUPYING_DEALS_SELECT,
 } from '../listings/listing-state';
+import { presentPropertyLease, propertyLeaseInclude } from '../tenants/tenants.service';
 
 const VALID_SITE_TYPES: ReadonlySet<string> = new Set(Object.values(SiteType));
 // 토지는 공간을 지정할 수 없다. 단독·다가구와 상가는 통건물 또는 개별 공간을 쓴다.
@@ -93,46 +95,8 @@ export class PropertiesService {
     }
 
     if (query.search) {
-      filters.push({
-        OR: [
-          { site: { name: { contains: query.search, mode: 'insensitive' } } },
-          {
-            site: {
-              roadAddress: { contains: query.search, mode: 'insensitive' },
-            },
-          },
-          {
-            site: {
-              jibunAddress: { contains: query.search, mode: 'insensitive' },
-            },
-          },
-          {
-            site: {
-              ward: { name: { contains: query.search, mode: 'insensitive' } },
-            },
-          },
-          {
-            site: {
-              ward: {
-                district: {
-                  name: { contains: query.search, mode: 'insensitive' },
-                },
-              },
-            },
-          },
-          {
-            site: {
-              ward: {
-                district: {
-                  province: {
-                    name: { contains: query.search, mode: 'insensitive' },
-                  },
-                },
-              },
-            },
-          },
-        ],
-      });
+      const searchWhere = buildPropertySearchWhere(query.search);
+      if (searchWhere) filters.push(searchWhere);
     }
 
     const where =
@@ -173,10 +137,8 @@ export class PropertiesService {
               contact: { include: { phones: contactPhonesIncludeOrdered } },
             },
           },
-          tenants: {
-            include: {
-              contact: { include: { phones: contactPhonesIncludeOrdered } },
-            },
+          leases: {
+            include: propertyLeaseInclude,
             orderBy: { createdAt: 'desc' },
           },
           listings: {
@@ -242,10 +204,8 @@ export class PropertiesService {
             contact: { include: { phones: contactPhonesIncludeOrdered } },
           },
         },
-        tenants: {
-          include: {
-            contact: { include: { phones: contactPhonesIncludeOrdered } },
-          },
+        leases: {
+          include: propertyLeaseInclude,
           orderBy: { createdAt: 'desc' },
         },
         listings: {
@@ -281,10 +241,30 @@ export class PropertiesService {
     });
 
     if (!property) {
-      throw new NotFoundException('Property not found');
+      throw new NotFoundException('매물을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
-    return this.withContactPhones(property);
+    // 끝난 의뢰의 거래 조건. 위 listings는 진행 중 의뢰의 것만 담아, 의뢰를 끝내면
+    // 가격 변경·광고 기록이 상세의 기록에서 사라지고 아직 게재 중인 광고도 보이지 않았다.
+    const pastListings = await this.prisma.listing.findMany({
+      where: { propertyId: id, officeId, intake: { lifecycleStatus: IntakeLifecycleStatus.CLOSED } },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      include: {
+        intake: {
+          select: { id: true, lifecycleStatus: true, closedReason: true, lifecycleChangedAt: true },
+        },
+        advertisements: {
+          orderBy: { createdAt: 'desc' },
+        },
+        priceHistories: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+        },
+      },
+    });
+
+    return { ...this.withContactPhones(property), pastListings };
   }
 
   /**
@@ -294,7 +274,7 @@ export class PropertiesService {
    */
   async ensure(officeId: string, dto: { siteId: string; unitId?: string | null }) {
     if (!dto.siteId) {
-      throw new BadRequestException('siteId is required');
+      throw new BadRequestException('단지를 골라 주세요.');
     }
     const lookup = () => this.prisma.property.findFirst({
       where: { officeId, siteId: dto.siteId, unitId: dto.unitId ?? null },
@@ -314,7 +294,7 @@ export class PropertiesService {
       throw error;
     }
     if (!property) {
-      throw new NotFoundException('Property could not be created');
+      throw new NotFoundException('매물을 만들지 못했습니다. 다시 시도해 주세요.');
     }
     return {
       id: property.id,
@@ -440,7 +420,7 @@ export class PropertiesService {
     });
 
     if (!existingProperty) {
-      throw new NotFoundException('Property not found');
+      throw new NotFoundException('매물을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
     const nextSite = dto.siteId
@@ -499,16 +479,11 @@ export class PropertiesService {
           : propertyContact.contact,
       }));
     }
-    const tenants = draft.tenants as
-      | Array<{ contact?: { phones?: [] } | null }>
-      | undefined;
-    if (tenants) {
-      draft.tenants = tenants.map((tenant) => ({
-        ...tenant,
-        contact: tenant.contact
-          ? withPrimaryPhone(tenant.contact)
-          : tenant.contact,
-      }));
+    const leases = draft.leases as Parameters<typeof presentPropertyLease>[0][] | undefined;
+    if (leases) {
+      const presented = leases.map((lease) => presentPropertyLease(lease));
+      draft.leases = presented;
+      draft.tenants = presented;
     }
     const consultations = draft.consultations as
       | Array<{ contact?: { phones?: [] } | null }>
@@ -526,7 +501,7 @@ export class PropertiesService {
 
   private assertValidSiteType(siteType: string) {
     if (!VALID_SITE_TYPES.has(siteType as SiteType)) {
-      throw new BadRequestException('Invalid siteType');
+      throw new BadRequestException('알 수 없는 건물 유형입니다.');
     }
   }
 
@@ -536,13 +511,13 @@ export class PropertiesService {
   ) {
     if (UNIT_REQUIRED_SITE_TYPES.has(siteType) && !unit) {
       throw new BadRequestException(
-        'unitId is required for building-type properties (apartment/officetel/villa/living_accommodation)',
+        '이 건물(아파트·오피스텔·빌라·생활숙박)은 호수를 골라야 합니다.',
       );
     }
 
     if (UNIT_FORBIDDEN_SITE_TYPES.has(siteType) && unit) {
       throw new BadRequestException(
-        'unitId is not allowed for land properties',
+        '토지에는 호수를 붙일 수 없습니다.',
       );
     }
   }
@@ -556,7 +531,7 @@ export class PropertiesService {
     });
 
     if (!site) {
-      throw new NotFoundException('Site not found');
+      throw new NotFoundException('단지를 찾을 수 없습니다.');
     }
 
     return site;
@@ -587,7 +562,7 @@ export class PropertiesService {
 
     if (!unit) {
       throw new BadRequestException(
-        'Unit does not belong to the selected site',
+        '고른 호수가 이 단지의 호수가 아닙니다.',
       );
     }
 

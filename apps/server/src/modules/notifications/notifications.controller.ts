@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -14,6 +16,13 @@ import {
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { NotificationsService } from './notifications.service';
+
+const UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+/** 주소의 id 형식이 틀리면 DB까지 가지 않고 400으로 돌려준다 (그대로 두면 uuid 변환 오류로 500이 난다). */
+const NotificationIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new BadRequestException('잘못된 알림 주소입니다.'),
+});
 
 @ApiTags('알림')
 @ApiBearerAuth()
@@ -29,6 +38,10 @@ export class NotificationsController {
     @Query('limit') limit?: string,
     @Query('unreadOnly') unreadOnly?: string,
   ) {
+    // 형식이 틀린 목록 위치(cursor)는 400으로 (그대로 두면 uuid 변환 오류로 500이 난다)
+    if (cursor && !UUID_PATTERN.test(cursor)) {
+      throw new BadRequestException('잘못된 알림 목록 위치입니다.');
+    }
     return this.notificationsService.list(user.officeId, user.userId, {
       cursor,
       limit: limit ? Number(limit) : undefined,
@@ -48,7 +61,7 @@ export class NotificationsController {
 
   @Patch(':id/read')
   markRead(
-    @Param('id') id: string,
+    @Param('id', NotificationIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.notificationsService.markRead(id, user.officeId, user.userId);

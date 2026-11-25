@@ -173,12 +173,12 @@ export class CallIntelligenceService {
       where: { id: recordingId, officeId },
       select: { id: true, sttStatus: true, _count: { select: { messages: true } } },
     });
-    if (!recording) throw new NotFoundException('Recording not found');
+    if (!recording) throw new NotFoundException('통화 녹음을 찾을 수 없습니다.');
     if (recording.sttStatus !== 'completed' || recording._count.messages === 0) {
       throw new BadRequestException('받아쓰기가 끝난 통화만 다시 분석할 수 있습니다');
     }
     if (!process.env.GEMINI_API_KEY) {
-      throw new BadRequestException('GEMINI_API_KEY가 설정되지 않아 분석할 수 없습니다');
+      throw new BadRequestException('통화 분석이 켜져 있지 않아 분석할 수 없습니다. 관리자에게 문의해 주세요.');
     }
     await this.prisma.callRecording.update({
       where: { id: recordingId },

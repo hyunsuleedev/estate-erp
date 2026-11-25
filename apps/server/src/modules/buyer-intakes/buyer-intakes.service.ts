@@ -11,6 +11,7 @@ import {
 } from "@estate-erp/shared";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { closeOpenMatchesForBuyerIntake } from "../matches/match-lifecycle-sync";
 import {
   buyerIntakeContactsInclude,
   withBuyerRequirementContact,
@@ -304,7 +305,7 @@ export class BuyerIntakesService {
       where: { id, officeId },
       include: buyerIntakeInclude,
     });
-    if (!intake) throw new NotFoundException("BuyerIntake not found");
+    if (!intake) throw new NotFoundException("구매 의뢰를 찾을 수 없습니다.");
     return this.present(intake);
   }
 
@@ -378,18 +379,61 @@ export class BuyerIntakesService {
       memo?: string | null;
     },
   ) {
-    await this.findOne(id, officeId);
     this.assertLifecycleStatus(dto.lifecycleStatus);
-    const intake = await this.prisma.buyerIntake.update({
-      where: { id },
-      data: {
-        lifecycleStatus: dto.lifecycleStatus,
-        receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined,
-        memo: dto.memo,
-      },
-      include: buyerIntakeInclude,
+    // 의뢰를 닫으면(다른 곳에서 구함 등) 담긴 희망 조건들의 진행 중 매칭도 같은 트랜잭션에서 닫는다
+    // (buyer_closed — 희망 조건 완료와 같다). 보류는 닫지 않고, 다시 열어도 닫힌 매칭은 되살리지 않는다.
+    const intake = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ lifecycle_status: string }[]>`SELECT "lifecycle_status" FROM "buyer_intakes" WHERE "id" = ${id}::uuid AND "office_id" = ${officeId}::uuid FOR UPDATE`;
+      if (locked.length === 0) throw new NotFoundException("구매 의뢰를 찾을 수 없습니다.");
+      const closingNow =
+        dto.lifecycleStatus === IntakeLifecycleStatus.CLOSED &&
+        locked[0].lifecycle_status !== IntakeLifecycleStatus.CLOSED;
+      const updated = await tx.buyerIntake.update({
+        where: { id },
+        data: {
+          lifecycleStatus: dto.lifecycleStatus,
+          receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined,
+          memo: dto.memo,
+        },
+        include: buyerIntakeInclude,
+      });
+      if (closingNow) {
+        await closeOpenMatchesForBuyerIntake(tx, { officeId, buyerIntakeId: id });
+      }
+      return updated;
     });
     return this.present(intake);
+  }
+
+  async remove(id: string, officeId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockPrimaryContact(tx, id);
+      const existing = await tx.buyerIntake.findFirst({
+        where: { id, officeId },
+        select: { id: true },
+      });
+      if (!existing) throw new NotFoundException("구매 의뢰를 찾을 수 없습니다.");
+
+      const [deals, consultations, projectSteps] = await Promise.all([
+        tx.deal.count({ where: { officeId, buyerIntakeId: id } }),
+        tx.consultation.count({ where: { officeId, buyerIntakeId: id } }),
+        tx.projectStep.count({ where: { officeId, buyerIntakeId: id } }),
+      ]);
+      if (deals > 0 || consultations > 0 || projectSteps > 0) {
+        const reasons = [
+          deals > 0 ? `거래 ${deals}건` : null,
+          consultations > 0 ? `상담 기록 ${consultations}건` : null,
+          projectSteps > 0 ? `프로젝트 단계 ${projectSteps}건` : null,
+        ].filter(Boolean);
+        throw new ConflictException(
+          `${reasons.join(", ")}이 연결된 구매 의뢰는 삭제할 수 없습니다. 상태 변경(종료)을 사용하세요.`,
+        );
+      }
+
+      await tx.buyerRequirement.deleteMany({ where: { officeId, buyerIntakeId: id } });
+      await tx.buyerIntakeContact.deleteMany({ where: { officeId, buyerIntakeId: id } });
+      return tx.buyerIntake.delete({ where: { id } });
+    });
   }
 
   async addContact(id: string, officeId: string, dto: BuyerIntakeContactInput) {
@@ -402,7 +446,7 @@ export class BuyerIntakesService {
         where: { id, officeId },
         include: { contacts: true },
       });
-      if (!intake) throw new NotFoundException("BuyerIntake not found");
+      if (!intake) throw new NotFoundException("구매 의뢰를 찾을 수 없습니다.");
       if (
         intake.contacts.some((contact) => contact.contactId === dto.contactId)
       ) {
@@ -448,7 +492,7 @@ export class BuyerIntakesService {
         where: { officeId, buyerIntakeId: id, contactId },
       });
       if (!participant) {
-        throw new NotFoundException("BuyerIntake contact not found");
+        throw new NotFoundException("이 구매 의뢰에 연결된 연락처가 아닙니다.");
       }
       if (participant.isPrimary && dto.isPrimary === false) {
         throw new BadRequestException(
@@ -481,12 +525,12 @@ export class BuyerIntakesService {
         where: { id, officeId },
         include: { contacts: { orderBy: { createdAt: "asc" } } },
       });
-      if (!intake) throw new NotFoundException("BuyerIntake not found");
+      if (!intake) throw new NotFoundException("구매 의뢰를 찾을 수 없습니다.");
       const participant = intake.contacts.find(
         (contact) => contact.contactId === contactId,
       );
       if (!participant) {
-        throw new NotFoundException("BuyerIntake contact not found");
+        throw new NotFoundException("이 구매 의뢰에 연결된 연락처가 아닙니다.");
       }
       if (intake.contacts.length === 1) {
         throw new BadRequestException(
@@ -606,7 +650,7 @@ export class BuyerIntakesService {
   private assertLifecycleStatus(status?: string) {
     if (status && !BUYER_INTAKE_LIFECYCLE_STATUSES.has(status)) {
       throw new BadRequestException(
-        "구매 의뢰 상태는 open, hold, closed 중 하나여야 합니다.",
+        "구매 의뢰 상태는 진행 · 보류 · 종료 중 하나여야 합니다.",
       );
     }
   }

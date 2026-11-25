@@ -356,48 +356,67 @@ export class CtiService {
     }
     const phone = normalizePhone(rawPhone.trim());
 
-    const [matchedPhone, vendorContacts, recentCalls] = await Promise.all([
-      this.prisma.contactPhone.findFirst({
-        where: { officeId, phone },
-        orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
-        select: {
-          contact: {
-            select: {
-              id: true,
-              name: true,
-              memo: true,
-              tagAssignments: CONTACT_TAG_NAMES_INCLUDE,
+    const [matchedPhone, vendorContacts, partnerBrokerContacts, recentCalls] =
+      await Promise.all([
+        this.prisma.contactPhone.findFirst({
+          where: { officeId, phone },
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+          select: {
+            contact: {
+              select: {
+                id: true,
+                kind: true,
+                name: true,
+                memo: true,
+                tagAssignments: CONTACT_TAG_NAMES_INCLUDE,
+              },
             },
           },
-        },
-      }),
-      this.prisma.vendorContact.findMany({
-        where: {
-          normalizedPhone: phone,
-          vendor: { isActive: true, OR: [{ officeId }, { officeId: null }] },
-        },
-        select: {
-          id: true,
-          name: true,
-          phone: true,
-          role: true,
-          vendor: { select: { id: true, name: true } },
-        },
-        take: 5,
-      }),
-      this.prisma.callLog.findMany({
-        where: { officeId, phoneNumber: phone },
-        orderBy: { startedAt: 'desc' },
-        take: 5,
-        select: {
-          id: true,
-          direction: true,
-          status: true,
-          durationSec: true,
-          startedAt: true,
-        },
-      }),
-    ]);
+        }),
+        this.prisma.vendorContact.findMany({
+          where: {
+            normalizedPhone: phone,
+            vendor: { isActive: true, OR: [{ officeId }, { officeId: null }] },
+          },
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            role: true,
+            vendor: { select: { id: true, name: true } },
+          },
+          take: 5,
+        }),
+        this.prisma.partnerBrokerContact
+          ? this.prisma.partnerBrokerContact.findMany({
+              where: {
+                officeId,
+                normalizedPhone: phone,
+                partnerBroker: { isActive: true },
+              },
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+                role: true,
+                partnerBroker: { select: { id: true, name: true } },
+              },
+              take: 5,
+            })
+          : Promise.resolve([]),
+        this.prisma.callLog.findMany({
+          where: { officeId, phoneNumber: phone },
+          orderBy: { startedAt: 'desc' },
+          take: 5,
+          select: {
+            id: true,
+            direction: true,
+            status: true,
+            durationSec: true,
+            startedAt: true,
+          },
+        }),
+      ]);
 
     // 화면은 태그를 이름 배열로 받는다.
     const contact = matchedPhone?.contact ? withTagNames(matchedPhone.contact) : null;
@@ -405,9 +424,11 @@ export class CtiService {
     if (!contact) {
       return {
         phone,
-        isNew: vendorContacts.length === 0,
+        isNew: vendorContacts.length === 0 && partnerBrokerContacts.length === 0,
         contact: null,
+        parties: [],
         vendorContacts,
+        partnerBrokerContacts,
         recentConsultations: [],
         properties: [],
         buyerRequirement: null,
@@ -416,16 +437,19 @@ export class CtiService {
       };
     }
 
+    const partyInfo = await this.loadLookupParties(officeId, contact.id);
+    const contextContactIds = partyInfo.householdContactIds;
+
     const [recentConsultations, propertyContacts, buyerRequirement, openTasks] =
       await Promise.all([
         this.prisma.consultation.findMany({
-          where: { officeId, contactId: contact.id },
+          where: { officeId, contactId: { in: contextContactIds } },
           orderBy: { createdAt: 'desc' },
           take: 3,
           select: { id: true, type: true, content: true, createdAt: true },
         }),
         this.prisma.propertyContact.findMany({
-          where: { officeId, contactId: contact.id, status: 'active' },
+          where: { officeId, contactId: { in: contextContactIds }, status: 'active' },
           take: 5,
           select: {
             role: true,
@@ -449,7 +473,7 @@ export class CtiService {
             officeId,
             status: 'active',
             buyerIntake: {
-              contacts: { some: { contactId: contact.id } },
+              contacts: { some: { contactId: { in: contextContactIds } } },
             },
           },
           orderBy: { updatedAt: 'desc' },
@@ -469,7 +493,7 @@ export class CtiService {
         this.prisma.task.findMany({
           where: {
             officeId,
-            contactId: contact.id,
+            contactId: { in: contextContactIds },
             status: { in: ['pending', 'in_progress'] },
           },
           orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
@@ -482,12 +506,83 @@ export class CtiService {
       phone,
       isNew: false,
       contact,
+      parties: partyInfo.parties,
       vendorContacts,
+      partnerBrokerContacts,
       recentConsultations,
       properties: propertyContacts,
       buyerRequirement,
       openTasks,
       recentCalls,
+    };
+  }
+
+  private async loadLookupParties(officeId: string, contactId: string) {
+    if (!this.prisma.partyMember || !this.prisma.party) {
+      return { parties: [], householdContactIds: [contactId] };
+    }
+    const [memberships, orgParty] = await Promise.all([
+      this.prisma.partyMember.findMany({
+        where: { officeId, contactId, status: 'active' },
+        include: {
+          party: {
+            include: {
+              organizationContact: { select: { id: true, name: true } },
+              members: {
+                where: { status: 'active' },
+                include: { contact: { select: { id: true, name: true } } },
+                orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.party.findFirst({
+        where: { officeId, kind: 'organization', organizationContactId: contactId },
+        include: {
+          organizationContact: { select: { id: true, name: true } },
+          members: {
+            where: { status: 'active' },
+            include: { contact: { select: { id: true, name: true } } },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+          },
+        },
+      }),
+    ]);
+
+    const partyEntries = [
+      ...memberships.map((item) => ({
+        party: item.party,
+        selfRoleLabel: item.roleLabel,
+      })),
+      ...(orgParty ? [{ party: orgParty, selfRoleLabel: null }] : []),
+    ];
+
+    const householdContactIds = new Set<string>([contactId]);
+    const parties = partyEntries.map(({ party, selfRoleLabel }) => {
+      if (party.kind === 'household') {
+        for (const member of party.members) {
+          householdContactIds.add(member.contactId);
+        }
+      }
+      return {
+        id: party.id,
+        kind: party.kind,
+        name: party.name ?? party.organizationContact?.name ?? null,
+        roleLabel: selfRoleLabel,
+        members: party.members.map((member) => ({
+          contactId: member.contactId,
+          name: member.contact.name,
+          roleLabel: member.roleLabel,
+          isPrimary: member.isPrimary,
+        })),
+      };
+    });
+
+    return {
+      parties,
+      householdContactIds: Array.from(householdContactIds),
     };
   }
 

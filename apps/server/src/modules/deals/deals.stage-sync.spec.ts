@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { DealsService } from './deals.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 
@@ -15,12 +15,19 @@ interface MockTx {
     findFirst: jest.Mock;
     count: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
+    findUniqueOrThrow: jest.Mock;
     delete: jest.Mock;
   };
   listing: { updateMany: jest.Mock; count: jest.Mock };
   listingIntake: { updateMany: jest.Mock; findFirst: jest.Mock; findUnique: jest.Mock };
   contract: { findUnique: jest.Mock };
-  commissionPayment: { updateMany: jest.Mock };
+  commissionPayment: { updateMany: jest.Mock; deleteMany: jest.Mock; findMany: jest.Mock; update: jest.Mock };
+  commissionReceipt: { count: jest.Mock };
+  dealPayment: { updateMany: jest.Mock; findMany: jest.Mock; update: jest.Mock };
+  dealParticipant: { deleteMany: jest.Mock };
+  task: { updateMany: jest.Mock };
+  calendarEvent: { updateMany: jest.Mock };
   /** 매칭 자동 종료·되살리기 (match-lifecycle-sync) */
   match: { findMany: jest.Mock; update: jest.Mock };
   /** advisory lock (pg_advisory_xact_lock) 호출 */
@@ -40,6 +47,11 @@ function buildMocks(options: {
       findFirst: jest.fn().mockResolvedValue(options.conflictingDeal ?? null),
       count: jest.fn().mockResolvedValue(options.remainingDoneDeals ?? 0),
       update: jest
+        .fn()
+        .mockResolvedValue({ ...options.existingDeal, listing: null }),
+      // 취소는 "아직 취소 전"일 때만 바꾸고(updateMany) 다시 읽는다
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUniqueOrThrow: jest
         .fn()
         .mockResolvedValue({ ...options.existingDeal, listing: null }),
       delete: jest.fn().mockResolvedValue({ ...options.existingDeal }),
@@ -74,7 +86,19 @@ function buildMocks(options: {
     },
     commissionPayment: {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findMany: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({}),
     },
+    commissionReceipt: { count: jest.fn().mockResolvedValue(0) },
+    dealPayment: {
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findMany: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    dealParticipant: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    task: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    calendarEvent: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     match: {
       findMany: jest.fn().mockResolvedValue([]),
       update: jest.fn().mockResolvedValue({}),
@@ -327,14 +351,17 @@ describe('DealsService completed 동기화', () => {
     });
   });
 
-  it('이미 취소된 거래를 다시 취소해도 매칭을 건드리지 않는다', async () => {
+  it('이미 취소된 거래를 다시 취소하면 거절하고 매칭을 건드리지 않는다', async () => {
     const { prisma, tx } = buildMocks({
       existingDeal: { ...baseDeal, isCancelled: true, matchId: 'match-source' },
     });
     const service = new DealsService(prisma);
 
-    await service.cancel('deal-1', 'office-1', {});
+    await expect(service.cancel('deal-1', 'office-1', {})).rejects.toBeInstanceOf(
+      ConflictException,
+    );
 
+    expect(tx.deal.updateMany).not.toHaveBeenCalled();
     expect(tx.match.findMany).not.toHaveBeenCalled();
     expect(tx.match.update).not.toHaveBeenCalled();
   });
@@ -526,7 +553,7 @@ describe('DealsService completed 동기화', () => {
     );
   });
 
-  it('이미 취소된 Deal의 completed 변경은 intake를 종결하지 않는다', async () => {
+  it('취소된 Deal은 단계를 바꿀 수 없고 intake도 건드리지 않는다', async () => {
     const { prisma, tx } = buildMocks({
       existingDeal: {
         ...baseDeal,
@@ -537,8 +564,11 @@ describe('DealsService completed 동기화', () => {
     });
     const service = new DealsService(prisma);
 
-    await service.updateStage('deal-1', 'office-1', { stage: 'completed' });
+    await expect(
+      service.updateStage('deal-1', 'office-1', { stage: 'completed' }),
+    ).rejects.toBeInstanceOf(ConflictException);
 
+    expect(tx.deal.update).not.toHaveBeenCalled();
     expect(tx.listingIntake.updateMany).not.toHaveBeenCalled();
   });
 });

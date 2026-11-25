@@ -25,12 +25,16 @@ model Project {
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
   office         Office              @relation(fields: [officeId], references: [id], onDelete: Restrict)
-  primaryContact Contact?            @relation("ProjectPrimaryContact", fields: [primaryContactId], references: [id], onDelete: SetNull)
+  primaryContact Contact?            @relation("ProjectPrimaryContact", fields: [officeId, primaryContactId], references: [officeId, id], onDelete: Restrict)
   assignedTo     User?               @relation("ProjectAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   steps          ProjectStep[]
   buyerIntakes   BuyerIntake[]
   listingIntakes ListingIntake[]
   comments       ProjectComment[]
+  consultations  Consultation[]
+  calendarEvents CalendarEvent[]
+  /// 이 프로젝트에 적은 업무. 프로젝트를 풀면 업무는 남고 연결만 끊긴다.
+  tasks          Task[]
 
   // 하위 테이블의 복합 FK가 office_id까지 함께 검증한다.
   @@unique([officeId, id])

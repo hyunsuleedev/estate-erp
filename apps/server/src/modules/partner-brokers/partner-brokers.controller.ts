@@ -1,9 +1,11 @@
 import {
+  NotFoundException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -16,6 +18,16 @@ import {
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { PartnerBrokersService } from './partner-brokers.service';
+import {
+  CreatePartnerBrokerContactDto,
+  CreatePartnerBrokerDto,
+  UpdatePartnerBrokerContactDto,
+  UpdatePartnerBrokerDto,
+} from './partner-brokers.dto';
+
+const uuidPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new NotFoundException('파트너 사무소를 찾을 수 없습니다.'),
+});
 
 @ApiTags('Partner Brokers')
 @ApiBearerAuth()
@@ -34,7 +46,7 @@ export class PartnerBrokersController {
 
   @Get(':id')
   findOne(
-    @Param('id') id: string,
+    @Param('id', uuidPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.findOne(id, user.officeId);
@@ -43,47 +55,53 @@ export class PartnerBrokersController {
   @Post()
   create(
     @CurrentUser() user: CurrentUserPayload,
-    @Body()
-    body: {
-      name: string;
-      phone?: string;
-      ceoName?: string;
-      ceoPhone?: string;
-      licenseNo?: string;
-      email?: string;
-      address?: string;
-      memo?: string;
-      linkedOfficeId?: string;
-    },
+    @Body() body: CreatePartnerBrokerDto,
   ) {
     return this.service.create(user.officeId, body);
   }
 
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', uuidPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
-    @Body()
-    body: Partial<{
-      name: string;
-      phone: string | null;
-      ceoName: string | null;
-      ceoPhone: string | null;
-      licenseNo: string | null;
-      email: string | null;
-      address: string | null;
-      memo: string | null;
-      isActive: boolean;
-    }>,
+    @Body() body: UpdatePartnerBrokerDto,
   ) {
     return this.service.update(id, user.officeId, body);
   }
 
   @Delete(':id')
   remove(
-    @Param('id') id: string,
+    @Param('id', uuidPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.remove(id, user.officeId);
+  }
+
+  @Post(':id/contacts')
+  addContact(
+    @Param('id', uuidPipe) id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: CreatePartnerBrokerContactDto,
+  ) {
+    return this.service.addContact(id, user.officeId, body);
+  }
+
+  @Patch(':id/contacts/:contactId')
+  updateContact(
+    @Param('id', uuidPipe) id: string,
+    @Param('contactId', uuidPipe) contactId: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @Body() body: UpdatePartnerBrokerContactDto,
+  ) {
+    return this.service.updateContact(id, contactId, user.officeId, body);
+  }
+
+  @Delete(':id/contacts/:contactId')
+  removeContact(
+    @Param('id', uuidPipe) id: string,
+    @Param('contactId', uuidPipe) contactId: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    return this.service.removeContact(id, contactId, user.officeId);
   }
 }

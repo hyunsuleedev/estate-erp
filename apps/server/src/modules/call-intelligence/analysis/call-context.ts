@@ -235,7 +235,7 @@ export async function buildCallContext(
         });
         const confirmation = getIntakeConfirmationState(intake, input.now);
         const lastVerified = intake.lastVerifiedAt
-          ? ` · 마지막 확인 ${intake.lastVerifiedAt.toISOString().slice(0, 10)}`
+          ? ` · 마지막 확인 ${kstDateText(intake.lastVerifiedAt)}`
           : '';
         lines.push(
           `  - ${intakeRef} 의뢰 ${intake.lifecycleStatus === 'hold' ? '보류' : '진행'} · ${CONFIRMATION_TEXT[confirmation] ?? confirmation}${lastVerified}`,
@@ -495,4 +495,9 @@ export async function describeSuggestionTargets(
   }
   for (const site of sites) labels[site.id] = site.name;
   return labels;
+}
+
+/** 시각 → 한국 날짜 "2026-11-22". toISOString은 UTC 날짜라 한국 시간 0~9시의 확인이 하루 앞날로 적힌다. */
+function kstDateText(value: Date): string {
+  return new Date(value.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }

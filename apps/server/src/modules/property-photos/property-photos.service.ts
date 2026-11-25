@@ -66,6 +66,13 @@ export class PropertyPhotosService {
       memo?: string;
     },
   ) {
+    // 이 사무소의 매물에만 사진을 붙인다(다른 사무소 매물 id로 사진 줄을 만들지 못하게)
+    const property = await this.prisma.property.findFirst({
+      where: { id: data.propertyId, officeId },
+      select: { id: true },
+    });
+    if (!property) throw new NotFoundException('매물을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
+
     const maxOrder = await this.prisma.propertyPhoto.aggregate({
       where: { officeId, propertyId: data.propertyId },
       _max: { sortOrder: true },
@@ -94,11 +101,16 @@ export class PropertyPhotosService {
     const photo = await this.prisma.propertyPhoto.findFirst({
       where: { id, officeId },
     });
-    if (!photo) throw new NotFoundException();
+    if (!photo) throw new NotFoundException('사진을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
 
+    // 본문을 그대로 쓰지 않는다 — 분류·순서·메모만 고친다
     return this.prisma.propertyPhoto.update({
       where: { id },
-      data,
+      data: {
+        ...(data.category !== undefined ? { category: data.category } : {}),
+        ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+        ...(data.memo !== undefined ? { memo: data.memo } : {}),
+      },
     });
   }
 
@@ -117,7 +129,7 @@ export class PropertyPhotosService {
     const photo = await this.prisma.propertyPhoto.findFirst({
       where: { id, officeId },
     });
-    if (!photo) throw new NotFoundException();
+    if (!photo) throw new NotFoundException('사진을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
 
     return this.prisma.propertyPhoto.delete({ where: { id } });
   }

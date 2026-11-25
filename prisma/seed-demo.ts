@@ -556,9 +556,9 @@ async function wipe({ prisma, officeId }: Pick<Ctx, 'prisma' | 'officeId'>) {
     },
   });
 
-  // 3) Tenant, PropertyContact → Property
+  // 3) PropertyLease, PropertyContact → Property
   if (uniquePropIds.length > 0) {
-    await prisma.tenant.deleteMany({
+    await prisma.propertyLease.deleteMany({
       where: { propertyId: { in: uniquePropIds } },
     });
     await prisma.propertyContact.deleteMany({
@@ -696,37 +696,49 @@ async function seedProperties(
     created.push(property);
   }
 
-  // 임대중인 Property 2개 (인덱스 4, 5) → Tenant 붙이기
+  // 임대중인 Property 2개 (인덱스 4, 5) → PropertyLease + PropertyLeaseTenant 붙이기
   const now = new Date();
   const addMonths = (d: Date, n: number) => {
     const copy = new Date(d);
     copy.setMonth(copy.getMonth() + n);
     return copy;
   };
-  await ctx.prisma.tenant.create({
+  await ctx.prisma.propertyLease.create({
     data: {
       officeId: ctx.officeId,
       propertyId: created[4].id,
-      contactId: tenants[0].id,
       deposit: 50000, // 5억
       monthlyRent: 0,
       contractStart: addMonths(now, -18),
       contractEnd: addMonths(now, 2), // 곧 만기 (D-60 테스트)
       status: 'residing',
       memo: `${DEMO_TAG} 전세 거주중`,
+      tenants: {
+        create: {
+          contactId: tenants[0].id,
+          role: 'tenant',
+          isPrimary: true,
+        },
+      },
     },
   });
-  await ctx.prisma.tenant.create({
+  await ctx.prisma.propertyLease.create({
     data: {
       officeId: ctx.officeId,
       propertyId: created[5].id,
-      contactId: tenants[1].id,
       deposit: 10000, // 1억
       monthlyRent: 120, // 120만원
       contractStart: addMonths(now, -6),
       contractEnd: addMonths(now, 18),
       status: 'residing',
       memo: `${DEMO_TAG} 월세 거주중`,
+      tenants: {
+        create: {
+          contactId: tenants[1].id,
+          role: 'tenant',
+          isPrimary: true,
+        },
+      },
     },
   });
 
@@ -1685,13 +1697,11 @@ async function seedDeals(
       memo: `${DEMO_TAG} 계약 진행중`,
     },
   });
-  await ctx.prisma.contract.create({
+  const contract2 = await ctx.prisma.contract.create({
     data: {
       officeId: ctx.officeId,
       dealId: deal2.id,
       transactionType: 'sale',
-      buyerContactId: buyers[2].id,
-      sellerContactId: owners[3].id,
       totalPrice: 198000,
       status: 'depositPaid',
       contractDate: daysAgo(5),
@@ -1705,6 +1715,28 @@ async function seedDeals(
       attachments: [],
       memo: `${DEMO_TAG} 계약금 완료`,
     },
+  });
+  await ctx.prisma.contractParty.createMany({
+    data: [
+      {
+        officeId: ctx.officeId,
+        contractId: contract2.id,
+        side: 'one',
+        subId: 1,
+        role: 'seller',
+        name: owners[3].name,
+        contactId: owners[3].id,
+      },
+      {
+        officeId: ctx.officeId,
+        contractId: contract2.id,
+        side: 'two',
+        subId: 1,
+        role: 'buyer',
+        name: buyers[2].name,
+        contactId: buyers[2].id,
+      },
+    ],
   });
   // Deal 2 DealPayment: 계약금 완료, 중도금/잔금 예정
   await ctx.prisma.dealPayment.createMany({
@@ -1783,13 +1815,11 @@ async function seedDeals(
       memo: `${DEMO_TAG} 공동중개 완료`,
     },
   });
-  await ctx.prisma.contract.create({
+  const contract3 = await ctx.prisma.contract.create({
     data: {
       officeId: ctx.officeId,
       dealId: deal3.id,
       transactionType: 'sale',
-      buyerContactId: buyers[3].id,
-      sellerContactId: owners[1].id,
       totalPrice: 242000,
       status: 'registered',
       contractDate: daysAgo(45),
@@ -1803,6 +1833,28 @@ async function seedDeals(
       attachments: [],
       memo: `${DEMO_TAG} 등기 완료`,
     },
+  });
+  await ctx.prisma.contractParty.createMany({
+    data: [
+      {
+        officeId: ctx.officeId,
+        contractId: contract3.id,
+        side: 'one',
+        subId: 1,
+        role: 'seller',
+        name: owners[1].name,
+        contactId: owners[1].id,
+      },
+      {
+        officeId: ctx.officeId,
+        contractId: contract3.id,
+        side: 'two',
+        subId: 1,
+        role: 'buyer',
+        name: buyers[3].name,
+        contactId: buyers[3].id,
+      },
+    ],
   });
   // Deal 3 DealPayment: 모든 입금 완료
   await ctx.prisma.dealPayment.createMany({

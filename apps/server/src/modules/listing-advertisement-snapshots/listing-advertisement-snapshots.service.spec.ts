@@ -42,6 +42,16 @@ describe("ListingAdvertisementSnapshotsService", () => {
   function createPrisma() {
     const prisma: any = {
       $queryRaw: jest.fn().mockResolvedValue([]),
+      officeCpAccount: {
+        upsert: jest.fn().mockResolvedValue({
+          id: "cp-account-1",
+          officeId,
+          channel: "esiljang",
+          accountKey: "esil-user-1",
+        }),
+        count: jest.fn().mockResolvedValue(1),
+        update: jest.fn().mockResolvedValue({ id: "cp-account-1" }),
+      },
       listingAdvertisementSnapshotSession: {
         findFirst: jest.fn(),
         create: jest.fn(),
@@ -81,7 +91,12 @@ describe("ListingAdvertisementSnapshotsService", () => {
         delete: jest.fn(),
       },
       listingAdvertisementHistory: { create: jest.fn(), updateMany: jest.fn() },
-      advertisementChangeRequest: { updateMany: jest.fn() },
+      advertisementChangeRequest: {
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      task: { updateMany: jest.fn() },
       advertisementComparisonRecord: { updateMany: jest.fn() },
       advertisementComparison: { count: jest.fn().mockResolvedValue(0),
         aggregate: jest.fn().mockResolvedValue({ _max: { lastSeenAt: null }, _count: { _all: 0 } }), updateMany: jest.fn(), deleteMany: jest.fn() },
@@ -96,6 +111,7 @@ describe("ListingAdvertisementSnapshotsService", () => {
     return {
       id: sessionId,
       officeId,
+      cpAccountId: "cp-account-1",
       channel: "esiljang",
       scope: "active_advertisements",
       status: "processing",
@@ -149,6 +165,7 @@ describe("ListingAdvertisementSnapshotsService", () => {
     const result = await service.begin(officeId, userId, {
       channel: "esiljang",
       provider: "esiljang",
+      accountKey: "esil-user-1",
       scope: "active_advertisements",
       observedAt,
       expectedTotal: 1,
@@ -508,7 +525,7 @@ describe("ListingAdvertisementSnapshotsService", () => {
         rawRoadAddress: null,
         externalAdId: "64850265",
         status: "active",
-        source: "cp_sync",
+        cpAccountId: "cp-account-1",
         advertisedDeposit: 3000,
         advertisedMonthlyRent: 170,
         providerStatus: "광고중",
@@ -531,9 +548,9 @@ describe("ListingAdvertisementSnapshotsService", () => {
         source: "cp_sync",
       }),
     });
-    // 같은 광고는 열쇠(매물 + 채널)로 먼저 찾는다. 종료된 줄도 대상이다
+    // 같은 광고는 열쇠(매물 + 채널 + CP계정)로 먼저 찾는다. 종료된 줄도 대상이다
     expect(prisma.listingAdvertisement.findFirst).toHaveBeenCalledWith({
-      where: { officeId, listingId, channel: "esiljang" },
+      where: { officeId, listingId, channel: "esiljang", cpAccountId: "cp-account-1" },
     });
     expect(result).toEqual(
       expect.objectContaining({
@@ -744,5 +761,185 @@ describe("ListingAdvertisementSnapshotsService", () => {
     expect(
       prisma.listingAdvertisementSnapshotItem.deleteMany,
     ).not.toHaveBeenCalled();
+  });
+
+  it("protects manualEditedAt edits made after snapshot observedAt from stale overwrite", async () => {
+    const prisma = createPrisma();
+    const session = {
+      ...activeSession(),
+      receivedCount: 1,
+      resolvedCount: 1,
+    };
+    prisma.listingAdvertisementSnapshotSession.findFirst.mockResolvedValue(session);
+    prisma.listingAdvertisementSnapshotItem.findMany.mockResolvedValue([
+      {
+        id: itemId,
+        sessionId,
+        externalAdId: "64850265",
+        status: "resolved",
+        raw: rawItem,
+        listingId,
+        propertyId: "property-1",
+        siteId: "site-1",
+        error: null,
+      },
+    ]);
+    prisma.listingAdvertisement.findMany.mockResolvedValue([]);
+    prisma.listingAdvertisement.findFirst.mockResolvedValue({
+      id: "ad-manual-newer",
+      status: "active",
+      externalAdId: "64850265",
+      cpAccountId: null,
+      advertisedDeposit: 4200,
+      advertisedMonthlyRent: 190,
+      manualEditedAt: new Date("2026-08-05T00:00:00.000Z"), // > observedAt (2026-08-04T14:48)
+    });
+    prisma.listingAdvertisementSnapshotSession.update.mockResolvedValue({
+      ...session,
+      status: "completed",
+      completedAt: new Date(observedAt),
+    });
+    const service = new ListingAdvertisementSnapshotsService(prisma);
+
+    await service.complete(officeId, userId, "agent", sessionId);
+
+    const updateData = prisma.listingAdvertisement.update.mock.calls[0][0].data;
+    expect(updateData).not.toHaveProperty("advertisedDeposit");
+    expect(updateData).not.toHaveProperty("lastSyncedAt");
+    expect(updateData.cpAccountId).toBe("cp-account-1");
+    expect(prisma.listingAdvertisementHistory.create).not.toHaveBeenCalled();
+  });
+
+  it("auto-verifies fulfilled update/takedown requests and completes parent Task", async () => {
+    const prisma = createPrisma();
+    const session = {
+      ...activeSession(),
+      receivedCount: 1,
+      resolvedCount: 1,
+    };
+    prisma.listingAdvertisementSnapshotSession.findFirst.mockResolvedValue(session);
+    prisma.listingAdvertisementSnapshotItem.findMany.mockResolvedValue([
+      {
+        id: itemId,
+        sessionId,
+        externalAdId: "64850265",
+        status: "resolved",
+        raw: rawItem,
+        listingId,
+        propertyId: "property-1",
+        siteId: "site-1",
+        error: null,
+      },
+    ]);
+    prisma.listingAdvertisement.findMany.mockResolvedValue([
+      {
+        id: "ad-stale",
+        status: "active",
+        externalAdId: "99999999",
+        advertisedPrice: null,
+        advertisedDeposit: 2000,
+        advertisedMonthlyRent: 100,
+      },
+    ]);
+    prisma.listingAdvertisement.findFirst.mockResolvedValue({
+      id: "ad-1",
+      status: "active",
+      externalAdId: "64850265",
+      advertisedPrice: null,
+      advertisedDeposit: 3500,
+      advertisedMonthlyRent: 170,
+      floorExposure: "exact",
+      naverArticleNo: "2641347513",
+      manualEditedAt: null,
+    });
+    prisma.advertisementChangeRequest.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "req-update",
+          action: "update",
+          advertisementId: "ad-1",
+          listingId,
+          taskId: "task-1",
+          targetValue: { deposit: 3000, monthlyRent: 170 },
+          baseSnapshot: null,
+        },
+        {
+          id: "req-takedown",
+          action: "takedown",
+          advertisementId: "ad-stale",
+          listingId: null,
+          taskId: "task-1",
+          targetValue: {},
+          baseSnapshot: null,
+        },
+      ])
+      .mockResolvedValueOnce([{ status: "verified" }, { status: "verified" }]);
+    prisma.advertisementChangeRequest.updateMany.mockResolvedValue({ count: 0 });
+    prisma.listingAdvertisementSnapshotSession.update.mockResolvedValue({
+      ...session,
+      status: "completed",
+      completedAt: new Date(observedAt),
+    });
+    const service = new ListingAdvertisementSnapshotsService(prisma);
+
+    await service.complete(officeId, userId, "agent", sessionId);
+
+    expect(prisma.advertisementChangeRequest.update).toHaveBeenCalledTimes(2);
+    expect(prisma.advertisementChangeRequest.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "req-update" },
+        data: expect.objectContaining({ status: "verified", verifiedAt: new Date(observedAt) }),
+      }),
+    );
+    expect(prisma.task.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "task-1", officeId, status: { in: ["pending", "in_progress"] } },
+        data: expect.objectContaining({ status: "completed" }),
+      }),
+    );
+  });
+
+  it("scopes stale termination strictly when office has multiple CP accounts", async () => {
+    const prisma = createPrisma();
+    const session = {
+      ...activeSession(),
+      receivedCount: 1,
+      resolvedCount: 1,
+    };
+    prisma.officeCpAccount.count.mockResolvedValue(2);
+    prisma.listingAdvertisementSnapshotSession.findFirst.mockResolvedValue(session);
+    prisma.listingAdvertisementSnapshotItem.findMany.mockResolvedValue([
+      {
+        id: itemId,
+        sessionId,
+        externalAdId: "64850265",
+        status: "resolved",
+        raw: rawItem,
+        listingId,
+        propertyId: "property-1",
+        siteId: "site-1",
+        error: null,
+      },
+    ]);
+    prisma.listingAdvertisement.findMany.mockResolvedValue([]);
+    prisma.listingAdvertisement.findFirst.mockResolvedValue(null);
+    prisma.listingAdvertisementSnapshotSession.update.mockResolvedValue({
+      ...session,
+      status: "completed",
+      completedAt: new Date(observedAt),
+    });
+    const service = new ListingAdvertisementSnapshotsService(prisma);
+
+    await service.complete(officeId, userId, "agent", sessionId);
+
+    expect(prisma.listingAdvertisement.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            { cpAccountId: "cp-account-1" },
+          ]),
+        }),
+      }),
+    );
   });
 });

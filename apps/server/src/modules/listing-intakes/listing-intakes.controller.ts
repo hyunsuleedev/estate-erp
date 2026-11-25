@@ -129,6 +129,8 @@ export class ListingIntakesController {
     dto: {
       propertyId: string;
       projectId?: string;
+      requesterContactId?: string | null;
+      requesterRole?: string | null;
       lifecycleStatus?: string;
       closedReason?: string | null;
       receivedAt?: string | null;
@@ -179,6 +181,8 @@ export class ListingIntakesController {
     @Param('id') id: string,
     @Body()
     dto: {
+      requesterContactId?: string | null;
+      requesterRole?: string | null;
       lifecycleStatus?: string;
       closedReason?: string | null;
       receivedAt?: string | null;

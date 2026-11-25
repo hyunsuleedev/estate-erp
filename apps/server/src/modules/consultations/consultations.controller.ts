@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -10,6 +11,7 @@ import {
   UseGuards,
   UseInterceptors,
   UploadedFile,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -19,6 +21,11 @@ import {
   CurrentUser,
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+
+/** 주소의 id 형식이 틀리면 DB까지 가지 않고 400으로 돌려준다 (그대로 두면 500이 났다). 연락처의 ContactIdPipe와 같다. */
+const ConsultationIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () => new BadRequestException('잘못된 상담 주소입니다.'),
+});
 
 @ApiTags('상담')
 @ApiBearerAuth()
@@ -39,6 +46,7 @@ export class ConsultationsController {
   findAll(
     @Query('q') q: string,
     @Query('contactId') contactId: string,
+    @Query('scope') scope: string,
     @Query('propertyId') propertyId: string,
     @Query('siteId') siteId: string,
     @Query('dongId') dongId: string,
@@ -48,6 +56,8 @@ export class ConsultationsController {
     @Query('matchId') matchId: string,
     @Query('buyerIntakeId') buyerIntakeId: string,
     @Query('buyerReqId') buyerReqId: string,
+    @Query('dealId') dealId: string,
+    @Query('projectId') projectId: string,
     @Query('context') context: string,
     @Query('outcome') outcome: string,
     @Query('type') type: string,
@@ -64,6 +74,7 @@ export class ConsultationsController {
     return this.service.findAll(user.officeId, {
       q: q || undefined,
       contactId: contactId || undefined,
+      scope: scope === 'party' ? 'party' : scope === 'self' ? 'self' : undefined,
       propertyId: propertyId || undefined,
       siteId: siteId || undefined,
       dongId: dongId || undefined,
@@ -73,6 +84,8 @@ export class ConsultationsController {
       matchId: matchId || undefined,
       buyerIntakeId: buyerIntakeId || undefined,
       buyerReqId: buyerReqId || undefined,
+      dealId: dealId || undefined,
+      projectId: projectId || undefined,
       context:
         (context as
           | 'property'
@@ -98,7 +111,7 @@ export class ConsultationsController {
 
   @Get(':id')
   findOne(
-    @Param('id') id: string,
+    @Param('id', ConsultationIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.findOne(id, user.officeId);
@@ -118,7 +131,11 @@ export class ConsultationsController {
       matchId?: string;
       buyerIntakeId?: string;
       buyerReqId?: string;
+      dealId?: string;
+      projectId?: string;
       callRecordingId?: string;
+      /** 상담한 때 (ISO). 비우면 지금 */
+      consultedAt?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -127,11 +144,12 @@ export class ConsultationsController {
 
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ConsultationIdPipe) id: string,
     @Body()
     dto: {
       type?: string;
       content?: string;
+      consultedAt?: string;
     },
     @CurrentUser() user: CurrentUserPayload,
   ) {
@@ -140,7 +158,7 @@ export class ConsultationsController {
 
   @Delete(':id')
   remove(
-    @Param('id') id: string,
+    @Param('id', ConsultationIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.remove(id, user.officeId);
@@ -181,7 +199,7 @@ export class ConsultationsController {
   @Post(':id/recording')
   @UseInterceptors(FileInterceptor('file'))
   attachRecordingToConsultation(
-    @Param('id') id: string,
+    @Param('id', ConsultationIdPipe) id: string,
     @UploadedFile() file: Express.Multer.File,
     @Body('durationSec') durationSec: string,
     @Body('calledAt') calledAt: string,
@@ -208,7 +226,7 @@ export class ConsultationsController {
   @Post('recordings/:id/attach-file')
   @UseInterceptors(FileInterceptor('file'))
   attachRecordingFile(
-    @Param('id') id: string,
+    @Param('id', ConsultationIdPipe) id: string,
     @UploadedFile() file: Express.Multer.File,
     @Body('contactId') contactId: string,
     @CurrentUser() user: CurrentUserPayload,
@@ -224,7 +242,7 @@ export class ConsultationsController {
   /** 받아쓰기는 그대로 두고 통화 분석(요약·업무 제안)만 다시 한다 */
   @Post('recordings/:id/reanalyze')
   reanalyzeRecording(
-    @Param('id') id: string,
+    @Param('id', ConsultationIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.reanalyzeRecording(id, user.officeId);
@@ -232,7 +250,7 @@ export class ConsultationsController {
 
   @Get(':id/stt-status')
   getSttStatus(
-    @Param('id') id: string,
+    @Param('id', ConsultationIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.getSttStatus(id, user.officeId);
@@ -289,7 +307,7 @@ export class ConsultationsController {
 
   @Get('recordings/:id')
   findRecording(
-    @Param('id') id: string,
+    @Param('id', ConsultationIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.service.findRecording(id, user.officeId);
@@ -297,7 +315,7 @@ export class ConsultationsController {
 
   @Patch('recordings/:id')
   updateRecording(
-    @Param('id') id: string,
+    @Param('id', ConsultationIdPipe) id: string,
     @Body()
     dto: {
       contactId?: string | null;

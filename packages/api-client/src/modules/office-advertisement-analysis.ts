@@ -33,7 +33,7 @@ function toSubject(
     advertisedDeposit: listingAdvertisement.advertisedDeposit,
     advertisedMonthlyRent: listingAdvertisement.advertisedMonthlyRent,
     hasComparison: comparison != null,
-    main: comparison?.mainAdvertisement ?? null,
+    ownAdvertisement: comparison?.ownAdvertisement ?? null,
     rows: comparison?.advertisements ?? [],
   };
 }

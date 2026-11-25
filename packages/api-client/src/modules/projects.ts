@@ -61,6 +61,8 @@ export interface CustomerLedgerDemandIntent {
   memo: string | null;
   assignedTo: { id: string; name: string } | null;
   matchCount: number;
+  /** 이 구매 의뢰의 취소되지 않은 거래 수 (매칭 없이 만든 거래 포함) */
+  activeDealCount?: number;
   preferredSites: Array<{
     id: string;
     name: string;
@@ -100,6 +102,8 @@ export interface CustomerLedgerListingIntent {
   area: number | null;
   isPaused: boolean;
   matchCount: number;
+  /** 이 거래 조건의 취소되지 않은 거래 수 (매칭 없이 만든 거래 포함) */
+  activeDealCount?: number;
   propertyId: string;
   siteId: string;
   siteName: string;
@@ -165,6 +169,9 @@ export interface ProjectStepDeal {
   /** 잔금 예정일. 대금 일정에 없으면 계약서의 잔금일. */
   balanceDate: string | null;
   balancePaidAt: string | null;
+  /** 취소한 거래만: 취소한 때 · 사유. 취소하지 않은 거래는 null. */
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
 }
 
 /**
@@ -196,6 +203,7 @@ export interface ProjectStep {
       monthlyRent: number | null;
       isPaused: boolean;
     }>;
+    /** 진행 중인 매칭 수 (종료된 매칭은 세지 않는다) */
     matchCount: number;
   } | null;
   buyerIntake: {
@@ -208,10 +216,16 @@ export interface ProjectStep {
       status: string;
       transactionType: string | null;
     }>;
+    /** 진행 중인 매칭 수 (종료된 매칭은 세지 않는다) */
     matchCount: number;
   } | null;
   /** 이 단계의 현재 거래: 취소되지 않은 가장 최근 거래. 없으면 null. */
   deal: ProjectStepDeal | null;
+  /**
+   * 의뢰 단계에서 가장 최근에 취소된 거래(지금 거래가 따로 있어도 준다). 없으면 null.
+   * 거래를 직접 가리키는 단계 · 직접 적은 단계는 늘 null이다(그 거래의 취소는 deal.isCancelled).
+   */
+  cancelledDeal?: ProjectStepDeal | null;
 }
 
 /** 프로젝트의 사람. 대표 고객은 사용자가 정한 값이고, 나머지는 담긴 의뢰에서 읽은 당사자다. */
@@ -287,8 +301,12 @@ export interface ProjectList {
 }
 
 export type ProjectListStatus = "open" | "archived" | "all";
-/** updated: 최근 고친 순(기본) · created: 최근 시작한 순 */
-export type ProjectListSort = "updated" | "created";
+/** updated: 최근 고친 순(기본) · created: 시작 순 · title: 이름 순 */
+export type ProjectListSort = "updated" | "created" | "title";
+/** 목록에서 거를 수 있는 계산한 상태: 준비 · 진행 중 · 마무리 (끝낸 것은 보기 탭으로) */
+export type ProjectDerivedStatus = "preparing" | "active" | "wrapping";
+/** 담긴 의뢰 조건: 매물 의뢰 있음 · 구매 의뢰 있음 · 의뢰 없음 */
+export type ProjectIntakeFilter = "listing" | "buyer" | "none";
 
 export interface ProjectListFilter {
   /** open(기본): 끝내지 않은 것 · archived: 끝낸 것 */
@@ -296,7 +314,27 @@ export interface ProjectListFilter {
   /** 이름, 대표 고객, 담긴 의뢰의 당사자 이름 */
   search?: string;
   assignedToId?: string;
+  /** 담당이 이 직원들인 것만. "none"은 담당 없음 */
+  assignedToIds?: string[];
+  /** 담당이 나(요청한 사람)인 것만 */
+  mine?: boolean;
+  /** 계산한 상태로 거른다(서버가 계산한 뒤 거르고 쪽을 자른다) */
+  statuses?: ProjectDerivedStatus[];
+  intakes?: ProjectIntakeFilter[];
+  /** 대표 고객: set(있음) · empty(비어 있음) */
+  primary?: "set" | "empty";
+  /** 시작(만든 날) 기간. YYYY-MM-DD, 끝 날 포함(한국 날짜) */
+  createdFrom?: string;
+  createdTo?: string;
+  /** 이 사람이 대표 고객이거나 담긴 의뢰의 당사자인 프로젝트만 */
+  contactId?: string;
+  /** 이 매물 의뢰를 담은 프로젝트만 (0~1건). 끝낸 프로젝트까지 보려면 status: "all" */
+  listingIntakeId?: string;
+  /** 이 구매 의뢰를 담은 프로젝트만 (0~1건). 끝낸 프로젝트까지 보려면 status: "all" */
+  buyerIntakeId?: string;
   sort?: ProjectListSort;
+  /** 정렬 방향. 기본은 updated · created가 desc, title이 asc */
+  order?: "asc" | "desc";
   /** 쪽 넘기기. 앞 쪽의 nextOffset을 준다. */
   offset?: number;
   /** 한 쪽의 수 (기본 50, 최대 100) */
@@ -334,15 +372,19 @@ export interface UpdateProjectDto {
 /** 이 프로젝트에 더 담을 만한 것 (제안). */
 export interface ProjectCandidates {
   /** 이미 종료된 의뢰도 포함한다 (lifecycleStatus로 구분). */
+  /** 만든 순서(최근 것이 위) */
   listingIntakes: Array<{
     id: string;
     label: string;
+    /** 의뢰를 등록한 때. 방금 등록한 것을 맨 위에 "방금 등록"으로 보인다. */
+    createdAt?: string;
     lifecycleStatus: string;
     transactionTypes: string[];
   }>;
   buyerIntakes: Array<{
     id: string;
     label: string;
+    createdAt?: string;
     lifecycleStatus: string;
     transactionTypes: string[];
   }>;
@@ -400,7 +442,10 @@ export interface CustomerLedgerResponse {
   } | null;
 }
 
-/** 대표 고객을 정하거나 의뢰를 하나 이상 담아야 한다. */
+/**
+ * 프로젝트 만들기. 아무것도 없이 빈 채로도 열린다(작업 공간 — Notion의 새 페이지처럼).
+ * assignedToId를 보내지 않으면 만든 사람이 담당, null이면 담당 없음.
+ */
 export interface CreateProjectDto {
   title?: string | null;
   memo?: string | null;
@@ -416,6 +461,34 @@ export interface ProjectStepInput {
   memo?: string | null;
 }
 
+/** 목록 조건 → 주소 인자. 여럿을 고르는 조건은 쉼표로 잇고, 빈 것은 보내지 않는다. */
+export function projectListParams(
+  filter?: ProjectListFilter,
+): Record<string, string | number | boolean | undefined> {
+  if (!filter) return {};
+  const join = (values?: readonly string[]) =>
+    values && values.length > 0 ? values.join(",") : undefined;
+  return {
+    status: filter.status,
+    search: filter.search,
+    assignedToId: filter.assignedToId,
+    assignedToIds: join(filter.assignedToIds),
+    mine: filter.mine ? "true" : undefined,
+    statuses: join(filter.statuses),
+    intakes: join(filter.intakes),
+    primary: filter.primary,
+    createdFrom: filter.createdFrom,
+    createdTo: filter.createdTo,
+    contactId: filter.contactId,
+    listingIntakeId: filter.listingIntakeId,
+    buyerIntakeId: filter.buyerIntakeId,
+    sort: filter.sort,
+    order: filter.order,
+    offset: filter.offset,
+    limit: filter.limit,
+  };
+}
+
 export function createProjectsApi(request: RequestFn) {
   return {
     ledger: (filters?: CustomerLedgerFilter) =>
@@ -428,9 +501,9 @@ export function createProjectsApi(request: RequestFn) {
     /** 프로젝트 목록. 조건을 주지 않으면 끝내지 않은 프로젝트다. */
     findAll: (filter?: ProjectListFilter) =>
       request<ProjectList>("/projects", {
-        params: filter as Record<string, string | number | undefined>,
+        params: projectListParams(filter),
       }),
-    /** 프로젝트를 연다. 대표 고객만 정해 열거나, 고른 의뢰들을 묶어 연다. */
+    /** 프로젝트를 연다. 빈 채로, 대표 고객만으로, 또는 고른 의뢰들을 묶어 연다. */
     create: (dto: CreateProjectDto) =>
       request<ProjectPlan>("/projects", {
         method: "POST",
@@ -443,7 +516,7 @@ export function createProjectsApi(request: RequestFn) {
         method: "PATCH",
         body: dto,
       }),
-    /** 묶음을 푼다. 의뢰와 거래는 남는다. */
+    /** 프로젝트를 푼다. 의뢰 · 거래 · 상담은 남고 진행 계획 · 코멘트는 지워진다. */
     remove: (id: string) =>
       request<{ success: boolean }>(`/projects/${id}`, {
         method: "DELETE",
@@ -467,8 +540,11 @@ export function createProjectsApi(request: RequestFn) {
       request<{ success: boolean }>(`/projects/${id}/comments/${commentId}`, {
         method: "DELETE",
       }),
-    candidates: (id: string) =>
-      request<ProjectCandidates>(`/projects/${id}/candidates`),
+    /** 담을 만한 의뢰·거래. contactId를 주면 그 손님(프로젝트 사람이 아니어도)의 것을 준다. */
+    candidates: (id: string, filter?: { contactId?: string }) =>
+      request<ProjectCandidates>(`/projects/${id}/candidates`, {
+        params: filter as Record<string, string | undefined>,
+      }),
     addIntake: (
       id: string,
       dto: { kind: "listing" | "buyer"; intakeId: string },

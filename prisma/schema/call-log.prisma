@@ -45,7 +45,7 @@ model CallLog {
 
   office       Office         @relation(fields: [officeId], references: [id])
   user         User?          @relation(fields: [userId], references: [id])
-  contact      Contact?       @relation(fields: [contactId], references: [id])
+  contact      Contact?       @relation(fields: [officeId, contactId], references: [officeId, id], onDelete: Restrict)
   consultation Consultation?  @relation(fields: [consultationId], references: [id])
   recording    CallRecording? @relation(fields: [recordingId], references: [id])
 
