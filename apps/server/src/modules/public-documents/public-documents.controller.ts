@@ -42,6 +42,7 @@ export class PublicDocumentsController {
     @Body()
     body: {
       propertyId?: string;
+      unitId?: string;
       siteId: string;
       types: string[];
       registryMode?: 'view' | 'certificate';
@@ -56,6 +57,7 @@ export class PublicDocumentsController {
     @Body()
     body: {
       propertyId?: string;
+      unitId?: string;
       siteId: string;
       types: string[];
       registryMode?: 'view' | 'certificate';
@@ -86,6 +88,7 @@ export class PublicDocumentsController {
     @Body()
     body: {
       propertyId?: string;
+      unitId?: string;
       siteId: string;
       type: string;
       title: string;

@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { isUUID } from 'class-validator';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { toGovernmentAddressParams } from './public-document-address.util';
@@ -19,6 +20,7 @@ import {
 
 interface RequestDocumentInput {
   propertyId?: string;
+  unitId?: string;
   siteId: string;
   type: string;
   title?: string;
@@ -42,6 +44,7 @@ export class PublicDocumentsService {
     data: {
       siteId: string;
       propertyId?: string;
+      unitId?: string;
       types: string[];
       registryMode?: 'view' | 'certificate';
     },
@@ -51,12 +54,20 @@ export class PublicDocumentsService {
       officeId,
       data.siteId,
       data.propertyId,
+      data.unitId,
     );
     const items = this.withAddressAvailability(
       this.providers.quote(types, data.registryMode),
       address,
     );
-    return { address: this.displayAddress(address), items };
+    return {
+      address: this.displayAddress(address),
+      items: items.map((item) =>
+        item.type === 'registry' && !data.propertyId
+          ? { ...item, available: false, reason: '등기 요청에는 등록된 매물이 필요합니다.' }
+          : item,
+      ),
+    };
   }
 
   async listAll(officeId: string, filters?: { type?: string }) {
@@ -106,6 +117,7 @@ export class PublicDocumentsService {
     const quote = await this.quote(officeId, {
       siteId: data.siteId,
       propertyId: data.propertyId,
+      unitId: data.unitId,
       types: [type],
       registryMode: mode === 'certificate' ? 'certificate' : 'view',
     });
@@ -317,6 +329,9 @@ export class PublicDocumentsService {
   private async processDocument(id: string, officeId: string) {
     try {
       const document = await this.findDocument(id, officeId);
+      if (document.type === 'registry' && !document.propertyId) {
+        throw new BadRequestException('등기 요청에는 등록된 매물이 필요합니다.');
+      }
       const address = await this.resolveAddress(
         officeId,
         document.siteId,
@@ -372,10 +387,15 @@ export class PublicDocumentsService {
     officeId: string,
     siteId: string,
     propertyId?: string,
+    unitId?: string,
   ): Promise<DocumentAddress> {
+    if (!isUUID(siteId) || (propertyId != null && !isUUID(propertyId)) ||
+        (unitId != null && (!isUUID(unitId) || !propertyId))) {
+      throw new BadRequestException('잘못된 서류 발급 주소입니다.');
+    }
     if (propertyId) {
       const property = await this.prisma.property.findFirst({
-        where: { id: propertyId, officeId, siteId },
+        where: { id: propertyId, officeId, siteId, ...(unitId ? { unitId } : {}) },
         include: {
           site: true,
           unit: { include: { dong: true } },

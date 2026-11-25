@@ -1,5 +1,6 @@
 {
   "strings": {
+    "등기 요청에는 등록된 매물이 필요합니다.": "A registered property is required to request a registry document.",
     "3.3% 공제 여부는 켬 또는 끔이어야 합니다.": "3.3% deduction must be on or off.",
     "가격순 정렬은 거래유형을 선택해 주세요.": "Select a transaction type to sort by price.",
     "가입 서버에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요.": "Couldn't reach the sign-up server. Check your internet connection.",

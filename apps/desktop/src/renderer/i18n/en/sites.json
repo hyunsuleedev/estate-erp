@@ -1,5 +1,7 @@
 {
   "strings": {
+    "매물을 등록하면 등기 열람을 요청할 수 있습니다.": "Register a property to request a registry search.",
+    "발급한 등기 문서가 없습니다.": "No registry documents have been issued.",
     " · {0}원": " · ₩{0}",
     " · 무료": " · Free",
     " · 필로티": " · Piloti",

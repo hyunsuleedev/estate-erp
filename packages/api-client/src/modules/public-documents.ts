@@ -51,6 +51,7 @@ export interface PublicDocument {
 
 export interface CreatePublicDocumentDto {
   propertyId?: string;
+  unitId?: string;
   siteId: string;
   type: string;
   title?: string;
@@ -95,6 +96,7 @@ export interface PublicDocumentQuote {
 
 export interface BatchPublicDocumentDto {
   propertyId?: string;
+  unitId?: string;
   siteId: string;
   types: PublicDocumentType[];
   registryMode?: 'view' | 'certificate';

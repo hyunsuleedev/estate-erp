@@ -431,7 +431,7 @@ function DocumentTableRow({
               </a>
             </Button>
           )}
-          {doc.status === 'failed' && (
+          {doc.status === 'failed' && (doc.type !== 'registry' || doc.propertyId) && (
             <Button
               variant="ghost"
               size="sm"

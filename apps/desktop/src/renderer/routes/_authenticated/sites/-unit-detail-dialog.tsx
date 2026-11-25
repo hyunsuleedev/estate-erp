@@ -418,9 +418,10 @@ function UnitDetailBody({
   const latestDocument = unitDocuments[0];
 
   const issueMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (propertyId: string) =>
       api.publicDocuments.create({
-        propertyId: primaryProperty?.id,
+        propertyId,
+        unitId: unit.id,
         siteId: site.id,
         type: 'registry',
         title: '등기사항증명서',
@@ -819,15 +820,15 @@ function UnitDetailBody({
           <section>
             <SectionTitle
               count={unitDocuments.length || undefined}
-              action={
+              action={primaryProperty && (
                 <TextAction
                   icon={<ScrollText />}
                   label={issueMutation.isPending ? '요청 중...' : `등기 열람 요청 (${REGISTRY_COST}원)`}
                   onClick={() => {
-                    if (!issueMutation.isPending) issueMutation.mutate();
+                    if (!issueMutation.isPending) issueMutation.mutate(primaryProperty.id);
                   }}
                 />
-              }
+              )}
             >
               발급 이력
             </SectionTitle>
@@ -882,8 +883,7 @@ function UnitDetailBody({
               </div>
             ) : (
               <EmptyText>
-                발급한 등기 문서가 없습니다. 등기 열람 요청({REGISTRY_COST}원)으로 이 호실의 권리관계를
-                확인하세요.
+                {primaryProperty ? '발급한 등기 문서가 없습니다.' : '매물을 등록하면 등기 열람을 요청할 수 있습니다.'}
               </EmptyText>
             )}
             <p className="mt-3 text-[12px] leading-[1.6] text-[#a9a7a1]">
@@ -903,8 +903,8 @@ function UnitDetailBody({
         <button
           type="button"
           className={barButtonClassName}
-          disabled={issueMutation.isPending}
-          onClick={() => issueMutation.mutate()}
+          disabled={!primaryProperty || issueMutation.isPending}
+          onClick={() => primaryProperty && issueMutation.mutate(primaryProperty.id)}
         >
           <ScrollText className="size-3.5" />
           {issueMutation.isPending ? '요청 중...' : '등기 열람 요청'}
