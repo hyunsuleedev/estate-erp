@@ -29,7 +29,7 @@ import { ProjectCommentsService } from './project-comments.service';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-@ApiTags('고객 원장')
+@ApiTags('프로젝트')
 @ApiBearerAuth()
 @Controller('projects')
 @UseGuards(JwtAuthGuard)

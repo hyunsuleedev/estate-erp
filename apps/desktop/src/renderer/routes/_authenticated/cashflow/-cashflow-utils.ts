@@ -647,8 +647,6 @@ export interface TrendBar {
   /** 그 달 수금 가운데 공동중개 상대에게 넘겨줄 몫 (만원) */
   partnerShare: number;
   forecast: number;
-  expense: number;
-  net: number;
 }
 
 /** 지난 달까지는 실제 수금, 이번 달부터는 앞으로 들어올 돈을 함께 쌓는다. */
@@ -671,7 +669,6 @@ export function buildTrendBars(
     forecast.set(key, (forecast.get(key) ?? 0) + paymentRemaining(p));
   });
 
-  const expense = trend[trend.length - 1]?.expense ?? 0;
   const months = trend.map((t) => t.month);
   const last = months[months.length - 1] ?? currentKey;
   const [lastYear, lastMonth] = last.split('-').map(Number);
@@ -693,9 +690,6 @@ export function buildTrendBars(
       collected,
       partnerShare,
       forecast: key >= currentKey ? (forecast.get(key) ?? 0) : 0,
-      expense,
-      // 수금 − 공동중개 줄 몫 − 고정비 (서버 순이익과 같은 식)
-      net: collected - partnerShare - expense,
     };
   });
 }
@@ -942,17 +936,6 @@ export function participantSettlement(
     state = 'ready';
   }
   return { state, billed, collected, percent: collectPercent(collected, billed) };
-}
-
-// ── 고정비 ───────────────────────────────────────────────
-
-export function monthlyExpenseAmount(t: {
-  amount: number;
-  frequency: string;
-}): number {
-  if (t.frequency === 'quarterly') return Math.round(t.amount / 3);
-  if (t.frequency === 'yearly') return Math.round(t.amount / 12);
-  return t.amount;
 }
 
 // ── CSV ─────────────────────────────────────────────────

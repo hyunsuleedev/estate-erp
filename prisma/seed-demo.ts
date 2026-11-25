@@ -162,9 +162,6 @@ async function main() {
     console.log('10. CalendarEvent insert...');
     await seedCalendarEvents(ctx, contacts, properties, listings, matches);
 
-    console.log('11. OfficeExpenseTemplate insert...');
-    await seedOfficeExpenses(ctx);
-
     console.log('12. NetworkRoom + 공유매물 + 채팅 + 문의 insert...');
     const network = await seedNetwork(ctx, listings);
 
@@ -411,11 +408,6 @@ async function wipe({ prisma, officeId }: Pick<Ctx, 'prisma' | 'officeId'>) {
           : []),
       ],
     },
-  });
-
-  // OfficeExpenseTemplate (note 기준)
-  await prisma.officeExpenseTemplate.deleteMany({
-    where: { officeId, note: demoLike },
   });
 
   // CommissionAdjustment → CommissionDistribution → CommissionPayment → Contract → DealPayment → DealParticipant → Deal
@@ -2384,65 +2376,6 @@ async function seedDeals(
       },
     ],
   });
-}
-
-// ─────────────────────────────────────────────────────────────
-// OfficeExpenseTemplate — 고정비 5개
-// ─────────────────────────────────────────────────────────────
-async function seedOfficeExpenses(ctx: Ctx) {
-  const defs = [
-    {
-      title: '사무실 임대료',
-      category: 'rent',
-      amount: 150,
-      dayOfMonth: 25,
-      taxDeductible: true,
-    },
-    {
-      title: '네이버 부동산 광고',
-      category: 'ad',
-      amount: 200,
-      dayOfMonth: 1,
-      taxDeductible: true,
-    },
-    {
-      title: '직방 광고',
-      category: 'ad',
-      amount: 50,
-      dayOfMonth: 1,
-      taxDeductible: true,
-    },
-    {
-      title: '전화/인터넷',
-      category: 'telecom',
-      amount: 15,
-      dayOfMonth: 20,
-      taxDeductible: true,
-    },
-    {
-      title: '공인중개사 협회비',
-      category: 'association',
-      amount: 30,
-      frequency: 'yearly' as const,
-      taxDeductible: false,
-    },
-  ];
-
-  for (const def of defs) {
-    await ctx.prisma.officeExpenseTemplate.create({
-      data: {
-        officeId: ctx.officeId,
-        title: def.title,
-        category: def.category,
-        amount: def.amount,
-        frequency: def.frequency ?? 'monthly',
-        dayOfMonth: def.dayOfMonth ?? null,
-        taxDeductible: def.taxDeductible,
-        isActive: true,
-        note: `${DEMO_TAG}`,
-      },
-    });
-  }
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -15,11 +15,12 @@ import {
   CloudRain,
   CloudSnow,
   CloudSun,
-  Handshake,
+  Home,
   ListChecks,
   ListTodo,
   Megaphone,
   MessageSquareText,
+  MapPin,
   Monitor,
   Moon,
   Phone,
@@ -33,12 +34,11 @@ import {
 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { formatFloorRange, normalizeDealStage } from '@estate-erp/shared';
+import { MatchStage, formatFloorRange, normalizeMatchStage } from '@estate-erp/shared';
 import type { CalendarEvent, Consultation, DealListItem as Deal, Notice, Task } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
-import { getStatusMeta } from '@/lib/status-config';
 import {
   NOTICES_QUERY_KEY,
   NOTICES_STALE_MS,
@@ -66,25 +66,21 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/providers/auth-provider';
 import { formatDate, formatPhone, formatRelativeDay } from '@/lib/format';
+import { ConsultationFormDialog } from './consultations/-consultation-form-dialog';
 import {
+  formatConsultationClock,
+  formatConsultationDay,
   formatConsultationWhen,
   getConsultationChannel,
   getConsultationRowStatus,
   getConsultationSummaryLine,
+  splitConsultationTag,
   type ConsultationChannelKind,
   type ConsultationRowStatus,
 } from './consultations/-consultation-list-model';
 import {
-  dealPipelineStages,
-  formatDealAmount,
-  formatNextPaymentName,
-  formatDaysLabel,
   getDealDisplayGroupKey,
   getDealPipelineHealth,
-  getDealTitle,
-  getNextDealPaymentSummary,
-  sortDealsForDisplay,
-  type DealPipelineHealthState,
 } from './deals/-deal-view-utils';
 import { getPropertyLabel } from './tasks/-task-property-label';
 import { taskEndedTags } from './tasks/-task-filters';
@@ -114,12 +110,14 @@ export const Route = createFileRoute('/_authenticated/dashboard')({
  * 땅이 오늘의 시간 축이라 해가 지금 시각 위에 뜨고 오늘 일정이 깃발로 꽂힌다. 하늘은 시각과 사무소 위치의 날씨를 따른다.
  * 아래는 순백(#ffffff) 바탕 위에 Notion형 카드(모서리 10px, 옅은 선 + 얕은 그림자) 3단으로 나눈다
  * (2026-11-23 개편, 시안 docs/mockups/dashboard-board/v12.html):
- *   왼쪽 단(sticky): 월간 달력 · 선택한 날의 타임라인 + 다가오는 일정
- *   가운데 단(유동): 할 일(지남 · 오늘 · 다가옴 탭, 한 줄씩, 기한은 알약) · 최근 상담 내역
- *   오른쪽 단(sticky): 진행 중인 거래(단계 띠) · 소식(공지사항 · 부동산 뉴스 탭) · 앱 사용법 가이드
- * 오른쪽 단은 좁아져도 숨기지 않는다. 960px 아래에서는 두 단 아래로 내려와 가로로 놓인다
- * (예전에는 1260px 아래에서 숨기고 할 일 머리에 "이달 수금 · 공지" 단추를 냈다. 거래와 공지가 화면에서 사라졌다).
- * 이달 수금 카드는 대시보드에서 뺐다(사용자 결정 2026-11-23). 예전 코드는 .qa/backups/dashboard-before-v12/에 있다.
+ *   왼쪽 단: 월간 달력(이번 주 띠 · 일정 수만큼 점) · 선택한 날의 타임라인 + 다가오는 일정
+ *   가운데 단: 할 일 · 최근 상담 내역 — 화면에 맞출 때 높이를 정확히 반씩 나눈다
+ *   오른쪽 단: 현재 상황(계기 셋: 매칭 중 → 거래 진행 → 거래 완료) · 앱 사용법 가이드 · 소식(남은 높이)
+ * 2026-11-25 개편(시안 docs/mockups/dashboard-2026-11-25/a-refine.html, 사용자 결정):
+ *   - 진행 중인 거래 목록(단계 띠)을 빼고 현재 상황 계기판을 두었다. 거래 하나하나는 거래관리에서 본다.
+ *   - 오른쪽 단은 좁아지면(판 960px 아래) 아래로 내려가지 않고 화면에서 빠진다.
+ *   - 상담 내역은 날짜로 묶고, 매물 확인으로 생긴 짧은 기록은 한 줄로 접는다.
+ * 이달 수금 카드는 대시보드에서 뺐다(사용자 결정 2026-11-23). 예전 코드는 .qa/backups/ 아래에 있다.
  */
 
 /* --------------------------------- 공통 --------------------------------- */
@@ -613,6 +611,11 @@ function MiniCalendarCard({
     if (focusDay > 0) selectedRef.current?.focus();
   }, [focusDay]);
 
+  // 이번 주(오늘이 든 주)에는 옅은 띠를 깐다
+  const today = parseDateKey(todayKey);
+  // 달력이 일요일부터 놓이므로 띠도 일요일~토요일이다 (startOfWeek는 월요일 기준이라 쓰지 않는다)
+  const weekStartMs = addDays(today, -today.getDay()).getTime();
+  const weekEndMs = addDays(today, 7 - today.getDay()).getTime();
   const countByDay = new Map<string, number>();
   for (const day of calendarDays) {
     const key = localDateKey(day);
@@ -622,8 +625,9 @@ function MiniCalendarCard({
   return (
     <section className="dash-sec dash-bento-card dash-cal-card min-w-0" style={stagger(0)}>
       <div className="mb-2.5 flex items-center justify-between gap-2">
-        <h2 className="text-[13.5px] font-bold tracking-[-0.015em] text-foreground tabular-nums">
-          {`${viewMonth.year}년 ${viewMonth.month + 1}월`}
+        <h2 className="flex items-baseline gap-1.5 text-[18px] leading-6 font-semibold tracking-[-0.02em] text-foreground tabular-nums">
+          {`${viewMonth.month + 1}월`}
+          <span className="text-xs font-normal tracking-normal text-muted-foreground">{viewMonth.year}</span>
         </h2>
         <div className="inline-flex items-center gap-0.5">
           <button
@@ -653,8 +657,10 @@ function MiniCalendarCard({
       </div>
 
       <div className="dash-cal-weekdays" aria-hidden="true">
-        {WEEKDAYS.map((day) => (
-          <span key={day}>{day}</span>
+        {WEEKDAYS.map((day, index) => (
+          <span key={day} className={cn(index === 0 && 'is-sun', index === 6 && 'is-sat')}>
+            {day}
+          </span>
         ))}
       </div>
 
@@ -665,6 +671,7 @@ function MiniCalendarCard({
           const isOut = day.getMonth() !== viewMonth.month;
           const isToday = key === todayKey;
           const isSelected = key === selectedKey;
+          const inWeek = day.getTime() >= weekStartMs && day.getTime() < weekEndMs;
           return (
             <button
               key={key}
@@ -678,10 +685,19 @@ function MiniCalendarCard({
                 isOut && 'is-out',
                 isToday && 'is-today',
                 isSelected && 'is-selected',
+                day.getTime() < today.getTime() && 'is-past',
+                day.getDay() === 0 && 'is-sun',
+                day.getDay() === 6 && 'is-sat',
+                inWeek && 'in-week',
               )}
             >
               <span className="dash-cal-num">{day.getDate()}</span>
-              <span className={cn('dash-cal-dot', count > 0 && 'has')} aria-hidden="true" />
+              {/* 일정 수만큼 점(셋까지) — 바쁜 날이 구분된다 */}
+              <span className="dash-cal-dots" aria-hidden="true">
+                {Array.from({ length: Math.min(count, 3) }, (_, dot) => (
+                  <i key={dot} />
+                ))}
+              </span>
             </button>
           );
         })}
@@ -1527,150 +1543,161 @@ function SetupSection() {
   );
 }
 
-/* -------------------------------- 진행 거래 -------------------------------- */
+/* -------------------------------- 현재 상황 -------------------------------- */
 
-const HEALTH_TEXT: Record<Exclude<DealPipelineHealthState, 'healthy'>, string> = {
-  overdue: 'text-destructive-strong',
-  stale: 'text-warning-strong',
-  unscheduled: 'text-muted-foreground',
-};
+interface GaugeStat {
+  key: 'match' | 'going' | 'done';
+  label: string;
+  /** 아직 모르면 null (불러오는 중 · 오류) */
+  value: number | null;
+  /** 호의 끝에서 호박색으로 보일 건수 (정체 · 지연된 거래) */
+  flag?: number;
+  sub: string | null;
+  subWarn?: boolean;
+  to: LinkProps['to'];
+}
 
-/**
- * 거래 단계 띠에서 지금 단계의 바탕색. 단계 색(lib/status-config의 dealStage)을 꽉 채운다 — 희망매물의 단계 띠와 같은 규칙이다.
- * 클래스가 아니라 색 값으로 넣는다: 띠 칸의 바탕은 -dashboard.css가 정하는데, 그 규칙이 유틸리티 클래스보다 앞서서
- * 클래스로 준 바탕색은 먹지 않는다.
- */
-const DEAL_BAND_CURRENT_COLOR: Record<string, string> = {
-  gray: 'var(--color-muted-foreground-strong)',
-  neutral: 'var(--color-muted-foreground-strong)',
-  violet: 'var(--color-violet)',
-  info: 'var(--color-info-strong)',
-  orange: '#c2650b',
-  success: 'var(--color-success)',
-};
+/** 270° 눈금판의 한 점. f는 0~1, r은 반지름 */
+function gaugePoint(f: number, r: number): [number, number] {
+  const angle = ((135 + 270 * f) * Math.PI) / 180;
+  return [60 + r * Math.cos(angle), 60 + r * Math.sin(angle)];
+}
 
-function DealsSection({
-  deals,
-  scope,
-  userId,
-}: {
-  deals: ReturnType<typeof useDealsQuery>;
-  scope: Scope;
-  userId: string | undefined;
-}) {
-  const view = queryView(deals);
-  const mine = scope === 'mine' && Boolean(userId);
-  // '내 담당'이면 내가 담당인 거래만(직원 정산·캘린더 '내 일정만'과 같은 기준). 예전에는 '내 담당'에서도 사무소 전체 거래가 보였다.
-  const assigned = mine && userId ? assignedDealIds(deals.data ?? [], userId) : null;
-  // 종료·취소를 뺀 거래를 거래관리와 같은 순서로 놓는다.
-  const active = sortDealsForDisplay(
-    (deals.data ?? []).filter((deal) => isActiveDeal(deal) && (!assigned || assigned.has(deal.id))),
-  );
-  const status = statusBody(view, () => void deals.refetch());
+const GAUGE_ARC = (() => {
+  const [sx, sy] = gaugePoint(0, 44);
+  const [ex, ey] = gaugePoint(1, 44);
+  return `M${sx.toFixed(2)} ${sy.toFixed(2)} A44 44 0 1 1 ${ex.toFixed(2)} ${ey.toFixed(2)}`;
+})();
 
+/** 계기 하나: 값만큼 호가 차오르고 끝에 바늘 점이 선다. 세 계기가 같은 눈금(scale)을 써서 호의 길이로 견줄 수 있다. */
+function Gauge({ stat, scale, order }: { stat: GaugeStat; scale: number; order: number }) {
+  const value = stat.value ?? 0;
+  const full = Math.min(1, value / scale);
+  const calm = Math.min(1, Math.max(0, value - (stat.flag ?? 0)) / scale);
+  const tickCount = Math.min(scale * 2, 48);
+  const [capX, capY] = gaugePoint(full, 44);
+  const [startX, startY] = gaugePoint(0, 34);
+  const [endX, endY] = gaugePoint(1, 34);
   return (
-    <section className="dash-sec dash-bento-card dash-side-card min-w-0" style={stagger(2)}>
-      <SectionHead
-        icon={Handshake}
-        title="진행 중인 거래"
-        // 숫자는 아래에 보이는 줄 수와 같게 센다. 잔금 완료(정산 전) 거래도 줄로 보이므로 함께 센다
-        // (예전에는 잔금 완료를 빼고 세어 머리의 숫자와 줄 수가 달랐다).
-        count={view === 'ready' ? active.length : undefined}
-        action={<MoreLink to="/deals">거래관리</MoreLink>}
-      />
-      {status ??
-        (active.length === 0 ? (
-          <EmptyNote>{mine ? '내가 담당인 진행 중인 거래가 없습니다.' : '진행 중인 거래가 없습니다.'}</EmptyNote>
-        ) : (
-          // 줄 하나가 통째로 링크다. 표 역할을 씌우지 않는다 — 씌우면 보조 기술에서 링크가 사라진다.
-          // 거래는 모두 싣고 카드 안에서 굴린다. 카드 높이는 두 줄 반으로 묶는다(-dashboard.css의 .dash-deals-scroll).
-          <div className="dash-scroll dash-deals-scroll">
-            <div className="dash-deals">
-              {active.map((deal) => (
-                <DealRow key={deal.id} deal={deal} />
-              ))}
-            </div>
-          </div>
-        ))}
-    </section>
+    <Link
+      to={stat.to}
+      className={cn('dash-gauge focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none', `is-${stat.key}`)}
+      style={{ '--i': order } as CSSProperties}
+    >
+      <svg viewBox="0 0 120 112" role="img" aria-label={stat.value === null ? stat.label : `${stat.label} ${stat.value}건`}>
+        {Array.from({ length: tickCount + 1 }, (_, tick) => {
+          const f = tick / tickCount;
+          const [x1, y1] = gaugePoint(f, 51);
+          const [x2, y2] = gaugePoint(f, tick % 2 ? 53.5 : 55.5);
+          return (
+            <line
+              key={tick}
+              className={cn('tk', f <= calm + 0.001 ? 'lit' : f <= full + 0.001 && 'amber')}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+            />
+          );
+        })}
+        <path className="trk" d={GAUGE_ARC} pathLength={100} />
+        {stat.flag ? <path className="flag" d={GAUGE_ARC} pathLength={100} strokeDasharray={`${full * 100} 100`} /> : null}
+        <path className="val" d={GAUGE_ARC} pathLength={100} strokeDasharray={`${calm * 100} 100`} />
+        {stat.value !== null && <circle className={cn('cap', stat.flag ? 'amber' : null)} cx={capX} cy={capY} r={4.5} />}
+        <text className="n" x={60} y={68} textAnchor="middle">
+          {stat.value ?? '–'}
+        </text>
+        <text className="u" x={60} y={82} textAnchor="middle">
+          건
+        </text>
+        <text className="sc" x={startX} y={startY + 8} textAnchor="middle">
+          0
+        </text>
+        <text className="sc" x={endX} y={endY + 8} textAnchor="middle">
+          {scale}
+        </text>
+      </svg>
+      <span className="dash-gauge-name">{stat.label}</span>
+      <span className={cn('dash-gauge-sub', stat.subWarn && 'is-warn')}>{stat.sub ?? ' '}</span>
+    </Link>
   );
 }
 
 /**
- * 거래 한 줄: 이름과 금액 · 단계 띠 · 다음 일정.
- * 단계는 꼬리표 하나 대신 희망매물과 같은 화살표 띠로 보여 준다(2026-11-23) — 지금 단계가 전체 흐름의 어디인지가 보인다.
+ * 현재 상황: 일이 흘러가는 순서대로 계기 셋 — 매칭 중 → 거래 진행 → 거래 완료(이번 달).
+ * 실적 지표가 아니라 지금 손에 든 일의 수다. 거래 하나하나는 계기를 눌러 그 화면에서 본다.
+ * '내 담당'이면 거래는 내가 담당인 것만 센다. 매칭에는 담당이 없어 사무소 전체를 센다.
  */
-function DealRow({ deal }: { deal: Deal }) {
-  const health = getDealPipelineHealth(deal);
-  const nextPayment = getNextDealPaymentSummary(deal);
-  const amount = formatDealAmount(deal);
-  const title = getDealTitle(deal);
-  // 좁은 카드에서 단지 이름이 길어도 동·호는 잘리지 않게 둘로 나눠 그린다.
-  const [, site = title, unit = ''] = /^(.*?)\s((?:\S+동\s)?\S+호)$/.exec(title) ?? [];
-  const stageKey = normalizeDealStage(deal.stage);
-  // 띠에 없는 단계(정산 종료 등)는 마지막 칸을 지금으로 본다
-  const found = dealPipelineStages.indexOf(stageKey as (typeof dealPipelineStages)[number]);
-  const currentIndex = found < 0 ? dealPipelineStages.length - 1 : found;
+function StatusSection({
+  deals,
+  matches,
+  scope,
+  userId,
+  now,
+}: {
+  deals: ReturnType<typeof useDealsQuery>;
+  matches: ReturnType<typeof useMatchesQuery>;
+  scope: Scope;
+  userId: string | undefined;
+  now: Date;
+}) {
+  const view = queryView(deals);
+  const mine = scope === 'mine' && Boolean(userId);
+  const assigned = mine && userId ? assignedDealIds(deals.data ?? [], userId) : null;
+  const scoped = (deals.data ?? []).filter((deal) => !assigned || assigned.has(deal.id));
+  const active = scoped.filter(isActiveDeal);
+  const atRisk = active.filter((deal) => getDealPipelineHealth(deal, now).state !== 'healthy').length;
+  const monthStartMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const doneThisMonth = scoped.filter(
+    (deal) =>
+      !deal.isCancelled &&
+      getDealDisplayGroupKey(deal.stage) === 'closed' &&
+      new Date(deal.stageChangedAt).getTime() >= monthStartMs,
+  ).length;
+
+  const matchesReady = queryView(matches) === 'ready';
+  const openMatches = (matches.data ?? []).filter((match) => {
+    const stage = normalizeMatchStage(match.stage);
+    return stage !== MatchStage.CLOSED && stage !== MatchStage.DEAL_CREATED;
+  });
+  const viewingsAhead = openMatches.filter((match) =>
+    (match.calendarEvents ?? []).some((event) => new Date(event.start).getTime() > now.getTime()),
+  ).length;
+
+  const stats: GaugeStat[] = [
+    {
+      key: 'match',
+      label: '매칭 중',
+      value: matchesReady ? openMatches.length : null,
+      sub: matchesReady && viewingsAhead > 0 ? `임장 예정 ${viewingsAhead}` : null,
+      to: '/wanted-properties',
+    },
+    {
+      key: 'going',
+      label: '거래 진행',
+      value: active.length,
+      flag: atRisk,
+      sub: atRisk > 0 ? `정체·지연 ${atRisk}` : null,
+      subWarn: true,
+      to: '/deals',
+    },
+    { key: 'done', label: '거래 완료', value: doneThisMonth, sub: '이번 달', to: '/deals' },
+  ];
+  // 가장 큰 값보다 넉넉한 4의 배수를 눈금 끝으로 쓴다
+  const scale = Math.max(4, Math.ceil((Math.max(...stats.map((stat) => stat.value ?? 0)) * 1.2) / 4) * 4);
+  const status = statusBody(view, () => void deals.refetch(), 2);
 
   return (
-    <Link to="/deals" search={{ dealId: deal.id }} className="dash-deal">
-      <span className="flex min-w-0 items-baseline gap-2">
-        <span className="flex min-w-0 gap-1 text-[14px] leading-[21px] font-medium text-foreground" title={title}>
-          <span className="truncate">{site}</span>
-          {unit && <span className="shrink-0">{unit}</span>}
-        </span>
-        {amount !== '—' && (
-          <span className="ml-auto shrink-0 text-[13px] leading-[21px] text-muted-foreground-strong tabular-nums">
-            {amount}
-          </span>
-        )}
-      </span>
-      <span className="dash-band" role="img" aria-label={`거래 단계: ${getStatusMeta('dealStage', stageKey).label}`}>
-        {dealPipelineStages.map((stage, index) => {
-          const meta = getStatusMeta('dealStage', stage);
-          return (
-            <span
-              key={stage}
-              aria-hidden="true"
-              className={cn(
-                'dash-band-step',
-                index < currentIndex && 'is-done',
-                index === currentIndex && 'is-current',
-              )}
-              style={
-                index === currentIndex
-                  ? { background: DEAL_BAND_CURRENT_COLOR[meta.tone] ?? 'var(--color-muted-foreground-strong)' }
-                  : undefined
-              }
-            >
-              {meta.label}
-            </span>
-          );
-        })}
-      </span>
-      <span className="flex min-w-0 justify-end text-[12.5px] leading-[18px] tabular-nums text-muted-foreground">
-        {health.state !== 'healthy' ? (
-          <span title={health.description} className={cn('truncate font-medium', HEALTH_TEXT[health.state])}>
-            {health.label}
-          </span>
-        ) : nextPayment?.payment.scheduledDate ? (
-          <span className="truncate">
-            {formatNextPaymentName(nextPayment, deal)}
-            <span
-              className={cn(
-                'ml-1.5 font-medium',
-                nextPayment.isUrgent ? 'text-warning-strong' : 'text-foreground',
-              )}
-            >
-              {formatDaysLabel(nextPayment.daysUntil)}
-            </span>
-          </span>
-        ) : (
-          // 거래관리와 같은 말: 대금을 다 받았으면 '대금 완료', 아니면 '일정 미정'
-          <span>{formatNextPaymentName(nextPayment, deal)}</span>
-        )}
-      </span>
-    </Link>
+    <section className="dash-sec dash-bento-card dash-side-card dash-status-card min-w-0" style={stagger(2)}>
+      <SectionHead icon={Home} title="현재 상황" />
+      {status ?? (
+        <div className="dash-cluster">
+          {stats.map((stat, index) => (
+            <Gauge key={stat.key} stat={stat} scale={scale} order={index} />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1680,7 +1707,7 @@ const CHANNEL_ICON: Record<ConsultationChannelKind, LucideIcon> = {
   inbound: PhoneIncoming,
   outbound: PhoneOutgoing,
   phone: Phone,
-  visit: Users,
+  visit: MapPin,
   online: Monitor,
   other: MessageSquareText,
 };
@@ -1701,6 +1728,29 @@ const CONSULT_STATUS_CLASS: Record<Exclude<ConsultationRowStatus['tone'], 'none'
   done: 'bg-neutral-soft text-muted-foreground-strong',
   quiet: 'bg-neutral-soft text-muted-foreground',
 };
+
+const CONSULT_STATUS_TEXT: Record<Exclude<ConsultationRowStatus['tone'], 'none'>, string> = {
+  todo: 'text-destructive-strong',
+  busy: 'text-info-strong',
+  failed: 'text-destructive-strong',
+  done: 'text-muted-foreground',
+  quiet: 'text-muted-foreground',
+};
+
+type TalkEntry = { kind: 'talk'; item: Consultation } | { kind: 'confirm'; items: Consultation[] };
+
+/** 접힌 매물 확인 묶음의 한 줄: "매물 확인 3건 — 유효함 2 · 부재중 1" */
+function confirmSummary(items: Consultation[]): string {
+  const counts = new Map<string, number>();
+  let head = '';
+  for (const item of items) {
+    const [name, result] = (splitConsultationTag(item.content).tag ?? '').split(' · ');
+    head ||= name;
+    if (result) counts.set(result, (counts.get(result) ?? 0) + 1);
+  }
+  const parts = [...counts].map(([result, count]) => `${result} ${count}`).join(' · ');
+  return parts ? `${head} ${items.length}건 — ${parts}` : `${head} ${items.length}건`;
+}
 
 function getConsultationPropertyLabel(consultation: Consultation): string | null {
   const siteName = consultation.property?.site?.name?.trim();
@@ -1771,6 +1821,33 @@ function ConsultationsSection({
   const totalCount = consultations.data?.pagination?.total;
   const status = statusBody(view, () => void consultations.refetch(), 3);
 
+  // 날짜로 묶는다(오늘 · 어제 · 그 전). 매물 확인으로 생긴 짧은 기록은 그 날의 한 묶음으로 접는다.
+  const dayGroups: Array<{ label: string; entries: TalkEntry[] }> = [];
+  for (const item of items) {
+    const label = formatConsultationDay(item.createdAt, now);
+    let group = dayGroups[dayGroups.length - 1];
+    if (!group || group.label !== label) {
+      group = { label, entries: [] };
+      dayGroups.push(group);
+    }
+    if (splitConsultationTag(item.content).tag) {
+      const fold = group.entries.find((entry) => entry.kind === 'confirm');
+      if (fold?.kind === 'confirm') fold.items.push(item);
+      else group.entries.push({ kind: 'confirm', items: [item] });
+    } else {
+      group.entries.push({ kind: 'talk', item });
+    }
+  }
+  const [openFolds, setOpenFolds] = useState<ReadonlySet<string>>(new Set());
+  const toggleFold = (key: string) =>
+    setOpenFolds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const [writing, setWriting] = useState(false);
+
   const selectedChannel = selected ? getConsultationChannel(selected) : null;
   const selectedProperty = selected ? getConsultationPropertyLabel(selected) : null;
   const selectedPhone = selected?.contact?.phone ? formatPhone(selected.contact.phone) : null;
@@ -1792,83 +1869,134 @@ function ConsultationsSection({
           </EmptyNote>
         ) : (
           <div className="dash-scroll">
-            {items.map((item) => {
-              const channel = getConsultationChannel(item);
-              const ChannelIcon = CHANNEL_ICON[channel.kind];
-              const rowStatus = getConsultationRowStatus(item);
-              const summaryLine = getConsultationSummaryLine(item);
-              const propertyLabel = getConsultationPropertyLabel(item);
-              const metaTail = [
-                propertyLabel,
-                scope === 'all' && item.createdBy?.name
-                  ? item.createdById === userId
-                    ? '나'
-                    : item.createdBy.name
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(' · ');
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={(event) => {
-                    openerRef.current = event.currentTarget;
-                    setSelected(item);
-                  }}
-                  className="dash-consult-row focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-                >
-                  <div className="min-w-0 flex-1 space-y-0.5">
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span
-                        className={cn(
-                          'inline-flex h-[18px] shrink-0 items-center gap-1 rounded px-1.5 text-[11px] font-medium',
-                          CHANNEL_TONE_CLASS[channel.kind],
+            {dayGroups.map((group) => (
+              <Fragment key={group.label}>
+                <div className="dash-talk-day">{group.label}</div>
+                {group.entries.map((entry) => {
+                  if (entry.kind === 'confirm') {
+                    const [first] = entry.items;
+                    const foldKey = `${group.label}:${first.id}`;
+                    const open = entry.items.length === 1 || openFolds.has(foldKey);
+                    return (
+                      <Fragment key={foldKey}>
+                        {entry.items.length > 1 && (
+                          <button
+                            type="button"
+                            aria-expanded={open}
+                            onClick={() => toggleFold(foldKey)}
+                            className="dash-talk-fold focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                          >
+                            <span className="dash-talk-ico is-line" aria-hidden="true">
+                              <Check className="size-3.5" />
+                            </span>
+                            <span className="min-w-0 flex-1 truncate">{confirmSummary(entry.items)}</span>
+                            <ChevronRight
+                              className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
+                              aria-hidden="true"
+                            />
+                          </button>
                         )}
-                      >
-                        <ChannelIcon className="size-3" aria-hidden="true" />
-                        {channel.label}
+                        {open &&
+                          entry.items.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={(event) => {
+                                openerRef.current = event.currentTarget;
+                                setSelected(item);
+                              }}
+                              className={cn(
+                                'dash-consult-row is-fold focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+                                entry.items.length > 1 && 'is-nested',
+                              )}
+                            >
+                              {entry.items.length === 1 && (
+                                <span className="dash-talk-ico is-line" aria-hidden="true">
+                                  <Check className="size-3.5" />
+                                </span>
+                              )}
+                              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground-strong">
+                                {getConsultationSummaryLine(item).text}
+                                <span className="text-muted-foreground"> · {item.contact?.name ?? '미연결 고객'}</span>
+                              </span>
+                              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                                {formatConsultationClock(item.createdAt)}
+                              </span>
+                            </button>
+                          ))}
+                      </Fragment>
+                    );
+                  }
+                  const { item } = entry;
+                  const channel = getConsultationChannel(item);
+                  const ChannelIcon = CHANNEL_ICON[channel.kind];
+                  const rowStatus = getConsultationRowStatus(item);
+                  const summaryLine = getConsultationSummaryLine(item);
+                  const metaTail = [
+                    getConsultationPropertyLabel(item),
+                    scope === 'all' && item.createdBy?.name
+                      ? item.createdById === userId
+                        ? '나'
+                        : item.createdBy.name
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ');
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={(event) => {
+                        openerRef.current = event.currentTarget;
+                        setSelected(item);
+                      }}
+                      className="dash-consult-row focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                    >
+                      {/* 수단(전화 · 방문 · 문자)은 색 꼬리표가 아니라 회색 아이콘 — 이름을 먼저 읽게 한다 */}
+                      <span className="dash-talk-ico" title={channel.label}>
+                        <ChannelIcon className="size-3.5" aria-label={channel.label} />
                       </span>
-                      <span className="truncate text-[13px] font-semibold text-foreground">
-                        {item.contact?.name ?? '미연결 고객'}
-                      </span>
-                      {metaTail && (
-                        <span className="min-w-0 truncate text-[11.5px] text-muted-foreground">
-                          · {metaTail}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 items-baseline gap-1.5">
+                          <span className="shrink-0 text-sm font-semibold text-foreground">
+                            {item.contact?.name ?? '미연결 고객'}
+                          </span>
+                          {metaTail && <span className="min-w-0 truncate text-xs text-muted-foreground">· {metaTail}</span>}
+                          <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                            {formatConsultationClock(item.createdAt)}
+                          </span>
                         </span>
-                      )}
-                    </div>
-                    <p className="flex items-center gap-1 truncate text-[12.5px] leading-5 text-muted-foreground-strong">
-                      {summaryLine.fromAi && (
-                        <SparklesIcon className="size-3 shrink-0 text-info" aria-label="AI 요약" />
-                      )}
-                      <span className="truncate">
-                        {summaryLine.text || '기록된 상담 메모가 없습니다.'}
-                      </span>
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span className="text-[11px] text-muted-foreground tabular-nums">
-                      {formatConsultationWhen(item.createdAt, now)}
-                    </span>
-                    {rowStatus.tone !== 'none' && (
-                      <span
-                        title={rowStatus.hint}
-                        className={cn(
-                          'inline-flex h-[18px] items-center rounded px-1.5 text-[10.5px] font-semibold',
-                          CONSULT_STATUS_CLASS[rowStatus.tone],
+                        <span className="dash-talk-text">
+                          {summaryLine.fromAi && (
+                            <SparklesIcon className="mr-1 inline size-3 -translate-y-px text-info" aria-label="AI 요약" />
+                          )}
+                          {summaryLine.text || '기록된 상담 메모가 없습니다.'}
+                        </span>
+                        {rowStatus.tone !== 'none' && (
+                          <span title={rowStatus.hint} className={cn('dash-talk-next', CONSULT_STATUS_TEXT[rowStatus.tone])}>
+                            <ArrowRight className="size-3" aria-hidden="true" />
+                            {rowStatus.label}
+                          </span>
                         )}
-                      >
-                        {rowStatus.label}
                       </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+                    </button>
+                  );
+                })}
+              </Fragment>
+            ))}
           </div>
         ))}
+
+      {/* 전화를 받으며 바로 적는다 — 화면을 옮기지 않고 이 자리에서 창을 연다 (빠른 등록의 '상담 적기'와 같은 창) */}
+      <button
+        type="button"
+        onClick={() => setWriting(true)}
+        className="dash-talk-add focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        <Plus className="size-4" aria-hidden="true" />
+        상담 적기
+      </button>
+      <ConsultationFormDialog open={writing} onOpenChange={setWriting} />
 
       <Dialog open={selected !== null} onOpenChange={(next) => !next && setSelected(null)}>
         {selected && selectedChannel && (
@@ -2233,6 +2361,11 @@ function useDealsQuery() {
   return useQuery(dealQueries.list());
 }
 
+/** 현재 상황의 '매칭 중'. 희망매물과 같은 조회(캐시 공유) */
+function useMatchesQuery() {
+  return useQuery({ queryKey: ['matches'], queryFn: () => api.matches.findAll() });
+}
+
 /** 오늘(0시~다음 날 0시) 일정. 달력을 다른 달로 넘겨도 인사 영역 숫자·그림 깃발이 유지된다. */
 function useTodayEventsQuery(todayKey: string, todayStart: Date) {
   return useQuery({
@@ -2313,6 +2446,7 @@ function DashboardPage() {
 
   const tasks = useTasksQuery();
   const deals = useDealsQuery();
+  const matches = useMatchesQuery();
   const notices = useNoticesQuery();
   const todayEventsQuery = useTodayEventsQuery(todayKey, todayStart);
   const monthEventsQuery = useMonthEventsQuery(rangeStart, rangeEnd);
@@ -2460,15 +2594,15 @@ function DashboardPage() {
             />
           </div>
 
-          {/* 오른쪽 단은 좁아져도 숨기지 않는다. 좁으면 두 단 아래로 내려온다(-dashboard.css의 @container). */}
+          {/* 오른쪽 단: 현재 상황 · 가이드 · 소식(남은 높이). 좁아지면 아래로 내려가지 않고 화면에서 빠진다(-dashboard.css의 @container). */}
           <aside className="dash-rail">
-            <DealsSection deals={deals} scope={scope} userId={user?.id} />
-            <NoticeSection notices={notices} reader={noticeReader} sectionRef={noticeSectionRef} />
+            <StatusSection deals={deals} matches={matches} scope={scope} userId={user?.id} now={now} />
             <GuideBannerCard
               bannerIdx={bannerIdx}
               onSelectBanner={setBannerIdx}
               onOpenGuide={(id) => setOpenGuideId(id)}
             />
+            <NoticeSection notices={notices} reader={noticeReader} sectionRef={noticeSectionRef} />
           </aside>
         </div>
       </div>

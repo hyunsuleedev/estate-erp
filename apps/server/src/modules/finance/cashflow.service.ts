@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { formatUnitName } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
-import { OfficeExpenseService } from './office-expense.service';
 import { monthRange } from './settlement-calc';
 import { kstMonthOf, loadOurCollections } from './our-collections';
 
@@ -47,14 +46,11 @@ export interface CashflowSummary {
   pending: number;
   overdue: number;
   expected: number;
-  monthlyExpense: number;
   /**
    * 그 달 수금 가운데 공동중개 상대에게 넘겨줄 몫 (만원). 우리가 수금한 청구의 상대 분배 비율만큼이다.
-   * 보냈는지와 상관없이 우리 돈이 아니라 순이익에서 뺀다.
+   * 보냈는지와 상관없이 우리 돈이 아니다.
    */
   partnerShare: number;
-  /** 수금 − 공동중개 줄 몫 − 고정비 */
-  netProfit: number;
   taxInvoicePending: number;
   pipeline: {
     preparing: { count: number; amount: number };
@@ -69,8 +65,6 @@ export interface CashflowSummary {
     collected: number;
     /** 상대에게 넘겨줄 몫 (만원) */
     partnerShare: number;
-    expense: number;
-    net: number;
   }>;
 }
 
@@ -91,10 +85,7 @@ const BALANCE_WAITING_STAGES = new Set(['completed', 'closed']);
 
 @Injectable()
 export class CashflowService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly expenseService: OfficeExpenseService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async getSummary(
     officeId: string,
@@ -281,11 +272,10 @@ export class CashflowService {
     }
 
     const expected = pending + pipelineCounts.preparing.amount;
-    const monthlyExpense = await this.expenseService.getMonthlyTotal(officeId);
 
     // 월별 추이 (최근 6개월). 맨 끝이 고른 달이다.
     // 예전에는 진행 중인 거래 전체의 받은 금액을 '수금'으로 내려 달과 상관없는 누계였다.
-    const monthlyTrend = await this.getMonthlyTrend(officeId, year, month, 6, monthlyExpense);
+    const monthlyTrend = await this.getMonthlyTrend(officeId, year, month, 6);
     const last = monthlyTrend[monthlyTrend.length - 1];
     const collected = last?.collected ?? 0;
     const partnerShare = last?.partnerShare ?? 0;
@@ -295,9 +285,7 @@ export class CashflowService {
       pending,
       overdue,
       expected,
-      monthlyExpense,
       partnerShare,
-      netProfit: collected - partnerShare - monthlyExpense,
       taxInvoicePending,
       pipeline: pipelineCounts,
       deals: pipelineDeals,
@@ -315,7 +303,6 @@ export class CashflowService {
     year: number,
     month: number,
     months: number,
-    monthlyExpense: number,
   ) {
     const keys: string[] = [];
     for (let i = months - 1; i >= 0; i--) {
@@ -342,8 +329,6 @@ export class CashflowService {
         month: key,
         collected,
         partnerShare,
-        expense: monthlyExpense,
-        net: collected - partnerShare - monthlyExpense,
       };
     });
   }

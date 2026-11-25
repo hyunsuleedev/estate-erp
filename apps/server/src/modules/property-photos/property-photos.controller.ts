@@ -17,7 +17,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { PropertyPhotosService } from './property-photos.service';
 
-@ApiTags('Property Photos')
+@ApiTags('매물 사진')
 @ApiBearerAuth()
 @Controller('property-photos')
 @UseGuards(JwtAuthGuard)

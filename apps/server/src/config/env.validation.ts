@@ -1,8 +1,7 @@
 import { MCP_RESOURCE_URI } from '@estate-erp/shared';
 
 // 직원 로그인은 Auth0다. AUTH0_DOMAIN은 테넌트 도메인, AUTH0_AUDIENCE는 이 서버의
-// API 식별자다. CLERK_SECRET_KEY는 소비자 사이트 로그인에만 쓰이며, 없어도 서버는
-// 뜬다(그 기능만 꺼진다).
+// API 식별자다.
 const REQUIRED_ENV_VARS = [
   'DATABASE_URL',
   'AUTH0_DOMAIN',

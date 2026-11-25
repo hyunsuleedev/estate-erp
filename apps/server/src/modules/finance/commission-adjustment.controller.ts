@@ -18,7 +18,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { CommissionAdjustmentService } from './commission-adjustment.service';
 
-@ApiTags('Finance / Commission Adjustment')
+@ApiTags('재무 · 수수료 조정')
 @ApiBearerAuth()
 @Controller('finance/commission-adjustments')
 @UseGuards(JwtAuthGuard)

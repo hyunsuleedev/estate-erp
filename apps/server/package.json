@@ -20,7 +20,6 @@
     "prisma:studio": "prisma studio --schema ../../prisma/schema"
   },
   "dependencies": {
-    "@clerk/backend": "^3.4.13",
     "@estate-erp/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nestjs/bullmq": "^11.0.0",

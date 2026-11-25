@@ -9,7 +9,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { LedgerService, LedgerPreset } from './ledger.service';
 
-@ApiTags('Finance / Ledger')
+@ApiTags('재무 · 수금 원장')
 @ApiBearerAuth()
 @Controller('finance/ledger')
 @UseGuards(JwtAuthGuard)

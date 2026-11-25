@@ -30,10 +30,8 @@ describe('McpToolsService 권한', () => {
       getSummary: jest.fn().mockResolvedValue({
         collected: 700,
         partnerShare: 100,
-        monthlyExpense: 418,
-        netProfit: 182,
         receivable: 2202,
-        monthly: [{ month: '2026-11', collected: 700, partnerShare: 100, expense: 418, net: 182 }],
+        monthly: [{ month: '2026-11', collected: 700, partnerShare: 100 }],
       }),
     };
     const deals = {
@@ -169,7 +167,7 @@ describe('McpToolsService 권한', () => {
     });
   });
 
-  it('캐시플로우 요약에 고정비와 순이익을 싣지 않는다 (화면에서 내린 것과 같게)', async () => {
+  it('대표·매니저에게는 캐시플로우 요약을 그대로 돌려준다', async () => {
     const { service } = createService();
 
     const summary = parse(

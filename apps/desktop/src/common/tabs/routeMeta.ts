@@ -76,7 +76,6 @@ const STATIC_ROUTES: Record<string, RouteMetaCore> = {
   '/contracts': { title: '계약서 관리', kind: 'contract', iconKey: 'file-text' },
   '/cashflow': { title: '캐시플로우', kind: 'cashflow', iconKey: 'wallet' },
   '/cashflow/ledger': { title: '수금 원장', kind: 'cashflow', iconKey: 'wallet' },
-  '/cashflow/expenses': { title: '고정비 설정', kind: 'cashflow', iconKey: 'wallet' },
   '/cashflow/partner-commissions': {
     title: '공동중개 수수료',
     kind: 'cashflow',

@@ -78,10 +78,10 @@ docker compose -f docker-compose.prod.yml run --rm -e SEED_SCRIPT=seed-legal-don
 
 ## 7. 확인
 
-- [ ] `https://api.estaitt.com/api-docs`가 HTTPS로 열린다.
+- [ ] `https://api.estaitt.com/health`가 HTTPS로 `{"status":"ok"}`를 돌려주고, `/api-docs`는 열리지 않는다(404).
 - [ ] 데스크톱 앱(`VITE_API_BASE_URL=https://api.estaitt.com`)에서 로그인, 매물 · 프로젝트 만들기 · 고치기, 두 창 사이 실시간 반영.
 - [ ] 외부 AI에서 `https://api.estaitt.com/mcp` 연결과 도구 호출.
-- [ ] 가동 감시(UptimeRobot 등)를 `/api-docs`에 건다.
+- [ ] 가동 감시(UptimeRobot 등)를 `/health`에 건다.
 
 ## 그 뒤의 배포
 

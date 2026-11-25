@@ -1,5 +1,3 @@
-import { ConsumerRequestsModule } from "./modules/consumer-requests/consumer-requests.module";
-import { PublicListingsModule } from './modules/public-listings/public-listings.module';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -46,12 +44,12 @@ import { NoticesModule } from './modules/notices/notices.module';
 import { CtiModule } from './modules/cti/cti.module';
 import { RequestContextMiddleware } from './common/request-context/request-context.middleware';
 import { RealtimeModule } from './realtime/realtime.module';
+import { HealthModule } from './modules/health/health.module';
 
 const GENERAL_API_RATE_LIMIT_PER_MINUTE = 600;
 
 @Module({
   imports: [
-    ConsumerRequestsModule,
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
@@ -74,6 +72,7 @@ const GENERAL_API_RATE_LIMIT_PER_MINUTE = 600;
     ]),
     PrismaModule,
     RealtimeModule,
+    HealthModule,
     AuthModule,
     SitesModule,
     OfficeSitesModule,
@@ -82,7 +81,6 @@ const GENERAL_API_RATE_LIMIT_PER_MINUTE = 600;
     PropertiesModule,
     ListingIntakesModule,
     ListingsModule,
-    PublicListingsModule,
     ListingAdvertisementsModule,
     OfficeAdvertisementsModule,
     ContactsModule,

@@ -186,39 +186,6 @@ model CommissionAdjustment {
 }
 
 // ============================================================
-// 사무소 고정비 템플릿 (OfficeExpenseTemplate)
-// 한번 등록 → 매월 자동 반영 (대시보드 집계용)
-// ============================================================
-
-model OfficeExpenseTemplate {
-  id       String @id @default(uuid()) @db.Uuid
-  officeId String @map("office_id") @db.Uuid
-
-  title         String // "네이버 부동산 광고", "사무실 임대료"
-  /// rent | ad | telecom | insurance | association | supplies | vehicle | other
-  category      String
-  /// 금액 (만원)
-  amount        Int
-  /// monthly | quarterly | yearly
-  frequency     String  @default("monthly")
-  /// 매월 결제일 (1~31)
-  dayOfMonth    Int?    @map("day_of_month")
-  /// 세금 공제 가능 여부 (부가세 매입세액 공제)
-  taxDeductible Boolean @default(false) @map("tax_deductible")
-
-  isActive Boolean @default(true) @map("is_active")
-  note     String?
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  office Office @relation(fields: [officeId], references: [id])
-
-  @@index([officeId, isActive])
-  @@map("office_expense_templates")
-}
-
-// ============================================================
 // 수수료 입금 기록 (CommissionReceipt)
 // ============================================================
 //

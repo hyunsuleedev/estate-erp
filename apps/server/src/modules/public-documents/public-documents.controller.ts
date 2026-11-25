@@ -24,7 +24,7 @@ const DocumentRequestIdPipe = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException('잘못된 서류 발급 주소입니다.'),
 });
 
-@ApiTags('Public Documents')
+@ApiTags('공적장부')
 @ApiBearerAuth()
 @Controller('public-documents')
 @UseGuards(JwtAuthGuard)

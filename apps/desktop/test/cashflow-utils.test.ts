@@ -22,7 +22,6 @@ import {
   isOurReceivable,
   isPaymentOverdue,
   monthContracts,
-  monthlyExpenseAmount,
   monthlyOwed,
   markCancelledDeals,
   collectedInMonth,
@@ -271,10 +270,10 @@ describe('취소한 거래와 원장 월 보기', () => {
     assert.equal(collectedInMonth([p], '2026-11'), 100);
   });
 
-  it('월별 순이익 = 수금 − 공동중개 줄 몫 − 고정비', () => {
-    const bars = buildTrendBars([{ month: '2026-11', collected: 200, partnerShare: 100, expense: 30, net: 70 }], [], NOW);
+  it('월별 추이 막대는 수금과 공동중개 줄 몫을 유지한다', () => {
+    const bars = buildTrendBars([{ month: '2026-11', collected: 200, partnerShare: 100 }], [], NOW);
     const nov = bars.find((b) => b.key === '2026-11');
-    assert.equal(nov?.net, 70);
+    assert.equal(nov?.collected, 200);
     assert.equal(nov?.partnerShare, 100);
   });
 });
@@ -455,8 +454,8 @@ describe('캐시플로우', () => {
 
   it('월별 막대는 지난달까지 수금만, 이번 달부터 예정을 쌓는다', () => {
     const trend = [
-      { month: '2026-10', collected: 1466, expense: 560, net: 906 },
-      { month: '2026-11', collected: 1470, expense: 560, net: 910 },
+      { month: '2026-10', collected: 1466 },
+      { month: '2026-11', collected: 1470 },
     ];
     const bars = buildTrendBars(trend, groups, NOW, 2);
     assert.deepEqual(
@@ -469,7 +468,6 @@ describe('캐시플로우', () => {
       ],
     );
     assert.equal(bars[3].label, "'27.1월");
-    assert.equal(bars[2].net, -560);
   });
 
   it('그달 계약은 계약 이후 단계이면서 그달에 단계가 바뀐 거래다', () => {
@@ -784,12 +782,6 @@ describe('기타', () => {
       dealLocation({ siteName: null, dongName: null, unitName: null }),
       '매물 미지정',
     );
-  });
-
-  it('고정비 월 환산', () => {
-    assert.equal(monthlyExpenseAmount({ amount: 280, frequency: 'monthly' }), 280);
-    assert.equal(monthlyExpenseAmount({ amount: 18, frequency: 'quarterly' }), 6);
-    assert.equal(monthlyExpenseAmount({ amount: 60, frequency: 'yearly' }), 5);
   });
 
   it('CSV는 BOM을 붙이고 따옴표를 이스케이프한다', () => {

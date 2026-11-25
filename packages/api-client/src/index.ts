@@ -382,7 +382,6 @@ export type {
   CommissionAdjustment,
   DistributionInput,
   TaxInvoiceStatus,
-  OfficeExpenseTemplate,
   PartnerBroker,
   PartnerBrokerContact,
   CreatePartnerBrokerDto,
@@ -461,5 +460,3 @@ export type {
   IngestCallEventResult,
   UpdateCallLogDto,
 } from "./modules/cti.js";
-
-export type { PublicListingSettings, SavePublicListing } from './modules/public-listings.js';

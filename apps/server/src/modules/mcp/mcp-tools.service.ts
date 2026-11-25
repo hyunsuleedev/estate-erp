@@ -65,23 +65,6 @@ export interface ToolCallResult {
   [key: string]: unknown;
 }
 
-/**
- * 캐시플로우 요약에서 고정비와 그것으로 계산한 순이익을 뺀다.
- * 고정비 화면을 내렸으므로(2026-11-22) 외부 AI에도 같은 범위만 준다. 서비스의 계산과 표는 남아 있다.
- */
-const EXPENSE_FIELD = /expense|netprofit|^net$/i;
-function stripExpenseFields(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stripExpenseFields);
-  if (value && typeof value === 'object' && !(value instanceof Date)) {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([key]) => !EXPENSE_FIELD.test(key))
-        .map(([key, child]) => [key, stripExpenseFields(child)]),
-    );
-  }
-  return value;
-}
-
 interface McpContext {
   officeId: string;
   userId: string;
@@ -2534,19 +2517,17 @@ export class McpToolsService {
       '월별 캐시플로우 요약 (수금, 공동중개 줄 몫, 받을 돈).',
       obj({ year: num('연도'), month: num('월') }, ['year', 'month']),
       async (a, c) => {
-        // 화면의 캐시플로우와 같은 권한: 고정비·순이익은 대표·매니저만 본다.
+        // 화면의 캐시플로우와 같은 권한: 대표·매니저만 본다.
         if (!['owner', 'manager'].includes(c.role ?? 'agent')) {
           throw new ForbiddenException(
             '캐시플로우 요약은 대표·매니저만 볼 수 있습니다.',
           );
         }
-        const summary = await this.cashflow.getSummary(
+        return this.cashflow.getSummary(
           c.officeId,
           a.year as number,
           a.month as number,
         );
-        // 고정비와 순이익은 2026-11-22에 화면에서 내렸다(직원 정산에 쓰이지 않는다). 도구도 같은 값만 준다.
-        return stripExpenseFields(summary);
       },
     );
 

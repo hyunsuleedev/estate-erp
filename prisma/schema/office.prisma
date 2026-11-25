@@ -66,7 +66,6 @@ model Office {
   propertyLeaseTenants                 PropertyLeaseTenant[]
   properties                           Property[]
   listingIntakes                       ListingIntake[]
-  publicListings                       PublicListing[]
   listings                             Listing[]
   cpAccounts                           OfficeCpAccount[]
   listingAdvertisements                ListingAdvertisement[]
@@ -110,7 +109,6 @@ model Office {
   commissionPayments      CommissionPayment[]
   commissionDistributions CommissionDistribution[]
   commissionAdjustments   CommissionAdjustment[]
-  officeExpenseTemplates  OfficeExpenseTemplate[]
 
   // 공동중개 파트너 주소록
   partnerBrokers        PartnerBroker[]        @relation("OfficePartnerBrokers")

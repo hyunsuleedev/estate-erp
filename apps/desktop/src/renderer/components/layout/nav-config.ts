@@ -147,10 +147,6 @@ export const NAV_ITEMS: NavItem[] = [
         roles: ["owner"],
       },
       { path: "/cashflow/my-settlement", label: "내 수수료" },
-      // 고정비 설정(/cashflow/expenses)은 2026-11-22에 메뉴에서 뺐다. 이 영역의 목적은 직원 정산 계산이고,
-      // 고정비는 정산에 쓰이지 않고 캐시플로우의 순이익 칸에만 쓰였다(그 칸도 함께 내렸다).
-      // 화면 코드와 서버 API·표는 남아 있고, 주소로 들어오면 캐시플로우로 보낸다. 다시 켤 때는 여기에
-      // { path: "/cashflow/expenses", label: "고정비 설정", roles: ["owner", "manager"] }를 되돌린다.
     ],
   },
 
@@ -252,7 +248,6 @@ export const ROUTE_LABELS: Record<string, string> = {
   "/_authenticated/cashflow/partner-commissions": "공동중개 수수료",
   "/_authenticated/cashflow/employee-settlements": "직원 정산",
   "/_authenticated/cashflow/my-settlement": "내 수수료",
-  "/_authenticated/cashflow/expenses": "고정비 설정",
   // 네트워크
   "/_authenticated/network/": "네트워크",
   "/_authenticated/partner-brokers/": "파트너 중개사",

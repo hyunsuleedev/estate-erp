@@ -94,31 +94,55 @@ svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-wid
 .done .check { background: var(--fg); box-shadow: none; }
 
 /* ── 고른 날의 일정 ── */
-.dayhead { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; padding: 10px 16px 2px; box-shadow: inset 0 1px 0 var(--line); }
-.dayhead b { font-weight: 600; }
-.dayhead .sub { margin-left: auto; }
+.dayhead { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 8px 2px 16px; box-shadow: inset 0 1px 0 var(--line); }
+.dayhead b { font-weight: 600; white-space: nowrap; }
+.dayhead .sp { flex: 1; }
 .day { padding: 2px 16px 12px; }
-.slot { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 7px 0; }
-.slot time { font-size: 12px; line-height: 20px; color: var(--fg3); font-variant-numeric: tabular-nums; }
-.slot .t { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.slot.past { opacity: 0.5; }
+.slot { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 7px 8px; margin: 0 -8px; border-radius: 8px; }
+.slot time { display: flex; flex-direction: column; font-size: 12px; line-height: 20px; color: var(--fg2); }
+.slot time em { font-style: normal; line-height: 16px; color: var(--fg4); }
+.slot .t { display: flex; align-items: center; gap: 6px; font-weight: 500; white-space: nowrap; overflow: hidden; }
+.slot .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot .kind { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 4px; background: var(--soft); color: var(--fg2); font-size: 11px; line-height: 16px; font-weight: 500; }
+.slot.past { opacity: 0.45; }
+.slot.next { background: var(--muted); }
+.soonb { flex: none; padding: 0 6px; border-radius: 9px; background: var(--fg); color: #fff; font-size: 11px; line-height: 18px; font-weight: 600; }
 .now { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; align-items: center; height: 14px; }
-.now time { font-size: 12px; font-weight: 600; color: var(--red); }
-.now i { height: 1px; background: var(--red); position: relative; }
-.now i::before { content: ""; position: absolute; left: -3px; top: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+.now time { font-size: 12px; font-weight: 600; color: #e03e3e; }
+.now i { height: 1px; background: #e03e3e; position: relative; }
+.now i::before { content: ""; position: absolute; left: -3px; top: -3px; width: 7px; height: 7px; border-radius: 50%; background: #e03e3e; }
 .empty { padding: 14px 0; color: var(--fg3); }
+.uphead { margin-top: 10px; padding-top: 10px; box-shadow: inset 0 1px 0 var(--line); font-size: 12px; line-height: 18px; color: var(--fg3); }
+.up { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; width: calc(100% + 16px); margin: 0 -8px; padding: 6px 8px; border-radius: 8px; }
+.up .when { font-size: 12px; color: var(--fg2); }
+.up .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (hover: hover) { .up:hover, .slot:not(.next):hover { background: var(--hover); } }
 
-/* ── 이번 주 띠 (납작한 한 줄) ── */
-.wk { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; padding: 0 10px; }
-.wk button { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 0 7px; border-radius: 8px; transition: background-color 120ms ease; }
-.wk .wd { font-size: 12px; line-height: 16px; color: var(--fg3); }
-.wk b { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 13px; font-weight: 500; }
-.wk .today b { background: var(--fg); color: #fff; font-weight: 600; }
-.wk .on { background: var(--sel); }
-.wk .dots { display: flex; gap: 2px; height: 4px; }
-.wk .dots i { width: 4px; height: 4px; border-radius: 2px; background: var(--fg4); }
-.wk .dots em { font-style: normal; font-size: 9px; line-height: 4px; color: var(--fg3); }
-@media (hover: hover) { .wk button:not(.on):hover { background: var(--hover); } }
+/* ── 한 달 달력 ──
+   이번 주에는 옅은 띠가 깔리고, 일요일·토요일은 달력 관례대로 옅은 빨강·파랑. 지난 날은 흐리게,
+   일정은 건수만큼 점(셋까지). 오늘은 꽉 찬 원, 고른 날은 테두리 원 */
+.calh h2 { font-size: 18px; line-height: 24px; font-weight: 600; letter-spacing: -0.02em; }
+.calh .yr { margin-left: 4px; font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--fg3); }
+.calh .nav { width: 26px; padding: 0; justify-content: center; }
+.mo-wd, .mo { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding: 0 10px; }
+.mo-wd span { text-align: center; font-size: 12px; line-height: 24px; color: var(--fg3); }
+.mo-wd .sun, .mo .sun b { color: #c4554d; }
+.mo-wd .sat, .mo .sat b { color: #3f7fc4; }
+.mo > * { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; height: 40px; padding-top: 3px; }
+.mo .cw { background: var(--muted); }
+.mo .cw0 { border-radius: 10px 0 0 10px; }
+.mo .cw6 { border-radius: 0 10px 10px 0; }
+.mo button b { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 13px; font-weight: 450; transition: background-color 120ms ease, box-shadow 120ms ease; }
+.mo .out { color: var(--fg4); line-height: 26px; }
+.mo .past b { opacity: 0.5; }
+.mo .dots { display: flex; gap: 2px; height: 4px; margin-top: 2px; }
+.mo .dots i { width: 4px; height: 4px; border-radius: 2px; background: var(--fg3); }
+.mo .past .dots i { background: var(--fg4); opacity: 0.6; }
+.mo .on b { box-shadow: inset 0 0 0 1.5px var(--fg); opacity: 1; }
+.mo .today b { background: #e03e3e; color: #fff; font-weight: 600; opacity: 1; }
+.mo .today.on b { box-shadow: 0 0 0 2px var(--muted), 0 0 0 3.5px #e03e3e; }
+.mo .today .dots i { background: #e03e3e; }
+@media (hover: hover) { .mo button:not(.on):not(.today):hover b { background: var(--sel); } }
 
 #tip { position: fixed; z-index: 50; pointer-events: none; padding: 6px 9px; border-radius: 6px; background: var(--fg); color: #fff; font-size: 12px; line-height: 18px; white-space: nowrap; opacity: 0; transform: translateY(2px); transition: opacity 120ms ease, transform 120ms var(--ease-out); }
 #tip.on { opacity: 1; transform: none; }

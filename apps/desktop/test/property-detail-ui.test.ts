@@ -181,7 +181,6 @@ describe('desktop property detail page structure', () => {
       '거래 바로 만들기',
       '확인 결과 기록',
       '가격·조건 수정',
-      '고객 공개 설정',
       '거래 조건 삭제',
       '확인 완료',
       '상담 적기',

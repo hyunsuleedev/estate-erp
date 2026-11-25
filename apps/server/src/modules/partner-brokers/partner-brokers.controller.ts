@@ -29,7 +29,7 @@ const uuidPipe = new ParseUUIDPipe({
   exceptionFactory: () => new NotFoundException('파트너 사무소를 찾을 수 없습니다.'),
 });
 
-@ApiTags('Partner Brokers')
+@ApiTags('파트너 중개사')
 @ApiBearerAuth()
 @Controller('partner-brokers')
 @UseGuards(JwtAuthGuard)

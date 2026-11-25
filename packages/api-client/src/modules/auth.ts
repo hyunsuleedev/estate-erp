@@ -16,9 +16,6 @@ export interface MeResponse {
 
 export function createAuthApi(request: RequestFn) {
   return {
-    logout: () =>
-      request<{ success: true }>('/auth/logout', { method: 'POST' }),
-
     me: () =>
       request<MeResponse>('/auth/me'),
   };

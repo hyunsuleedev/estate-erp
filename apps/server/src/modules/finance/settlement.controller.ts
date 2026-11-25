@@ -11,7 +11,7 @@ import { SettlementService } from './settlement.service';
  * 직원 정산. 직원별 지급액이 드러나므로 정산 조회·확정·지급은 대표만 한다
  * (급여와 배분율을 대표만 보는 것과 같은 기준). 직원 본인은 /mine 으로 자기 것만 본다.
  */
-@ApiTags('Finance / Settlement')
+@ApiTags('재무 · 직원 정산')
 @ApiBearerAuth()
 @Controller('finance/settlements')
 @UseGuards(JwtAuthGuard)

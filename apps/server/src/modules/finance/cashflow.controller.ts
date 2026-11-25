@@ -9,7 +9,7 @@ import {
 } from '../../common/decorators/current-user.decorator';
 import { CashflowService } from './cashflow.service';
 
-@ApiTags('Finance / Cashflow')
+@ApiTags('재무 · 캐시플로우')
 @ApiBearerAuth()
 @Controller('finance/cashflow')
 @UseGuards(JwtAuthGuard)

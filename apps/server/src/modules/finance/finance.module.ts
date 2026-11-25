@@ -2,8 +2,6 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { CommissionPaymentService } from './commission-payment.service';
 import { CommissionPaymentController } from './commission-payment.controller';
-import { OfficeExpenseService } from './office-expense.service';
-import { OfficeExpenseController } from './office-expense.controller';
 import { CashflowService } from './cashflow.service';
 import { CashflowController } from './cashflow.controller';
 import { LedgerService } from './ledger.service';
@@ -17,7 +15,6 @@ import { SettlementController } from './settlement.controller';
   imports: [PrismaModule],
   controllers: [
     CommissionPaymentController,
-    OfficeExpenseController,
     CashflowController,
     LedgerController,
     CommissionAdjustmentController,
@@ -25,7 +22,6 @@ import { SettlementController } from './settlement.controller';
   ],
   providers: [
     CommissionPaymentService,
-    OfficeExpenseService,
     CashflowService,
     LedgerService,
     CommissionAdjustmentService,

@@ -142,19 +142,6 @@ export type UpdatePartnerBrokerDto = Partial<CreatePartnerBrokerDto> & {
   isActive?: boolean;
 };
 
-export interface OfficeExpenseTemplate {
-  id: string;
-  officeId: string;
-  title: string;
-  category: string;
-  amount: number;
-  frequency: string;
-  dayOfMonth: number | null;
-  taxDeductible: boolean;
-  isActive: boolean;
-  note: string | null;
-}
-
 export interface PipelineDealPayment {
   id: string;
   side: string;
@@ -204,9 +191,6 @@ export interface MonthlyTrend {
   collected: number;
   /** 그 수금 가운데 공동중개 상대에게 넘겨줄 몫 (만원). 보냈는지와 상관없이 우리 돈이 아니다. */
   partnerShare?: number;
-  expense: number;
-  /** 수금 − 줄 몫 − 고정비 */
-  net: number;
 }
 
 // ============================================================
@@ -353,11 +337,8 @@ export interface CashflowSummary {
   pending: number;
   overdue: number;
   expected: number;
-  monthlyExpense: number;
   /** 그 달 수금 가운데 공동중개 상대에게 넘겨줄 몫 (만원) */
   partnerShare?: number;
-  /** 수금 − 공동중개 줄 몫 − 고정비 */
-  netProfit: number;
   taxInvoicePending: number;
   pipeline: {
     preparing: PipelineBucket;
@@ -655,47 +636,6 @@ export function createFinanceApi(request: RequestFn) {
           `/finance/commission-payments/deal/${dealId}/distributions`,
           { method: 'PATCH', body: { items } },
         ),
-    },
-
-    expenses: {
-      list: () => request<OfficeExpenseTemplate[]>('/finance/expenses'),
-
-      create: (data: {
-        title: string;
-        category: string;
-        amount: number;
-        frequency?: string;
-        dayOfMonth?: number | null;
-        taxDeductible?: boolean;
-        note?: string | null;
-      }) =>
-        request<OfficeExpenseTemplate>('/finance/expenses', {
-          method: 'POST',
-          body: data,
-        }),
-
-      update: (
-        id: string,
-        data: Partial<{
-          title: string;
-          category: string;
-          amount: number;
-          frequency: string;
-          /** null 이면 결제일을 지운다 */
-          dayOfMonth: number | null;
-          taxDeductible: boolean;
-          isActive: boolean;
-          /** null 이면 메모를 지운다 */
-          note: string | null;
-        }>,
-      ) =>
-        request<OfficeExpenseTemplate>(`/finance/expenses/${id}`, {
-          method: 'PATCH',
-          body: data,
-        }),
-
-      remove: (id: string) =>
-        request<void>(`/finance/expenses/${id}`, { method: 'DELETE' }),
     },
 
     cashflow: {

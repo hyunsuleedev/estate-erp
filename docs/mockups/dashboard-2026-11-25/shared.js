@@ -66,13 +66,17 @@ const D = {
     { d: '목', n: 26 }, { d: '금', n: 27 }, { d: '토', n: 28 },
   ],
   dayEvents: {
+    4: [['11:00', '임장', '고덕그라시움 103동']], 6: [['14:00', '계약서 작성', '고덕아르테온 305동'], ['16:00', '정유진 고객 상담', '방문']],
+    11: [['10:30', '문지훈 매도인 통화', '가격 조정']], 13: [['13:00', '임장 2건', '헬리오시티']], 17: [['15:00', '가계약', '고덕그라시움 101동 3404호']],
+    19: [['11:00', '한지우 고객 상담', '방문'], ['17:30', '사진 촬영', '고덕그라시움 101동 3401호']], 20: [['14:00', '임장', '래미안강동팰리스']],
+    29: [['13:00', '수금 예정', '강수연 · 660만']], 30: [['10:00', '주간 회의', '사무소']],
     23: [['10:00', '주간 회의', '사무소'], ['14:00', '정유진 고객 상담', '대출 한도 확인'], ['17:00', '매물 사진 촬영', '고덕그라시움 101동 3401호']],
     24: [['11:30', '문지훈 매도인 방문', '고덕그라시움 101동 3403호'], ['15:00', '임장', '고덕아르테온 305동 1204호']],
     26: [['12:00', '최도윤 고객 방문 상담', '고덕그라시움 102동 3401호'], ['15:30', '가계약금 협의', '고덕아르테온 305동 1204호'], ['17:00', '임장', '헬리오시티 204동']],
     27: [['10:00', '등기 이전 확인', '고덕그라시움 101동 3503호'], ['16:00', '강수연 고객 통화', '토요일 임장 확인']],
     28: [['09:30', '강수연 고객 임장', '헬리오시티 204동 1102호'], ['11:00', '한지우 고객 임장 2건', '고덕그라시움'], ['14:00', '임장', '래미안강동팰리스'], ['16:00', '임장', '고덕아르테온']],
   },
-  stages: ['계약 준비', '가계약', '본계약', '중도금·잔금', '잔금 완료'],
+  stages: ['계약 준비', '가계약', '본계약', '중도금/잔금', '잔금 완료'],
   stageShort: ['준비', '가계약', '본계약', '중도금', '완료'],
   deals: [
     { name: '고덕그라시움 101동 3503호', type: '매매', price: '24억 2,000', stage: 4, days: 2, next: '등기 이전 확인', due: '11.27', who: '이현수' },
@@ -181,42 +185,72 @@ function bindChecks() {
   });
 }
 
-/** 이번 주 띠: 한 줄에 일곱 날. 날마다 요일·날짜·일정 수(점)만 둔다. 고른 날의 일정은 아래에 목록으로 나온다. */
-function weekStripHtml(picked = 25) {
-  return `<div class="wk" role="tablist" aria-label="이번 주">${D.week.map((d) => `<button role="tab" aria-selected="${d.n === picked}" class="${d.today ? 'today' : ''} ${d.n === picked ? 'on' : ''}" data-n="${d.n}"><span class="wd">${d.d}</span><b class="num">${d.n}</b><span class="dots" aria-label="일정 ${d.ev}건">${'<i></i>'.repeat(Math.min(d.ev, 4))}${d.ev > 4 ? '<em>+</em>' : ''}</span></button>`).join('')}</div>`;
+/* ── 일정: 한 달 달력 + 고른 날의 일정 (2026년 11월 — 1일이 일요일) ── */
+const WD = ['일', '월', '화', '수', '목', '금', '토'];
+const TODAY = 25, MONTH_DAYS = 30;
+const evCount = (n) => (n === TODAY ? D.events.length : (D.dayEvents[n] ?? []).length);
+/** 일정 종류는 제목에서 읽는다(임장 · 계약 · 잔금 · 상담). 꼬리표로만 쓴다 */
+const kindOf = (t) => (/임장/.test(t) ? '임장' : /잔금|수금/.test(t) ? '잔금' : /계약/.test(t) ? '계약' : /상담|통화/.test(t) ? '상담' : '');
+function monthHtml() {
+  const weekStart = TODAY - ((TODAY - 1) % 7);
+  let cells = '';
+  for (let n = 1; n <= 35; n += 1) {
+    const col = (n - 1) % 7, wk = n >= weekStart && n < weekStart + 7 ? `cw ${col === 0 ? 'cw0' : col === 6 ? 'cw6' : ''}` : '';
+    if (n > MONTH_DAYS) { cells += `<span class="out num ${wk}">${n - MONTH_DAYS}</span>`; continue; }
+    const ev = evCount(n);
+    cells += `<button data-n="${n}" class="${n === TODAY ? 'today' : n < TODAY ? 'past' : ''} ${col === 0 ? 'sun' : col === 6 ? 'sat' : ''} ${wk}" aria-label="11월 ${n}일 ${WD[col]}요일, 일정 ${ev}건"><b class="num">${n}</b><span class="dots">${'<i></i>'.repeat(Math.min(ev, 3))}</span></button>`;
+  }
+  return `<div class="mo-wd">${WD.map((d, i) => `<span class="${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}">${d}</span>`).join('')}</div><div class="mo">${cells}</div>`;
 }
-
-/** 일정 카드: 위에 이번 주 띠, 아래에 고른 날의 일정. 오늘이면 지금 시각 선이 들어간다. */
+const slotHtml = (at, end, title, who, cls = '', badge = '') => {
+  const k = kindOf(title);
+  return `<div class="slot ${cls}"><time class="num">${at}${end ? `<em>${end}</em>` : ''}</time><div><div class="t">${esc(title)}${badge}</div><div class="sub">${k ? `<span class="kind">${k}</span>` : ''}${esc(who)}</div></div></div>`;
+};
 function dayListHtml(n) {
-  if (n === 25) {
+  if (n === TODAY) {
     let out = '', put = false;
     D.events.forEach((e) => {
-      if (!put && e.at > NOW_HOUR) { out += `<div class="now"><time class="num">${hm(NOW_HOUR)}</time><i></i></div>`; put = true; }
-      out += `<div class="slot ${e.end <= NOW_HOUR ? 'past' : ''}"><time>${hm(e.at)}</time><div><div class="t">${esc(e.title)}</div><div class="sub">${esc(e.who)}</div></div></div>`;
+      const next = !put && e.at > NOW_HOUR;
+      if (next) { out += `<div class="now"><time class="num">${hm(NOW_HOUR)}</time><i></i></div>`; put = true; }
+      const mins = Math.round((e.at - NOW_HOUR) * 60);
+      out += slotHtml(hm(e.at), hm(e.end), e.title, e.who, e.end <= NOW_HOUR ? 'past' : next ? 'next' : '', next ? `<span class="soonb num">${mins >= 60 ? `${Math.floor(mins / 60)}시간 ${mins % 60 ? `${mins % 60}분 ` : ''}뒤` : `${mins}분 뒤`}</span>` : '');
     });
     if (!put) out += `<div class="now"><time class="num">${hm(NOW_HOUR)}</time><i></i></div>`;
     return out;
   }
   const list = D.dayEvents[n] ?? [];
-  return list.length ? list.map(([at, t, who]) => `<div class="slot"><time>${at}</time><div><div class="t">${esc(t)}</div><div class="sub">${esc(who)}</div></div></div>`).join('') : `<p class="empty">일정이 없습니다.</p>`;
+  return list.length ? list.map(([at, t, who]) => slotHtml(at, '', t, who, n < TODAY ? 'past' : '')).join('') : `<p class="empty">일정이 없습니다.</p>`;
+}
+/** 다가오는 일정: 고른 날 뒤로(지난 날을 골랐으면 오늘부터) 일정이 있는 가장 가까운 날 둘. 오늘은 아직 안 끝난 일정만 센다 */
+const dayItems = (d) => (d === TODAY ? D.events.filter((e) => e.end > NOW_HOUR).map((e) => [hm(e.at), e.title]) : (D.dayEvents[d] ?? []).map(([at, t]) => [at, t]));
+function upcomingHtml(n) {
+  const days = [];
+  for (let d = Math.max(n + 1, TODAY); d <= MONTH_DAYS && days.length < 2; d += 1) if (dayItems(d).length) days.push(d);
+  if (!days.length) return '';
+  return `<div class="uphead">다가오는 일정</div>${days.map((d) => { const l = dayItems(d); const diff = d - TODAY; return `<button class="up" data-go="${d}"><span class="when num">${diff === 0 ? '오늘' : diff === 1 ? '내일' : `${d}일 (${WD[(d - 1) % 7]})`}</span><span class="t">${esc(l[0][1])}${l.length > 1 ? ` 외 ${l.length - 1}건` : ''}</span><span class="sub num">${l[0][0]}</span></button>`; }).join('')}`;
 }
 function scheduleCardHtml() {
-  return `<section class="panel" id="sched">
-    <div class="ph">${ic('cal')}<h2>11월 22~28일</h2><span class="sp"></span><button class="btn ghost" data-today>오늘</button><button class="btn ghost">캘린더 ${ic('arrow')}</button></div>
-    ${weekStripHtml(25)}
-    <div class="dayhead"><b id="daytitle">11월 25일 (수) · 오늘</b><span class="sub num" id="daycount"></span></div>
-    <div class="day" id="daylist"></div>
+  return `<section class="panel sched" id="sched">
+    <div class="ph calh"><h2><span class="num">11</span>월 <span class="yr num">2026</span></h2><span class="sp"></span><button class="btn ghost nav" aria-label="지난달">${ic('chev', 'style="transform:rotate(180deg)"')}</button><button class="btn ghost" data-today>오늘</button><button class="btn ghost nav" aria-label="다음 달">${ic('chev')}</button></div>
+    ${monthHtml()}
+    <div class="dayhead"><b id="daytitle"></b><span class="sub num" id="daycount"></span><span class="sp"></span><button class="btn ghost">캘린더 ${ic('arrow')}</button></div>
+    <div class="day"><div id="daylist"></div><div id="upcoming"></div></div>
   </section>`;
 }
 function bindSchedule() {
   const card = document.getElementById('sched');
   const draw = (n) => {
-    const d = D.week.find((w) => w.n === n);
-    card.querySelectorAll('.wk button').forEach((b) => { const on = Number(b.dataset.n) === n; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
-    document.getElementById('daytitle').textContent = `11월 ${n}일 (${d.d})${d.today ? ' · 오늘' : ''}`;
-    document.getElementById('daycount').textContent = `일정 ${d.ev}`;
+    card.querySelectorAll('.mo button').forEach((b) => { const on = Number(b.dataset.n) === n; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+    const rel = n === TODAY ? '오늘' : n === TODAY + 1 ? '내일' : n === TODAY - 1 ? '어제' : '';
+    document.getElementById('daytitle').textContent = `${n}일 ${WD[(n - 1) % 7]}요일${rel ? ` · ${rel}` : ''}`;
+    document.getElementById('daycount').textContent = evCount(n) ? `일정 ${evCount(n)}` : '';
     document.getElementById('daylist').innerHTML = dayListHtml(n);
+    document.getElementById('upcoming').innerHTML = upcomingHtml(n);
   };
-  card.addEventListener('click', (e) => { const b = e.target.closest('.wk button'); if (b) draw(Number(b.dataset.n)); if (e.target.closest('[data-today]')) draw(25); });
-  draw(25);
+  card.addEventListener('click', (e) => {
+    const b = e.target.closest('.mo button'); if (b) draw(Number(b.dataset.n));
+    const go = e.target.closest('[data-go]'); if (go) draw(Number(go.dataset.go));
+    if (e.target.closest('[data-today]')) draw(TODAY);
+  });
+  draw(TODAY);
 }

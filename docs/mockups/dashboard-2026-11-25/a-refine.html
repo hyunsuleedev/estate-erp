@@ -6,11 +6,21 @@
 <title>대시보드 시안 A — 지금 구조 다듬기</title>
 <link rel="stylesheet" href="shared.css">
 <style>
-/* A (2판): 세 단 구성과 칸은 지금 그대로. 칸 안의 표현만 고친다. 그래프는 없다.
-   한 달 달력 → 한 줄짜리 이번 주 띠 / 거래 단계 화살표 다섯 칸 → 한 줄 진행선 / 빨간 알약 줄줄이 → 오른쪽 글자 한 칸 /
-   상담 내역 → 날짜로 묶고, 매물 확인 기록은 한 줄로 접고, 이어서 할 일을 붙인다 */
-.cols { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.35fr) minmax(0, 1.1fr); gap: 16px; align-items: start; }
-.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* A (3판, 사용자 지시 2026-11-25): 화면 높이에 맞춘 세 단. 단마다 위아래를 정확히 반씩 나눈다.
+   왼쪽 = 한 달 달력 + 고른 날 일정 / 가운데 = 할 일 ½ · 상담 내역 ½ / 오른쪽 = 진행 중인 거래 ½(단계 띠) · 소식 ½.
+   칸은 높이가 고정이고 내용은 칸 안에서 굴린다. 그래프는 없다. */
+.page { height: 100%; }
+.cols { flex: 1 1 0; min-height: 600px; display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.35fr) minmax(0, 1.1fr); gap: 16px; }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; }
+.half { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.half > .ph, .half > .addrow { flex: none; }
+/* 현재 상황 칸은 내용 높이만큼만 차지하고, 남는 높이는 소식 칸이 가져간다 */
+.half.low { flex: none; }
+.half.low .cluster { flex: none; }
+.scrolly { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+.sched { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.sched > * { flex: none; }
+.sched > .day { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 .addrow { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 16px; color: var(--fg4); box-shadow: inset 0 1px 0 var(--line); }
 .soon { padding: 0 16px 12px; }
 .soon li { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 6px 0; box-shadow: inset 0 1px 0 var(--line); }
@@ -38,35 +48,60 @@
 .talk.fold .line { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg3); }
 .talk.fold .line b { font-weight: 500; color: var(--fg2); }
 @media (hover: hover) { .talk:hover { background: var(--hover); } }
-.write { display: flex; align-items: center; gap: 10px; height: 40px; margin: 0 12px 10px; padding: 0 10px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--line2); color: var(--fg4); }
-.write kbd { margin-left: auto; font: 500 11px/16px inherit; padding: 0 5px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--line2); color: var(--fg3); }
 
-/* ── 거래: 단계는 한 줄 진행선 ── */
-.deal { padding: 11px 16px 12px; }
-.deal + .deal { box-shadow: inset 0 1px 0 var(--line); }
-.deal .top { display: flex; align-items: baseline; gap: 8px; }
-.deal .top b { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.deal .top .price { margin-left: auto; flex: none; color: var(--fg2); font-variant-numeric: tabular-nums; }
-.track { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin: 9px 0 7px; }
-.track i { height: 4px; border-radius: 2px; background: var(--soft); }
-.track i.on { background: var(--fg); }
-.track i.cur { background: var(--blue); }
-.deal.stall .track i.cur { background: var(--red); }
-.deal .meta { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 20px; color: var(--fg3); white-space: nowrap; }
-.deal .meta b { font-weight: 500; color: var(--fg); }
-.deal .meta .next { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.deal.stall .meta .days { color: var(--red); font-weight: 500; }
+/* ── 현재 상황: 계기판 세 개 (매칭 중 → 거래 진행 → 거래 완료).
+   270° 눈금판 위에 값만큼 호가 차오르고 끝에 바늘 점이 선다. 세 계기는 같은 눈금(0~12)을 써서 서로 견줄 수 있다.
+   거래 진행의 호 끝 호박색 구간은 정체된 건수. 밝게/어둡게 두 판. ── */
+.cluster { --track: #ecebe8; --tick: #d5d3ce; --ink: var(--fg); --ink2: var(--fg3); --panel: transparent; --cap: #fff;
+  flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0 10px 10px; padding: 8px 6px 10px; border-radius: 10px; background: var(--panel); transition: background-color 220ms ease; }
+.cluster.dark { --track: rgba(255, 255, 255, 0.09); --tick: rgba(255, 255, 255, 0.2); --ink: #f4f3f1; --ink2: rgba(255, 255, 255, 0.55); --cap: #1c1c1b;
+  --panel: radial-gradient(120% 90% at 50% 0%, #2b2b29 0%, #1c1c1b 62%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 0 1px rgba(0, 0, 0, 0.4); }
+.gauge { flex: 1 1 0; min-width: 0; max-width: 132px; display: flex; flex-direction: column; align-items: center; color: var(--ink); border-radius: 10px; }
+.gauge svg { width: 100%; height: auto; overflow: visible; display: block; }
+.gauge .trk { fill: none; stroke: var(--track); stroke-width: 5; stroke-linecap: round; }
+.gauge .val, .gauge .flag { fill: none; stroke: var(--c); stroke-width: 5; stroke-linecap: round; }
+.gauge .flag { stroke: #cb912f; stroke-linecap: butt; }
+.gauge .tk { stroke: var(--tick); stroke-width: 1; stroke-linecap: round; }
+.gauge .tk.lit { stroke: var(--c); }
+.gauge .tk.amber { stroke: #cb912f; }
+.gauge .cap { fill: var(--cap); stroke: var(--c); stroke-width: 2.5; }
+.gauge .cap.amber { stroke: #cb912f; }
+.gauge .n { fill: var(--ink); font: 600 30px "Pretendard Variable", Pretendard, sans-serif; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.gauge .u, .gauge .sc { fill: var(--ink2); font: 400 9px "Pretendard Variable", Pretendard, sans-serif; font-variant-numeric: tabular-nums; }
+.gauge .name { margin-top: -6px; font-weight: 600; white-space: nowrap; }
+.gauge .sub { color: var(--ink2); white-space: nowrap; }
+.gauge .sub.warn { color: #cb912f; font-weight: 500; }
+.cluster.dark .val { filter: drop-shadow(0 0 4px var(--c)); }
+.gauge.match { --c: #8e8b86; } .gauge.going { --c: #2383e2; } .gauge.done { --c: #0f9d8a; }
+.cluster.dark .gauge.match { --c: #c9c6c0; } .cluster.dark .gauge.going { --c: #4da3f5; } .cluster.dark .gauge.done { --c: #2cc9b0; }
+@media (hover: hover) { .gauge svg { transition: transform 220ms var(--ease-out); } .gauge:hover svg { transform: scale(1.03); } }
+/* 처음 뜰 때 한 번: 호가 0에서 값까지 차오른다 */
+@media (prefers-reduced-motion: no-preference) {
+  .gauge .val { animation: sweep 900ms cubic-bezier(0.16, 1, 0.3, 1) backwards; animation-delay: calc(var(--i) * 110ms); }
+  .gauge .flag, .gauge .cap { animation: appear 300ms ease backwards; animation-delay: calc(var(--i) * 110ms + 700ms); }
+  @keyframes sweep { from { stroke-dasharray: 0 100; } }
+  @keyframes appear { from { opacity: 0; } }
+}
 
+/* ── 가이드 배너: 지금 대시보드에 있는 것 그대로(남색 판 · 꼬리표 · 쪽 점 · 건물 선 그림) ── */
+.guide { position: relative; flex: none; display: block; padding: 14px 16px 14px; border-radius: 12px; overflow: hidden; color: #fff; background: linear-gradient(120deg, #1f2a44 0%, #2b3a5c 60%, #34466b 100%); }
+.guide .pill { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 4px; background: rgba(255, 255, 255, 0.14); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+.guide b { display: block; margin-top: 8px; font-weight: 600; }
+.guide p { margin-top: 2px; font-size: 12px; line-height: 18px; color: rgba(255, 255, 255, 0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 56px; }
+.guide .go { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; font-size: 12px; font-weight: 500; }
+.guide .go svg { width: 14px; height: 14px; transition: transform 180ms var(--ease-out); }
+.guide .pager { position: absolute; right: 14px; top: 18px; display: flex; gap: 4px; }
+.guide .pager i { width: 5px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.35); }
+.guide .pager i.on { width: 14px; background: #fff; }
+.guide .art { position: absolute; right: 10px; bottom: 0; width: 64px; height: 60px; fill: none; stroke: rgba(255, 255, 255, 0.22); stroke-width: 1.4; stroke-linejoin: round; }
+@media (hover: hover) { .guide:hover .go svg { transform: translateX(3px); } }
 .newsrow { display: flex; gap: 10px; padding: 9px 16px; align-items: baseline; }
 .newsrow + .newsrow { box-shadow: inset 0 1px 0 var(--line); }
 .newsrow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .newsrow .sub { flex: none; }
-.guide { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 12px; background: var(--muted); }
-.guide b { font-weight: 600; }
-/* 본문이 좁아지면 오른쪽 단(진행 중인 거래 · 소식 · 가이드)은 아래로 내려가지 않고 화면에서 빠진다 (사용자 결정 2026-11-25).
-   남는 것은 일정과 할 일 · 상담 내역 두 단, 더 좁으면 한 단. */
+/* 본문이 좁아지면 오른쪽 단(거래 · 소식)은 화면에서 빠진다. 한 단일 때는 높이를 풀고 칸마다 최대 높이만 둔다 */
 @container main (max-width: 1040px) { .cols { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.35fr); } .col:last-child { display: none; } .row .who { display: none; } }
-@container main (max-width: 700px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+@container main (max-width: 700px) { .page { height: auto; } .cols { display: flex; flex-direction: column; flex: none; min-height: 0; } .half, .sched { flex: none; height: 440px; } .half.low { height: auto; } .sched { height: auto; } .sched > .day { flex: none; max-height: 240px; } }
 </style>
 </head>
 <body>
@@ -74,11 +109,6 @@
 <script>
 const late = lateTasks(), today = todayTasks(), soon = soonTasks();
 const taskRow = (t) => `<li class="row act"><button class="check" aria-label="${esc(t.t)} 완료"></button><span class="t">${esc(t.t)}</span><span class="who">${esc(t.who)}</span><span class="end ${t.late > 0 ? 'late' : ''} num">${dueText(t)}</span></li>`;
-const dealRow = (d) => `<li class="deal ${d.stall ? 'stall' : ''}">
-  <div class="top"><b>${esc(d.name)}</b><span class="tag">${d.type}</span><span class="price">${d.price}만</span></div>
-  <div class="track" data-tip="${esc(`<b>${D.stages[d.stage]}</b> <span>${d.stage + 1}/5 단계 ·</span> ${d.days}일째`)}">${D.stages.map((_, i) => `<i class="${i < d.stage ? 'on' : i === d.stage ? 'cur' : ''}"></i>`).join('')}</div>
-  <div class="meta"><b>${D.stages[d.stage]}</b><span class="days num">${d.days}일째${d.stall ? ' · 정체' : ''}</span><span class="next">${d.due ? `${esc(d.next)} ${d.due}` : esc(d.next)}</span></div>
-</li>`;
 const TALK_ICON = { phone: 'phone', sms: 'sms', visit: 'walk', confirm: 'check2' };
 const TALK_KIND = { phone: '전화', sms: '문자', visit: '방문' };
 const talkHtml = (t) => t.kind === 'confirm'
@@ -97,49 +127,73 @@ mountShell(`
 <div class="cols">
   <div class="col">
     ${scheduleCardHtml()}
-    <section class="panel">
-      <div class="ph"><h2>다가오는 일정</h2><span class="sp"></span><span class="sub">2주 · 2건</span></div>
-      <ul class="soon">
-        <li><span>내일</span><div><div>최도윤 고객 방문 상담</div><div class="sub">12:00 · 고덕그라시움 102동 3401호</div></div></li>
-        <li><span class="num">11.29</span><div><div>수금 예정 · 강수연</div><div class="sub">13:00 · 660만</div></div></li>
-      </ul>
-    </section>
   </div>
 
   <div class="col">
-    <section class="panel">
+    <section class="panel half" id="p-tasks">
       <div class="ph">${ic('list')}<h2>할 일</h2><div class="tabs" id="ttabs"><button class="on" data-k="late">지남 <span class="num">${late.length}</span></button><button data-k="today">오늘 <span class="num">${today.length}</span></button><button data-k="soon">다가옴 <span class="num">${soon.length}</span></button></div><span class="sp"></span><button class="btn ghost">업무 ${ic('arrow')}</button></div>
-      <ul id="tasks"></ul>
+      <ul id="tasks" class="scrolly"></ul>
       <div class="addrow">${ic('plus')}새 업무 적고 Enter</div>
     </section>
-    <section class="panel">
-      <div class="ph">${ic('chat')}<h2>상담 내역</h2><div class="tabs" id="ctabs"><button class="on" data-k="all">전체</button><button data-k="talk">대화</button><button data-k="next">이어서 할 일 <span class="num">3</span></button><button data-k="confirm">매물 확인</button></div><span class="sp"></span><button class="btn ghost">상담분석 ${ic('arrow')}</button></div>
-      <div class="write">${ic('plus')}상담 적기 — 누구와 무슨 이야기를 했나요<kbd>R</kbd></div>
-      <div id="talks"></div>
+    <section class="panel half" id="p-talks">
+      <div class="ph">${ic('chat')}<h2>상담 내역</h2><span class="sp"></span><button class="btn ghost">상담분석 ${ic('arrow')}</button></div>
+      <div id="talks" class="scrolly"></div>
+      <div class="addrow">${ic('plus')}상담 적기</div>
     </section>
   </div>
 
   <div class="col">
-    <section class="panel">
-      <div class="ph">${ic('hand')}<h2>진행 중인 거래 <span class="cnt num">${D.deals.length}</span></h2><span class="sp"></span><button class="btn ghost">거래관리 ${ic('arrow')}</button></div>
-      <ul>${[...D.deals].sort((a, b) => Number(!!b.stall) - Number(!!a.stall) || b.stage - a.stage).map(dealRow).join('')}</ul>
+    <section class="panel half low" id="p-deals">
+      <div class="ph"><h2>현재 상황</h2><span class="sp"></span><div class="tabs" id="stabs"><button class="on" data-k="light">밝게</button><button data-k="dark">어둡게</button></div></div>
+      <div class="cluster" id="status"></div>
     </section>
-    <section class="panel">
+    <a class="guide" href="#">
+      <span class="pill">GUIDE · 3분 시작</span><span class="pager"><i class="on"></i><i></i><i></i></span>
+      <b>에스테잇플로우 빠른 시작 가이드</b>
+      <p>매물 접수부터 프로젝트·계약까지 핵심 흐름 한눈에</p>
+      <span class="go">가이드 보기 ${ic('arrow')}</span>
+      <svg class="art" viewBox="0 0 64 60" aria-hidden="true"><path d="M6 60V26l20-12v46M26 60V8l30-6v58M34 18h14M34 28h14M34 38h14M12 34h8M12 44h8"/></svg>
+    </a>
+    <section class="panel half" id="p-news">
       <div class="ph">${ic('bell')}<h2>소식</h2><div class="tabs" id="ntabs"><button class="on" data-k="notice">공지사항</button><button data-k="news">부동산 뉴스</button></div></div>
-      <div id="newsbox"></div>
+      <div id="newsbox" class="scrolly"></div>
     </section>
-    <a class="guide" href="#">${ic('flag')}<span class="gt"><b>빠른 시작 가이드</b> <span class="sub">· 매물 접수부터 계약까지 3분</span></span><span style="flex:1"></span>${ic('arrow')}</a>
   </div>
 </div>`);
 
 bindSchedule();
+/* 현재 상황 계기판. 세 계기가 같은 눈금을 쓴다(가장 큰 값보다 넉넉한 4의 배수) */
+const STATS = [
+  { k: 'match', n: 9, name: '매칭 중', sub: '임장 예정 3' },
+  { k: 'going', n: D.deals.length, name: '거래 진행', sub: '정체 2', warn: true, flag: 2 },
+  { k: 'done', n: 4, name: '거래 완료', sub: '이번 달' },
+];
+const SCALE = Math.ceil((Math.max(...STATS.map((s) => s.n)) * 1.2) / 4) * 4;
+const pt = (f, r) => { const a = ((135 + 270 * f) * Math.PI) / 180; return [(60 + r * Math.cos(a)).toFixed(2), (60 + r * Math.sin(a)).toFixed(2)]; };
+const gaugeSvg = (s) => {
+  const f = s.n / SCALE, ff = s.flag ? (s.n - s.flag) / SCALE : f, TICKS = SCALE * 2;
+  let ticks = '';
+  for (let t = 0; t <= TICKS; t += 1) { const tf = t / TICKS, [x1, y1] = pt(tf, 51), [x2, y2] = pt(tf, t % 2 ? 53.5 : 55.5); ticks += `<line class="tk ${tf <= ff + 0.001 ? 'lit' : tf <= f + 0.001 ? 'amber' : ''}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`; }
+  const arc = 'M' + pt(0, 44).join(' ') + ' A44 44 0 1 1 ' + pt(1, 44).join(' ');
+  const [cx, cy] = pt(f, 44), [sx, sy] = pt(0, 34), [ex, ey] = pt(1, 34);
+  return `<svg viewBox="0 0 120 112" role="img" aria-label="${s.name} ${s.n}건">
+    ${ticks}<path class="trk" d="${arc}" pathLength="100"/>
+    ${s.flag ? `<path class="flag" d="${arc}" pathLength="100" stroke-dasharray="${(f * 100).toFixed(2)} 100"/>` : ''}
+    <path class="val" d="${arc}" pathLength="100" stroke-dasharray="${(ff * 100).toFixed(2)} 100"/>
+    <circle class="cap ${s.flag ? 'amber' : ''}" cx="${cx}" cy="${cy}" r="4.5"/>
+    <text class="n" x="60" y="68" text-anchor="middle">${s.n}</text><text class="u" x="60" y="82" text-anchor="middle">건</text>
+    <text class="sc" x="${sx}" y="${Number(sy) + 8}" text-anchor="middle">0</text><text class="sc" x="${ex}" y="${Number(ey) + 8}" text-anchor="middle">${SCALE}</text>
+  </svg>`;
+};
+const drawStatus = () => { document.getElementById('status').innerHTML = STATS.map((s, i) => `<a class="gauge ${s.k}" href="#" style="--i:${i}">${gaugeSvg(s)}<span class="name">${s.name}</span><span class="sub ${s.warn ? 'warn' : ''}">${s.sub}</span></a>`).join(''); };
+drawStatus();
+document.getElementById('stabs').addEventListener('pick', (e) => document.getElementById('status').classList.toggle('dark', e.target.closest('button').dataset.k === 'dark'));
 const lists = { late, today, soon };
 const drawTasks = (k) => { document.getElementById('tasks').innerHTML = lists[k].map(taskRow).join(''); };
 drawTasks('late');
 document.getElementById('ttabs').addEventListener('pick', (e) => drawTasks(e.target.closest('button').dataset.k));
 const drawTalks = (k) => { document.getElementById('talks').innerHTML = talksHtml(k); };
 drawTalks('all');
-document.getElementById('ctabs').addEventListener('pick', (e) => drawTalks(e.target.closest('button').dataset.k));
 const drawNews = (k) => { document.getElementById('newsbox').innerHTML = (k === 'notice' ? D.notices.map((n) => `<div class="newsrow">${n.must ? '<span class="tag amber">필독</span>' : ''}<span class="t">${esc(n.t)}</span><span class="sub num">${n.at}</span></div>`) : D.news.map((n) => `<div class="newsrow"><span class="t">${esc(n.t)}</span><span class="sub">${n.src} · ${n.at}</span></div>`)).join(''); };
 drawNews('notice');
 document.getElementById('ntabs').addEventListener('pick', (e) => drawNews(e.target.closest('button').dataset.k));

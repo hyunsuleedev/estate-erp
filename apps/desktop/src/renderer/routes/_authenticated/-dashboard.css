@@ -1230,7 +1230,9 @@ a.dash-tr:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 0 0 36px;
+  /* 좌우 2px: 카드의 테두리는 바깥으로 나가는 1px 선(box-shadow)인데, 굴림 상자(.dash-canvas)가 넘친 것을 잘라
+     왼쪽 단 카드의 왼쪽 선과 오른쪽 단 카드의 오른쪽 선이 보이지 않았다. 그 선이 들어갈 자리를 준다. */
+  padding: 0 2px 36px;
 }
 /* 카드 안에서 굴러가는 목록. 줄의 hover 바탕이 좌우로 6px 나가므로 그만큼 안쪽 여백으로 받아 준다. */
 .dash-scroll {
@@ -1246,10 +1248,6 @@ a.dash-tr:focus-visible {
 }
 .dash-scroll > * {
   flex-shrink: 0;
-}
-/* 진행 중인 거래는 두 줄 반만 보이고 나머지는 굴린다 (잘린 셋째 줄이 더 있음을 알린다) */
-.dash-scroll.dash-deals-scroll {
-  max-height: 226px;
 }
 /* 공지는 네 줄까지 보이고 나머지는 굴린다 */
 .dash-scroll.dash-notice-scroll {
@@ -1314,67 +1312,93 @@ a.dash-tr:focus-visible {
 .dash-cal-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 2px;
 }
 .dash-cal-weekdays {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   text-align: center;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  line-height: 22px;
   color: var(--color-muted-foreground);
 }
+/* 일요일 · 토요일은 달력 관례대로 옅은 빨강 · 파랑 */
+.dash-cal-weekdays .is-sun,
+.dash-cal-day.is-sun .dash-cal-num {
+  color: #c4554d;
+}
+.dash-cal-weekdays .is-sat,
+.dash-cal-day.is-sat .dash-cal-num {
+  color: #3f7fc4;
+}
 .dash-cal-day {
-  height: 32px;
-  border-radius: 7px;
+  height: 38px;
+  padding-top: 3px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 2px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--color-foreground);
-  transition: background-color 110ms ease, color 110ms ease;
 }
-.dash-cal-day:hover {
-  background: rgb(55 53 47 / 0.065);
+/* 이번 주(오늘이 든 주)에는 옅은 띠가 깔려 지금 위치가 먼저 보인다 */
+.dash-cal-day.in-week {
+  background: var(--color-muted);
+}
+.dash-cal-day.in-week.is-sun {
+  border-radius: 10px 0 0 10px;
+}
+.dash-cal-day.in-week.is-sat {
+  border-radius: 0 10px 10px 0;
 }
 .dash-cal-day.is-out {
   opacity: 0.34;
 }
 .dash-cal-num {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   border-radius: 9999px;
   display: inline-grid;
   place-items: center;
   line-height: 1;
+  font-weight: 450;
   font-variant-numeric: tabular-nums;
+  transition: background-color 110ms ease, box-shadow 110ms ease;
 }
-.dash-cal-day.is-today:not(.is-selected) .dash-cal-num {
-  background: rgb(224 62 62 / 0.14);
-  color: var(--color-destructive);
-  font-weight: 700;
+/* 지난 날은 흐리게 — 앞으로 남은 날이 또렷해진다 */
+.dash-cal-day.is-past:not(.is-selected) .dash-cal-num {
+  opacity: 0.5;
 }
-.dash-cal-day.is-selected .dash-cal-num {
-  background: var(--color-foreground);
-  color: #ffffff;
-  font-weight: 700;
+.dash-cal-day:hover:not(.is-selected, .is-today) .dash-cal-num {
+  background: rgb(55 53 47 / 0.08);
 }
-.dash-cal-day.is-today.is-selected .dash-cal-num {
+/* 오늘은 꽉 찬 빨간 원, 고른 날은 테두리 원 */
+.dash-cal-day.is-today .dash-cal-num {
   background: var(--color-destructive);
   color: #ffffff;
-  font-weight: 700;
+  font-weight: 600;
 }
-.dash-cal-dot {
+.dash-cal-day.is-selected:not(.is-today) .dash-cal-num {
+  box-shadow: inset 0 0 0 1.5px var(--color-foreground);
+}
+.dash-cal-day.is-today.is-selected .dash-cal-num {
+  box-shadow: 0 0 0 2px var(--color-muted), 0 0 0 3.5px var(--color-destructive);
+}
+.dash-cal-dots {
+  display: flex;
+  gap: 2px;
+  height: 4px;
+}
+.dash-cal-dots i {
   width: 4px;
   height: 4px;
   border-radius: 9999px;
-  background: transparent;
+  background: var(--color-muted-foreground);
 }
-.dash-cal-dot.has {
-  background: rgb(55 53 47 / 0.42);
+.dash-cal-day.is-past .dash-cal-dots i {
+  background: #a4a19b;
+  opacity: 0.6;
 }
-.dash-cal-day.is-today .dash-cal-dot.has {
+.dash-cal-day.is-today .dash-cal-dots i {
   background: var(--color-destructive);
 }
 
@@ -1530,19 +1554,103 @@ a.dash-tr:focus-visible {
   width: 100%;
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 8px;
+  gap: 10px;
+  padding: 9px 8px 10px;
   border-radius: 8px;
-  border-bottom: 1px solid var(--color-border);
   text-align: left;
   transition: background-color 110ms ease;
 }
-.dash-consult-row:last-child {
-  border-bottom: 0;
-}
-.dash-consult-row:hover {
+.dash-consult-row:hover,
+.dash-talk-fold:hover {
   background: rgb(33 27 23 / 0.045);
+}
+/* 매물 확인으로 생긴 짧은 기록: 한 줄 */
+.dash-consult-row.is-fold {
+  align-items: center;
+  padding-block: 6px;
+}
+.dash-consult-row.is-nested {
+  padding-left: 46px;
+}
+.dash-talk-fold {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--color-muted-foreground-strong);
+  transition: background-color 110ms ease;
+}
+/* 날짜 묶음 머리: 오늘 · 어제 · 11.23 (월) */
+.dash-talk-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-inline: -10px;
+  padding: 0 18px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+  background: var(--color-muted);
+  box-shadow: inset 0 1px 0 var(--color-border), inset 0 -1px 0 var(--color-border);
+}
+.dash-talk-ico {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  display: grid;
+  place-items: center;
+  background: var(--color-secondary);
+  color: var(--color-muted-foreground-strong);
+}
+.dash-talk-ico.is-line {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--color-input);
+  color: var(--color-muted-foreground);
+}
+/* 내용은 두 줄까지 */
+.dash-talk-text {
+  margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-muted-foreground-strong);
+}
+.dash-talk-next {
+  margin-top: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+}
+/* 상담 적기: 할 일의 바로 추가 줄과 같은 자리 · 같은 모양 */
+.dash-talk-add {
+  flex: none;
+  margin: 4px -6px 0;
+  height: 34px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--color-muted-foreground);
+  transition: background-color 110ms ease, color 110ms ease;
+}
+.dash-talk-add:hover {
+  background: rgb(33 27 23 / 0.045);
+  color: var(--color-foreground);
 }
 
 /* 할 일 탭: 지남 · 오늘 · 다가옴. 화면 위쪽의 묶음 탭(전체 · 매매 …)과 같은 모양 — 고른 것은 먹색 알약 */
@@ -1596,65 +1704,137 @@ a.dash-tr:focus-visible {
   color: var(--color-foreground);
 }
 
-/* 진행 중인 거래: 줄마다 이름 · 단계 띠 · 다음 일정 */
-.dash-deals {
-  display: flex;
-  flex-direction: column;
-  margin: 0 -6px;
-}
-.dash-deal {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 6px 9px;
-  border-radius: 6px;
-  transition: background-color 110ms ease;
-}
-.dash-deal:hover {
-  background: rgb(33 27 23 / 0.045);
-}
-.dash-deal:focus-visible {
-  outline: 2px solid var(--color-ring);
-  outline-offset: -2px;
-}
-/* 단계 띠: 희망매물의 화살표 띠를 작게 줄인 것. 끝낸 단계는 초록, 지금 단계는 단계 색을 채운 흰 글씨, 남은 단계는 회색 */
-.dash-band {
-  display: flex;
-  gap: 2px;
-  min-width: 0;
-}
-.dash-band-step {
-  flex: 1;
-  min-width: 0;
-  height: 22px;
+/* 현재 상황: 계기 셋(매칭 중 → 거래 진행 → 거래 완료).
+   270° 눈금판 위에 값만큼 호가 차오르고 끝에 바늘 점이 선다. 판은 카드와 같은 흰 바탕이다(사용자 결정 2026-11-26: 어두운 판 거절).
+   거래 진행의 호 끝 호박색 구간은 정체 · 지연된 건수. */
+.dash-cluster {
+  --track: #ecebe8;
+  --tick: #d5d3ce;
+  --ink: var(--color-foreground);
+  --ink2: var(--color-muted-foreground);
+  --cap: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 2px 0 8px;
-  overflow: hidden;
-  font-size: 11px;
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-  color: var(--color-muted-foreground-strong);
-  background: #efeeec;
-  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%);
+  gap: 6px;
+  margin: 0 -4px;
+  padding: 2px 6px 6px;
 }
-.dash-band-step:first-child {
-  padding-left: 2px;
-  border-radius: 5px 0 0 5px;
-  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%);
+.dash-gauge {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 10px;
+  color: var(--ink);
 }
-.dash-band-step:last-child {
-  border-radius: 0 5px 5px 0;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 6px 50%);
+.dash-gauge.is-match {
+  --c: #8e8b86;
 }
-.dash-band-step.is-done {
-  background: #cfe6d2;
-  color: #0a5c51;
+.dash-gauge.is-going {
+  --c: #2383e2;
 }
-.dash-band-step.is-current {
-  color: #fff;
+.dash-gauge.is-done {
+  --c: #0f9d8a;
+}
+.dash-gauge svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+  transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.dash-gauge:hover svg {
+  transform: scale(1.03);
+}
+.dash-gauge .trk {
+  fill: none;
+  stroke: var(--track);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.dash-gauge .val,
+.dash-gauge .flag {
+  fill: none;
+  stroke: var(--c);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.dash-gauge .flag {
+  stroke: #cb912f;
+  stroke-linecap: butt;
+}
+.dash-gauge .tk {
+  stroke: var(--tick);
+  stroke-width: 1;
+  stroke-linecap: round;
+}
+.dash-gauge .tk.lit {
+  stroke: var(--c);
+}
+.dash-gauge .tk.amber,
+.dash-gauge .cap.amber {
+  stroke: #cb912f;
+}
+.dash-gauge .cap {
+  fill: var(--cap);
+  stroke: var(--c);
+  stroke-width: 2.5;
+}
+.dash-gauge .n {
+  fill: var(--ink);
+  font-size: 30px;
   font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.dash-gauge .u,
+.dash-gauge .sc {
+  fill: var(--ink2);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.dash-gauge-name {
+  margin-top: -6px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dash-gauge-sub {
+  min-height: 18px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ink2);
+  white-space: nowrap;
+}
+.dash-gauge-sub.is-warn {
+  color: var(--color-warning-strong);
+  font-weight: 500;
+}
+/* 화면을 열 때 한 번: 호가 0에서 값까지 차오른다 */
+@media (prefers-reduced-motion: no-preference) {
+  .dash-play .dash-gauge .val {
+    animation: dash-gauge-sweep 900ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    animation-delay: calc(var(--i) * 110ms + 300ms);
+  }
+  .dash-play .dash-gauge .flag,
+  .dash-play .dash-gauge .cap {
+    animation: dash-gauge-appear 300ms ease backwards;
+    animation-delay: calc(var(--i) * 110ms + 1000ms);
+  }
+  @keyframes dash-gauge-sweep {
+    from {
+      stroke-dasharray: 0 100;
+    }
+  }
+  @keyframes dash-gauge-appear {
+    from {
+      opacity: 0;
+    }
+  }
 }
 
 /* 소식 카드: 공지사항 · 부동산 뉴스 탭과 한 줄짜리 공지 줄 */
@@ -1698,7 +1878,7 @@ a.dash-tr:focus-visible {
   background: rgb(33 27 23 / 0.045);
 }
 
-/* 오른쪽 단: 진행 중인 거래 · 소식 · 사용법 가이드 */
+/* 오른쪽 단: 현재 상황 · 사용법 가이드 · 소식 */
 .dash-rail {
   position: sticky;
   top: 12px;
@@ -1814,8 +1994,8 @@ a.dash-tr:focus-visible {
 }
 
 /* 컨테이너 너비 반응형 — 사이드바 여닫기·창 크기 모두 대응 */
-/* 오른쪽 단은 좁아져도 숨기지 않는다. 세 단이 들어가지 않으면 두 단 아래로 내려와 카드를 가로로 놓는다.
-   (예전에는 1260px 아래에서 숨기고 할 일 머리의 단추로만 열었다 — 거래와 공지가 화면에서 사라졌다) */
+/* 오른쪽 단(현재 상황 · 가이드 · 소식)은 세 단이 들어가지 않으면 아래로 내려가지 않고 화면에서 빠진다
+   (사용자 결정 2026-11-25. 그 전에는 두 단 아래로 내려와 가로로 놓였다). */
 /* 화면에 맞추기: 세 단이 들어가고 높이가 넉넉하면 대시보드는 굴러가지 않는다.
    단마다 카드가 남은 높이를 나눠 갖고, 넘치는 내용은 카드 안(.dash-scroll)에서 굴린다. */
 @container dash-canvas (min-width: 960px) {
@@ -1823,7 +2003,8 @@ a.dash-tr:focus-visible {
     .dash-wrap {
       flex: 1 1 0;
       min-height: 0;
-      padding-bottom: 0;
+      /* 맨 아래 카드의 아래 선과 그림자(1px 선 + 2px 내려온 4px 그림자)가 굴림 상자에 잘리지 않게 자리를 둔다 */
+      padding-bottom: 6px;
     }
     .dash-wrap > * {
       flex-shrink: 0;
@@ -1849,23 +2030,19 @@ a.dash-tr:focus-visible {
     .dash-bento-grid .dash-guide-banner {
       flex: none;
     }
-    /* 가운데 단: 할 일은 내용만큼(단의 절반 남짓까지), 최근 상담이 남은 높이를 채운다 */
-    .dash-bento-grid .dash-tasks-card {
-      max-height: 54%;
+    /* 가운데 단: 할 일과 최근 상담이 남은 높이를 정확히 반씩 나눈다 (사용자 결정 2026-11-25) */
+    .dash-bento-grid .dash-tasks-card,
+    .dash-bento-grid .dash-consult-card {
+      flex: 1 1 0;
     }
-    /* '처음 할 일'이 떠 있으면 그 칸이 단의 위를 차지한다. 그대로 두면 낮은 화면(1440×760)에서 할 일 카드가
-       머리와 입력 줄만 남고 업무가 한 줄도 안 보였다. 처음 할 일은 다음 단계의 설명만 남기고, 할 일은 두세 줄을 지킨다. */
+    /* '처음 할 일'이 떠 있으면 그 칸이 단의 위를 차지한다. 다음 단계의 설명만 남기고, 할 일은 두세 줄을 지킨다. */
     .dash-setup li:not(.is-next) .dash-setup-desc {
       display: none;
     }
     .dash-center:has(.dash-setup) .dash-tasks-card {
       min-height: 168px;
-      max-height: 40%;
     }
-    .dash-bento-grid .dash-consult-card {
-      flex: 1 1 0;
-    }
-    .dash-scroll:not(.dash-deals-scroll, .dash-notice-scroll) {
+    .dash-scroll {
       max-height: none;
     }
     /* 왼쪽 단: 일정 카드가 줄어들 때 다가오는 일정이 먼저 줄고, 고른 날(오늘)의 일정은 되도록 남긴다.
@@ -1878,10 +2055,12 @@ a.dash-tr:focus-visible {
     .dash-sched-part:last-child {
       flex-shrink: 5;
     }
-    /* 오른쪽 단: 공지·가이드는 제 높이. 진행 중인 거래는 큰 화면에서도 두 줄 반에 묶어 둔다
-       (사용자 지시 2026-11-23: 거래 카드는 작게, 안에서 굴린다 — 남은 높이로 늘리지 않는다). */
-    .dash-rail .dash-notice-card {
+    /* 오른쪽 단: 현재 상황 · 가이드는 제 높이, 소식이 남은 높이를 가져가고 안에서 굴린다 */
+    .dash-rail .dash-status-card {
       flex: none;
+    }
+    .dash-rail .dash-notice-card {
+      flex: 1 1 0;
     }
   }
 }
@@ -1903,16 +2082,11 @@ a.dash-tr:focus-visible {
     grid-template-columns: 296px minmax(0, 1fr);
     row-gap: 14px;
   }
-  /* 두 단일 때는 왼쪽 단을 붙여 두지 않는다. 붙여 두면 굴렸을 때 아래로 내려온 오른쪽 단(거래 · 소식) 위를 덮는다. */
   .dash-left {
     position: static;
   }
   .dash-rail {
-    position: static;
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    align-items: start;
+    display: none;
   }
 }
 /* 한 줄로 쌓는 것은 정말 좁을 때만. 작은 노트북(창 1100px, 사이드바 열림 → 판 약 830px)에서 한 줄로 쌓으면
@@ -1924,9 +2098,6 @@ a.dash-tr:focus-visible {
   }
   .dash-left {
     position: static;
-  }
-  .dash-rail {
-    grid-column: auto;
   }
   /* 새 사무소의 '처음 할 일'이 있으면 한 줄로 쌓일 때 달력보다 먼저 보이게 한다 */
   .dash-center:has(.dash-setup) {

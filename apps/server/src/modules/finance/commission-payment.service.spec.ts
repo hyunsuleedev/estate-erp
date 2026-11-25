@@ -180,8 +180,7 @@ describe('공동중개 상대가 수금하는 청구', () => {
       commissionReceipt: { findMany: jest.fn().mockResolvedValue([]) },
       commissionDistribution: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const expenses = { getMonthlyTotal: jest.fn().mockResolvedValue(0) };
-    const service = new CashflowService(prisma as never, expenses as never);
+    const service = new CashflowService(prisma as never);
     const summary = await service.getSummary('o1', 2026, 11);
     // 우리 청구 두 건(연체 100 + 기한 지난 수금대기 100)만 연체로 센다
     expect(summary.overdue).toBe(200);
@@ -205,11 +204,9 @@ describe('우리 통장에 들어온 돈 (캐시플로우 수금·원장 수금�
       commissionReceipt: { findMany: receiptFind },
       commissionDistribution: { findMany: distFind },
     };
-    const expenses = { getMonthlyTotal: jest.fn().mockResolvedValue(418) };
-    const summary = await new CashflowService(prisma as never, expenses as never).getSummary('o1', 2026, 11);
+    const summary = await new CashflowService(prisma as never).getSummary('o1', 2026, 11);
     // 660만 + 40만 = 700만. 상대가 받은 100만(부가세 포함 110만)은 넣지 않는다.
     expect(summary.collected).toBe(700);
-    expect(summary.netProfit).toBe(700 - 418);
     // 입금 기록은 우리가 수금한 청구만, 분배는 상대가 수금한 청구의 '받음 기록'한 우리 몫만 읽는다
     expect(receiptFind.mock.calls[0][0].where.payment).toMatchObject({ collectedByOffice: 'us' });
     expect(distFind.mock.calls[0][0].where).toMatchObject({
@@ -221,7 +218,7 @@ describe('우리 통장에 들어온 돈 (캐시플로우 수금·원장 수금�
 });
 
 describe('독립 검토에서 나온 결함', () => {
-  it('순이익 = 수금 − 공동중개 줄 몫(그 달 수금의 비례 몫) − 고정비, 취소한 거래의 입금도 통장 기준으로 넣는다', async () => {
+  it('수금과 공동중개 줄 몫을 계산하고, 취소한 거래의 입금도 통장 기준으로 넣는다', async () => {
     const nov = new Date('2026-11-10T00:00:00Z');
     const receiptFind = jest.fn().mockResolvedValue([
       // 우리 50 : 상대 50 청구 200만을 우리가 받음 → 줄 몫 100만 (보냈는지와 상관없이)
@@ -236,11 +233,9 @@ describe('독립 검토에서 나온 결함', () => {
       commissionReceipt: { findMany: receiptFind },
       commissionDistribution: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const expenses = { getMonthlyTotal: jest.fn().mockResolvedValue(100) };
-    const summary = await new CashflowService(prisma as never, expenses as never).getSummary('o1', 2026, 11);
+    const summary = await new CashflowService(prisma as never).getSummary('o1', 2026, 11);
     expect(summary.collected).toBe(350);
     expect(summary.partnerShare).toBe(100);
-    expect(summary.netProfit).toBe(350 - 100 - 100);
     // 거래 취소 여부로 거르지 않는다 (돌려주면 '돌려준 돈' 기록으로 빠진다)
     expect(receiptFind.mock.calls[0][0].where.payment.deal).toBeUndefined();
   });

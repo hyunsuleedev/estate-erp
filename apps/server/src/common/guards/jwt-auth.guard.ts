@@ -69,8 +69,7 @@ export class JwtAuthGuard implements CanActivate {
 
     return (
       (method === 'GET' && path === '/auth/me') ||
-      (method === 'POST' && path === '/offices/me') ||
-      (method === 'POST' && path === '/auth/logout')
+      (method === 'POST' && path === '/offices/me')
     );
   }
 

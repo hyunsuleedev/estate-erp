@@ -166,4 +166,4 @@ EOF
 run_on_server "$TMP/deploy.sh" 600
 
 echo
-echo "배포 끝: https://$API_DOMAIN/api-docs"
+echo "배포 끝: https://$API_DOMAIN/health"

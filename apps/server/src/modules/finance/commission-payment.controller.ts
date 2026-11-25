@@ -22,7 +22,7 @@ import {
   DistributionInput,
 } from './commission-payment.service';
 
-@ApiTags('Finance / Commission Payment')
+@ApiTags('재무 · 수수료 청구')
 @ApiBearerAuth()
 @Controller('finance/commission-payments')
 @UseGuards(JwtAuthGuard)

@@ -17,12 +17,12 @@ const dashboardCss = readFileSync(
 const dashboardCode = dashboardSource.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 describe('dashboard', () => {
-  it('is a pure-white three-column dashboard: calendar & upcoming / tasks, consultations / deals, news, guide', () => {
+  it('is a pure-white three-column dashboard: calendar & upcoming / tasks, consultations / status, guide, news', () => {
     for (const component of [
       'MiniCalendarCard',
       'ScheduleCard',
       'TaskSection',
-      'DealsSection',
+      'StatusSection',
       'ConsultationsSection',
       'NoticeSection',
       'GuideBannerCard',
@@ -32,10 +32,12 @@ describe('dashboard', () => {
     assert.match(dashboardSource, /dash-canvas/);
     assert.match(dashboardSource, /dash-bento-grid/);
     assert.match(dashboardSource, /dash-bento-card/);
-    // 진행 거래는 오른쪽 단에 있고, 줄마다 단계 띠를 그린다 (2026-11-23, 표에서 바꿨다).
-    // '내 담당'이면 내가 담당인 거래만 보이도록 범위를 함께 넘긴다 (6차 검수).
-    assert.match(dashboardSource, /<aside className="dash-rail">\s*<DealsSection deals=\{deals\} scope=\{scope\} userId=\{user\?\.id\} \/>/);
-    assert.match(dashboardSource, /className="dash-band"/);
+    // 오른쪽 단의 맨 위는 현재 상황 계기판이다 (2026-11-25, 진행 중인 거래 목록 · 단계 띠를 뺐다).
+    // '내 담당'이면 내가 담당인 거래만 세도록 범위를 함께 넘긴다.
+    assert.match(dashboardSource, /<aside className="dash-rail">\s*<StatusSection deals=\{deals\} matches=\{matches\} scope=\{scope\} userId=\{user\?\.id\} now=\{now\} \/>\s*<GuideBannerCard[\s\S]*?<NoticeSection/);
+    // 계기는 일이 흘러가는 순서: 매칭 중 → 거래 진행 → 거래 완료
+    assert.match(dashboardSource, /label: '매칭 중'[\s\S]*?label: '거래 진행'[\s\S]*?label: '거래 완료'/);
+    assert.doesNotMatch(dashboardCode, /DealsSection|DealRow|dash-band/);
     // 공지사항과 부동산 뉴스는 '소식' 카드 하나의 탭이다.
     assert.match(dashboardSource, /aria-pressed=\{feed === 'notice'\}/);
     assert.match(dashboardSource, /aria-pressed=\{feed === 'news'\}/);
@@ -57,13 +59,13 @@ describe('dashboard', () => {
     assert.match(dashboardSource, /<QuickCreate \/>/);
   });
 
-  it('uses CSS container queries and never hides the right rail, without ResizeObserver hacks', () => {
+  it('uses CSS container queries and drops the right rail when three columns do not fit, without ResizeObserver hacks', () => {
     assert.match(dashboardCss, /\.dash-canvas\s*\{[^}]*container-type:\s*inline-size;[^}]*container-name:\s*dash-canvas;[^}]*background:\s*var\(--color-background\)/s);
-    // 오른쪽 단(거래 · 소식)은 좁아져도 숨기지 않는다. 세 단이 들어가지 않으면 두 단 아래로 내려온다.
-    assert.doesNotMatch(dashboardCss, /\.dash-rail\s*\{[^}]*display:\s*none/);
-    assert.match(dashboardCss, /@container dash-canvas \(max-width: 959px\)[\s\S]*?\.dash-rail\s*\{[^}]*grid-column:\s*1 \/ -1;/);
-    // 두 단일 때는 왼쪽 단(달력 · 일정)을 붙여 두지 않는다. 붙여 두면 굴렸을 때 아래로 내려온 거래 카드를 덮는다.
-    assert.match(dashboardCss, /@container dash-canvas \(max-width: 959px\)[\s\S]*?\.dash-left\s*\{\s*position:\s*static;\s*\}\s*\.dash-rail/);
+    // 오른쪽 단(현재 상황 · 가이드 · 소식)은 세 단이 들어가지 않으면 아래로 내려가지 않고 화면에서 빠진다 (사용자 결정 2026-11-25).
+    assert.match(dashboardCss, /@container dash-canvas \(max-width: 959px\)[\s\S]*?\.dash-rail\s*\{\s*display:\s*none;\s*\}/);
+    assert.doesNotMatch(dashboardCss, /\.dash-rail\s*\{[^}]*grid-column/);
+    // 화면에 맞출 때 할 일과 최근 상담은 남은 높이를 정확히 반씩 나눈다.
+    assert.match(dashboardCss, /\.dash-bento-grid \.dash-tasks-card,\s*\.dash-bento-grid \.dash-consult-card\s*\{\s*flex:\s*1 1 0;/);
     // 숨긴 단을 대신 열던 단추와 요약 창은 없앴다.
     assert.doesNotMatch(dashboardCode, /digestOpen|onOpenDigest|dash-compact-actions/);
     // 한 줄로 쌓는 것은 정말 좁을 때만(759px 아래). 작은 노트북(판 약 830px)은 두 단이라 달력 옆에 할 일이 보인다 (6차 검수).
@@ -76,7 +78,7 @@ describe('dashboard', () => {
     assert.doesNotMatch(dashboardCode, /\.isLoading\b/);
     assert.match(dashboardSource, /if \(isQueryPaused\(query\)\) return 'offline'/);
     assert.match(dashboardSource, /<OfflineState/);
-    // 다섯 목록 구획(일정, 할 일, 거래, 상담, 공지) 모두 불러오는 중·오프라인·오류를 목록보다 먼저 그린다.
+    // 다섯 구획(일정, 할 일, 현재 상황, 상담, 공지) 모두 불러오는 중·오프라인·오류를 목록보다 먼저 그린다.
     assert.equal(dashboardCode.match(/[{(]status \?\?/g)?.length, 5);
   });
 
@@ -181,14 +183,16 @@ describe('dashboard', () => {
     assert.match(dashboardSource, /onClick=\{\(\) => onPin\(pin\.key\)\}/);
   });
 
-  it('reuses the deals page rules instead of re-deriving deal risk or stage labels', () => {
+  it('counts the status gauges with the deals page rules instead of re-deriving deal risk', () => {
     assert.match(dashboardSource, /from '\.\/deals\/-deal-view-utils'/);
-    assert.match(dashboardSource, /getDealPipelineHealth\(/);
-    assert.match(dashboardSource, /sortDealsForDisplay\(/);
-    // 단계는 꼬리표 대신 띠로 그린다. 단계 목록과 이름은 거래관리 · 공용 상태 이름에서 읽는다.
-    assert.match(dashboardSource, /dealPipelineStages\.map\(\(stage, index\) =>/);
-    assert.match(dashboardSource, /getStatusMeta\('dealStage', stage\)/);
-    // 거래 줄은 통째로 링크다. role="row"를 씌우면 보조 기술에서 링크가 사라진다.
+    // 정체 · 지연은 거래관리와 같은 판정으로 센다. 끝난 거래 · 진행 중인 거래의 구분도 거래관리의 묶음을 쓴다.
+    assert.match(dashboardSource, /getDealPipelineHealth\(deal, now\)\.state !== 'healthy'/);
+    assert.match(dashboardSource, /getDealDisplayGroupKey\(deal\.stage\) === 'closed'/);
+    // 매칭 중은 닫힌 매칭과 거래로 넘어간 매칭을 뺀다.
+    assert.match(dashboardSource, /stage !== MatchStage\.CLOSED && stage !== MatchStage\.DEAL_CREATED/);
+    // 세 계기는 같은 눈금을 쓴다 — 호의 길이로 서로 견줄 수 있게.
+    assert.match(dashboardSource, /<Gauge key=\{stat\.key\} stat=\{stat\} scale=\{scale\} order=\{index\} \/>/);
+    // 계기는 통째로 링크다. role="row"를 씌우면 보조 기술에서 링크가 사라진다.
     assert.doesNotMatch(dashboardCode, /role="(row|cell|table|columnheader)"/);
   });
 
@@ -224,5 +228,10 @@ describe('dashboard', () => {
     assert.match(dashboardSource, /getConsultationSummaryLine\(/);
     assert.match(dashboardSource, /formatConsultationWhen\(/);
     assert.match(dashboardSource, /<Link to="\/consultations" search=\{\{ consultationId: selected\.id \}\}>/);
+    // 날짜로 묶고(공용 표기), 매물 확인으로 생긴 짧은 기록은 그 날의 한 묶음으로 접는다.
+    assert.match(dashboardSource, /formatConsultationDay\(item\.createdAt, now\)/);
+    assert.match(dashboardSource, /if \(splitConsultationTag\(item\.content\)\.tag\)/);
+    // 상담 적기는 빠른 등록과 같은 창을 그 자리에서 연다.
+    assert.match(dashboardSource, /<ConsultationFormDialog open=\{writing\} onOpenChange=\{setWriting\} \/>/);
   });
 });

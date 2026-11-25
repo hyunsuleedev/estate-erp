@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ExternalLink,
-  Globe,
   Handshake,
   MessageSquarePlus,
   ListTodo,
@@ -60,7 +59,6 @@ import { IntakeConfirmDialog } from '../-property-intake-actions';
 import { PropertyInspectorProgressTab } from '../-components/property-inspector-progress-tab';
 import { PropertyAdActions } from '../-components/property-ad-actions';
 import { RetryNote } from '../-components/property-inspector-view';
-import { PublicListingDialog } from './PublicListingDialog';
 import {
   buildOfferRows,
   buildPastIntakes,
@@ -146,7 +144,6 @@ type DialogState =
   | { kind: 'consultation' }
   | { kind: 'deal' }
   | { kind: 'confirm' }
-  | { kind: 'public'; listingId: string }
   | { kind: 'delete'; row: OfferRow }
   | { kind: 'task' }
   | null;
@@ -862,10 +859,6 @@ export function PropertyDetailScreen({
             {row.listing.isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
             {row.listing.isPaused ? `${row.typeLabel} 다시 진행` : `${row.typeLabel}만 중단`}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => openDialog({ kind: 'public', listingId: row.listing.id })}>
-            <Globe className="size-3.5" />
-            고객 공개 설정…
-          </DropdownMenuItem>
           {mayDeleteListing && (
             <>
               <DropdownMenuSeparator />
@@ -1361,11 +1354,6 @@ export function PropertyDetailScreen({
         onOpenChange={(open) => !open && closeDialog()}
         propertyId={propertyId ?? undefined}
         listingId={listings.length === 1 ? listings[0].id : undefined}
-      />
-      <PublicListingDialog
-        listingId={dialog?.kind === 'public' ? dialog.listingId : null}
-        open={dialog?.kind === 'public'}
-        onOpenChange={(open) => !open && closeDialog()}
       />
       <ConfirmDialog
         open={dialog?.kind === 'delete'}
