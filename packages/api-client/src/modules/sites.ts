@@ -53,13 +53,15 @@ export interface CreateSiteDto {
   totalDongs?: number;
 }
 
+/** 단지 한 곳: 주소 · 평형 · 동 목록. 호는 없다(overview나 units 조회로 받는다). */
 export interface SiteDetail extends Site {
   dongs: import('./dongs.js').Dong[];
-  units: import('./units.js').Unit[];
   siteUnitTypes: import('./units.js').SiteUnitType[];
 }
 
 export interface SiteOverview extends SiteDetail {
+  /** 첫 동(defaultDongId)의 호 */
+  units: import('./units.js').Unit[];
   defaultDongId: string | null;
   _count?: {
     dongs: number;
@@ -73,8 +75,8 @@ export function createSitesApi(request: RequestFn) {
     findAll: () =>
       request<Site[]>('/sites'),
 
-    findOne: (id: string, options?: { includeUnits?: boolean }) =>
-      request<SiteDetail>(`/sites/${id}`, { params: { includeUnits: options?.includeUnits } }),
+    findOne: (id: string) =>
+      request<SiteDetail>(`/sites/${id}`),
 
     overview: (id: string) =>
       request<SiteOverview>(`/sites/${id}/overview`),

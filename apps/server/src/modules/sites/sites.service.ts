@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { UNIT_TYPE_SUMMARY_SELECT } from '../units/units.service';
 import { createPrivateSiteRecord, type PrivateSiteData } from './private-site';
 import {
   contactPhonesIncludeOrdered,
@@ -63,7 +64,11 @@ export class SitesService {
     });
   }
 
-  async findOne(id: string, officeId?: string, includeUnits = true) {
+  /**
+   * 단지 한 곳: 주소 · 평형 · 동 목록. 호는 싣지 않는다 — 큰 단지는 수천 호라 응답이 수 MB가 된다.
+   * 호가 필요하면 overview(첫 동의 호까지)나 호 조회(units, 동을 골라서)를 쓴다.
+   */
+  async findOne(id: string, officeId?: string) {
     const where = officeId
       ? { id, OR: [{ officeId }, { isPublic: true }] }
       : { id };
@@ -91,61 +96,10 @@ export class SitesService {
             _count: { select: { units: true } },
           },
         },
-        ...(includeUnits
-          ? {
-              units: {
-                where: {
-                  OR: officeId ? [{ officeId }, { officeId: null }] : undefined,
-                },
-                orderBy: [{ floor: 'desc' }, { lineNo: 'asc' }, { name: 'asc' }],
-                include: {
-                  siteUnitType: true,
-                  properties: {
-                    where: officeId ? { officeId } : undefined,
-                    include: {
-                      propertyContacts: {
-                        where: {
-                          ...(officeId ? { officeId } : {}),
-                          role: 'owner',
-                          status: 'active',
-                        },
-                        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
-                      },
-                      leases: {
-                        where: {
-                          ...(officeId ? { officeId } : {}),
-                          status: 'residing',
-                        },
-                        include: propertyLeaseInclude,
-                      },
-                      consultations: {
-                        where: officeId ? { officeId } : undefined,
-                        orderBy: { createdAt: 'desc' },
-                        take: 1,
-                        include: { contact: { include: { phones: contactPhonesIncludeOrdered } } },
-                      },
-                      listings: {
-                        where: {
-                          ...(officeId ? { officeId } : {}),
-                          // 호실 그리드의 "매물 있음" 은 열린 의뢰만 — 목록과 동일 기준
-                          intake: NON_CLOSED_INTAKE_WHERE,
-                        },
-                        orderBy: { updatedAt: 'desc' },
-                        include: {
-                          intake: { select: LISTING_INTAKE_STATE_SELECT },
-                          deals: OCCUPYING_DEALS_SELECT,
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            }
-          : {}),
       },
     });
     if (!site) throw new NotFoundException('단지를 찾을 수 없습니다.');
-    return this.withContactPhones(site);
+    return site;
   }
 
   async overview(id: string, officeId: string) {
@@ -202,7 +156,7 @@ export class SitesService {
       },
       orderBy: [{ floor: 'desc' }, { lineNo: 'asc' }, { name: 'asc' }],
       include: {
-        siteUnitType: true,
+        siteUnitType: { select: UNIT_TYPE_SUMMARY_SELECT },
         properties: {
           where: { officeId },
           include: {

@@ -74,13 +74,33 @@ function pickUnitFields<T extends object>(dto: T) {
   };
 }
 
+/**
+ * 호 목록에 싣는 평형 칸. 평형 한 종류가 그 평형의 호 수만큼 되풀이되므로(5,150호에 2.2MB였다)
+ * 호 줄이 실제로 쓰는 칸만 싣는다: 이름, 면적, 방 · 욕실 수(호의 값이 비었을 때 대신 쓴다).
+ * 평형의 나머지 칸은 단지 조회의 siteUnitTypes에 한 번씩 들어 있다.
+ */
+export const UNIT_TYPE_SUMMARY_SELECT = {
+  id: true,
+  name: true,
+  exclusiveAreaM2: true,
+  supplyAreaM2: true,
+  roomCount: true,
+  bathRoomCount: true,
+} satisfies Prisma.SiteUnitTypeSelect;
+
 @Injectable()
 export class UnitsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * 호 목록. 호마다 단지 · 동을 통째로 싣지 않는다 — 5,150호 단지에서 같은 단지 한 곳과 동 53곳이
+   * 호 수만큼 되풀이되어 응답의 절반을 넘었다(10.9MB 중 5.9MB). 호는 siteId · dongId를 갖고 있고,
+   * 부르는 쪽은 이미 단지와 동을 알고 있다. 이름이 필요한 곳(MCP)만 withPlace로 id · 이름을 받는다.
+   */
   async findAll(
     officeId: string,
     query: { siteId?: string; dongId?: string; dongIds?: string[] },
+    options: { withPlace?: boolean } = {},
   ) {
     const dongIds = Array.from(new Set((query.dongIds ?? []).filter(Boolean)));
 
@@ -106,9 +126,13 @@ export class UnitsService {
         },
       },
       include: {
-        site: true,
-        dong: true,
-        siteUnitType: true,
+        ...(options.withPlace
+          ? {
+              site: { select: { id: true, name: true } },
+              dong: { select: { id: true, name: true, isPlaceholder: true } },
+            }
+          : {}),
+        siteUnitType: { select: UNIT_TYPE_SUMMARY_SELECT },
         properties: {
           where: { officeId },
           include: {

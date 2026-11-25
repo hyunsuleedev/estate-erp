@@ -326,15 +326,20 @@ function PropertyHierarchyFilter({
     queryKey: ['consultation-filter-sites'],
     queryFn: () => api.sites.findAll(),
   });
-  const { data: dongs = [] } = useQuery({
+  const { data: dongs = [], isSuccess: dongsLoaded } = useQuery({
     queryKey: ['consultation-filter-dongs', site?.id],
     queryFn: () => api.dongs.findAll(site?.id),
     enabled: Boolean(site?.id),
   });
-  const { data: units = [] } = useQuery({
+  const visibleDongs = dongs.filter((item) => !item.isPlaceholder);
+  // 호는 동을 고른 뒤에 받는다. 동이 있는 단지에서 단지만 고른 채로 부르면 단지의 모든 호(수천 개)가 온다.
+  // 동 구분이 없는 건물(다가구 · 상가)은 고를 동이 없으므로 바로 받는다.
+  const canLoadUnits =
+    Boolean(site?.id) && dongsLoaded && (visibleDongs.length === 0 || Boolean(dong?.id));
+  const { data: units = [], isSuccess: unitsLoaded } = useQuery({
     queryKey: ['consultation-filter-units', site?.id, dong?.id],
     queryFn: () => api.units.findAll({ siteId: site?.id, dongId: dong?.id }),
-    enabled: Boolean(site?.id),
+    enabled: canLoadUnits,
   });
 
   const filteredSites = useMemo(() => {
@@ -342,7 +347,6 @@ function PropertyHierarchyFilter({
     if (!query) return sites.slice(0, 12);
     return sites.filter((item) => formatSiteSearchText(item).includes(query)).slice(0, 12);
   }, [siteQuery, sites]);
-  const visibleDongs = dongs.filter((item) => !item.isPlaceholder);
 
   return (
     <div className="p-3">
@@ -429,7 +433,7 @@ function PropertyHierarchyFilter({
           </div>
         )}
 
-        {site && units.length === 0 && (
+        {site && visibleDongs.length === 0 && unitsLoaded && units.length === 0 && (
           <div className="rounded-md border border-dashed border-slate-200 bg-background px-2 py-2 text-[11px] text-muted-foreground">
             단독주택·토지처럼 동/호가 없는 매물은 단지/장소만으로 필터링합니다.
           </div>

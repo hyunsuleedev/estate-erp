@@ -2224,9 +2224,9 @@ export class McpToolsService {
 
     this.add(
       'get_site',
-      '단지 상세: 주소 · 동 목록 · 평형. 호 목록은 기본으로 넣지 않습니다(단지 하나에 수천 호, 수 MB입니다) — 호는 find_dongs로 동을 고른 뒤 find_units(dongId)로 찾으세요. 작은 건물의 호까지 한 번에 필요하면 includeUnits: true.',
-      obj({ id: str('단지 ID'), includeUnits: bool('호 목록까지 넣기 (기본 false)') }, ['id']),
-      async (a, c) => this.sites.findOne(a.id as string, c.officeId, a.includeUnits === true),
+      '단지 상세: 주소 · 동 목록 · 평형. 호는 들어 있지 않습니다 — find_dongs로 동을 고른 뒤 find_units(dongId)로 찾으세요. 동 구분이 없는 작은 건물은 find_units(siteId)로 호를 한 번에 봅니다.',
+      obj({ id: str('단지 ID') }, ['id']),
+      async (a, c) => this.sites.findOne(a.id as string, c.officeId),
     );
 
     this.add(
@@ -2246,30 +2246,18 @@ export class McpToolsService {
         limit: num('페이지당 수 (기본 300, 최대 500) — dongId가 없을 때만'),
       }),
       async (a, c) => {
-        const all = await this.units.findAll(c.officeId, {
-          siteId: a.siteId as string,
-          dongId: a.dongId as string,
-        });
+        // 어느 단지 · 동의 호인지 알 id와 이름만 붙여 받는다(단지 · 동의 나머지 칸은 get_site · find_dongs에 있다)
+        const all = await this.units.findAll(
+          c.officeId,
+          { siteId: a.siteId as string, dongId: a.dongId as string },
+          { withPlace: true },
+        );
         // 결과는 예전과 같은 배열이다(로컬 스킬이 동의 호 전체에서 호를 찾는다). 동으로 좁힌 호출은 자르지 않고,
         // 단지 전체 · 조건 없는 호출만 나눠 준다 — 한 번에 16MB가 나가던 것을 막는다.
-        let list = all;
-        if (!a.dongId) {
-          const limit = Math.min(500, Math.max(1, Math.trunc(Number(a.limit) || 300)));
-          const pageNo = Math.max(1, Math.trunc(Number(a.page) || 1));
-          list = all.slice((pageNo - 1) * limit, pageNo * limit);
-        }
-        // 호마다 단지 · 동의 모든 칸을 되풀이해 싣지 않는다(어느 단지 · 동인지 알 id와 이름만)
-        return list.map((unit) => {
-          const { site, dong, ...rest } = unit as typeof unit & {
-            site?: { id: string; name: string } | null;
-            dong?: { id: string; name: string | null; isPlaceholder?: boolean } | null;
-          };
-          return {
-            ...rest,
-            site: site ? { id: site.id, name: site.name } : null,
-            dong: dong ? { id: dong.id, name: dong.name, isPlaceholder: dong.isPlaceholder ?? false } : null,
-          };
-        });
+        if (a.dongId) return all;
+        const limit = Math.min(500, Math.max(1, Math.trunc(Number(a.limit) || 300)));
+        const pageNo = Math.max(1, Math.trunc(Number(a.page) || 1));
+        return all.slice((pageNo - 1) * limit, pageNo * limit);
       },
     );
 

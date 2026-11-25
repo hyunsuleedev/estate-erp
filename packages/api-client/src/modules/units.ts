@@ -21,6 +21,12 @@ export interface SiteUnitType {
   naverPyeongNo: string | null;
 }
 
+/** 호 목록의 호마다 붙는 평형 칸 (이름 · 면적 · 방 수) */
+export type UnitTypeSummary = Pick<
+  SiteUnitType,
+  'id' | 'name' | 'exclusiveAreaM2' | 'supplyAreaM2' | 'roomCount' | 'bathRoomCount'
+>;
+
 export interface UnitContact {
   id: string;
   name: string;
@@ -106,7 +112,8 @@ export interface Unit {
   cellType?: string;
   createdAt: string;
   updatedAt: string;
-  siteUnitType?: SiteUnitType | null;
+  /** 호 줄에 싣는 평형 요약. 평형의 나머지 칸은 단지 조회의 siteUnitTypes에 있다 */
+  siteUnitType?: UnitTypeSummary | null;
   properties?: UnitProperty[];
 }
 

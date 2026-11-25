@@ -5,7 +5,6 @@ import {
   Patch,
   Delete,
   Param,
-  Query,
   Body,
   UseGuards,
 } from '@nestjs/common';
@@ -40,10 +39,9 @@ export class SitesController {
   @Get(':id')
   findOne(
     @Param('id') id: string,
-    @Query('includeUnits') includeUnits: string | undefined,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    return this.sitesService.findOne(id, user.officeId, includeUnits !== 'false');
+    return this.sitesService.findOne(id, user.officeId);
   }
 
   @Post()
