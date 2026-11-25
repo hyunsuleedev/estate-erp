@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowUpRight, Check, ChevronDown, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { ApiError, type CalendarEvent, type DealListItem as Deal, type Match } from "@estate-erp/api-client";
+import { ApiError, type CalendarEvent, type DealSummary, type Match } from "@estate-erp/api-client";
 import {
   DealStage,
   formatPrice,
@@ -63,12 +63,16 @@ import { propertyErrorMessage } from "../-error-message";
  *   거래 단계 변경은 거래관리(/deals)가 소유하므로 여기서는 읽기 전용이고 이동만 연결한다.
  */
 
+type Deal = DealSummary;
 type TypeMeta = (transactionType: string) => { label: string; className: string };
 
 export function PropertyInspectorProgressTab({
   listingIds,
   creatableListingIds = listingIds,
   propertyId,
+  deals: dealSummaries,
+  dealsStatus,
+  onRetryDeals,
   matches,
   matchesStatus,
   onRetryMatches,
@@ -92,6 +96,11 @@ export function PropertyInspectorProgressTab({
   creatableListingIds?: string[];
   /** 주면 거래 조건 없이 이 호실에 직접 걸린 거래도 보여준다 (매물 상세 페이지). */
   propertyId?: string;
+  /** 이 집(매물 상세)이나 이 의뢰(옆 패널)의 거래 요약 — 그 상세 응답의 deals */
+  deals: DealSummary[];
+  /** 그 상세 응답의 상태. 상세를 못 받았으면 거래도 모른다 */
+  dealsStatus: "loading" | "error" | "ready";
+  onRetryDeals: () => void;
   /** 이 의뢰의 거래 조건에 연결된 매칭 */
   matches: Match[];
   matchesStatus: "loading" | "error" | "ready";
@@ -100,14 +109,9 @@ export function PropertyInspectorProgressTab({
   onOpenDeal: (dealId: string) => void;
   typeMeta: TypeMeta;
 }) {
-  // 이 집과 이 거래 조건들에 걸린 거래만 받는다(대금 일정이 함께 온다).
-  const dealsQuery = useQuery({
-    queryKey: ["deals", "by-property", propertyId ?? null, [...listingIds].sort()],
-    queryFn: () => api.deals.findAll({ propertyId, listingIds }),
-    enabled: propertyId !== undefined || listingIds.length > 0,
-  });
+  // 거래는 집 · 의뢰의 상세에 실려 온다(dealSummaries). 여기서는 이 조건들에 걸린 것만 고른다.
   const listingIdSet = new Set(listingIds);
-  const deals = (dealsQuery.data ?? [])
+  const deals = dealSummaries
     .filter(
       (deal) =>
         (deal.listingId && listingIdSet.has(deal.listingId)) ||
@@ -140,9 +144,9 @@ export function PropertyInspectorProgressTab({
       />
       <DealSection
         deals={deals}
-        isLoading={dealsQuery.isLoading}
-        isError={dealsQuery.isError}
-        onRetry={() => void dealsQuery.refetch()}
+        isLoading={dealsStatus === "loading"}
+        isError={dealsStatus === "error"}
+        onRetry={onRetryDeals}
         onOpenDeal={onOpenDeal}
         typeMeta={typeMeta}
       />

@@ -48,6 +48,7 @@ import {
   getDealDisplayGroupKey,
   getDealTitle,
 } from '@/routes/_authenticated/deals/-deal-view-utils'
+import { dealQueries } from '@/queries/deals';
 
 const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   sale: '매매',
@@ -161,8 +162,7 @@ export function GlobalSearch({ variant = 'button' }: { variant?: 'button' | 'sid
   })
   // 거래는 서버 검색이 없어 거래 목록(대시보드·캘린더와 같은 캐시)에서 단지·동·호·당사자 이름으로 거른다.
   const dealsQuery = useQuery({
-    queryKey: ['deals'],
-    queryFn: () => api.deals.findAll(),
+    ...dealQueries.list(),
     enabled: open,
     staleTime: 60_000,
   })

@@ -681,7 +681,7 @@ describe("project workspace — table cards keep the ways out and stay fresh", (
     );
     assert.match(hook, /previous\.current !== null && previous\.current !== signature/);
     assert.match(hook, /invalidateQueries\(\{ queryKey: \["projects"\] \}\)/);
-    assert.match(hook, /invalidateQueries\(\{ queryKey: \["deals"\] \}\)/);
+    assert.match(hook, /invalidateQueries\(\{ queryKey: dealQueries\.all \}\)/);
     assert.match(listing, /useRefreshPlanWhenListingChanges\(group\)/);
   });
 
@@ -734,7 +734,7 @@ describe("project workspace — the plan follows saves made by borrowed parts", 
     assert.match(read("$id.tsx"), /useRefreshAfterSaves\(plan\.id\)/);
     assert.deepEqual(projectFollowerKeysAfterSave(), [
       ["listing-intakes", "project-row"],
-      ["deals", "project-step"],
+      ["deals", "detail"],
     ]);
   });
 

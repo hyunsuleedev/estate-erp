@@ -6,6 +6,7 @@ import {
 import { IntakeLifecycleStatus, SiteType } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { buildPropertySearchWhere } from './property-search';
+import { DEAL_SUMMARY_SELECT, presentDealSummary } from '../deals/deal-summary';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   contactPhonesIncludeOrdered,
@@ -264,7 +265,18 @@ export class PropertiesService {
       },
     });
 
-    return { ...this.withContactPhones(property), pastListings };
+    // 이 집의 거래(지난 의뢰의 거래 조건에 걸렸던 것까지, 완료 · 취소 포함). 화면이 거래를 따로 요청하지 않게 싣는다.
+    const deals = await this.prisma.deal.findMany({
+      where: { officeId, listing: { propertyId: id } },
+      select: DEAL_SUMMARY_SELECT,
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    return {
+      ...this.withContactPhones(property),
+      pastListings,
+      deals: deals.map(presentDealSummary),
+    };
   }
 
   /**

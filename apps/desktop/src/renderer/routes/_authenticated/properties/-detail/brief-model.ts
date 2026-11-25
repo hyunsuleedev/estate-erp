@@ -1,5 +1,5 @@
 import type {
-  DealListItem as Deal,
+  DealSummary as Deal,
   ListingIntake,
   Match,
   Property,

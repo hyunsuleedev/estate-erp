@@ -44,6 +44,7 @@ import {
   paymentKindLabels,
   type DealPayment,
 } from './-deal-view-utils';
+import { invalidateDealData } from '@/queries/deals';
 
 function getErrorMessage(error: unknown, fallback = '요청을 처리하지 못했습니다. 다시 시도해 주세요.') {
   return apiErrorMessage(error, fallback);
@@ -136,7 +137,7 @@ export function ContractPaymentMismatch({
   const mutation = useMutation({
     mutationFn: () => api.deals.matchPaymentsToContract(deal.id),
     onSuccess: ({ changed, skipped }) => {
-      void queryClient.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(queryClient);
       void queryClient.invalidateQueries({ queryKey: ['cashflow'] });
       if (changed > 0) {
         toast.success('대금 일정을 계약서 값으로 맞췄습니다.', {
@@ -224,7 +225,7 @@ export function DealPaymentsSection({
   const [deleteTarget, setDeleteTarget] = useState<DealPayment | null>(null);
 
   const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: ['deals'] });
+    invalidateDealData(queryClient);
   };
 
   // 잘못 누른 입금 확인을 되돌린다 (예정 상태로)

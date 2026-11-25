@@ -32,6 +32,7 @@ import { StatusBadge } from '@/components/domain';
 import { AssigneeSelect, ContactPicker, ManwonInput, PartnerBrokerSelect, type PickedContact } from './-deal-shared';
 import { useAuth } from '@/providers/auth-provider';
 import { getOurSideLabel } from './-deal-view-utils';
+import { invalidateDealData } from '@/queries/deals';
 
 const TX_TYPES = ['sale', 'jeonse', 'monthly'] as const;
 
@@ -139,7 +140,7 @@ export function DealCreateDialog({
         assigneeUserId: assigneeUserId || undefined,
       }),
     onSuccess: (deal) => {
-      void queryClient.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(queryClient);
       void queryClient.invalidateQueries({ queryKey: ['commission-payments'] });
       toast.success('거래를 만들었습니다.', {
         description: '합의 금액이 있으면 법정 상한으로 수수료 청구가 함께 만들어집니다.',

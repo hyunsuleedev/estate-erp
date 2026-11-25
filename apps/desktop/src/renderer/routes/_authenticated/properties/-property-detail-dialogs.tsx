@@ -43,6 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { invalidateDealData } from '@/queries/deals';
 
 // ── 공통 헬퍼 ──────────────────────────────────────────────────────
 
@@ -1090,7 +1091,7 @@ export function DealAddDialog({
     },
     onSuccess: () => {
       toast.success('거래를 만들었습니다.');
-      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(queryClient);
       queryClient.invalidateQueries({ queryKey: ['listings'] });
       onCreated?.();
       onOpenChange(false);

@@ -143,7 +143,7 @@ export type {
   UpdateMatchAgreedTermsDto,
   UpdateMatchMemoDto,
 } from "./modules/matches.js";
-export type { Deal, DealListItem, DealListFilter, DealListContact, DealListProperty, DealListListing, DealWithCommissions, DealContract, CreateDealDto, DealPropertyTransitionPreview, ApplyDealPropertyTransitionDto } from "./modules/deals.js";
+export type { Deal, DealSummary, DealListItem, DealListFilter, DealListContact, DealListProperty, DealListListing, DealWithCommissions, DealContract, CreateDealDto, DealPropertyTransitionPreview, ApplyDealPropertyTransitionDto } from "./modules/deals.js";
 export type {
   Contract,
   ContractClauseTemplate,

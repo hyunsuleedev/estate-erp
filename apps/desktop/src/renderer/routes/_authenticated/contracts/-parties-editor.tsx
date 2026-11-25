@@ -67,6 +67,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { invalidateDealData } from '@/queries/deals';
 
 const ID_TYPE_OPTIONS: Array<{ value: ContractPartyIdType; label: string }> = [
   { value: 'resident', label: '주민등록번호' },
@@ -353,7 +354,7 @@ export function ContractPartiesCard({ contract }: { contract: Contract }) {
       toast.success('계약 당사자를 저장했습니다.');
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
       // 거래에 계약서 요약이 실려 온다 — 계약서가 바뀌면 거래도 다시 받는다
-      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(queryClient);
       queryClient.invalidateQueries({ queryKey: ['contract', contract.id] });
     },
     onError: (mutationError) => {

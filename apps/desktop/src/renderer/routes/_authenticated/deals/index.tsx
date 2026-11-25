@@ -47,6 +47,7 @@ import {
   type DealPipelineHealthState,
   type DealRowActions,
 } from './-deal-view-utils';
+import { dealQueries } from '@/queries/deals';
 
 type DealViewMode = 'board' | 'list';
 
@@ -114,8 +115,7 @@ function DealsPage() {
   const referenceDate = useMemo(() => new Date(), []);
 
   const dealsQuery = useQuery({
-    queryKey: ['deals', 'active'],
-    queryFn: () => api.deals.findActive(),
+    ...dealQueries.active(),
     enabled: scope === 'active',
   });
   const deals = useMemo(() => dealsQuery.data ?? [], [dealsQuery.data]);
@@ -174,8 +174,7 @@ function DealsPage() {
   );
   const listedDeal = deals.find((deal) => deal.id === selectedDealId);
   const detailQuery = useQuery({
-    queryKey: ['deals', 'detail', selectedDealId],
-    queryFn: () => api.deals.findOne(selectedDealId!),
+    ...dealQueries.detail(selectedDealId),
     enabled: Boolean(selectedDealId),
   });
   // 옆 패널은 상세를 보인다(수수료 청구 · 배분 · 연락처 상세는 목록 줄에 없다).

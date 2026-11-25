@@ -60,6 +60,7 @@ import {
   PaymentSchedule,
   TypeChip,
 } from "./-project-step-detail";
+import { dealQueries } from "@/queries/deals";
 
 /*
  * 프로젝트 상세 본문의 보기 탭: 개요 · 매물·매칭 · 거래·보수 · 자료실(데모).
@@ -767,8 +768,7 @@ function dealAmount(deal: ProjectStepDeal) {
 function DealBlock({ deal, stepTitle }: { deal: ProjectStepDeal; stepTitle: string }) {
   // 단계 펼침과 같은 이름표라 읽어 둔 것을 함께 쓴다.
   const dealQuery = useQuery({
-    queryKey: ["deals", "project-step", deal.id],
-    queryFn: () => api.deals.findOne(deal.id),
+    ...dealQueries.detail(deal.id),
     ...FRESH_ON_RETURN,
   });
   const payments = orderPayments(dealQuery.data?.payments ?? []);

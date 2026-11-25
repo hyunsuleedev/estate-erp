@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
 import { buildOverlayItems, groupOverlaysByDate } from './-calendar-overlay-items';
+import { dealQueries } from '@/queries/deals';
 
 export {
   OVERLAY_META,
@@ -40,8 +41,7 @@ export function useCalendarOverlays(enabled: boolean, assigneeId?: string | null
 
   // 거래관리·대시보드와 같은 캐시. 대금 일정(payments)이 함께 온다.
   const dealsQuery = useQuery({
-    queryKey: ['deals'],
-    queryFn: () => api.deals.findAll(),
+    ...dealQueries.list(),
     enabled,
     staleTime: 60_000,
   });

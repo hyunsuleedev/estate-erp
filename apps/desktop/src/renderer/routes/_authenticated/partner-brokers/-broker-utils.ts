@@ -4,6 +4,7 @@ import type { SortingState } from '@tanstack/react-table';
 import type { DealWithCommissions as Deal, PartnerBroker } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { formatMoney, formatRent } from '@/lib/format';
+import { dealQueries } from '@/queries/deals';
 
 /**
  * deals.findAll 응답에는 서버 include로 commissionPayments(+distributions)가 동봉되지만
@@ -35,9 +36,7 @@ export type DealWithCommission = Deal & {
 /** 거래 전체 조회 — 파트너별 거래 수/연결 거래/분배 내역 계산용 (deals 페이지와 캐시 공유) */
 export function usePartnerDeals() {
   return useQuery({
-    // 파트너 중개사가 연결된 거래만, 수수료 청구 · 배분과 함께
-    queryKey: ['deals', 'partner-commissions'],
-    queryFn: () => api.deals.findPartnerWithCommissions(),
+    ...dealQueries.partnerWithCommissions(),
   });
 }
 

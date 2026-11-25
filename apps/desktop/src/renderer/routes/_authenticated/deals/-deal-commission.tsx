@@ -23,6 +23,7 @@ import { StatusBadge } from '@/components/domain';
 import { PaymentDialogHost, type PaymentDialogState } from '../cashflow/-payment-dialogs';
 import { ManwonInput, SectionTitle } from './-deal-shared';
 import { getDealTransactionType, getOurSideLabel } from './-deal-view-utils';
+import { dealQueries, invalidateDealData } from '@/queries/deals';
 
 const PROPERTY_KIND_OPTIONS: Array<{ value: CommissionPropertyKind; label: string }> = [
   { value: 'housing', label: '주택' },
@@ -140,8 +141,7 @@ function getErrorMessage(error: unknown, fallback = '요청을 처리하지 못�
 export function DealCommissionSection({ deal }: { deal: Deal }) {
   const needsDetail = deal.commissionPayments === undefined && !deal.commissionHidden;
   const detailQuery = useQuery({
-    queryKey: ['deals', 'detail', deal.id],
-    queryFn: () => api.deals.findOne(deal.id),
+    ...dealQueries.detail(deal.id),
     enabled: needsDetail,
   });
   if (!needsDetail) return <DealCommissionBody deal={deal} />;
@@ -390,7 +390,7 @@ function CommissionSideRow({
     mutationFn: (amount: number) =>
       api.deals.setCommission(deal.id, { side, amount, propertyKind }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(queryClient);
       void queryClient.invalidateQueries({ queryKey: ['commission-payments'] });
       toast.success(`${label} 수수료를 저장했습니다.`);
       setEditing(false);

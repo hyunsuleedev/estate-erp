@@ -24,6 +24,14 @@ interface ListingIntakeUpdatedEvent {
   actorUserId?: string | null;
 }
 
+export interface DealUpdatedEvent {
+  officeId: string;
+  dealId: string;
+  /** 그 거래가 걸린 집 · 의뢰. 집 상세와 의뢰 상세에 거래 요약이 실려 있어 함께 다시 받아야 한다 */
+  propertyId: string | null;
+  intakeId: string | null;
+}
+
 export interface NotificationCreatedEvent {
   officeId: string;
   /** 수신 대상 사용자 — 사용자별 room이 없으므로 클라이언트가 이 값으로 필터링한다. */
@@ -109,6 +117,19 @@ export class RealtimeService {
     }
 
     emitter.emit('listing.updated', event);
+  }
+
+  /**
+   * 거래가 바뀌었다(만들기 · 단계 · 조건 · 취소 · 되살리기 · 삭제 · 대금 일정). 내용은 싣지 않는다.
+   * 사무소 전체에 보낸다: 거래관리 · 대시보드 · 캘린더 · 매물 목록의 "거래 중" 표시가 모두 거래에서 나온다.
+   */
+  emitDealUpdated(event: DealUpdatedEvent) {
+    if (!this.server) return;
+
+    const emitter = this.server.to(officeRoom(event.officeId));
+    if (event.propertyId) emitter.to(propertyRoom(event.officeId, event.propertyId));
+    if (event.intakeId) emitter.to(listingIntakeRoom(event.officeId, event.intakeId));
+    emitter.emit('deal.updated', event);
   }
 
   emitListingIntakeUpdated(event: ListingIntakeUpdatedEvent) {

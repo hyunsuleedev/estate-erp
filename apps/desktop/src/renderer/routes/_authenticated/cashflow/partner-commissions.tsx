@@ -50,6 +50,7 @@ import {
 } from './-cashflow-utils';
 import { dealLocationOf } from './-settlement-labels';
 import { NoticeError, apiErrorMessage } from './-payment-dialogs';
+import { dealQueries, invalidateDealData } from '@/queries/deals';
 
 export const Route = createFileRoute('/_authenticated/cashflow/partner-commissions')({
   component: PartnerCommissionsRoute,
@@ -148,8 +149,7 @@ function aggregateByPartner(deals: Deal[]): PartnerRow[] {
 function PartnerCommissionsPage() {
   const navigate = useNavigate();
   const { data: deals, isLoading, isError, refetch } = useQuery({
-    queryKey: ['deals', 'joint-commissions'],
-    queryFn: () => api.deals.findJointWithCommissions(),
+    ...dealQueries.jointWithCommissions(),
   });
 
   const [year, setYear] = useState('all');
@@ -169,12 +169,12 @@ function PartnerCommissionsPage() {
     },
     onSuccess: () => {
       toast.success('정산 기록을 되돌렸습니다.');
-      qc.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(qc);
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
       setUndoing(null);
     },
     onError: (error) => {
-      qc.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(qc);
       toast.error(apiErrorMessage(error, '정산 기록을 되돌리지 못했습니다.'));
       setUndoing(null);
     },
@@ -552,12 +552,12 @@ function SettleDialog({
     },
     onSuccess: () => {
       toast.success('공동중개 정산을 기록했습니다.');
-      qc.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(qc);
       qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
       onClose();
     },
     onError: (error) => {
-      qc.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(qc);
       toast.error(apiErrorMessage(error, '공동중개 정산을 기록하지 못했습니다.'));
     },
   });

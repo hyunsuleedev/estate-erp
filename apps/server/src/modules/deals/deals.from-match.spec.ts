@@ -104,3 +104,39 @@ describe('DealsService 매칭에서 거래 만들기', () => {
     expect(tx.match.updateMany).not.toHaveBeenCalled();
   });
 });
+
+describe('DealsService 실시간 신호', () => {
+  it('거래를 만든 뒤 그 집과 의뢰를 실어 신호를 보낸다', async () => {
+    const { service: _unused, tx } = setup(sourceMatch('listing-1'));
+    void _unused;
+    const emitDealUpdated = jest.fn();
+    const prisma = {
+      listing: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'listing-1',
+          transactionType: 'sale',
+          isPaused: false,
+          intake: { id: 'intake-1', lifecycleStatus: 'open' },
+          property: { site: { type: 'apartment' } },
+        }),
+      },
+      match: { findFirst: jest.fn().mockResolvedValue(sourceMatch('listing-1')) },
+      deal: {
+        findFirst: jest.fn().mockResolvedValue({ listing: { propertyId: 'property-1', intakeId: 'intake-1' } }),
+      },
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaService;
+    const service = new DealsService(prisma, { emitDealUpdated } as never);
+
+    await service.create('office-1', { listingId: 'listing-1', matchId: MATCH_ID });
+
+    expect(emitDealUpdated).toHaveBeenCalledWith({
+      officeId: 'office-1',
+      dealId: 'deal-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
+    });
+    // 저장(거래 만들기)이 끝난 뒤에 보낸다
+    expect(tx.deal.create.mock.invocationCallOrder[0]).toBeLessThan(emitDealUpdated.mock.invocationCallOrder[0]);
+  });
+});

@@ -96,6 +96,8 @@ export interface Property {
       } | null;
     }
   >;
+  /** 이 집의 거래 요약(상세 조회에만). 지난 의뢰의 거래까지, 완료 · 취소 포함 */
+  deals?: import('./deals.js').DealSummary[];
 }
 
 export interface PropertiesFilter {

@@ -12,6 +12,7 @@ import { RefreshFailedNote } from "./-project-notes";
 import { getDealProgressStages } from "../wanted-properties/-match-view-utils";
 import { balanceShownInSchedule, describePaymentState, orderPayments } from "./-project-model";
 import { describeTerms, FRESH_ON_RETURN, TypeChip } from "./-project-step-detail";
+import { dealQueries } from "@/queries/deals";
 
 /*
  * 단계 카드의 거래 묶음: 거래유형 · 금액 · 당사자 · 잔금일, (거래 단계) 흐름, 대금 일정.
@@ -81,8 +82,7 @@ export function DealFlowBlock({
   const cancelled = step.deal?.isCancelled ? step.deal : (step.cancelledDeal ?? null);
   // 거래·보수 탭과 같은 이름표
   const dealQuery = useQuery({
-    queryKey: ["deals", "project-step", deal?.id],
-    queryFn: () => api.deals.findOne(deal!.id),
+    ...dealQueries.detail(deal?.id),
     enabled: Boolean(deal),
     ...FRESH_ON_RETURN,
   });

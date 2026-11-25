@@ -50,6 +50,7 @@ import {
   withVatWon,
   withoutVatWon,
 } from './-cashflow-utils';
+import { invalidateDealData } from '@/queries/deals';
 
 export type LedgerAdjustment = LedgerView['adjustmentsPending'][number];
 
@@ -68,7 +69,7 @@ export function useInvalidateFinance() {
     qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
     qc.invalidateQueries({ queryKey: ['finance', 'receipts'] });
     qc.invalidateQueries({ queryKey: ['cashflow'] });
-    qc.invalidateQueries({ queryKey: ['deals'] });
+    invalidateDealData(qc);
     qc.invalidateQueries({ queryKey: ['commission-payments'] });
     // 입금이 바뀌면 직원 정산의 계산도 바뀐다
     qc.invalidateQueries({ queryKey: ['settlement'] });

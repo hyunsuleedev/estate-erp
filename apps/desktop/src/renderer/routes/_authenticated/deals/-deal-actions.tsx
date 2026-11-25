@@ -36,6 +36,7 @@ import {
   type DealRowActions,
 } from './-deal-view-utils';
 import { CreateContractDialog } from './-deal-detail';
+import { dealQueries, invalidateDealData } from '@/queries/deals';
 
 const CONTRACT_REQUIRED_STAGES = new Set(['settling', 'completed', 'closed']);
 
@@ -80,7 +81,7 @@ export function useDealActions({
   const [deleteTarget, setDeleteTarget] = useState<Deal | null>(null);
 
   const invalidateDeals = () => {
-    void queryClient.invalidateQueries({ queryKey: ['deals'] });
+    invalidateDealData(queryClient);
     void queryClient.invalidateQueries({ queryKey: ['commission-payments'] });
     // Deal 단계는 파생 상태의 원천 — 매물 목록·그리드·네트워크 노출도 함께 갱신
     invalidateListingDerivedCaches(queryClient);
@@ -90,10 +91,10 @@ export function useDealActions({
     mutationFn: ({ deal, stage }: { deal: Deal; stage: string }) =>
       api.deals.updateStage(deal.id, { stage }),
     onMutate: async ({ deal, stage }) => {
-      await queryClient.cancelQueries({ queryKey: ['deals'] });
-      const previousDeals = queryClient.getQueryData<Deal[]>(['deals', 'active']);
+      await queryClient.cancelQueries({ queryKey: dealQueries.all });
+      const previousDeals = queryClient.getQueryData<Deal[]>(dealQueries.active().queryKey);
 
-      queryClient.setQueryData<Deal[]>(['deals', 'active'], (currentDeals) =>
+      queryClient.setQueryData<Deal[]>(dealQueries.active().queryKey, (currentDeals) =>
         currentDeals?.map((currentDeal) =>
           currentDeal.id === deal.id
             ? { ...currentDeal, stage, stageChangedAt: new Date().toISOString() }
@@ -104,7 +105,7 @@ export function useDealActions({
       return { previousDeals };
     },
     onSuccess: (updatedDeal, { deal, stage }) => {
-      queryClient.setQueryData<Deal[]>(['deals', 'active'], (currentDeals) =>
+      queryClient.setQueryData<Deal[]>(dealQueries.active().queryKey, (currentDeals) =>
         currentDeals?.map((current) => (current.id === updatedDeal.id ? updatedDeal : current)),
       );
       toast.success(`'${getStatusMeta('dealStage', stage).label}' 단계로 변경되었습니다.`);
@@ -123,7 +124,7 @@ export function useDealActions({
     },
     onError: (error, { deal, stage }, context) => {
       if (context?.previousDeals) {
-        queryClient.setQueryData(['deals', 'active'], context.previousDeals);
+        queryClient.setQueryData(dealQueries.active().queryKey, context.previousDeals);
       }
       setPendingStage(null);
       const needsContract =
@@ -343,8 +344,7 @@ function CancelDealDialog({
   const labels = getCancelledByLabels(transactionType);
   // 목록 줄에는 수수료 청구가 없다(합계만). 취소로 무엇이 정리되는지 보이려면 상세의 청구가 필요하다.
   const detailQuery = useQuery({
-    queryKey: ['deals', 'detail', deal?.id],
-    queryFn: () => api.deals.findOne(deal!.id),
+    ...dealQueries.detail(deal?.id),
     enabled: Boolean(deal),
   });
   const commissions = detailQuery.data?.commissionPayments ?? [];

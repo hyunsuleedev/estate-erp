@@ -30,6 +30,7 @@ export interface RealtimeRoomRequest {
 export const REALTIME_SERVER_EVENTS = [
   'listing.updated',
   'listing-intake.updated',
+  'deal.updated',
   'network.message.created',
   'notification.created',
   'cti.incoming',

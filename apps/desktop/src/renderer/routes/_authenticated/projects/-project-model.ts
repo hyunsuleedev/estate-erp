@@ -1205,7 +1205,7 @@ export function projectPlanScope(projectId: string): string {
 export function projectFollowerKeysAfterSave(): ReadonlyArray<readonly unknown[]> {
   return [
     ["listing-intakes", "project-row"],
-    ["deals", "project-step"],
+    ["deals", "detail"],
   ];
 }
 

@@ -5,6 +5,7 @@ import type {
 } from '../../common/desktopRealtime';
 import { useAuth } from '@/providers/auth-provider';
 import { queryClient } from '@/providers/query-provider';
+import { invalidateDealData } from '@/queries/deals';
 
 /**
  * 서버 실시간 연결은 main 프로세스에 하나뿐이다. 화면은 연결을 갖지 않고, main이
@@ -36,6 +37,12 @@ function invalidate(queryKey: readonly unknown[]) {
   void queryClient.invalidateQueriesFromRemote(queryKey);
 }
 
+/** 받은 신호로 이 화면의 캐시만 고친다(다른 화면도 같은 신호를 직접 받는다) */
+const remoteOnly = {
+  invalidateQueries: ({ queryKey }: { queryKey: readonly unknown[] }) =>
+    queryClient.invalidateQueriesFromRemote(queryKey),
+};
+
 function invalidateProperty(propertyId: unknown) {
   invalidate(['listings']);
   invalidate(['listing-intakes']);
@@ -57,6 +64,10 @@ export function applyRealtimeEvent(event: RealtimeEventMessage): void {
       }
       return;
     }
+    case 'deal.updated':
+      // 내가 거래를 바꾼 직후와 같은 것을 다시 받는다(거래 · 그 집과 의뢰의 상세 · 매물 목록 · 매칭)
+      invalidateDealData(remoteOnly);
+      return;
     default:
       // 알림·중개방 채팅·전화 이벤트는 아직 화면에서 쓰지 않는다.
       return;

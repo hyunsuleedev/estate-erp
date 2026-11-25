@@ -45,6 +45,39 @@ export interface DealContract {
   leaseEndDate: string | null;
 }
 
+/**
+ * 집(매물 상세)과 의뢰 상세에 실려 오는 거래 요약: 단계 · 취소 · 합의 금액 · 당사자 이름 · 대금 일정.
+ * 수수료와 계약서는 없다 — 거래 상세(findOne)에 있다.
+ */
+export interface DealSummary
+  extends Pick<
+    DealListItem,
+    | 'id'
+    | 'listingId'
+    | 'matchId'
+    | 'propertyId'
+    | 'stage'
+    | 'stageChangedAt'
+    | 'isCancelled'
+    | 'cancelledAt'
+    | 'cancelReason'
+    | 'cancelledBy'
+    | 'transactionType'
+    | 'agreedPrice'
+    | 'agreedDeposit'
+    | 'agreedMonthlyRent'
+    | 'agreedMoveInDate'
+    | 'isJointBrokerage'
+    | 'partnerBrokerId'
+    | 'createdAt'
+    | 'updatedAt'
+    | 'partnerBroker'
+    | 'payments'
+  > {
+  buyerContact: DealListContact | null;
+  sellerContact: DealListContact | null;
+}
+
 /** 목록 줄의 당사자: 이름과 대표 번호 */
 export interface DealListContact {
   id: string;

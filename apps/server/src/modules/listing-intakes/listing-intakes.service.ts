@@ -22,6 +22,7 @@ import {
   TransactionType,
 } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
+import { DEAL_SUMMARY_SELECT, presentDealSummary } from '../deals/deal-summary';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
 import { assertValidListingMoney, normalizeListingMoveIn } from '../listings/listing-input';
@@ -495,7 +496,14 @@ export class ListingIntakesService {
       throw new NotFoundException('의뢰를 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
-    return this.toResponse(intake);
+    // 이 의뢰의 거래 조건에 걸린 거래(완료 · 취소 포함). 옆 패널이 거래를 따로 요청하지 않게 싣는다.
+    const deals = await this.prisma.deal.findMany({
+      where: { officeId, listing: { intakeId: id } },
+      select: DEAL_SUMMARY_SELECT,
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    return { ...this.toResponse(intake), deals: deals.map(presentDealSummary) };
   }
 
   async create(officeId: string, dto: ListingIntakeCreateDto) {

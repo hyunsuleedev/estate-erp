@@ -101,6 +101,7 @@ import { OVERLAY_META, assignedDealIds, useCalendarOverlays, type OverlayItem } 
 import { formatEventPlace, getEventSuperseded, isEventMoot } from './calendar/-event-meta';
 import { EventTitle } from './calendar/-event-title';
 import { PRECIP, WEATHER_LABEL, clock, sceneState, type SceneWeather, type WeatherKind } from './-dashboard-sky';
+import { dealQueries } from '@/queries/deals';
 import './-dashboard.css';
 
 export const Route = createFileRoute('/_authenticated/dashboard')({
@@ -2229,7 +2230,7 @@ function useTasksQuery() {
 }
 
 function useDealsQuery() {
-  return useQuery({ queryKey: ['deals'], queryFn: () => api.deals.findAll() });
+  return useQuery(dealQueries.list());
 }
 
 /** 오늘(0시~다음 날 0시) 일정. 달력을 다른 달로 넘겨도 인사 영역 숫자·그림 깃발이 유지된다. */

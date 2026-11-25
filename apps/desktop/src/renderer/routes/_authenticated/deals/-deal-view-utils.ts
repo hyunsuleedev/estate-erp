@@ -245,8 +245,11 @@ export function getWeightedCommissionValue(deal: DealListItem): number {
   return Math.round(getDealCommissionValue(deal) * probability);
 }
 
+/** 단계와 대금 일정만 읽는다 — 거래 목록 줄과 집 상세의 거래 요약 둘 다 받는다 */
+type DealProgress = Pick<DealListItem, 'stage' | 'stageChangedAt' | 'payments'>;
+
 export function getDealStageAgeDays(
-  deal: DealListItem,
+  deal: DealProgress,
   referenceDate = new Date(),
 ) {
   return Math.max(
@@ -256,7 +259,7 @@ export function getDealStageAgeDays(
 }
 
 export function getDealPipelineHealth(
-  deal: DealListItem,
+  deal: DealProgress,
   referenceDate = new Date(),
 ): DealPipelineHealth {
   const groupKey = getDealDisplayGroupKey(deal.stage);
@@ -322,7 +325,7 @@ export function getDealPipelineHealth(
 }
 
 export function getNextDealPaymentSummary(
-  deal: DealListItem,
+  deal: DealProgress,
   referenceDate = new Date(),
 ) {
   const nextPayment = (deal.payments ?? [])

@@ -37,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useInspectorOutsideClose } from '@/hooks/use-inspector-outside-close';
+import { dealQueries, invalidateDealData } from '@/queries/deals';
 
 /** 계약서가 지나가는 상태 순서. 화면에서 손으로 고른다 (서명·입금·등기는 프로그램이 알 수 없다). */
 const CONTRACT_STATUS_ORDER = ['draft', 'signed', 'depositPaid', 'balancePaid', 'registered', 'cancelled'] as const;
@@ -49,7 +50,7 @@ function ContractStatusPicker({ contract }: { contract: Contract }) {
     onSuccess: (_, status) => {
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['contract', contract.id] });
-      void queryClient.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(queryClient);
       toast.success(`계약서 상태를 '${getStatusMeta('contractStatus', status).label}'(으)로 바꿨습니다.`);
     },
     onError: (error) =>
@@ -178,8 +179,7 @@ export function ContractPeek({
   const overdue = isBalanceOverdue(contract);
   // 계약서 요약과 거래 대금 일정이 다른지 보려고 거래를 읽는다 (거래 상세 패널과 같은 캐시)
   const dealQuery = useQuery({
-    queryKey: ['deals', 'detail', contract.dealId],
-    queryFn: () => api.deals.findOne(contract.dealId as string),
+    ...dealQueries.detail(contract.dealId),
     enabled: Boolean(contract.dealId) && contract.status !== 'cancelled',
   });
 

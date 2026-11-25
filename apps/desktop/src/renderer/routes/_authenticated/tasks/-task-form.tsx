@@ -61,6 +61,7 @@ import { dueDateKey } from './-task-filters';
 import { PropertyInspectorToolbar } from '../properties/-components/property-inspector-view';
 import { useInspectorOutsideClose } from '@/hooks/use-inspector-outside-close';
 import { EventLinkRow, type LinkedEntity } from '../calendar/-event-link-picker';
+import { dealQueries } from '@/queries/deals';
 
 // ─── 컨텍스트 (연락처 제외 — 연락처는 검색 연결까지 지원) ──────
 
@@ -282,8 +283,7 @@ function useResolvedPresetLinks(links: TaskPresetLinks | null | undefined) {
     staleTime: 60_000,
   });
   const dealQuery = useQuery({
-    queryKey: ['deals', 'detail', links?.dealId],
-    queryFn: () => api.deals.findOne(links!.dealId!),
+    ...dealQueries.detail(links?.dealId),
     enabled: Boolean(links?.dealId),
     staleTime: 60_000,
   });

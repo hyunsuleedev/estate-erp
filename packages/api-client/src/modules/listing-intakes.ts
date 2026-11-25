@@ -57,6 +57,8 @@ export interface ListingIntake {
   /** 사용자가 프로젝트로 묶었을 때만 있다. */
   projectId: string | null;
   propertyId: string;
+  /** 이 의뢰의 거래 조건에 걸린 거래 요약(상세 조회에만). 완료 · 취소 포함 */
+  deals?: import('./deals.js').DealSummary[];
   lifecycleStatus: IntakeLifecycleStatus;
   lifecycleChangedAt: string;
   /** 마지막 생명주기 전이 주체: "user" | "system:deal" */

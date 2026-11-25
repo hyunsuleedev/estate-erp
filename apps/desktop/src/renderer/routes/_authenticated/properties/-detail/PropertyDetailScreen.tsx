@@ -325,13 +325,8 @@ export function PropertyDetailScreen({
   // 진행 중 의뢰의 조건만이 아니라 지난 의뢰(거래 완료로 자동 종료된 의뢰 포함)의 조건까지.
   const allListingIds = collectListingIds(listings, intakes);
   const intakeIds = intakes.map((intake) => intake.id);
-  // 이 집과 이 집의 거래 조건(지난 의뢰 포함)에 걸린 거래만 받는다. 완료·취소된 거래도 기록에 남긴다.
-  const dealsQuery = useQuery({
-    queryKey: ['deals', 'by-property', propertyId, [...allListingIds].sort()],
-    queryFn: () => api.deals.findAll({ propertyId: propertyId ?? undefined, listingIds: allListingIds }),
-    enabled: propertyId !== null,
-  });
-  const propertyDeals = propertyId === null ? [] : selectPropertyDeals(dealsQuery.data ?? [], propertyId, allListingIds);
+  // 이 집의 거래는 집 상세에 실려 온다(지난 의뢰의 거래까지, 완료·취소 포함). 따로 요청하지 않는다.
+  const propertyDeals = propertyId === null ? [] : selectPropertyDeals(propertyQuery.data?.deals ?? [], propertyId, allListingIds);
 
   // 상담은 매물·의뢰·거래 조건 중 어디에 연결했는지에 따라 따로 받아 합친다.
   // (서버는 의뢰나 거래 조건만 지정한 상담에 propertyId를 채우지 않는다.)
@@ -1194,6 +1189,9 @@ export function PropertyDetailScreen({
                   connectTarget={{ property, listings }}
                   // 거래 조건이나 거래가 있으면 관리호수도 있다
                   propertyId={propertyId ?? ''}
+                  deals={propertyDeals}
+                  dealsStatus={propertyQuery.isError ? 'error' : propertyQuery.data ? 'ready' : 'loading'}
+                  onRetryDeals={() => void propertyQuery.refetch()}
                   matches={matches}
                   matchesStatus={matchesQuery.isError ? 'error' : matchesQuery.data ? 'ready' : 'loading'}
                   onRetryMatches={() => void matchesQuery.refetch()}

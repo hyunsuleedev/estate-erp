@@ -10,6 +10,7 @@ import { useDealActions } from './-deal-actions';
 import { DealDetailPanel } from './-deal-detail';
 import { getDealTabTitle, type DealRowActions } from './-deal-view-utils';
 import { useTabTitle } from '@/hooks/use-tab-title';
+import { dealQueries } from '@/queries/deals';
 
 export const Route = createFileRoute('/_authenticated/deals/$id')({
   component: DealDetailPage,
@@ -25,8 +26,7 @@ function DealDetailPage() {
   const referenceDate = useMemo(() => new Date(), []);
 
   const dealsQuery = useQuery({
-    queryKey: ['deals', 'detail', id],
-    queryFn: () => api.deals.findOne(id),
+    ...dealQueries.detail(id),
   });
   const deal = dealsQuery.data ?? null;
   // 탭 제목: "고덕그라시움 102동 2203호 매매" (매물 없는 거래는 당사자 이름)

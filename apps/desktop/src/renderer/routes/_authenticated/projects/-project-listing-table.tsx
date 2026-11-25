@@ -63,6 +63,7 @@ import {
   TransactionMiniLabel,
   TransactionStack,
 } from "./-project-table-parts";
+import { dealQueries } from "@/queries/deals";
 
 /*
  * 매물 의뢰 단계 = 매물관리 표의 한 줄 + 매칭을 펼치면 그 줄 아래 매물관리와 같은 매칭 패널(사용자 요청 2026-11-24:
@@ -123,7 +124,8 @@ function useRefreshPlanWhenListingChanges(group: ReturnType<typeof buildListingG
     if (signature === null) return;
     if (previous.current !== null && previous.current !== signature) {
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      void queryClient.invalidateQueries({ queryKey: ["deals"] });
+      // 매물 줄이 달라졌을 때 거래만 다시 읽는다. 매물 쪽까지 다시 받게 하면(invalidateDealData) 이 줄이 다시 달라져 되풀이된다.
+      void queryClient.invalidateQueries({ queryKey: dealQueries.all });
     }
     previous.current = signature;
   }, [queryClient, signature]);

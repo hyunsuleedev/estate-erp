@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { invalidateDealData } from '@/queries/deals';
 
 /** 빈 칸은 undefined(합의 금액 없이 거래를 만든다). 읽을 수 없는 글은 NaN — 저장을 막는다. */
 function parseManwon(value: string): number | undefined {
@@ -146,7 +147,7 @@ export function MatchConvertDialog({
     },
     onSuccess: (dealId) => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
-      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(queryClient);
       onOpenChange(false);
       toast.success(activeDeal ? '거래 전환 단계로 바꿨습니다' : '거래로 전환했습니다 (계약 준비)', {
         action: {

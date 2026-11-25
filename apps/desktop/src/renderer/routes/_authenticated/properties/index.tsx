@@ -3922,6 +3922,10 @@ function PropertyInspectorContent({
       progressTab={
         <PropertyInspectorProgressTab
           listingIds={inspectorListingIds}
+          // 거래는 의뢰 상세에 실려 온다 — 이 구역은 의뢰를 받은 뒤에만 그려진다
+          deals={intake.deals ?? []}
+          dealsStatus="ready"
+          onRetryDeals={() => undefined}
           connectTarget={{ property, listings }}
           matches={(propertyMatches ?? []).filter((match) =>
             intakeListingIdSet.has(match.listingId),

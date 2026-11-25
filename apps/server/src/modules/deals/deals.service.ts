@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
@@ -25,6 +26,7 @@ import {
   type CommissionTransactionType,
 } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RealtimeService } from '../../realtime/realtime.service';
 import { getPrimaryPhone, withPrimaryPhone } from '../contacts/contact-phone.utils';
 import {
   recomputeShareAmounts,
@@ -435,7 +437,43 @@ function computeAutoCommission(terms: CommissionTerms) {
 
 @Injectable()
 export class DealsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly realtime?: RealtimeService,
+  ) {}
+
+  /** 그 거래가 걸린 집과 의뢰 (거래 조건 없이 만든 거래는 없다) */
+  private async dealPlace(officeId: string, dealId: string) {
+    const deal = await this.prisma.deal.findFirst({
+      where: { id: dealId, officeId },
+      select: { listing: { select: { propertyId: true, intakeId: true } } },
+    });
+    return deal?.listing ?? null;
+  }
+
+  /**
+   * 거래가 바뀌었다는 실시간 신호. 저장이 끝난 뒤에 부른다(도중에 보내면 화면이 다시 받아도 예전 값이다).
+   * 신호에는 무엇이 바뀌었는지만 싣는다 — 화면이 평소 조회로 다시 받고, 수수료 가리기는 그때 걸린다.
+   * 신호를 못 보내도 저장은 성공이다.
+   */
+  private async signalChanged(
+    officeId: string,
+    dealId: string,
+    place?: { propertyId: string; intakeId: string } | null,
+  ) {
+    if (!this.realtime) return;
+    try {
+      const at = place === undefined ? await this.dealPlace(officeId, dealId) : place;
+      this.realtime.emitDealUpdated({
+        officeId,
+        dealId,
+        propertyId: at?.propertyId ?? null,
+        intakeId: at?.intakeId ?? null,
+      });
+    } catch {
+      // 다음 변경이나 다시 연결할 때 화면이 따라잡는다
+    }
+  }
 
   private readonly dealInclude = dealInclude;
 
@@ -785,6 +823,7 @@ export class DealsService {
         });
       }
     });
+    await this.signalChanged(officeId, id);
     return this.findOne(id, officeId);
   }
 
@@ -1135,6 +1174,7 @@ export class DealsService {
     });
 
     if (!deal) throw new NotFoundException('거래를 만들지 못했습니다.');
+    await this.signalChanged(officeId, deal.id);
     return this.withPropertyContext(deal);
   }
 
@@ -1672,6 +1712,7 @@ export class DealsService {
       return updated;
     });
 
+    await this.signalChanged(officeId, id);
     return this.withPropertyContext(deal);
   }
 
@@ -1701,6 +1742,7 @@ export class DealsService {
         })
       : null;
     await this.prisma.deal.update({ where: { id }, data: { buyerIntakeId } });
+    await this.signalChanged(officeId, id);
     return this.findOne(id, officeId);
   }
 
@@ -1787,6 +1829,7 @@ export class DealsService {
       return updated;
     });
 
+    await this.signalChanged(officeId, id);
     return { ...this.withPropertyContext(deal), commissionNotice };
   }
 
@@ -1899,6 +1942,7 @@ export class DealsService {
       }
       return tx.deal.findUniqueOrThrow({ where: { id }, include: this.dealInclude });
     });
+    await this.signalChanged(officeId, id);
     return this.withPropertyContext(deal);
   }
 
@@ -2046,6 +2090,7 @@ export class DealsService {
       return tx.deal.findUniqueOrThrow({ where: { id }, include: this.dealInclude });
     });
 
+    await this.signalChanged(officeId, id);
     return this.withPropertyContext(deal);
   }
 
@@ -2165,13 +2210,16 @@ export class DealsService {
       return cancelled;
     });
 
+    await this.signalChanged(officeId, id);
     return this.withPropertyContext(deal);
   }
 
   async remove(id: string, officeId: string) {
     const existing = await this.findOne(id, officeId);
+    // 지운 뒤에는 어느 집의 거래였는지 알 수 없다. 신호에 실을 자리를 먼저 읽어 둔다.
+    const place = await this.dealPlace(officeId, id);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const shouldReevaluateIntake =
         DONE_STAGES.has(existing.stage) &&
         !existing.isCancelled &&
@@ -2254,6 +2302,8 @@ export class DealsService {
 
       return deleted;
     });
+    await this.signalChanged(officeId, id, place);
+    return result;
   }
 
   // ============================================================
@@ -2324,7 +2374,7 @@ export class DealsService {
     }
 
     try {
-      return await this.prisma.dealPayment.create({
+      const created = await this.prisma.dealPayment.create({
         data: {
           officeId,
           dealId,
@@ -2335,6 +2385,8 @@ export class DealsService {
           memo: dto.memo,
         },
       });
+      await this.signalChanged(officeId, dealId);
+      return created;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -2398,7 +2450,7 @@ export class DealsService {
       paidAt = new Date();
     }
 
-    return this.prisma.dealPayment.update({
+    const result = await this.prisma.dealPayment.update({
       where: { id: paymentId },
       data: {
         scheduledAmount: dto.scheduledAmount,
@@ -2411,6 +2463,8 @@ export class DealsService {
         memo: dto.memo !== undefined ? dto.memo : undefined,
       },
     });
+    await this.signalChanged(officeId, dealId);
+    return result;
   }
 
   /**
@@ -2541,6 +2595,7 @@ export class DealsService {
       }
     });
 
+    await this.signalChanged(officeId, dealId);
     return { deal: await this.findOne(dealId, officeId), changed, skipped };
   }
 
@@ -2550,6 +2605,7 @@ export class DealsService {
       select: { id: true },
     });
     if (!existing) throw new NotFoundException('지급 항목을 찾을 수 없습니다.');
+    await this.signalChanged(officeId, dealId);
     return this.prisma.dealPayment.delete({ where: { id: paymentId } });
   }
 
@@ -2732,7 +2788,7 @@ export class DealsService {
       createNewLease?: boolean;
     },
   ): Promise<{ applied: boolean }> {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const context = await this.loadPropertyTransitionContext(id, officeId, tx);
       if (!context.eligible || !context.propertyId || !context.kind) {
         throw new BadRequestException(
@@ -2832,6 +2888,8 @@ export class DealsService {
 
       return { applied: true };
     });
+    await this.signalChanged(officeId, id);
+    return result;
   }
 
   private async loadPropertyTransitionContext(

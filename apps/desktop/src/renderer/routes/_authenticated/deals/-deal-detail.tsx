@@ -101,6 +101,7 @@ import {
   getPartyLabels,
 } from './-deal-view-utils';
 import { useInspectorOutsideClose } from '@/hooks/use-inspector-outside-close';
+import { invalidateDealData } from '@/queries/deals';
 
 function getErrorMessage(error: unknown, fallback = '요청을 처리하지 못했습니다. 다시 시도해 주세요.') {
   return apiErrorMessage(error, fallback);
@@ -955,7 +956,7 @@ function DealAssigneeEditor({ deal }: { deal: Deal }) {
   const mutation = useMutation({
     mutationFn: (userId: string) => api.deals.setAssignee(deal.id, userId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(queryClient);
       void queryClient.invalidateQueries({ queryKey: ['settlement'] });
       toast.success('담당을 바꿨습니다.');
     },
@@ -1075,7 +1076,7 @@ function EditTermsDialogInner({
         memo: memo.trim() || null,
       }),
     onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(queryClient);
       void queryClient.invalidateQueries({ queryKey: ['commission-payments'] });
       if (result.commissionNotice === 'kept') {
         toast.success('거래 조건을 저장했습니다.', {
@@ -1263,7 +1264,7 @@ export function CreateContractDialog({
           }
         : undefined;
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
-      void queryClient.invalidateQueries({ queryKey: ['deals'] });
+      invalidateDealData(queryClient);
       if (advanced) {
         invalidateListingDerivedCaches(queryClient);
         toast.success(
@@ -1482,7 +1483,7 @@ function DealPropertyTransitionSection({ dealId }: { dealId: string }) {
     onSuccess: async () => {
       toast.success('매물 소유·임대차 정보를 반영했습니다.');
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['deals'] }),
+        invalidateDealData(queryClient),
         queryClient.invalidateQueries({ queryKey: ['properties'] }),
         queryClient.invalidateQueries({ queryKey: ['sites'] }),
         queryClient.invalidateQueries({ queryKey: ['contacts'] }),

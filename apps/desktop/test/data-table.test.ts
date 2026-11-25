@@ -395,8 +395,8 @@ describe('desktop data table', () => {
     );
     assert.match(
       progressTabSource,
-      /queryFn: \(\) => api\.deals\.findAll\(\{ propertyId, listingIds \}\)/,
-      'asks only for the deals on this property and its listings (payment schedules come with them)',
+      /const deals = dealSummaries\s*\.filter\(/,
+      'deals come with the property or intake detail — the tab does not ask for them again',
     );
     assert.match(
       progressTabSource,
