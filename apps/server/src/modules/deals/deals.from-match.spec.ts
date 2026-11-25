@@ -140,3 +140,19 @@ describe('DealsService 실시간 신호', () => {
     expect(tx.deal.create.mock.invocationCallOrder[0]).toBeLessThan(emitDealUpdated.mock.invocationCallOrder[0]);
   });
 });
+
+describe('DealsService 대금 일정 삭제의 신호', () => {
+  it('지운 뒤에 신호를 보낸다', async () => {
+    const emitDealUpdated = jest.fn();
+    const remove = jest.fn().mockResolvedValue({ id: 'payment-1' });
+    const prisma = {
+      dealPayment: { findFirst: jest.fn().mockResolvedValue({ id: 'payment-1' }), delete: remove },
+      deal: { findFirst: jest.fn().mockResolvedValue({ listing: { propertyId: 'property-1', intakeId: 'intake-1' } }) },
+    } as unknown as PrismaService;
+    const service = new DealsService(prisma, { emitDealUpdated } as never);
+
+    await service.removePayment('deal-1', 'payment-1', 'office-1');
+
+    expect(remove.mock.invocationCallOrder[0]).toBeLessThan(emitDealUpdated.mock.invocationCallOrder[0]);
+  });
+});

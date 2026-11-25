@@ -2605,8 +2605,9 @@ export class DealsService {
       select: { id: true },
     });
     if (!existing) throw new NotFoundException('지급 항목을 찾을 수 없습니다.');
+    const deleted = await this.prisma.dealPayment.delete({ where: { id: paymentId } });
     await this.signalChanged(officeId, dealId);
-    return this.prisma.dealPayment.delete({ where: { id: paymentId } });
+    return deleted;
   }
 
   private withPropertyContext(deal: DealWithRelations) {
