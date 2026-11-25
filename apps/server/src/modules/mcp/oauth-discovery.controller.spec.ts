@@ -9,7 +9,7 @@ import {
 function createController(env: Record<string, string | undefined>, issuer: string | null) {
   return new OAuthDiscoveryController(
     { get: (key: string) => env[key] } as never,
-    { getIssuer: () => issuer } as never,
+    { getAdvertisedIssuer: () => issuer } as never,
   );
 }
 

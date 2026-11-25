@@ -4,11 +4,21 @@
 {$API_DOMAIN} {
 	encode zstd gzip
 
-	# NestJS 서버. Socket.io(WebSocket)와 MCP의 긴 응답도 그대로 지나간다.
-	reverse_proxy server:3000 {
-		# 서버가 다시 뜨는 동안(배포 · 마이그레이션) 잠깐 기다렸다가 넘긴다
-		lb_try_duration 30s
-		lb_try_interval 500ms
+	# 탭 아이콘. 외부 AI(Claude 등)가 연결 목록에 이 주소의 아이콘을 쓴다. 파일은 앱 배포 저장소(R2)에 있다.
+	handle /favicon.ico {
+		rewrite * /brand/favicon.ico
+		reverse_proxy https://releases.estaitt.com {
+			header_up Host releases.estaitt.com
+		}
+	}
+
+	handle {
+		# NestJS 서버. Socket.io(WebSocket)와 MCP의 긴 응답도 그대로 지나간다.
+		reverse_proxy server:3000 {
+			# 서버가 다시 뜨는 동안(배포 · 마이그레이션) 잠깐 기다렸다가 넘긴다
+			lb_try_duration 30s
+			lb_try_interval 500ms
+		}
 	}
 
 	# 외부 매물 배치 업로드(서버 한도 10MB)에 맞춘 본문 크기

@@ -14,7 +14,7 @@ import { MCP_TOOLS_SCOPE, resolveMcpResourceUrl } from './mcp-oauth.config';
  *
  * MCP 클라이언트(Claude, ChatGPT, Codex CLI 등)는 여기서 다음을 알아낸다.
  *   - 토큰을 요청할 자원 식별자(= 이 서버의 MCP 주소)
- *   - 그 자원의 토큰을 발급하는 인가 서버(Auth0 테넌트)
+ *   - 그 자원의 토큰을 발급하는 인가 서버(Auth0. 자체 로그인 주소가 있으면 그 주소)
  *   - 요청할 scope
  *
  * 인증 없이 열려 있어야 한다. 주소는 자원 주소의 호스트와 경로 사이에 well-known
@@ -39,7 +39,7 @@ export class OAuthDiscoveryController {
   protectedResourceMetadata() {
     // 인가 서버 식별자는 Auth0 메타데이터의 `issuer`와 글자 그대로 같아야 한다
     // (끝의 `/` 포함). 클라이언트가 둘을 문자열로 비교한다.
-    const issuer = this.tokens.getIssuer();
+    const issuer = this.tokens.getAdvertisedIssuer();
     if (!issuer) {
       throw new ServiceUnavailableException('Auth0 설정이 없습니다.');
     }

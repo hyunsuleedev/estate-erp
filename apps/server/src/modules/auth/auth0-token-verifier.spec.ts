@@ -67,7 +67,7 @@ function newKey(kid: string) {
   };
 }
 
-function setup(jwksOverride?: () => unknown) {
+function setup(jwksOverride?: () => unknown, customDomains?: string) {
   const { publicKey, privateKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,
   });
@@ -83,7 +83,9 @@ function setup(jwksOverride?: () => unknown) {
         ? DOMAIN
         : key === 'AUTH0_AUDIENCE'
           ? AUDIENCE
-          : undefined,
+          : key === 'AUTH0_CUSTOM_DOMAINS'
+            ? customDomains
+            : undefined,
   };
   const verifier = new TestVerifier(
     config,
@@ -101,6 +103,35 @@ describe('Auth0TokenVerifier', () => {
     expect(claims.sub).toBe('auth0|abc');
     expect(claims.azp).toBe('desktop-client');
     expect(verifier.getIssuer()).toBe(ISSUER);
+  });
+
+  it('accepts the custom login domain as issuer only when it is configured', async () => {
+    const custom = signTokenFor('https://login.estaitt.com/');
+    function signTokenFor(iss: string) {
+      return (privateKey: Parameters<typeof signToken>[0]) =>
+        signToken(privateKey, validPayload({ iss }));
+    }
+    const plain = setup();
+    await expect(
+      plain.verifier.verifyAccessToken(custom(plain.privateKey)),
+    ).rejects.toThrow('토큰 발급자가 다릅니다.');
+
+    const both = setup(undefined, ' https://login.estaitt.com/ , ');
+    const claims = await both.verifier.verifyAccessToken(custom(both.privateKey));
+    expect(claims.sub).toBe('auth0|abc');
+    // 테넌트 도메인으로 받은 토큰(설치된 데스크톱 앱, 외부 AI)도 그대로 받는다.
+    await expect(
+      both.verifier.verifyAccessToken(signToken(both.privateKey, validPayload())),
+    ).resolves.toBeDefined();
+    await expect(
+      both.verifier.verifyAccessToken(
+        signTokenFor('https://login.evil.com/')(both.privateKey),
+      ),
+    ).rejects.toThrow('토큰 발급자가 다릅니다.');
+    // 서명 키를 받는 곳은 테넌트 도메인 그대로고, 외부 AI에 알리는 로그인 주소는 자체 주소다.
+    expect(both.verifier.getIssuer()).toBe(ISSUER);
+    expect(both.verifier.getAdvertisedIssuer()).toBe('https://login.estaitt.com/');
+    expect(plain.verifier.getAdvertisedIssuer()).toBe(ISSUER);
   });
 
   it('reads the session login time from the Auth0 Action claim, only when it is a number', async () => {

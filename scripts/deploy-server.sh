@@ -153,6 +153,13 @@ for i in \$(seq 1 48); do
   if [ \$i -eq 48 ]; then echo '4분 안에 뜨지 않았습니다. 마지막 로그:'; docker logs --tail 60 estaitflow-server 2>&1; exit 1; fi
   sleep 5
 done
+# Caddyfile이 바뀌었어도 이미 떠 있는 Caddy는 다시 읽지 않는다. 끊김 없이 다시 읽힌다(바뀐 게 없으면 아무 일도 없다).
+# 읽지 못하면 배포를 실패로 끝낸다 — 성공으로 넘기면 바꾼 설정이 적용된 줄 알게 된다.
+if ! reload_out=\$(docker compose -f docker-compose.prod.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile 2>&1); then
+  echo "\$reload_out" | tail -5
+  echo 'Caddy가 새 Caddyfile을 읽지 못했습니다. 예전 설정으로 계속 돕니다 — Caddyfile을 고쳐 다시 배포하세요.'
+  exit 1
+fi
 docker image prune -af --filter 'until=168h' >/dev/null 2>&1 || true
 docker compose -f docker-compose.prod.yml ps --format 'table {{.Name}}\t{{.Status}}'
 EOF

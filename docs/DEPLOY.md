@@ -74,6 +74,7 @@ docker compose -f docker-compose.prod.yml run --rm -e SEED_SCRIPT=seed-legal-don
 
 - [ ] `API_BASE_URL=https://api.estaitt.com`으로 `apps/server/auth0/deploy-actions.sh`를 실행한다(순서: `apps/server/auth0/README.md`).
 - [ ] Auth0의 MCP API 식별자가 `MCP_RESOURCE_URL`과 같은지 본다.
+- [ ] 자체 로그인 주소(`login.estaitt.com`, Auth0 › Branding › Custom Domains, DNS는 "DNS only" CNAME)를 쓰면 `AUTH0_CUSTOM_DOMAINS`에 적는다. 그 주소로 로그인한 토큰은 발급자(`iss`)가 그 주소라, 적지 않으면 서버가 거절한다. `AUTH0_DOMAIN`은 테넌트 도메인 그대로 둔다(관리 API와 서명 키, 이미 설치된 앱·연결된 외부 AI가 쓴다).
 
 ## 7. 확인
 

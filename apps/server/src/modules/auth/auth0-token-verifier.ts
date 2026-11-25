@@ -137,6 +137,36 @@ export class Auth0TokenVerifier {
     return domain ? `https://${domain}/` : null;
   }
 
+  /**
+   * 토큰의 `iss`로 받아들이는 발급자들. 테넌트 도메인과, 자체 로그인 주소(AUTH0_CUSTOM_DOMAINS,
+   * 쉼표로 여럿)다. Auth0는 로그인이 시작된 주소를 `iss`에 적는다 — 웹사이트는 login.estaitt.com으로,
+   * 이미 설치된 데스크톱 앱과 연결된 외부 AI는 테넌트 도메인으로 로그인하므로 둘 다 받아야 한다.
+   * 서명 키는 같은 테넌트의 것이라 하나다(JWKS는 테넌트 도메인에서 받는다).
+   */
+  /**
+   * 새로 연결하는 외부 AI에 알려 주는 로그인 주소. 자체 로그인 주소가 있으면 그것(첫 번째), 없으면 테넌트 도메인.
+   * 이미 연결된 클라이언트는 테넌트 도메인에서 받은 토큰을 계속 쓰고, 서버는 둘 다 받는다.
+   */
+  getAdvertisedIssuer(): string | null {
+    return this.getAcceptedIssuers().at(1) ?? this.getIssuer();
+  }
+
+  private getAcceptedIssuers(): string[] {
+    const primary = this.getIssuer();
+    if (!primary) return [];
+    const extra = (this.config.get<string>('AUTH0_CUSTOM_DOMAINS') ?? '')
+      .split(',')
+      .map((domain) =>
+        domain
+          .trim()
+          .replace(/^https?:\/\//, '')
+          .replace(/\/+$/, ''),
+      )
+      .filter(Boolean)
+      .map((domain) => `https://${domain}/`);
+    return [primary, ...extra];
+  }
+
   async verifyAccessToken(
     token: string,
     options: VerifyAccessTokenOptions = {},
@@ -160,7 +190,12 @@ export class Auth0TokenVerifier {
       throw unauthorized('지원하지 않는 토큰 서명 방식입니다.');
     }
     // 서명 키를 받으러 가기 전에 발급자부터 본다. 남의 토큰으로 JWKS 요청을 유발하지 않게 한다.
-    if (payload.iss !== issuer) throw unauthorized('토큰 발급자가 다릅니다.');
+    if (
+      typeof payload.iss !== 'string' ||
+      !this.getAcceptedIssuers().includes(payload.iss)
+    ) {
+      throw unauthorized('토큰 발급자가 다릅니다.');
+    }
 
     const key = await this.getSigningKey(header.kid, issuer);
     const signatureValid = verifySignature(
