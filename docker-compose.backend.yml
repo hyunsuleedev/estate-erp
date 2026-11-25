@@ -15,6 +15,9 @@ services:
       PORT: "3000"
       # 이 컨테이너가 외부 AI에 알리는 MCP 주소(= Auth0 MCP API 식별자). apps/server/.env의 로컬 값(3000)을 덮어쓴다.
       MCP_RESOURCE_URL: http://localhost:3001/mcp
+      # 계약 당사자 암호화 키. 이미지가 NODE_ENV=production으로 떠서 없으면 서버가 뜨지 않는다.
+      # 로컬 전용 값이다(예전의 개발용 기본 키와 같아 이미 저장된 로컬 데이터를 그대로 읽는다). 운영 값은 EC2의 .env.prod에만 둔다.
+      CONTRACT_PARTY_CRYPTO_KEY: dev-contract-party-crypto-key-change-in-production
     ports:
       - "127.0.0.1:3001:3000"
     depends_on:

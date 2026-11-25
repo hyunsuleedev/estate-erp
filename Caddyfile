@@ -1,0 +1,23 @@
+# 운영 서버의 HTTPS 입구. 도메인은 EC2의 .env에 적힌 API_DOMAIN(api.estaitt.com 또는 시험용 api-dev.estaitt.com).
+# 인증서는 Caddy가 알아서 받고 갱신한다 — 80·443이 열려 있고 DNS가 이 서버의 IP를 가리켜야 한다
+# (Cloudflare를 쓰면 프록시를 끈 "DNS only"로).
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	# NestJS 서버. Socket.io(WebSocket)와 MCP의 긴 응답도 그대로 지나간다.
+	reverse_proxy server:3000 {
+		# 서버가 다시 뜨는 동안(배포 · 마이그레이션) 잠깐 기다렸다가 넘긴다
+		lb_try_duration 30s
+		lb_try_interval 500ms
+	}
+
+	# 외부 매물 배치 업로드(서버 한도 10MB)에 맞춘 본문 크기
+	request_body {
+		max_size 12MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

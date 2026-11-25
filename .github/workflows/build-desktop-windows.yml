@@ -1,0 +1,143 @@
+name: Build desktop (Windows)
+
+# Windows 설치 파일을 만들고 서명한다(Azure Artifact Signing). 손으로만 돌린다.
+# 결과는 이 실행의 Artifacts에 남는다. 업데이트 주소에 올리는 일은 여기서 하지 않는다.
+#
+# 저장소 변수(Settings › Secrets and variables › Actions › Variables):
+#   ESTATE_ERP_WIN_PUBLISHER_NAME, ESTATE_ERP_WIN_SIGN_ENDPOINT,
+#   ESTATE_ERP_WIN_SIGN_ACCOUNT, ESTATE_ERP_WIN_SIGN_PROFILE      서명(apps/desktop/.env.example)
+#   VITE_API_BASE_URL, VITE_AUTH0_DOMAIN, VITE_AUTH0_CLIENT_ID,
+#   VITE_AUTH0_AUDIENCE, VITE_AUTH0_REALM, VITE_NAVER_MAPS_NCP_KEY_ID   앱에 들어가는 공개 값
+#   ESTATE_ERP_UPDATE_BASE_URL                                    자동 업데이트 주소(없으면 업데이트 없음)
+# 저장소 비밀값(Secrets):
+#   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET         서명 권한이 있는 Entra ID 앱
+
+on:
+  workflow_dispatch:
+    inputs:
+      sign:
+        description: '서명한다 (끄면 서명 없는 시험용 설치 파일)'
+        type: boolean
+        default: true
+
+concurrency:
+  group: build-desktop-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and sign
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      VITE_AUTH0_DOMAIN: ${{ vars.VITE_AUTH0_DOMAIN }}
+      VITE_AUTH0_CLIENT_ID: ${{ vars.VITE_AUTH0_CLIENT_ID }}
+      VITE_AUTH0_AUDIENCE: ${{ vars.VITE_AUTH0_AUDIENCE }}
+      VITE_AUTH0_REALM: ${{ vars.VITE_AUTH0_REALM }}
+      VITE_NAVER_MAPS_NCP_KEY_ID: ${{ vars.VITE_NAVER_MAPS_NCP_KEY_ID }}
+      ESTATE_ERP_UPDATE_BASE_URL: ${{ vars.ESTATE_ERP_UPDATE_BASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: |
+          pnpm --filter @estate-erp/shared build
+          pnpm --filter @estate-erp/api-client build
+
+      # 서명하기로 한 실행에서 값이 빠져 있으면, 서명 없는 설치 파일이 나오기 전에 멈춘다.
+      - name: Check signing settings
+        if: ${{ inputs.sign }}
+        shell: pwsh
+        env:
+          ESTATE_ERP_WIN_PUBLISHER_NAME: ${{ vars.ESTATE_ERP_WIN_PUBLISHER_NAME }}
+          ESTATE_ERP_WIN_SIGN_ENDPOINT: ${{ vars.ESTATE_ERP_WIN_SIGN_ENDPOINT }}
+          ESTATE_ERP_WIN_SIGN_ACCOUNT: ${{ vars.ESTATE_ERP_WIN_SIGN_ACCOUNT }}
+          ESTATE_ERP_WIN_SIGN_PROFILE: ${{ vars.ESTATE_ERP_WIN_SIGN_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          $names = 'ESTATE_ERP_WIN_PUBLISHER_NAME', 'ESTATE_ERP_WIN_SIGN_ENDPOINT',
+                   'ESTATE_ERP_WIN_SIGN_ACCOUNT', 'ESTATE_ERP_WIN_SIGN_PROFILE',
+                   'AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET'
+          $missing = $names | Where-Object { -not [Environment]::GetEnvironmentVariable($_) }
+          if ($missing) {
+            Write-Error "Missing signing settings: $($missing -join ', ')"
+            exit 1
+          }
+
+      # --publish never: CI에서는 electron-builder가 스스로 올리려 한다. 올리는 것은 따로 한다.
+      - name: Build signed installer
+        if: ${{ inputs.sign }}
+        env:
+          ESTATE_ERP_WIN_PUBLISHER_NAME: ${{ vars.ESTATE_ERP_WIN_PUBLISHER_NAME }}
+          ESTATE_ERP_WIN_SIGN_ENDPOINT: ${{ vars.ESTATE_ERP_WIN_SIGN_ENDPOINT }}
+          ESTATE_ERP_WIN_SIGN_ACCOUNT: ${{ vars.ESTATE_ERP_WIN_SIGN_ACCOUNT }}
+          ESTATE_ERP_WIN_SIGN_PROFILE: ${{ vars.ESTATE_ERP_WIN_SIGN_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: pnpm --filter @estate-erp/desktop make --publish never
+
+      - name: Build unsigned installer
+        if: ${{ !inputs.sign }}
+        run: pnpm --filter @estate-erp/desktop make --publish never
+
+      # 서명이 실제로 붙었는지, 그 이름이 앱이 업데이트 때 확인할 이름과 같은지 본다.
+      - name: Verify signatures
+        if: ${{ inputs.sign }}
+        shell: pwsh
+        env:
+          ESTATE_ERP_WIN_PUBLISHER_NAME: ${{ vars.ESTATE_ERP_WIN_PUBLISHER_NAME }}
+        run: |
+          $files = @(Get-ChildItem apps/desktop/dist/*.exe) + @(Get-ChildItem apps/desktop/dist/win-unpacked/*.exe)
+          if ($files.Count -lt 2) { Write-Error 'No installer or app executable found'; exit 1 }
+          $failed = $false
+          foreach ($file in $files) {
+            $sig = Get-AuthenticodeSignature -LiteralPath $file.FullName
+            $subject = $sig.SignerCertificate.Subject
+            Write-Host "$($file.Name): $($sig.Status) / $subject"
+            if ($sig.Status -ne 'Valid') { $failed = $true; continue }
+            $cn = $sig.SignerCertificate.GetNameInfo('SimpleName', $false)
+            if ($cn -ne $env:ESTATE_ERP_WIN_PUBLISHER_NAME) {
+              Write-Host "  publisher mismatch: certificate '$cn', configured '$($env:ESTATE_ERP_WIN_PUBLISHER_NAME)'"
+              $failed = $true
+            }
+            if (-not $sig.TimeStamperCertificate) {
+              Write-Host '  no timestamp: the signature stops being valid when the certificate expires'
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: estaitflow-windows-${{ inputs.sign && 'signed' || 'unsigned' }}-${{ github.sha }}
+          path: |
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.exe.blockmap
+            apps/desktop/dist/latest.yml
+          if-no-files-found: error
+          retention-days: 14

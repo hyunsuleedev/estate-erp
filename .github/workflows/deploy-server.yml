@@ -1,15 +1,8 @@
 name: Deploy server to ECS
 
+# 예전 구성(ECS Fargate · amd64 · 옛 AWS 계정)의 배포다. 운영은 EC2 한 대로 옮겼고 scripts/deploy-server.sh로 배포한다
+# (docs/DEPLOY.md). main에 올릴 때 자동으로 돌지 않게 손으로 실행할 때만 남겨 두었다.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/server/**'
-      - 'packages/shared/**'
-      - 'prisma/**'
-      - 'pnpm-lock.yaml'
-      - 'apps/server/Dockerfile'
-      - '.github/workflows/deploy-server.yml'
   workflow_dispatch:
 
 # 동시 실행 방지 — 직전 배포가 끝나기 전 새 push가 오면 큐잉

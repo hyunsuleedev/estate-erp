@@ -20,6 +20,8 @@ out
 **/.env
 **/.env.local
 **/.env.*.local
+.env.*
+**/.env.*
 !**/.env.example
 
 # Git / IDE

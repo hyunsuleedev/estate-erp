@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대시보드 시안 C — 거래 흐름판</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+/* C: 돈이 되는 일(거래)이 화면의 주인공. 거래마다 다섯 단계 중 어디에 있고 며칠째인지를 한 판에서 본다.
+   지금 화면의 색 화살표 다섯 칸(거래마다 반복)을, 단계가 세로 칸인 표 하나로 바꾼 것. 오늘 일정과 할 일은 왼쪽에 좁게. */
+.grid { display: grid; grid-template-columns: minmax(280px, 320px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.board { --name: minmax(200px, 1.5fr); --next: minmax(150px, 1fr); display: grid; grid-template-columns: var(--name) repeat(5, minmax(72px, 1fr)) var(--next); }
+.board > * { min-width: 0; }
+.boardwrap { overflow-x: auto; }
+.boardwrap .board { min-width: 760px; }
+.bh { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 8px; font-size: 12px; color: var(--fg3); box-shadow: inset 0 -1px 0 var(--line), inset 0 1px 0 var(--line); white-space: nowrap; }
+.bh:first-child { padding-left: 16px; }
+.bh b { font-weight: 500; color: var(--fg); }
+.bh.stage { box-shadow: inset 0 -1px 0 var(--line), inset 0 1px 0 var(--line), inset 1px 0 0 var(--line); }
+.bc { display: flex; align-items: center; height: 52px; box-shadow: inset 0 -1px 0 var(--line); }
+.bc.name { flex-direction: column; align-items: flex-start; justify-content: center; padding-left: 16px; }
+.bc.name b { font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc.name span { font-size: 12px; line-height: 18px; color: var(--fg3); white-space: nowrap; }
+.bc.stage { position: relative; box-shadow: inset 0 -1px 0 var(--line), inset 1px 0 0 var(--line); }
+/* 지나온 단계는 선, 지금 단계는 "며칠째" 알약 */
+.bc.stage.past::before, .bc.stage.cur::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; background: var(--seq-2); }
+.bc.stage.cur::before { right: 50%; }
+.bc.stage.first::before { left: 12px; }
+.chip { position: relative; margin: 0 auto; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 11px; background: var(--blue); color: #fff; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.chip.stall { background: var(--red); }
+.chip.done { background: var(--green); }
+.bc.next { padding: 0 12px 0 12px; flex-direction: column; align-items: flex-start; justify-content: center; box-shadow: inset 0 -1px 0 var(--line), inset 1px 0 0 var(--line); }
+.bc.next b { font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc.next span { font-size: 12px; line-height: 18px; color: var(--fg3); }
+.bc.next span.hot { color: var(--red); font-weight: 500; }
+.rowhover { display: contents; }
+@media (hover: hover) { .rowhover:hover > .bc { background: var(--hover); } }
+.boardfoot { display: flex; align-items: center; gap: 12px; padding: 10px 16px; font-size: 12px; color: var(--fg3); }
+.boardfoot i { display: inline-block; width: 8px; height: 8px; border-radius: 4px; margin-right: 5px; }
+
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.newsrow { display: flex; gap: 10px; padding: 9px 16px; align-items: baseline; }
+.newsrow + .newsrow { box-shadow: inset 0 1px 0 var(--line); }
+.newsrow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@container main (max-width: 940px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+@container main (max-width: 620px) { .two { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<script src="shared.js"></script>
+<script>
+const late = lateTasks(), today = todayTasks();
+const deals = [...D.deals].sort((a, b) => Number(!!b.stall) - Number(!!a.stall) || b.stage - a.stage);
+const counts = D.stages.map((_, i) => D.deals.filter((d) => d.stage === i).length);
+const dealCells = (d) => {
+  const hot = d.due && d.due.startsWith('오늘');
+  const stageCells = D.stages.map((s, i) => {
+    const cls = i < d.stage ? 'past' : i === d.stage ? 'cur' : '';
+    const chip = i === d.stage ? `<span class="chip ${d.stall ? 'stall' : d.stage === 4 ? 'done' : ''} num">${d.days}일째</span>` : '';
+    return `<div class="bc stage ${cls} ${i === 0 ? 'first' : ''}" ${i === d.stage ? `data-tip="${esc(`<b>${s}</b> ${d.days}일째${d.stall ? ' <span>· 2주 넘게 그대로</span>' : ''}`)}"` : ''}>${chip}</div>`;
+  }).join('');
+  return `<div class="rowhover"><div class="bc name"><b>${esc(d.name)}</b><span>${d.type} ${d.price}만 · ${d.who}</span></div>${stageCells}<div class="bc next"><b>${esc(d.next)}</b><span class="${hot ? 'hot' : ''} num">${d.due ?? (d.stall ? '날짜 없음' : '')}</span></div></div>`;
+};
+const taskRow = (t) => `<li class="row act"><button class="check" aria-label="${esc(t.t)} 완료"></button><span class="t">${esc(t.t)}</span><span class="end ${t.late > 0 ? 'late' : ''} num">${dueText(t)}</span></li>`;
+
+mountShell(`
+<div class="grid">
+  <div class="col">
+    ${scheduleCardHtml()}
+    <section class="panel">
+      <div class="ph">${ic('list')}<h2>할 일</h2><div class="tabs" id="ttabs"><button class="on" data-k="late">지남 <span class="num">${late.length}</span></button><button data-k="today">오늘 <span class="num">${today.length}</span></button></div><span class="sp"></span><button class="btn ghost">업무 ${ic('arrow')}</button></div>
+      <ul id="tasks"></ul>
+    </section>
+  </div>
+  <div class="col">
+    <section class="panel">
+      <div class="ph">${ic('hand')}<h2>진행 중인 거래 <span class="cnt num">${D.deals.length}</span></h2><span class="sub">· 2건이 2주 넘게 같은 단계입니다</span><span class="sp"></span><button class="btn ghost">거래관리 ${ic('arrow')}</button></div>
+      <div class="boardwrap"><div class="board" role="table" aria-label="거래별 단계">
+        <div class="bh">거래</div>
+        ${D.stages.map((s, i) => `<div class="bh stage"><b>${s}</b><span class="num">${counts[i]}</span></div>`).join('')}
+        <div class="bh stage">다음 할 일</div>
+        ${deals.map(dealCells).join('')}
+      </div></div>
+      <div class="boardfoot"><span><i style="background:var(--blue)"></i>진행 중</span><span><i style="background:var(--red)"></i>2주 넘게 그대로</span><span><i style="background:var(--green)"></i>잔금 완료</span><span style="margin-left:auto">알약의 숫자는 그 단계에 머문 날</span></div>
+    </section>
+    <div class="two">
+      <section class="panel"><div class="ph">${ic('bell')}<h2>공지사항</h2></div>${D.notices.map((n) => `<div class="newsrow">${n.must ? '<span class="tag amber">필독</span>' : ''}<span class="t">${esc(n.t)}</span><span class="sub num">${n.at}</span></div>`).join('')}</section>
+      <section class="panel"><div class="ph">${ic('news')}<h2>부동산 뉴스</h2></div>${D.news.slice(0, 3).map((n) => `<div class="newsrow"><span class="t">${esc(n.t)}</span><span class="sub">${n.at}</span></div>`).join('')}</section>
+    </div>
+  </div>
+</div>`);
+bindSchedule();
+const lists = { late: late.slice(0, 6), today };
+const drawTasks = (k) => { document.getElementById('tasks').innerHTML = lists[k].map(taskRow).join('') + (k === 'late' ? `<li class="row"><span class="sub">3건 더</span></li>` : ''); };
+drawTasks('late');
+document.getElementById('ttabs').addEventListener('pick', (e) => drawTasks(e.target.closest('button').dataset.k));
+</script>
+</body>
+</html>
