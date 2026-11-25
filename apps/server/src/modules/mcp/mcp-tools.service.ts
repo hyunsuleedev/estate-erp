@@ -1714,48 +1714,40 @@ export class McpToolsService {
 
     this.add(
       'create_deal',
-      '새 거래를 시작합니다. matchId를 주면 그 매칭이 "거래 전환" 단계로 넘어갑니다(화면의 거래 전환과 같습니다).',
+      '새 거래를 시작합니다. 화면의 거래 전환 창에서 "확정"을 누르는 것과 같으므로, 거래 유형·합의 금액·매수인(임차인)·매도인(임대인)을 사용자에게 확인받은 뒤 부릅니다. matchId를 주면 그 매칭이 "거래 전환" 단계로 함께 넘어가고, 당사자를 비우면 매칭의 손님과 물건의 대표 소유자로 채웁니다.',
       obj(
         {
           listingId: str('매물 ID'),
-          matchId: str('매칭 ID'),
+          matchId: str('매칭 ID (이 매물의 매칭이어야 합니다)'),
           transactionType: strEnum('거래 유형', ['sale', 'jeonse', 'monthly']),
           agreedPrice: num('합의된 거래가 / 전세금 (만원)'),
           agreedDeposit: num('합의된 보증금 (만원, 월세)'),
           agreedMonthlyRent: num('합의된 월세 (만원)'),
+          buyerContactId: str('매수인·임차인 연락처 ID'),
+          sellerContactId: str('매도인·임대인 연락처 ID'),
           specialTerms: str('특약'),
           memo: str('메모'),
         },
         ['listingId'],
       ),
-      async (a, c) => {
-        const deal = await this.deals.create(c.officeId, {
-          listingId: a.listingId as string,
-          matchId: a.matchId as string | undefined,
-          transactionType: a.transactionType as string | undefined,
-          agreedPrice: a.agreedPrice as number | undefined,
-          agreedDeposit: a.agreedDeposit as number | undefined,
-          agreedMonthlyRent: a.agreedMonthlyRent as number | undefined,
-          specialTerms: a.specialTerms as string | undefined,
-          memo: a.memo as string | undefined,
-        },
-        // 만든 사람을 넘겨야 거래의 담당이 채워진다(비면 직원 정산에 "담당이 정해지지 않음"으로 나온다).
-        c.userId ? { userId: c.userId, role: c.role ?? 'agent' } : undefined,
-        );
-        // 화면은 거래를 만든 뒤 매칭을 "거래 전환"으로 넘긴다. 도구도 같게 한다 — 안 하면 거래는 진행 중인데 매칭은 예전 단계에 남는다.
-        if (a.matchId) {
-          try {
-            await this.matches.updateStage(a.matchId as string, c.officeId, { stage: MatchStage.DEAL_CREATED });
-          } catch (err) {
-            // 거래는 이미 만들어졌다. 여기서 던지면 AI가 실패로 알고 거래를 또 만든다 — 거래를 돌려주고 남은 일을 알려 준다.
-            return {
-              ...deal,
-              matchStageNote: `거래는 만들었지만 매칭을 "거래 전환"으로 옮기지 못했습니다: ${formatToolError(err)} update_match_stage로 다시 옮겨 주세요.`,
-            };
-          }
-        }
-        return deal;
-      },
+      (a, c) =>
+        this.deals.create(
+          c.officeId,
+          {
+            listingId: a.listingId as string,
+            matchId: a.matchId as string | undefined,
+            transactionType: a.transactionType as string | undefined,
+            agreedPrice: a.agreedPrice as number | undefined,
+            agreedDeposit: a.agreedDeposit as number | undefined,
+            agreedMonthlyRent: a.agreedMonthlyRent as number | undefined,
+            buyerContactId: a.buyerContactId as string | undefined,
+            sellerContactId: a.sellerContactId as string | undefined,
+            specialTerms: a.specialTerms as string | undefined,
+            memo: a.memo as string | undefined,
+          },
+          // 만든 사람을 넘겨야 거래의 담당이 채워진다(비면 직원 정산에 "담당이 정해지지 않음"으로 나온다).
+          c.userId ? { userId: c.userId, role: c.role ?? 'agent' } : undefined,
+        ),
     );
 
     this.add(
@@ -1977,7 +1969,7 @@ export class McpToolsService {
 
     this.add(
       'update_match_stage',
-      '매칭 단계를 변경합니다.',
+      '매칭 단계를 변경합니다. "거래 전환"(dealCreated)은 이 도구로 올리지 않습니다 — 그 값을 주면 확인할 거래 조건(dealDraft)을 돌려주니, 사용자에게 확인받고 create_deal에 matchId를 넣어 거래를 만드세요. 그러면 매칭이 함께 넘어갑니다.',
       obj(
         {
           id: str('매칭 ID'),

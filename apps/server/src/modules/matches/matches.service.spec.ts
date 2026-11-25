@@ -418,3 +418,43 @@ describe('MatchesService closed buyer intake', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
+
+describe('MatchesService deal-created stage', () => {
+  it('refuses to move a match to dealCreated without a linked deal and returns the terms to confirm', async () => {
+    const match = buildMatch('negotiating');
+    const { service, prisma } = setup({
+      ...match,
+      agreedPrice: 156000,
+      listing: { ...match.listing, transactionType: 'sale', price: 158000 },
+    } as never);
+
+    const error = await service
+      .updateStage('match-1', 'office-1', { stage: 'dealCreated' })
+      .catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as ConflictException).getResponse()).toMatchObject({
+      dealDraft: {
+        matchId: 'match-1',
+        listingId: 'listing-1',
+        transactionType: 'sale',
+        agreedPrice: 156000,
+        priceSource: 'match',
+      },
+    });
+    expect(prisma.match.update).not.toHaveBeenCalled();
+  });
+
+  it('lets a match catch up to dealCreated when its deal already exists', async () => {
+    const { service, prisma } = setup({
+      ...buildMatch('negotiating'),
+      deals: [{ id: 'deal-1', stage: 'preparing', isCancelled: false, createdAt: new Date() }],
+    } as never);
+
+    await service.updateStage('match-1', 'office-1', { stage: 'dealCreated' });
+
+    expect(prisma.match.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ stage: 'dealCreated' }) }),
+    );
+  });
+});

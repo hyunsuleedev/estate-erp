@@ -17,6 +17,7 @@ import {
   MatchStage,
   NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
   normalizeDealStage,
+  normalizeMatchStage,
   OCCUPYING_DEAL_STAGES,
   siteTypeToCommissionKind,
   TransactionType,
@@ -675,6 +676,82 @@ export class DealsService {
     return intake.id;
   }
 
+  /**
+   * 거래로 넘기는 매칭을 확인하고, 화면의 거래 전환 창이 미리 채우는 당사자(매칭의 손님 · 물건의 대표 소유자)를 읽는다.
+   * 받은 matchId를 그대로 저장하면 다른 매물의 매칭이 거래에 붙을 수 있으므로 같은 매물의 매칭인지 본다.
+   */
+  private async resolveSourceMatch(
+    officeId: string,
+    matchId: string,
+    listingId: string | null | undefined,
+  ): Promise<{ buyerContactId: string | null; sellerContactId: string | null }> {
+    if (!UUID_PATTERN.test(matchId)) {
+      throw new BadRequestException('매칭을 다시 골라 주세요.');
+    }
+    const match = await this.prisma.match.findFirst({
+      where: { id: matchId, officeId },
+      select: {
+        listingId: true,
+        stage: true,
+        buyerRequirement: {
+          select: {
+            status: true,
+            buyerIntake: {
+              select: {
+                lifecycleStatus: true,
+                contacts: {
+                  select: { contactId: true },
+                  orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+        listing: {
+          select: {
+            property: {
+              select: {
+                propertyContacts: {
+                  where: {
+                    status: 'active',
+                    role: { in: ['owner', 'co_owner', 'representative'] },
+                  },
+                  select: { contactId: true },
+                  orderBy: { isPrimary: 'desc' },
+                  take: 1,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!match) throw new NotFoundException('매칭을 찾을 수 없습니다.');
+    if (match.listingId !== listingId) {
+      throw new BadRequestException('이 매물의 매칭이 아닙니다. 매칭을 다시 골라 주세요.');
+    }
+    // 종료한 매칭을 거래가 조용히 되살리지 않는다. 다시 진행하려면 사람이 먼저 매칭을 연다.
+    if (normalizeMatchStage(match.stage) === MatchStage.CLOSED) {
+      throw new ConflictException('종료한 매칭입니다. 매칭을 다시 연 뒤 거래를 만들어 주세요');
+    }
+    // 매칭 단계를 바꿀 때와 같은 기준: 완료한 손님 · 종료한 구매 의뢰의 매칭은 다시 진행하지 않는다
+    if (match.buyerRequirement.status === 'completed') {
+      throw new ConflictException(
+        '완료한 희망 조건의 매칭입니다. 고객 상태를 활성으로 바꾼 뒤 다시 시작해 주세요',
+      );
+    }
+    if (match.buyerRequirement.buyerIntake.lifecycleStatus === IntakeLifecycleStatus.CLOSED) {
+      throw new ConflictException(
+        '종료한 구매 의뢰의 매칭입니다. 구매 의뢰를 다시 연 뒤 진행해 주세요',
+      );
+    }
+    return {
+      buyerContactId: match.buyerRequirement.buyerIntake.contacts[0]?.contactId ?? null,
+      sellerContactId: match.listing.property?.propertyContacts[0]?.contactId ?? null,
+    };
+  }
+
   async create(
     officeId: string,
     dto: {
@@ -713,6 +790,14 @@ export class DealsService {
     this.assertValidTransactionType(transactionType);
 
     const ourSide = dto.ourSide ?? 'both';
+
+    // 매칭에서 넘어온 거래: 당사자를 안 받았으면 매칭의 손님과 물건의 대표 소유자로 채운다.
+    // (화면의 전환 창은 이 값을 보내지만 MCP는 보내지 않아 거래와 수수료 청구의 납부자가 비었다)
+    const sourceMatch = dto.matchId
+      ? await this.resolveSourceMatch(officeId, dto.matchId, listingId)
+      : null;
+    const buyerContactId = dto.buyerContactId ?? sourceMatch?.buyerContactId ?? undefined;
+    const sellerContactId = dto.sellerContactId ?? sourceMatch?.sellerContactId ?? undefined;
 
     const deal = await this.prisma.$transaction(async (tx) => {
       if (intakeId) {
@@ -796,8 +881,8 @@ export class DealsService {
           agreedMonthlyRent: dto.agreedMonthlyRent,
           agreedMoveInDate: agreedMoveInDate ?? undefined,
           specialTerms: dto.specialTerms,
-          buyerContactId: dto.buyerContactId,
-          sellerContactId: dto.sellerContactId,
+          buyerContactId,
+          sellerContactId,
           isJointBrokerage: dto.isJointBrokerage ?? false,
           ourSide,
           partnerBrokerId: dto.isJointBrokerage ? dto.partnerBrokerId : undefined,
@@ -828,12 +913,36 @@ export class DealsService {
         agreedPrice: dto.agreedPrice,
         agreedDeposit: dto.agreedDeposit,
         agreedMonthlyRent: dto.agreedMonthlyRent,
-        buyerContactId: dto.buyerContactId,
-        sellerContactId: dto.sellerContactId,
+        buyerContactId,
+        sellerContactId,
         isJointBrokerage: dto.isJointBrokerage ?? false,
         ourSide,
         partnerBrokerId: dto.partnerBrokerId,
       });
+
+      // "거래 전환"은 사람이 올리는 단계가 아니라 거래가 연결됐다는 사실이다. 거래를 만드는 자리에서 함께 옮긴다
+      // (따로 부르게 두면 거래는 있는데 매칭은 예전 단계에 남는다).
+      if (dto.matchId) {
+        // 앞의 확인과 이 자리 사이에 매칭이 종료될 수 있다(다른 직원의 종료, 다른 거래의 본계약으로 인한 자동 종료).
+        // 조건을 붙여 옮기고, 옮기지 못했으면 거래까지 되돌린다 — 종료 이유를 지우며 되살리지 않는다.
+        const moved = await tx.match.updateMany({
+          where: {
+            id: dto.matchId,
+            officeId,
+            stage: { not: MatchStage.CLOSED },
+            buyerRequirement: {
+              status: { not: 'completed' },
+              buyerIntake: { lifecycleStatus: { not: IntakeLifecycleStatus.CLOSED } },
+            },
+          },
+          data: { stage: MatchStage.DEAL_CREATED },
+        });
+        if (moved.count === 0) {
+          throw new ConflictException(
+            '그사이 매칭이 종료되어 거래를 만들지 않았습니다. 매칭을 확인한 뒤 다시 시도해 주세요',
+          );
+        }
+      }
 
       return tx.deal.findUnique({
         where: { id: created.id },

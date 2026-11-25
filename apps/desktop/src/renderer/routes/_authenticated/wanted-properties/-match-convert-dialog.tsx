@@ -138,9 +138,10 @@ export function MatchConvertDialog({
           sellerContactId: getPrimaryOwnerContact(match.listing)?.id,
         });
         dealId = created.id;
+      } else {
+        // 거래는 이미 이 매칭에 연결돼 있는데 단계만 예전에 남은 경우. 새 거래는 서버가 만들면서 단계도 함께 옮긴다.
+        await api.matches.updateStage(match.id, { stage: MatchStage.DEAL_CREATED });
       }
-
-      await api.matches.updateStage(match.id, { stage: MatchStage.DEAL_CREATED });
       return dealId;
     },
     onSuccess: (dealId) => {

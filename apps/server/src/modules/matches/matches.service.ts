@@ -260,6 +260,20 @@ export class MatchesService {
         '거래로 전환한 매칭이라 단계를 바꿀 수 없습니다. 진행은 거래관리에서 해 주세요',
       );
     }
+    // "거래 전환"은 손으로 올리는 단계가 아니다. 이 매칭에서 거래를 만들면 그 자리에서 함께 옮겨진다(DealsService.create).
+    // 여기서 받는 것은 거래가 이미 이 매칭에 연결돼 있는데 단계만 예전에 남은 경우뿐이다.
+    if (
+      targetStage === MatchStage.DEAL_CREATED &&
+      currentStage !== MatchStage.DEAL_CREATED &&
+      !currentMatch.deals.some((deal) => !deal.isCancelled)
+    ) {
+      throw new ConflictException({
+        message:
+          '거래를 만들면 매칭이 거래 전환 단계로 넘어갑니다. 아래 조건을 확인한 뒤 거래를 만들어 주세요',
+        // 화면의 거래 전환 창이 미리 채워 보여 주는 값. MCP에서는 AI가 사용자에게 확인받고 create_deal(matchId 포함)을 부른다.
+        dealDraft: this.dealDraftFor(currentMatch),
+      });
+    }
     const currentIndex = MATCH_STAGE_ORDER.indexOf(
       currentStage as (typeof MATCH_STAGE_ORDER)[number],
     );
@@ -435,6 +449,30 @@ export class MatchesService {
   async remove(id: string, officeId: string) {
     await this.findOne(id, officeId);
     return this.prisma.match.delete({ where: { id } });
+  }
+
+  /** 거래 전환 창이 미리 채우는 값: 적어 둔 합의 조건, 없으면 매물 가격. 당사자는 매칭의 손님과 물건의 대표 소유자. */
+  private dealDraftFor(match: ReturnType<MatchesService['withPropertyContext']>) {
+    const listing = match.listing;
+    const isMonthly = listing.transactionType === 'monthly';
+    const owner = listing.property.propertyContacts.find((entry) =>
+      ['owner', 'co_owner', 'representative'].includes(entry.role),
+    );
+    const buyer = match.buyerRequirement?.contact as { name?: string } | null | undefined;
+    return {
+      matchId: match.id,
+      listingId: match.listingId,
+      transactionType: listing.transactionType,
+      agreedPrice: isMonthly ? null : (match.agreedPrice ?? listing.price ?? listing.deposit ?? null),
+      agreedDeposit: isMonthly ? (match.agreedDeposit ?? listing.deposit ?? null) : null,
+      agreedMonthlyRent: isMonthly ? (match.agreedMonthlyRent ?? listing.monthlyRent ?? null) : null,
+      agreedMoveInDate: match.agreedMoveInDate ?? null,
+      priceSource: match.agreedPrice != null || match.agreedDeposit != null ? 'match' : 'listing',
+      buyerContactId: match.buyerRequirement?.contactId ?? null,
+      buyerName: buyer?.name ?? null,
+      sellerContactId: owner?.contactId ?? null,
+      sellerName: owner?.contact?.name ?? null,
+    };
   }
 
   private withPropertyContext(match: MatchWithRelations) {
