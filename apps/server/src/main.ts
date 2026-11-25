@@ -10,6 +10,14 @@ import { RedisIoAdapter } from './realtime/redis-io.adapter';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // 리버스 프록시(운영: Caddy) 뒤에서는 모든 요청이 프록시의 IP로 보인다. 그대로 두면 IP당 요청 제한
+  // (ThrottlerGuard)이 모든 사용자를 한 사람으로 센다. 앞에 선 프록시 수만큼만 X-Forwarded-For를 믿는다.
+  // 프록시 없이 직접 받는 환경(로컬)에서는 0이라 그 머리글을 믿지 않는다(믿으면 IP를 속여 제한을 피할 수 있다).
+  const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+  if (Number.isInteger(trustProxyHops) && trustProxyHops > 0) {
+    app.set('trust proxy', trustProxyHops);
+  }
+
   if (process.env.REDIS_URL) {
     const redisIoAdapter = new RedisIoAdapter(app);
     await redisIoAdapter.connectToRedis(process.env.REDIS_URL);

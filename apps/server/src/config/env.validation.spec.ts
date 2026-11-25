@@ -13,6 +13,7 @@ const production = {
   AUTH0_MGMT_CLIENT_SECRET: 'mgmt-secret',
   AUTH0_EVENT_SECRET: 'event-secret',
   AUTH0_STAFF_CLIENT_IDS: 'desktop-client',
+  CONTRACT_PARTY_CRYPTO_KEY: 'contract-party-key',
 };
 
 describe('validateEnv', () => {
@@ -49,6 +50,7 @@ describe('validateEnv', () => {
       'AUTH0_MGMT_CLIENT_SECRET',
       'AUTH0_EVENT_SECRET',
       'AUTH0_STAFF_CLIENT_IDS',
+      'CONTRACT_PARTY_CRYPTO_KEY',
     ]) {
       expect(() => validateEnv({ ...production, [key]: ' ' })).toThrow(key);
     }

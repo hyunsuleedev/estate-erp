@@ -417,6 +417,14 @@ export function buildContractDocumentEngineDraft({
     ...documentFields,
     ...(shouldUpgradeLegacyDefault ? { bodyText: defaultBodyText } : {}),
   };
+  // 예전에 저장된 문서에는 당사자 호칭 자리에 코드값(seller · buyer)이, 전화번호에 숫자만 들어 있을 수 있다.
+  // 문서를 열 때 계약서에 찍을 꼴로 맞춘다(거래유형에 맞는 호칭은 defaults가 알고 있다). 코드값이 아닌 호칭은
+  // 사람이 정한 것이라 그대로 둔다.
+  fields.partyOneRole = storedPartyRole(fields.partyOneRole, defaults.partyOneRole);
+  fields.partyTwoRole = storedPartyRole(fields.partyTwoRole, defaults.partyTwoRole);
+  // 전화번호는 뜻이 바뀌지 않는 표기(하이픈)만 맞춘다. 숫자만 적힌 국내 번호가 아니면 그대로다.
+  fields.partyOnePhone = printedPhone(fields.partyOnePhone);
+  fields.partyTwoPhone = printedPhone(fields.partyTwoPhone);
 
   if (contract.transactionType === 'yearly' && fields.annualRent) {
     fields.monthlyRentText = fields.annualRent;
@@ -851,14 +859,14 @@ export function convertResidentialSaleAgreementToEngineFields(
     set('partyOneName', seller.name);
     set('partyOneIdNumber', seller.identificationNoMasked);
     set('partyOneAddress', seller.address);
-    set('partyOnePhone', seller.phone);
+    set('partyOnePhone', printedPhone(seller.phone));
   }
   const buyer = agreement.buyers[0];
   if (buyer) {
     set('partyTwoName', buyer.name);
     set('partyTwoIdNumber', buyer.identificationNoMasked);
     set('partyTwoAddress', buyer.address);
-    set('partyTwoPhone', buyer.phone);
+    set('partyTwoPhone', printedPhone(buyer.phone));
   }
 
   // 중개사무소
@@ -1270,22 +1278,22 @@ function buildDefaultFields(
       property?.unit?.exclusiveAreaM2,
       property?.unit?.supplyAreaM2,
     ),
-    partyOneRole: partyOne?.role || partyRoles.one,
+    partyOneRole: printedPartyRole(partyOne?.role, partyRoles.one),
     partyOneName: partyOne ? (partyOne.name ?? '') : (seller?.name ?? ''),
     partyOneAddress: partyOne
       ? (partyOne.address ?? '')
       : (seller?.address ?? ''),
-    partyOnePhone: partyOne
-      ? partyOne.mobilePhone || partyOne.phone || ''
-      : (seller?.phone ?? ''),
-    partyTwoRole: partyTwo?.role || partyRoles.two,
+    partyOnePhone: printedPhone(
+      partyOne ? partyOne.mobilePhone || partyOne.phone || '' : getEngineContactPhone(seller),
+    ),
+    partyTwoRole: printedPartyRole(partyTwo?.role, partyRoles.two),
     partyTwoName: partyTwo ? (partyTwo.name ?? '') : (buyer?.name ?? ''),
     partyTwoAddress: partyTwo
       ? (partyTwo.address ?? '')
       : (buyer?.address ?? ''),
-    partyTwoPhone: partyTwo
-      ? partyTwo.mobilePhone || partyTwo.phone || ''
-      : (buyer?.phone ?? ''),
+    partyTwoPhone: printedPhone(
+      partyTwo ? partyTwo.mobilePhone || partyTwo.phone || '' : getEngineContactPhone(buyer),
+    ),
     transactionTypeText: getTransactionTypeLabel(contract.transactionType),
     totalPriceText: formatManwon(contract.totalPrice),
     totalPriceHangulText: formatAmountWithWonSafe(contract.totalPrice),
@@ -1803,8 +1811,9 @@ function buildPartyRows(
   }
 
   const sideLabels: Record<string, string> = {
-    one: fields.partyOneRole || '갑',
-    two: fields.partyTwoRole || '을',
+    // 예전에 저장된 문서에는 호칭 자리에 코드값(seller · buyer)이 들어 있을 수 있다 — 찍을 때 호칭으로 바꾼다
+    one: printedPartyRole(fields.partyOneRole) || '갑',
+    two: printedPartyRole(fields.partyTwoRole) || '을',
   };
 
   const sideCounts: Record<string, number> = {};
@@ -1821,18 +1830,17 @@ function buildPartyRows(
     if (party.side === 'office') {
       officeIndex += 1;
       rows.push({
-        label:
-          party.role ||
-          (officeIndex === 1
-            ? '개업공인중개사'
-            : `공동중개 ${officeIndex - 1}`),
+        label: printedPartyRole(
+          party.role,
+          officeIndex === 1 ? '개업공인중개사' : `공동중개 ${officeIndex - 1}`,
+        ),
         value: formatOfficePartyLine(party),
       });
       continue;
     }
 
     sideIndices[party.side] = (sideIndices[party.side] ?? 0) + 1;
-    const baseLabel = party.role || sideLabels[party.side] || party.side;
+    const baseLabel = printedPartyRole(party.role, sideLabels[party.side] || party.side);
     const label =
       (sideCounts[party.side] ?? 0) > 1
         ? `${baseLabel} ${sideIndices[party.side]}`
@@ -1866,7 +1874,7 @@ function formatPartyLine(party: ContractDocumentEngineParty): string {
       party.name,
       party.idNumber,
       party.address,
-      party.mobilePhone || party.phone,
+      printedPhone(party.mobilePhone || party.phone),
       party.sharePercent ? `지분 ${party.sharePercent}` : null,
     ]
       .filter(Boolean)
@@ -1881,7 +1889,7 @@ function formatOfficePartyLine(party: ContractDocumentEngineParty): string {
       party.officeRegNo ? `등록번호 ${party.officeRegNo}` : null,
       party.name ? `대표 ${party.name}` : null,
       party.address,
-      party.mobilePhone || party.phone,
+      printedPhone(party.mobilePhone || party.phone),
     ]
       .filter(Boolean)
       .join(' / ') || '-'
@@ -2044,6 +2052,57 @@ function readStringArray(value: unknown): string[] | undefined {
  * documents-legacy-spec §2.1 (e) 표).
  * 엔진 기본 partyOne/TwoRole 과 파티 에디터(apps/*)가 같은 매핑을 공유한다.
  */
+/** 당사자 기록의 역할 코드값과 계약서에 찍는 호칭. 거래유형을 모를 때(이미 저장된 값을 찍을 때)만 쓴다. */
+const PARTY_ROLE_CODE_LABELS: Record<string, string> = {
+  seller: '매도인',
+  buyer: '매수인',
+  lessor: '임대인',
+  landlord: '임대인',
+  lessee: '임차인',
+  tenant: '임차인',
+  transferor: '양도인',
+  transferee: '양수인',
+};
+
+/**
+ * 계약서에 찍는 당사자의 호칭. 당사자 기록의 role에는 코드값(seller · buyer · lessor …)이 들어 있을 수 있는데,
+ * 그대로 찍으면 계약서에 "seller 홍길동"이 나온다. 값이 **정확히 그 코드값일 때만** 거래유형에 맞는 호칭
+ * (sideLabel: 매도인 · 임대인 …)으로 바꾸고, 그것을 모르면 코드값의 뜻으로 바꾼다.
+ * 그 밖의 글은 사람이 정한 호칭이다 — 영문("Seller", "Lessor Ltd")이든 한 글자("갑")든 손대지 않는다.
+ * 비어 있으면 sideLabel을 쓴다.
+ */
+function printedPartyRole(role: string | null | undefined, sideLabel?: string): string {
+  const text = role?.trim();
+  if (!text) return sideLabel ?? '';
+  if (!Object.prototype.hasOwnProperty.call(PARTY_ROLE_CODE_LABELS, text)) return text;
+  return sideLabel || PARTY_ROLE_CODE_LABELS[text];
+}
+
+/**
+ * 이미 저장된 문서의 호칭을 열 때 맞춘다. 코드값이 그대로 저장된 것만 고치고, 그 밖의 값은 — 사람이 비워 둔 것까지 —
+ * 저장된 그대로 둔다(다시 열었을 때 사용자가 정한 호칭이 바뀌면 안 된다).
+ */
+function storedPartyRole(stored: string | undefined, sideLabel: string): string {
+  if (stored === undefined) return sideLabel;
+  return Object.prototype.hasOwnProperty.call(PARTY_ROLE_CODE_LABELS, stored.trim())
+    ? sideLabel || PARTY_ROLE_CODE_LABELS[stored.trim()]
+    : stored;
+}
+
+/** 계약서에 찍는 전화번호. 숫자만 저장된 국내 번호에 하이픈을 넣는다(010-1234-5678, 02-123-4567). 그 밖의 꼴은 그대로. */
+function printedPhone(phone: string | null | undefined): string {
+  const text = (phone ?? '').trim();
+  if (!/^0\d{8,10}$/.test(text)) return text;
+  if (text.startsWith('02')) {
+    return text.length === 9
+      ? `02-${text.slice(2, 5)}-${text.slice(5)}`
+      : `02-${text.slice(2, 6)}-${text.slice(6)}`;
+  }
+  return text.length === 10
+    ? `${text.slice(0, 3)}-${text.slice(3, 6)}-${text.slice(6)}`
+    : `${text.slice(0, 3)}-${text.slice(3, 7)}-${text.slice(7)}`;
+}
+
 export function getContractPartySideLabels(transactionType: string): {
   one: string;
   two: string;
@@ -2150,7 +2209,7 @@ function getEngineContactPhone(
   contact: ContractDocumentEngineContact | null | undefined,
 ) {
   const primary = contact?.phones?.find((phone) => phone.isPrimary);
-  return primary?.phone ?? contact?.phones?.[0]?.phone ?? contact?.phone ?? '';
+  return printedPhone(primary?.phone ?? contact?.phones?.[0]?.phone ?? contact?.phone ?? '');
 }
 
 function toNullableEngineNumber(value: number | string | null | undefined) {

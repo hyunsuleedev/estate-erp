@@ -58,6 +58,27 @@ export class McpController {
     await transport.handleRequest(req, res, req.body);
   }
 
+  /**
+   * 상태 없는(stateless) 서버라 서버가 먼저 보내는 흐름(GET)과 세션 끝내기(DELETE)가 없다. 규격대로 405로 답한다.
+   * (경로가 아예 없으면 404가 나가, GET으로 먼저 살펴보는 클라이언트가 "MCP 서버가 없다"로 읽는다.)
+   */
+  @Get()
+  getNotAllowed(@Res() res: Response) {
+    this.methodNotAllowed(res);
+  }
+
+  @Delete()
+  deleteNotAllowed(@Res() res: Response) {
+    this.methodNotAllowed(res);
+  }
+
+  private methodNotAllowed(res: Response) {
+    res
+      .status(405)
+      .setHeader('Allow', 'POST')
+      .json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed. Use POST.' }, id: null });
+  }
+
   // --- API Key management (JWT auth only, not API key) ---
 
   @Get('api-key')

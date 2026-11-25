@@ -110,6 +110,8 @@ export class McpAuthGuard implements CanActivate {
       userId: user.userId,
       officeId: user.officeId,
       role: user.role,
+      // 외부 AI가 바꾼 것은 변경 기록에 source = "mcp"로 남는다(.claude/rules/mcp.md)
+      source: 'mcp',
       actor: 'mcp:claude',
     });
   }

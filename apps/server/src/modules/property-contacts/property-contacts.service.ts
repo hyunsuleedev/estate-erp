@@ -11,6 +11,9 @@ import {
   withPrimaryContactPhone,
 } from '../contacts/contact-phone.utils';
 
+/** 매물에 붙는 사람의 역할 (prisma/schema/contact.prisma의 PropertyContact.role) */
+export const PROPERTY_CONTACT_ROLES = ['owner', 'co_owner', 'representative', 'lawyer', 'tax_agent'] as const;
+
 const ACTIVE_PROPERTY_CONTACT_STATUS = 'active';
 const PROPERTY_CONTACT_STATUSES = new Set([
   ACTIVE_PROPERTY_CONTACT_STATUS,
@@ -121,6 +124,13 @@ export class PropertyContactsService {
       memo?: string;
     },
   ) {
+    // 역할은 정해진 값만 받는다. 화면은 고르게 하지만 MCP · API로는 아무 글이나 올 수 있고, 모르는 역할은
+    // 소유자 찾기(owner · co_owner · representative) 같은 조회에서 조용히 빠진다.
+    if (!(PROPERTY_CONTACT_ROLES as readonly string[]).includes(dto.role)) {
+      throw new BadRequestException(
+        `역할 값이 올바르지 않습니다. ${PROPERTY_CONTACT_ROLES.join(' | ')} 중 하나여야 합니다.`,
+      );
+    }
     return this.prisma.$transaction(async (tx) => {
       await this.assertPropertyExists(tx, officeId, dto.propertyId);
       await this.assertContactExists(tx, officeId, dto.contactId);

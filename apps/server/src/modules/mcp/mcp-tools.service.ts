@@ -11,7 +11,9 @@ import {
   IntakeLifecycleStatus,
   ListingAvailability,
   MATCH_STAGE_ORDER,
+  MatchStage,
 } from '@estate-erp/shared';
+import { formatToolError, normalizeDateArgs, validateToolArgs } from './mcp-tool-args';
 import { ListingsService } from '../listings/listings.service';
 import { ListingIntakesService } from '../listing-intakes/listing-intakes.service';
 import { ContactsService } from '../contacts/contacts.service';
@@ -96,6 +98,17 @@ interface ToolEntry {
   handler: ToolHandler;
   requiredScopes: readonly string[];
 }
+
+/**
+ * 시각 칸(…At)에 날짜만 와도 받는 도구. 이 도구들의 서비스는 받은 문자열을 그대로 DB에 넘겨, 날짜만 주면 실패했다.
+ * 날짜만 받는 칸이 있는 도구(계약서 초안의 체결일 등)는 넣지 않는다 — 그쪽은 날짜 문자열 그대로 써야 한다.
+ */
+const DATE_ONLY_AS_TIME_TOOLS: ReadonlySet<string> = new Set([
+  'create_listing_intake',
+  'update_listing_intake',
+  'create_listing_advertisement',
+  'update_listing_advertisement',
+]);
 
 // JSON Schema helpers
 const str = (desc: string) => ({ type: 'string' as const, description: desc });
@@ -238,21 +251,32 @@ export class McpToolsService {
         isError: true,
       };
     }
+    // 손잡이에 닿기 전에 인자를 스키마로 확인한다(필수 id가 빠지면 아무 기록에나 동작하던 문제, mcp-tool-args.ts).
+    const invalid = validateToolArgs(entry.def.inputSchema, args);
+    if (invalid) {
+      return {
+        content: [{ type: 'text', text: `Error: 인자가 올바르지 않습니다 — ${invalid}` }],
+        isError: true,
+      };
+    }
     try {
-      const data = await entry.handler(args, ctx);
+      const data = await entry.handler(
+        DATE_ONLY_AS_TIME_TOOLS.has(toolName) ? normalizeDateArgs(args ?? {}) : (args ?? {}),
+        ctx,
+      );
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(this.redactPrivateFields(data), null, 2),
+            // 들여쓰기 없이 보낸다. 읽는 쪽은 AI라 줄바꿈이 필요 없고, 응답이 절반 가까이 줄어든다.
+            text: JSON.stringify(this.redactPrivateFields(data)),
           },
         ],
         isError: false,
       };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
       return {
-        content: [{ type: 'text', text: `Error: ${message}` }],
+        content: [{ type: 'text', text: `Error: ${formatToolError(err)}` }],
         isError: true,
       };
     }
@@ -702,7 +726,7 @@ export class McpToolsService {
 
     this.add(
       'create_listing_intake',
-      '새 매물 의뢰(ListingIntake) row를 등록합니다. 테스트용 table CRUD 도구이므로 listings는 선택입니다.',
+      '새 매물 의뢰(ListingIntake)를 등록합니다. 거래 조건(listings)은 함께 줘도 되고 나중에 create_listing으로 더해도 됩니다.',
       obj(
         {
           propertyId: str('관리매물 ID'),
@@ -1690,7 +1714,7 @@ export class McpToolsService {
 
     this.add(
       'create_deal',
-      '새 거래를 시작합니다.',
+      '새 거래를 시작합니다. matchId를 주면 그 매칭이 "거래 전환" 단계로 넘어갑니다(화면의 거래 전환과 같습니다).',
       obj(
         {
           listingId: str('매물 ID'),
@@ -1704,8 +1728,8 @@ export class McpToolsService {
         },
         ['listingId'],
       ),
-      async (a, c) =>
-        this.deals.create(c.officeId, {
+      async (a, c) => {
+        const deal = await this.deals.create(c.officeId, {
           listingId: a.listingId as string,
           matchId: a.matchId as string | undefined,
           transactionType: a.transactionType as string | undefined,
@@ -1717,7 +1741,21 @@ export class McpToolsService {
         },
         // 만든 사람을 넘겨야 거래의 담당이 채워진다(비면 직원 정산에 "담당이 정해지지 않음"으로 나온다).
         c.userId ? { userId: c.userId, role: c.role ?? 'agent' } : undefined,
-        ),
+        );
+        // 화면은 거래를 만든 뒤 매칭을 "거래 전환"으로 넘긴다. 도구도 같게 한다 — 안 하면 거래는 진행 중인데 매칭은 예전 단계에 남는다.
+        if (a.matchId) {
+          try {
+            await this.matches.updateStage(a.matchId as string, c.officeId, { stage: MatchStage.DEAL_CREATED });
+          } catch (err) {
+            // 거래는 이미 만들어졌다. 여기서 던지면 AI가 실패로 알고 거래를 또 만든다 — 거래를 돌려주고 남은 일을 알려 준다.
+            return {
+              ...deal,
+              matchStageNote: `거래는 만들었지만 매칭을 "거래 전환"으로 옮기지 못했습니다: ${formatToolError(err)} update_match_stage로 다시 옮겨 주세요.`,
+            };
+          }
+        }
+        return deal;
+      },
     );
 
     this.add(
@@ -2185,15 +2223,18 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     // 단지/동/호실 (Sites / Dongs / Units)
     // ═══════════════════════════════════════════════════════════
-    this.add('find_sites', '단지/건물 목록.', obj({}), async (_a, c) =>
-      this.sites.findAll(c.officeId),
+    this.add(
+      'find_sites',
+      '이 사무소가 직접 등록한 비공개 건물 목록(대장에 없는 건물 등). 아파트 같은 공공 단지는 여기에 나오지 않습니다 — 관리 단지는 find_office_sites, 전국 단지 검색은 search_central_sites를 쓰세요.',
+      obj({}),
+      async (_a, c) => this.sites.findAll(c.officeId),
     );
 
     this.add(
       'get_site',
-      '단지 상세. 동/호실/평형 정보 포함.',
-      obj({ id: str('단지 ID') }, ['id']),
-      async (a, c) => this.sites.findOne(a.id as string, c.officeId),
+      '단지 상세: 주소 · 동 목록 · 평형. 호 목록은 기본으로 넣지 않습니다(단지 하나에 수천 호, 수 MB입니다) — 호는 find_dongs로 동을 고른 뒤 find_units(dongId)로 찾으세요. 작은 건물의 호까지 한 번에 필요하면 includeUnits: true.',
+      obj({ id: str('단지 ID'), includeUnits: bool('호 목록까지 넣기 (기본 false)') }, ['id']),
+      async (a, c) => this.sites.findOne(a.id as string, c.officeId, a.includeUnits === true),
     );
 
     this.add(
@@ -2205,13 +2246,39 @@ export class McpToolsService {
 
     this.add(
       'find_units',
-      '호실 목록. 단지 또는 동으로 필터.',
-      obj({ siteId: str('단지 ID'), dongId: str('동 ID') }),
-      async (a, c) =>
-        this.units.findAll(c.officeId, {
+      '호실 목록(배열). dongId를 주면 그 동의 호를 모두 돌려줍니다 — 호를 찾을 때는 find_dongs로 동을 고른 뒤 이렇게 부르세요. dongId 없이 siteId만 주거나 아무것도 주지 않으면 한 번에 limit개(기본 300, 최대 500)만 돌려주므로 page로 넘겨 봅니다(단지 하나에 수천 호가 있습니다).',
+      obj({
+        siteId: str('단지 ID'),
+        dongId: str('동 ID'),
+        page: num('페이지 번호 (기본 1) — dongId가 없을 때만'),
+        limit: num('페이지당 수 (기본 300, 최대 500) — dongId가 없을 때만'),
+      }),
+      async (a, c) => {
+        const all = await this.units.findAll(c.officeId, {
           siteId: a.siteId as string,
           dongId: a.dongId as string,
-        }),
+        });
+        // 결과는 예전과 같은 배열이다(로컬 스킬이 동의 호 전체에서 호를 찾는다). 동으로 좁힌 호출은 자르지 않고,
+        // 단지 전체 · 조건 없는 호출만 나눠 준다 — 한 번에 16MB가 나가던 것을 막는다.
+        let list = all;
+        if (!a.dongId) {
+          const limit = Math.min(500, Math.max(1, Math.trunc(Number(a.limit) || 300)));
+          const pageNo = Math.max(1, Math.trunc(Number(a.page) || 1));
+          list = all.slice((pageNo - 1) * limit, pageNo * limit);
+        }
+        // 호마다 단지 · 동의 모든 칸을 되풀이해 싣지 않는다(어느 단지 · 동인지 알 id와 이름만)
+        return list.map((unit) => {
+          const { site, dong, ...rest } = unit as typeof unit & {
+            site?: { id: string; name: string } | null;
+            dong?: { id: string; name: string | null; isPlaceholder?: boolean } | null;
+          };
+          return {
+            ...rest,
+            site: site ? { id: site.id, name: site.name } : null,
+            dong: dong ? { id: dong.id, name: dong.name, isPlaceholder: dong.isPlaceholder ?? false } : null,
+          };
+        });
+      },
     );
 
     this.add(

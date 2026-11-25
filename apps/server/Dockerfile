@@ -103,6 +103,9 @@ COPY --chown=nestjs:nodejs --from=builder /app/node_modules/.bin/prisma ./node_m
 # apps/server/node_modules/@estate-erp/shared → ../../packages/shared
 COPY --chown=nestjs:nodejs --from=builder /app/apps/server/node_modules ./apps/server/node_modules
 COPY --chown=nestjs:nodejs --from=builder /app/packages/shared/dist ./packages/shared/dist
+# 시드 스크립트(prisma/*.ts)가 shared의 소스를 바로 읽는다(예: 계약서 서식 시드 → src/contract-clause-layouts).
+# SEED_SCRIPT로 돌리는 일회성 작업이 이미지 안에서 되도록 소스도 넣는다.
+COPY --chown=nestjs:nodejs packages/shared/src ./packages/shared/src
 
 # 서버 빌드 산출물
 COPY --chown=nestjs:nodejs --from=builder /app/apps/server/dist ./apps/server/dist

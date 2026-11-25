@@ -16,12 +16,15 @@ const REQUIRED_ENV_VARS = [
  *   테넌트의 앱 ID를 명시해야 한다.
  * - AUTH0_EVENT_SECRET: 없으면 Auth0의 비밀번호 변경 알림을 받지 않아, 사장님이 메일
  *   링크로 비밀번호를 바꿔도 예전 PC의 로그인이 끊기지 않는다.
+ * - CONTRACT_PARTY_CRYPTO_KEY: 계약 당사자의 주민(법인)번호 · 전화번호를 암호화하는 키. 없으면 코드에 적힌
+ *   개발용 키로 암호화하는데, 그 키는 저장소에 공개돼 있다. 한 번 정하면 바꿀 수 없다(이전 값을 못 푼다).
  */
 const PRODUCTION_REQUIRED_ENV_VARS = [
   'AUTH0_MGMT_CLIENT_ID',
   'AUTH0_MGMT_CLIENT_SECRET',
   'AUTH0_STAFF_CLIENT_IDS',
   'AUTH0_EVENT_SECRET',
+  'CONTRACT_PARTY_CRYPTO_KEY',
 ] as const;
 
 export function validateEnv(config: Record<string, unknown>) {

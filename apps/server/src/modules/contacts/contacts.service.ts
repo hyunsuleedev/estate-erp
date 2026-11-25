@@ -63,6 +63,18 @@ import {
   deriveContactRoles,
 } from './contact-categories';
 
+/**
+ * 전화번호의 종류 이름. 휴대폰 번호는 사무소 안에서 한 사람만 갖게 막는데(종류가 mobile인 번호에 걸린 유일 조건),
+ * 화면의 종류 칸은 자유 입력이라 "휴대폰"처럼 한글로 적으면 그 검사를 비껴가 같은 번호가 여러 사람에게 저장됐다.
+ * 휴대폰을 뜻하는 이름은 모두 mobile로 맞춰 저장한다. 비우면 mobile이다.
+ */
+const MOBILE_LABEL_ALIASES = new Set(['mobile', 'cell', 'cellphone', '휴대폰', '휴대전화', '핸드폰', '모바일', '폰', 'hp']);
+function normalizePhoneLabel(label: string | null | undefined): string {
+  const text = label?.trim();
+  if (!text) return 'mobile';
+  return MOBILE_LABEL_ALIASES.has(text.toLowerCase().replace(/\s+/g, '')) ? 'mobile' : text;
+}
+
 export interface ContactSearchQuery {
   search?: string;
   kind?: ContactKind;
@@ -1068,7 +1080,7 @@ export class ContactsService {
         seen.add(canonicalPhone);
         return {
           phone: canonicalPhone,
-          label: item.label?.trim() || 'mobile',
+          label: normalizePhoneLabel(item.label),
           isPrimary: item.isPrimary ?? false,
           memo: item.memo?.trim() || null,
         };
