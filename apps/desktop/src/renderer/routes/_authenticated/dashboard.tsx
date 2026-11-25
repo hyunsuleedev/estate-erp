@@ -34,7 +34,7 @@ import {
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { formatFloorRange, normalizeDealStage } from '@estate-erp/shared';
-import type { CalendarEvent, Consultation, Deal, Notice, Task } from '@estate-erp/api-client';
+import type { CalendarEvent, Consultation, DealListItem as Deal, Notice, Task } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';

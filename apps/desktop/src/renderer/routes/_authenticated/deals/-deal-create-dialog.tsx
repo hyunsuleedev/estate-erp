@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StatusBadge } from '@/components/domain';
-import { AssigneeSelect, ContactPicker, ManwonInput, PartnerBrokerSelect } from './-deal-shared';
+import { AssigneeSelect, ContactPicker, ManwonInput, PartnerBrokerSelect, type PickedContact } from './-deal-shared';
 import { useAuth } from '@/providers/auth-provider';
 import { getOurSideLabel } from './-deal-view-utils';
 
@@ -75,8 +75,8 @@ export function DealCreateDialog({
   const [price, setPrice] = useState('');
   const [deposit, setDeposit] = useState('');
   const [monthlyRent, setMonthlyRent] = useState('');
-  const [seller, setSeller] = useState<Contact | null>(null);
-  const [buyer, setBuyer] = useState<Contact | null>(null);
+  const [seller, setSeller] = useState<PickedContact | null>(null);
+  const [buyer, setBuyer] = useState<PickedContact | null>(null);
   const [isJoint, setIsJoint] = useState(false);
   const [ourSide, setOurSide] = useState<'seller' | 'buyer' | 'both'>('both');
   const [partnerBrokerId, setPartnerBrokerId] = useState('');

@@ -689,11 +689,13 @@ describe('DealsService 수수료를 볼 수 있는 사람', () => {
   it('중개사는 담당이 아닌 거래의 청구·요약을 받지 않는다', async () => {
     const service = serviceReturning(dealWith([{ userId: 'other', sharePercent: 100 }]));
 
-    const [row] = await service.findAll('office-1', false, { userId: AGENT, role: 'agent' });
+    const [row] = await service.findAll('office-1', {}, { userId: AGENT, role: 'agent' });
     const one = await service.findOne('deal-1', 'office-1', { userId: AGENT, role: 'agent' });
 
+    // 목록 줄에는 청구가 아예 없고(합계만), 상세에는 빈 배열로 온다
+    expect(row).not.toHaveProperty('commissionPayments');
+    expect(one.commissionPayments).toEqual([]);
     for (const deal of [row, one]) {
-      expect(deal.commissionPayments).toEqual([]);
       expect(deal.commissionSummary).toBeNull();
       expect(deal.commissionHidden).toBe(true);
       // 다른 직원의 몫(%)·배분 금액도 비운다

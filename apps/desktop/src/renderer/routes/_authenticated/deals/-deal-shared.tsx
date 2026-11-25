@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, Ban, ChevronsUpDown, MoreVertical, Plus, RotateCcw, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Contact, Deal } from '@estate-erp/api-client';
+import type { Contact, DealListItem as Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
@@ -250,13 +250,16 @@ export function SectionTitle({ children }: { children: ReactNode }) {
  * 연락처 검색 선택 콤보박스 (서버 검색).
  * 거래 생성/계약서 생성 다이얼로그에서 매수·매도 당사자 선택에 사용.
  */
+/** 고른 사람: 창이 쓰는 것은 id · 이름 · 번호뿐이다 (거래 목록 줄의 당사자도 그대로 넣는다) */
+export type PickedContact = Pick<Contact, 'id' | 'name'> & { phone?: string | null };
+
 export function ContactPicker({
   value,
   onChange,
   placeholder = '이름·전화번호 검색',
 }: {
-  value: Contact | null;
-  onChange: (contact: Contact | null) => void;
+  value: PickedContact | null;
+  onChange: (contact: PickedContact | null) => void;
   placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);

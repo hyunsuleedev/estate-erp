@@ -22,7 +22,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Contact, DealContract as Contract, Deal } from '@estate-erp/api-client';
+import type { Contact, DealContract as Contract, Deal, DealListItem } from '@estate-erp/api-client';
 import { normalizeDealStage } from '@estate-erp/shared';
 import { api } from '@/lib/api';
 import { useAuth } from '@/providers/auth-provider';
@@ -70,6 +70,7 @@ import {
 import {
   AssigneeSelect,
   ContactPicker,
+  type PickedContact,
   DateQuickInput,
   DealActionsMenu,
   DealStagePill,
@@ -1047,8 +1048,8 @@ function EditTermsDialogInner({
   const [deposit, setDeposit] = useState(digits(deal.agreedDeposit));
   const [monthlyRent, setMonthlyRent] = useState(digits(deal.agreedMonthlyRent));
   const [moveInDate, setMoveInDate] = useState(isoToDateInput(deal.agreedMoveInDate));
-  const [seller, setSeller] = useState<Contact | null>(deal.sellerContact ?? null);
-  const [buyer, setBuyer] = useState<Contact | null>(deal.buyerContact ?? null);
+  const [seller, setSeller] = useState<PickedContact | null>(deal.sellerContact ?? null);
+  const [buyer, setBuyer] = useState<PickedContact | null>(deal.buyerContact ?? null);
   const [isJoint, setIsJoint] = useState(deal.isJointBrokerage);
   const [ourSide, setOurSide] = useState<'seller' | 'buyer' | 'both'>(
     deal.ourSide === 'seller' || deal.ourSide === 'buyer' ? deal.ourSide : 'both',
@@ -1203,7 +1204,7 @@ export function CreateContractDialog({
   onOpenChange,
   advanceToStage = null,
 }: {
-  deal: Deal;
+  deal: DealListItem;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** 계약서를 만든 뒤 넘길 단계 (아래 막대의 "다음"에서 열었을 때) */
@@ -1226,8 +1227,8 @@ export function CreateContractDialog({
     const initial = isMonthly ? deal.agreedDeposit : (deal.agreedPrice ?? deal.agreedDeposit);
     return initial != null ? String(initial) : '';
   });
-  const [buyer, setBuyer] = useState<Contact | null>(deal.buyerContact ?? null);
-  const [seller, setSeller] = useState<Contact | null>(deal.sellerContact ?? null);
+  const [buyer, setBuyer] = useState<PickedContact | null>(deal.buyerContact ?? null);
+  const [seller, setSeller] = useState<PickedContact | null>(deal.sellerContact ?? null);
 
   const mutation = useMutation({
     mutationFn: async () => {

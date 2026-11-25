@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useMemo, useState } from 'react';
 import { Handshake } from 'lucide-react';
 import { toast } from 'sonner';
-import type { CommissionPayment, Deal } from '@estate-erp/api-client';
+import type { CommissionPayment, DealWithCommissions as Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { formatDate, formatMoney, formatPhone } from '@/lib/format';
 import { ConfirmDialog, EmptyState, StatusBadge } from '@/components/domain';
@@ -148,8 +148,8 @@ function aggregateByPartner(deals: Deal[]): PartnerRow[] {
 function PartnerCommissionsPage() {
   const navigate = useNavigate();
   const { data: deals, isLoading, isError, refetch } = useQuery({
-    queryKey: ['deals'],
-    queryFn: () => api.deals.findAll(),
+    queryKey: ['deals', 'joint-commissions'],
+    queryFn: () => api.deals.findJointWithCommissions(),
   });
 
   const [year, setYear] = useState('all');

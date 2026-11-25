@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ExternalLink, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
@@ -132,7 +132,38 @@ function getErrorMessage(error: unknown, fallback = '요청을 처리하지 못�
  * 요율 계산은 packages/shared/commission.ts 법정 상한 로직을 그대로 쓴다.
  * 업무용 오피스텔은 자동 판별이 안 되므로 물건 종류를 손으로 바꿀 수 있게 둔다.
  */
+/**
+ * 수수료 구역. 청구 · 배분은 거래 상세에만 있다 — 옆 패널이 목록 줄로 먼저 그릴 때는 상세를 직접 받아
+ * (옆 패널과 같은 조회라 요청이 겹치지 않는다) 올 때까지 기다리고, 못 받으면 알리고 다시 받게 한다.
+ * 빈 목록으로 그리면 청구가 없는 거래처럼 보인다.
+ */
 export function DealCommissionSection({ deal }: { deal: Deal }) {
+  const needsDetail = deal.commissionPayments === undefined && !deal.commissionHidden;
+  const detailQuery = useQuery({
+    queryKey: ['deals', 'detail', deal.id],
+    queryFn: () => api.deals.findOne(deal.id),
+    enabled: needsDetail,
+  });
+  if (!needsDetail) return <DealCommissionBody deal={deal} />;
+  if (detailQuery.data) return <DealCommissionBody deal={detailQuery.data} />;
+  if (detailQuery.isError) {
+    return (
+      <div className="flex items-center justify-between gap-3 py-6 text-sm text-muted-foreground" role="alert">
+        <span>수수료를 불러오지 못했습니다.</span>
+        <Button type="button" variant="outline" size="xs" onClick={() => void detailQuery.refetch()}>
+          다시 시도
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <p className="py-6 text-sm text-muted-foreground" aria-live="polite">
+      수수료를 불러오는 중입니다…
+    </p>
+  );
+}
+
+function DealCommissionBody({ deal }: { deal: Deal }) {
   const { user } = useAuth();
   const canEdit = user?.role === 'owner' || user?.role === 'manager';
   const rawType = getDealTransactionType(deal);

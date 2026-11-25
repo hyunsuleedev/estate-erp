@@ -395,8 +395,8 @@ describe('desktop data table', () => {
     );
     assert.match(
       progressTabSource,
-      /queryKey: \["deals"\],\s*queryFn: \(\) => api\.deals\.findAll\(\)/,
-      'deals share the 거래관리 query cache (with payment schedules)',
+      /queryFn: \(\) => api\.deals\.findAll\(\{ propertyId, listingIds \}\)/,
+      'asks only for the deals on this property and its listings (payment schedules come with them)',
     );
     assert.match(
       progressTabSource,

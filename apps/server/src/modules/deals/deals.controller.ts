@@ -32,6 +32,8 @@ const PaymentIdPipe = new ParseUUIDPipe({
 /** 보는 사람 (수수료 칸을 가리는 기준). finance 의 FinanceViewer 와 같은 모양 */
 const viewerOf = (user: CurrentUserPayload) => ({ userId: user.userId, role: user.role });
 
+const UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
 @ApiTags('거래')
 @ApiBearerAuth()
 @Controller('deals')
@@ -40,8 +42,42 @@ export class DealsController {
   constructor(private readonly dealsService: DealsService) {}
 
   @Get()
-  findAll(@CurrentUser() user: CurrentUserPayload, @Query('scope') scope?: string) {
-    return this.dealsService.findAll(user.officeId, scope === 'active', viewerOf(user));
+  findAll(
+    @CurrentUser() user: CurrentUserPayload,
+    @Query('scope') scope?: string,
+    @Query('propertyId') propertyId?: string,
+    @Query('listingIds') listingIds?: string,
+    @Query('partnerBrokerId') partnerBrokerId?: string,
+    @Query('joint') joint?: string,
+    @Query('withPartner') withPartner?: string,
+    @Query('withoutContract') withoutContract?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+    @Query('expand') expand?: string,
+  ) {
+    const ids = [propertyId, partnerBrokerId, ...(listingIds?.split(',') ?? [])].filter(
+      (value): value is string => Boolean(value),
+    );
+    if (ids.some((value) => !UUID_PATTERN.test(value))) {
+      throw new BadRequestException('찾는 조건을 확인하세요.');
+    }
+    return this.dealsService.findAll(
+      user.officeId,
+      {
+        activeOnly: scope === 'active',
+        propertyId,
+        listingIds: listingIds ? listingIds.split(',').filter(Boolean) : undefined,
+        partnerBrokerId,
+        jointOnly: joint === 'true',
+        withPartner: withPartner === 'true',
+        withoutContract: withoutContract === 'true',
+        search,
+        limit: limit ? Number(limit) || undefined : undefined,
+        // 수수료 청구 · 배분까지 싣기 (공동중개 정산). 중개사에게는 담당 거래의 것만 실린다
+        withCommissions: expand === 'commissions',
+      },
+      viewerOf(user),
+    );
   }
 
   @Get('views/archive')

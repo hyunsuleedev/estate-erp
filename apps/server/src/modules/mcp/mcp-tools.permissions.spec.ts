@@ -157,7 +157,7 @@ describe('McpToolsService 권한', () => {
     const { service, deals } = createService();
 
     await service.executeTool('find_deals', {}, agent);
-    expect(deals.findAll).toHaveBeenCalledWith('office-1', false, {
+    expect(deals.findAll).toHaveBeenCalledWith('office-1', expect.any(Object), {
       userId: 'agent-1',
       role: 'agent',
     });

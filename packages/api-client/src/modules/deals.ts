@@ -45,7 +45,54 @@ export interface DealContract {
   leaseEndDate: string | null;
 }
 
-export interface Deal {
+/** 목록 줄의 당사자: 이름과 대표 번호 */
+export interface DealListContact {
+  id: string;
+  name: string;
+  phone: string | null;
+}
+
+/** 목록 줄의 집: 어느 단지 · 동 · 호인지 */
+export interface DealListProperty {
+  id: string;
+  siteId: string | null;
+  unitId?: string | null;
+  site?: {
+    id: string;
+    name: string;
+    type: string;
+    roadAddress: string | null;
+    jibunAddress: string | null;
+  } | null;
+  unit?: {
+    id: string;
+    name: string | null;
+    floor: number | null;
+    floorEnd?: number | null;
+    floorLabel?: string | null;
+    exclusiveAreaM2: number | string | null;
+    supplyAreaM2: number | string | null;
+    dong?: { id: string; name: string; isPlaceholder?: boolean } | null;
+  } | null;
+}
+
+/** 목록 줄의 거래 조건: 매물가와 거래 유형 (집은 property에 있다) */
+export interface DealListListing {
+  id: string;
+  propertyId: string;
+  intakeId: string;
+  transactionType: string;
+  price: number | null;
+  deposit: number | null;
+  monthlyRent: number | null;
+  isPaused: boolean;
+}
+
+/**
+ * 거래 목록(GET /deals · 종료 목록)의 한 줄: 어느 집 · 누구 · 어느 단계 · 얼마 · 대금 일정 · 계약서 요약.
+ * 수수료는 합계(commissionSummary)만 있다. 청구 · 배분 · 조정과 연락처 상세는 findOne(Deal)에 있다.
+ */
+export interface DealListItem {
   id: string;
   officeId: string;
   propertyId: string | null;
@@ -89,10 +136,10 @@ export interface Deal {
   memo: string | null;
   createdAt: string;
   updatedAt: string;
-  property?: Property | null;
-  listing?: Listing | null;
-  buyerContact?: Contact | null;
-  sellerContact?: Contact | null;
+  property?: DealListProperty | null;
+  listing?: DealListListing | null;
+  buyerContact?: DealListContact | null;
+  sellerContact?: DealListContact | null;
   partnerBroker?: { id: string; name: string; phone: string | null } | null;
   participants?: Array<{
     id: string;
@@ -111,6 +158,15 @@ export interface Deal {
   payments?: DealPayment[];
   /** 이 거래의 계약서 요약 (없으면 null). 문서와 당사자는 계약 상세에 있다 */
   contract?: DealContract | null;
+}
+
+/** 거래 상세(GET /deals/:id). 목록 줄의 칸에 더해 집 · 거래 조건 · 연락처의 상세와 수수료 청구가 있다 */
+export interface Deal
+  extends Omit<DealListItem, 'property' | 'listing' | 'buyerContact' | 'sellerContact'> {
+  property?: Property | null;
+  listing?: Listing | null;
+  buyerContact?: Contact | null;
+  sellerContact?: Contact | null;
   /// 수수료 청구. 목록·상세 응답에 분배와 함께 포함된다.
   /// adjustments 에는 승인을 기다리는 조정만 실린다 (DealPendingAdjustment 모양, 요청한 사람 이름 포함).
   commissionPayments?: CommissionPayment[];
@@ -126,6 +182,24 @@ export interface DealPendingAdjustment {
   requestedAt: string;
   requestedBy?: { id: string; name: string } | null;
 }
+
+export interface DealListFilter {
+  /** 이 집의 거래만 */
+  propertyId?: string;
+  /** 이 거래 조건들의 거래만 (propertyId와 함께 주면 둘 중 하나에 걸린 거래) */
+  listingIds?: string[];
+  partnerBrokerId?: string;
+  /** 공동중개 거래만 */
+  joint?: boolean;
+  /** 계약서가 아직 없는 거래만 */
+  withoutContract?: boolean;
+  /** 단지 이름 · 당사자 이름으로 찾기 */
+  search?: string;
+  limit?: number;
+}
+
+/** 수수료 청구 · 배분까지 실은 목록 줄 */
+export type DealWithCommissions = DealListItem & Pick<Deal, 'commissionPayments'>;
 
 export interface CreateDealDto {
   propertyId?: string;
@@ -265,13 +339,37 @@ export interface UpdateDealPaymentDto {
 
 export function createDealsApi(request: RequestFn) {
   return {
-    findActive: () => request<Deal[]>('/deals?scope=active'),
+    findActive: () => request<DealListItem[]>('/deals?scope=active'),
     findArchive: (filters: { kind: 'closed' | 'cancelled'; q: string; since: string }, cursor?: string) => {
       const params = new URLSearchParams({ ...filters, ...(cursor && { cursor }) });
-      return request<{ items: Deal[]; nextCursor: string | null }>(`/deals/views/archive?${params}`);
+      return request<{ items: DealListItem[]; nextCursor: string | null }>(`/deals/views/archive?${params}`);
     },
 
-    findAll: () => request<Deal[]>('/deals'),
+    /** 거래 목록. 조건 없이 부르면 사무소의 모든 거래(취소 · 종료 포함)다 — 쓸 만큼만 조건으로 좁힌다. */
+    findAll: (filter: DealListFilter = {}) =>
+      request<DealListItem[]>('/deals', {
+        params: {
+          propertyId: filter.propertyId,
+          listingIds: filter.listingIds?.length ? filter.listingIds.join(',') : undefined,
+          partnerBrokerId: filter.partnerBrokerId,
+          joint: filter.joint ? 'true' : undefined,
+          withoutContract: filter.withoutContract ? 'true' : undefined,
+          search: filter.search || undefined,
+          limit: filter.limit,
+        },
+      }),
+
+    /** 공동중개 거래와 그 수수료 청구 · 배분 (공동중개 정산 화면) */
+    findJointWithCommissions: () =>
+      request<DealWithCommissions[]>('/deals', {
+        params: { joint: 'true', expand: 'commissions' },
+      }),
+
+    /** 파트너 중개사가 연결된 거래와 그 수수료 청구 · 배분 (파트너 중개사 화면) */
+    findPartnerWithCommissions: () =>
+      request<DealWithCommissions[]>('/deals', {
+        params: { withPartner: 'true', expand: 'commissions' },
+      }),
 
     findOne: (id: string) => request<Deal>(`/deals/${id}`),
 

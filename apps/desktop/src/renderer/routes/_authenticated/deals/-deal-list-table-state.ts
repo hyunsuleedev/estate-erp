@@ -1,5 +1,5 @@
 import { formatUnitName } from '@estate-erp/shared';
-import type { Deal } from '@estate-erp/api-client';
+import type { DealListItem as Deal } from '@estate-erp/api-client';
 import type { SortingState } from '@tanstack/react-table';
 import {
   getDealAmountValue,

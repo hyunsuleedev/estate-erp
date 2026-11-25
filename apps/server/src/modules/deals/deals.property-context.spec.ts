@@ -10,30 +10,11 @@ describe('DealsService property context', () => {
 
     await service.findAll('office-1');
 
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        include: expect.objectContaining({
-          listing: {
-            include: expect.objectContaining({
-              intake: {
-                select: expect.objectContaining({
-                  lifecycleStatus: true,
-                  lastCheckedAt: true,
-                  lastVerifiedAt: true,
-                  lastCheckResult: true,
-                  nextConfirmAt: true,
-                }),
-              },
-              property: {
-                include: {
-                  site: true,
-                  unit: { include: { dong: true } },
-                },
-              },
-            }),
-          },
-        }),
-      }),
-    );
+    // 목록 줄은 집을 가볍게 싣는다: 단지는 이름 · 주소, 호는 표기에 쓰는 칸과 동
+    const { include } = findMany.mock.calls[0][0];
+    const property = include.listing.select.property.select;
+    expect(property.site.select).toEqual(expect.objectContaining({ name: true, roadAddress: true }));
+    expect(property.unit.select.dong.select).toEqual({ id: true, name: true, isPlaceholder: true });
+    expect(include.listing.select).not.toHaveProperty('intake');
   });
 });

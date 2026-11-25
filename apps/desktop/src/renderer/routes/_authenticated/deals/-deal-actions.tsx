@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ApiError, type BuyerRequirement, type Deal } from '@estate-erp/api-client';
+import { ApiError, type BuyerRequirement, type DealListItem as Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-error';
 import { invalidateListingDerivedCaches } from '@/lib/listing-cache';
@@ -341,7 +341,16 @@ function CancelDealDialog({
 
   const transactionType = deal ? getDealTransactionType(deal) : undefined;
   const labels = getCancelledByLabels(transactionType);
-  const commissions = deal?.commissionPayments ?? [];
+  // 목록 줄에는 수수료 청구가 없다(합계만). 취소로 무엇이 정리되는지 보이려면 상세의 청구가 필요하다.
+  const detailQuery = useQuery({
+    queryKey: ['deals', 'detail', deal?.id],
+    queryFn: () => api.deals.findOne(deal!.id),
+    enabled: Boolean(deal),
+  });
+  const commissions = detailQuery.data?.commissionPayments ?? [];
+  // 청구를 모르는 채로 "정리할 수수료 없음"처럼 보이면 안 된다: 올 때까지 취소 단추를 잠그고, 못 받으면 알린다.
+  const commissionsLoading = deal !== null && detailQuery.isPending;
+  const commissionsFailed = deal !== null && detailQuery.isError;
   const unpaidCommissions = commissions.filter(
     (payment) => ['draft', 'pending', 'overdue'].includes(payment.status) && payment.actualAmount == null,
   );
@@ -393,6 +402,20 @@ function CancelDealDialog({
               placeholder={`예: ${getPartyLabels(transactionType).buyer} 대출이 나오지 않아 계약 포기`}
             />
           </div>
+
+          {commissionsLoading ? (
+            <p className="border-t pt-3 text-[12.5px] text-muted-foreground" aria-live="polite">
+              함께 정리될 수수료를 확인하는 중입니다…
+            </p>
+          ) : null}
+          {commissionsFailed ? (
+            <div className="flex items-center justify-between gap-3 border-t pt-3 text-[12.5px] text-warning" role="alert">
+              <span>함께 정리될 수수료를 불러오지 못했습니다. 받지 않은 청구는 취소되고 받은 수수료는 그대로 남습니다.</span>
+              <Button type="button" variant="outline" size="xs" onClick={() => void detailQuery.refetch()}>
+                다시 시도
+              </Button>
+            </div>
+          ) : null}
 
           {/* 돈이 걸린 것 정리 */}
           {unpaidCommissions.length > 0 || receivedCommission > 0 || upcomingPayments.length > 0 ? (
@@ -455,7 +478,7 @@ function CancelDealDialog({
           <Button
             type="button"
             variant="destructive"
-            disabled={loading}
+            disabled={loading || commissionsLoading}
             onClick={() => onSubmit(reason, cancelledBy, paidMoneyNote || undefined)}
           >
             취소 처리

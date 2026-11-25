@@ -25,7 +25,7 @@ import {
   type CommissionTransactionType,
 } from '@estate-erp/shared';
 import { PrismaService } from '../../prisma/prisma.service';
-import { withPrimaryPhone } from '../contacts/contact-phone.utils';
+import { getPrimaryPhone, withPrimaryPhone } from '../contacts/contact-phone.utils';
 import {
   recomputeShareAmounts,
   seesAllPayments,
@@ -125,6 +125,87 @@ const dealInclude = {
 } satisfies Prisma.DealInclude;
 
 type DealWithRelations = Prisma.DealGetPayload<{ include: typeof dealInclude }>;
+
+/**
+ * 거래 목록(GET /deals · 종료 목록)의 한 줄. 상세(findOne)와 같은 include를 쓰던 때에는 줄마다
+ * 같은 집이 두 번(listing.property와 property), 단지 · 연락처가 통째로, 수수료 청구 · 배분 · 조정까지 붙어
+ * 한 건에 11KB였고, 그것을 매물 한 곳의 거래나 달력의 날짜를 보려는 화면들이 사무소 전체로 받았다.
+ * 목록 줄은 어느 집 · 누구 · 어느 단계 · 얼마 · 다음 대금까지만 싣고, 수수료는 합계(commissionSummary)만 싣는다.
+ * 청구 · 배분 · 조정과 연락처 상세는 상세(GET /deals/:id)에 있다.
+ */
+const dealListInclude = {
+  listing: {
+    select: {
+      id: true,
+      propertyId: true,
+      intakeId: true,
+      transactionType: true,
+      price: true,
+      deposit: true,
+      monthlyRent: true,
+      isPaused: true,
+      property: {
+        select: {
+          id: true,
+          siteId: true,
+          unitId: true,
+          site: { select: { id: true, name: true, type: true, roadAddress: true, jibunAddress: true } },
+          unit: {
+            select: {
+              id: true,
+              name: true,
+              floor: true,
+              floorEnd: true,
+              floorLabel: true,
+              exclusiveAreaM2: true,
+              supplyAreaM2: true,
+              dong: { select: { id: true, name: true, isPlaceholder: true } },
+            },
+          },
+        },
+      },
+    },
+  },
+  buyerContact: { select: { id: true, name: true, phones: dealInclude.buyerContact.include.phones } },
+  sellerContact: { select: { id: true, name: true, phones: dealInclude.sellerContact.include.phones } },
+  partnerBroker: dealInclude.partnerBroker,
+  participants: dealInclude.participants,
+  payments: dealInclude.payments,
+  contract: dealInclude.contract,
+} satisfies Prisma.DealInclude;
+
+/** 합계(commissionSummary)를 내는 데 필요한 칸만. 응답에는 싣지 않는다 */
+const commissionSummarySource = {
+  select: {
+    expectedAmount: true,
+    actualAmount: true,
+    status: true,
+    distributions: { select: { recipientType: true, shareRatio: true, shareAmount: true } },
+  },
+} satisfies Prisma.Deal$commissionPaymentsArgs;
+
+export interface DealListQuery {
+  /** 진행 중인 거래만 (취소 · 정산 종료 제외) */
+  activeOnly?: boolean;
+  /** 이 집의 거래만 */
+  propertyId?: string;
+  /** 이 거래 조건들의 거래만 (propertyId와 함께 주면 둘 중 하나에 걸린 거래) */
+  listingIds?: string[];
+  /** 이 파트너 중개사와의 거래만 */
+  partnerBrokerId?: string;
+  /** 공동중개 거래만 */
+  jointOnly?: boolean;
+  /** 파트너 중개사가 연결된 거래만 */
+  withPartner?: boolean;
+  /** 계약서가 아직 없는 거래만 */
+  withoutContract?: boolean;
+  /** 단지 이름 · 당사자 이름으로 찾기 */
+  search?: string;
+  /** 줄 수 상한 (검색 · 고르기용) */
+  limit?: number;
+  /** 수수료 청구와 배분까지 싣기 (공동중개 정산 화면) */
+  withCommissions?: boolean;
+}
 
 /// ListingIntake 생명주기를 closed로 확정하는 Deal 단계.
 const DONE_STAGES: ReadonlySet<string> = new Set(['completed', 'closed']);
@@ -390,14 +471,96 @@ export class DealsService {
     };
   }
 
-  async findAll(officeId: string, activeOnly = false, viewer?: FinanceViewer) {
+  async findAll(officeId: string, query: DealListQuery = {}, viewer?: FinanceViewer) {
+    const search = query.search?.trim();
+    const contains = { contains: search, mode: 'insensitive' as const };
+    const place: Prisma.DealWhereInput[] = [];
+    if (query.propertyId) place.push({ listing: { propertyId: query.propertyId } });
+    if (query.listingIds?.length) place.push({ listingId: { in: query.listingIds } });
+
     const deals = await this.prisma.deal.findMany({
-      where: { officeId, ...(activeOnly && { isCancelled: false, stage: { not: 'closed' } }) },
-      include: this.dealInclude,
+      where: {
+        officeId,
+        ...(query.activeOnly && { isCancelled: false, stage: { not: 'closed' } }),
+        ...(query.partnerBrokerId && { partnerBrokerId: query.partnerBrokerId }),
+        ...(query.jointOnly && { isJointBrokerage: true }),
+        ...(query.withPartner && !query.partnerBrokerId && { partnerBrokerId: { not: null } }),
+        ...(query.withoutContract && { contract: null }),
+        AND: [
+          ...(place.length > 0 ? [{ OR: place }] : []),
+          ...(search
+            ? [
+                {
+                  OR: [
+                    { listing: { property: { site: { name: contains } } } },
+                    { buyerContact: { name: contains } },
+                    { sellerContact: { name: contains } },
+                  ],
+                },
+              ]
+            : []),
+        ],
+      },
+      include: {
+        ...dealListInclude,
+        commissionPayments: query.withCommissions
+          ? dealInclude.commissionPayments
+          : commissionSummarySource,
+      },
       orderBy: { createdAt: 'desc' },
+      ...(query.limit && { take: Math.min(100, Math.max(1, Math.trunc(query.limit))) }),
     });
 
-    return deals.map((deal) => this.forViewer(this.withPropertyContext(deal), viewer));
+    return deals.map((deal) => this.presentListRow(deal, viewer, query.withCommissions === true));
+  }
+
+  /**
+   * 목록의 한 줄. 집은 property 한 곳에만 싣고(listing 아래에는 넣지 않는다), 당사자는 이름과 대표 번호만.
+   * 수수료는 합계만 — 중개사에게는 담당 거래의 것만 보인다(forViewer, 상세와 같은 기준).
+   */
+  private presentListRow(
+    deal: Prisma.DealGetPayload<{
+      include: typeof dealListInclude & {
+        commissionPayments: typeof commissionSummarySource | typeof dealInclude.commissionPayments;
+      };
+    }>,
+    viewer: FinanceViewer | undefined,
+    withCommissions: boolean,
+  ) {
+    const { listing, buyerContact, sellerContact, commissionPayments, ...rest } = deal;
+    const property = listing?.property ?? null;
+    const listingRow = listing ? (({ property: _property, ...row }) => row)(listing) : null;
+    const person = (contact: typeof buyerContact) =>
+      contact ? { id: contact.id, name: contact.name, phone: getPrimaryPhone(contact) } : null;
+    const commissionSummary = computeDealCommissionSummary(
+      commissionPayments.map((payment) => ({
+        expectedAmount: payment.expectedAmount,
+        actualAmount: payment.actualAmount,
+        status: payment.status,
+        distributions: payment.distributions.map((distribution) => ({
+          recipientType: distribution.recipientType,
+          shareRatio: distribution.shareRatio.toString(),
+          shareAmount: distribution.shareAmount,
+        })),
+      })),
+    );
+    const row = this.forViewer(
+      {
+        ...rest,
+        stage: normalizeDealStage(deal.stage),
+        listing: listingRow,
+        propertyId: property?.id ?? null,
+        property,
+        buyerContact: person(buyerContact),
+        sellerContact: person(sellerContact),
+        commissionPayments: commissionPayments as unknown[],
+        commissionSummary,
+      },
+      viewer,
+    );
+    if (withCommissions) return row;
+    const { commissionPayments: _omitted, ...light } = row;
+    return light;
   }
 
   async findArchive(
@@ -426,11 +589,11 @@ export class DealsService {
       orderBy: [{ [dateField]: 'desc' }, { id: 'desc' }],
       ...(cursor && { cursor: { id: cursor }, skip: 1 }),
       take: 31,
-      include: this.dealInclude,
+      include: { ...dealListInclude, commissionPayments: commissionSummarySource },
     });
     const page = rows.slice(0, 30);
     return {
-      items: page.map((row) => this.forViewer(this.withPropertyContext(row), viewer)),
+      items: page.map((row) => this.presentListRow(row, viewer, false)),
       nextCursor: rows.length > 30 ? page[29].id : null,
     };
   }

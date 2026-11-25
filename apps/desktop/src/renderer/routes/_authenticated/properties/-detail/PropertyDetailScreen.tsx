@@ -325,10 +325,11 @@ export function PropertyDetailScreen({
   // 진행 중 의뢰의 조건만이 아니라 지난 의뢰(거래 완료로 자동 종료된 의뢰 포함)의 조건까지.
   const allListingIds = collectListingIds(listings, intakes);
   const intakeIds = intakes.map((intake) => intake.id);
-  // 거래관리·손님 · 거래 구역과 같은 조회(캐시 공유). 완료·취소된 거래도 기록에 남긴다.
+  // 이 집과 이 집의 거래 조건(지난 의뢰 포함)에 걸린 거래만 받는다. 완료·취소된 거래도 기록에 남긴다.
   const dealsQuery = useQuery({
-    queryKey: ['deals'],
-    queryFn: () => api.deals.findAll(),
+    queryKey: ['deals', 'by-property', propertyId, [...allListingIds].sort()],
+    queryFn: () => api.deals.findAll({ propertyId: propertyId ?? undefined, listingIds: allListingIds }),
+    enabled: propertyId !== null,
   });
   const propertyDeals = propertyId === null ? [] : selectPropertyDeals(dealsQuery.data ?? [], propertyId, allListingIds);
 

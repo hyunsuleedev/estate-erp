@@ -37,6 +37,7 @@ import { useDealActions } from './-deal-actions';
 import { DealInspector } from './-deal-detail';
 import { EndedDeals } from './-ended-deals';
 import { DealListView } from './-deal-list';
+import type { Deal } from '@estate-erp/api-client';
 import {
   dealStageOrder,
   getDealLocationLine,
@@ -175,9 +176,11 @@ function DealsPage() {
   const detailQuery = useQuery({
     queryKey: ['deals', 'detail', selectedDealId],
     queryFn: () => api.deals.findOne(selectedDealId!),
-    enabled: Boolean(selectedDealId && !listedDeal),
+    enabled: Boolean(selectedDealId),
   });
-  const selectedDeal = listedDeal ?? detailQuery.data;
+  // 옆 패널은 상세를 보인다(수수료 청구 · 배분 · 연락처 상세는 목록 줄에 없다).
+  // 상세가 오기 전에는 목록 줄로 먼저 그린다 — 수수료 구역은 청구가 올 때까지 기다린다.
+  const selectedDeal = detailQuery.data ?? (listedDeal as Deal | undefined);
   const navigateDeals = Route.useNavigate();
   // 주소(?dealId=)나 다른 화면에서 연 거래를 불러오지 못했을 때: 빈 패널·날 단추를 남기지 않고 한 번 알린다.
   // 없는 거래(404)·형식이 틀린 id(400)는 주소에서 지워 새로 고침·뒤로 가기 때 다시 묻지 않는다.

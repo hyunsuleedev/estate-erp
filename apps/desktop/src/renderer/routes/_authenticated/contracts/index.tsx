@@ -9,7 +9,7 @@ import type {
   ContractDocumentTemplate,
   CreateContractDocumentDto,
   CreateContractDto,
-  Deal,
+  DealListItem as Deal,
   UpdateContractDocumentDto,
 } from '@estate-erp/api-client';
 import { mergeResidentialSaleAgreementMetadata } from '@estate-erp/shared';
@@ -235,9 +235,10 @@ function ContractsPage() {
   });
   const allContracts = useMemo(() => allContractsQuery.data ?? [], [allContractsQuery.data]);
 
+  // 계약서를 새로 만들 때 고를 거래: 계약서가 아직 없는 거래만 받는다
   const { data: deals = [] } = useQuery({
-    queryKey: ['deals'],
-    queryFn: () => api.deals.findAll(),
+    queryKey: ['deals', 'without-contract'],
+    queryFn: () => api.deals.findAll({ withoutContract: true }),
   });
 
   // 서식종류(kind) 필터 옵션 — 전체 템플릿 목록에서 code/title 추출

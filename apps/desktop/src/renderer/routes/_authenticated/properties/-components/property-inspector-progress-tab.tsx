@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowUpRight, Check, ChevronDown, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { ApiError, type CalendarEvent, type Deal, type Match } from "@estate-erp/api-client";
+import { ApiError, type CalendarEvent, type DealListItem as Deal, type Match } from "@estate-erp/api-client";
 import {
   DealStage,
   formatPrice,
@@ -100,10 +100,11 @@ export function PropertyInspectorProgressTab({
   onOpenDeal: (dealId: string) => void;
   typeMeta: TypeMeta;
 }) {
-  // 거래관리 페이지와 같은 쿼리(캐시 공유). 지급 일정(payments)까지 담겨 있다.
+  // 이 집과 이 거래 조건들에 걸린 거래만 받는다(대금 일정이 함께 온다).
   const dealsQuery = useQuery({
-    queryKey: ["deals"],
-    queryFn: () => api.deals.findAll(),
+    queryKey: ["deals", "by-property", propertyId ?? null, [...listingIds].sort()],
+    queryFn: () => api.deals.findAll({ propertyId, listingIds }),
+    enabled: propertyId !== undefined || listingIds.length > 0,
   });
   const listingIdSet = new Set(listingIds);
   const deals = (dealsQuery.data ?? [])

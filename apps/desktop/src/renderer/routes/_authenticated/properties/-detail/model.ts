@@ -1,7 +1,7 @@
 import { formatPropertySpaceLabel } from '../-registration-space';
 import type {
   Consultation,
-  Deal,
+  DealListItem as Deal,
   ListingAdvertisement,
   ListingIntake,
   Property,

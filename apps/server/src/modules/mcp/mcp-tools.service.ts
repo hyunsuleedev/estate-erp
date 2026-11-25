@@ -1691,14 +1691,31 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_deals',
-      '거래 목록. 매물, 매수인/매도인 정보 포함.',
-      obj({}),
-      // 화면과 같은 기준: 중개사에게는 담당 거래에만 수수료 청구·요약을 싣는다.
-      async (_a, c) =>
-        this.deals.findAll(c.officeId, false, {
-          userId: c.userId,
-          role: c.role ?? 'agent',
-        }),
+      '거래 목록: 어느 집 · 누구 · 어느 단계 · 합의 금액 · 대금 일정 · 계약서 요약 · 수수료 합계. 조건 없이 부르면 사무소의 모든 거래(취소 · 종료 포함)가 오니 조건으로 좁히세요. 수수료 청구와 배분, 연락처 상세는 get_deal로 봅니다.',
+      obj({
+        activeOnly: bool('진행 중인 거래만 (취소 · 정산 종료 제외)'),
+        propertyId: str('이 매물(Property)의 거래만'),
+        partnerBrokerId: str('이 파트너 중개사와의 거래만'),
+        jointOnly: bool('공동중개 거래만'),
+        withoutContract: bool('계약서가 아직 없는 거래만'),
+        search: str('단지 이름 · 매수인 · 매도인 이름으로 찾기'),
+        limit: num('줄 수 상한 (최대 100)'),
+      }),
+      // 화면과 같은 기준: 중개사에게는 담당 거래에만 수수료 합계를 싣는다.
+      async (a, c) =>
+        this.deals.findAll(
+          c.officeId,
+          {
+            activeOnly: a.activeOnly === true,
+            propertyId: a.propertyId as string | undefined,
+            partnerBrokerId: a.partnerBrokerId as string | undefined,
+            jointOnly: a.jointOnly === true,
+            withoutContract: a.withoutContract === true,
+            search: a.search as string | undefined,
+            limit: a.limit as number | undefined,
+          },
+          { userId: c.userId, role: c.role ?? 'agent' },
+        ),
     );
 
     this.add(

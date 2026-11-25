@@ -6,7 +6,7 @@ import type {
   Contract,
   ContractDocument,
   ContractDocumentTemplate,
-  Deal,
+  DealListItem as Deal,
   ContractListItem,
 } from '@estate-erp/api-client';
 import {
@@ -170,8 +170,27 @@ export function ContractTransactionTypeBadge({
 // deal.listing.property 폴백이 반드시 필요하다 (감사 갭 #1).
 // ---------------------------------------------------------------------------
 
-export function getContractProperty(deal: Deal | null | undefined) {
-  return deal?.property ?? deal?.listing?.property ?? null;
+/** 표기에 쓰는 집: 단지 이름 · 동 · 호 */
+type PlaceProperty = {
+  id?: string;
+  site?: { name?: string | null; roadAddress?: string | null; jibunAddress?: string | null } | null;
+  unit?: {
+    exclusiveAreaM2?: number | string | null;
+    name?: string | null;
+    floor?: number | null;
+    floorEnd?: number | null;
+    floorLabel?: string | null;
+    dong?: { name?: string | null; isPlaceholder?: boolean | null } | null;
+  } | null;
+};
+
+/** 집은 거래의 property에 있다. 계약 목록 줄의 거래처럼 listing 아래에만 실려 오는 응답도 받는다 */
+export function getContractProperty(deal: { id: string } | null | undefined): PlaceProperty | null {
+  const source = deal as
+    | { property?: PlaceProperty | null; listing?: { property?: PlaceProperty | null } | null }
+    | null
+    | undefined;
+  return source?.property ?? source?.listing?.property ?? null;
 }
 
 /** "래미안고덕 101동 1503호" (placeholder 동은 생략) */
@@ -179,8 +198,7 @@ export function getContractProperty(deal: Deal | null | undefined) {
 export function getContractPropertyLabel(
   deal: Deal | ContractListItem['deal'] | null | undefined,
 ): string {
-  // 목록 줄의 거래에는 집이 listing 아래에만 있다
-  const property = deal && 'property' in deal ? getContractProperty(deal) : deal?.listing?.property;
+  const property = getContractProperty(deal);
   if (!property) return '';
   const dong = property.unit?.dong;
   return formatPlaceLabel({

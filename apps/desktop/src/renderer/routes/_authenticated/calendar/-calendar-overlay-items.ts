@@ -3,7 +3,7 @@
  * 불러오기는 -calendar-overlay.ts의 useCalendarOverlays가 한다.
  */
 import { formatPlaceLabel, normalizeDealStage } from '@estate-erp/shared';
-import type { CommissionPayment, ContractListItem as Contract, Deal } from '@estate-erp/api-client';
+import type { CommissionPayment, ContractListItem as Contract, DealListItem as Deal } from '@estate-erp/api-client';
 
 /** 거래 한 건의 대금 일정 한 줄 (가계약금·계약금·중도금·잔금) */
 export type DealPayment = NonNullable<Deal['payments']>[number];
@@ -80,7 +80,7 @@ function contractPlaceLabel(contract: Contract) {
 }
 
 function dealPlaceLabel(deal: Deal) {
-  const place = placeOf((deal.property ?? deal.listing?.property) as PlaceProperty);
+  const place = placeOf(deal.property as PlaceProperty);
   if (place) return place;
   const buyer = deal.buyerContact?.name;
   const seller = deal.sellerContact?.name;

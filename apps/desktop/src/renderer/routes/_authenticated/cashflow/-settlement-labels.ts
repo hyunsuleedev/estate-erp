@@ -1,5 +1,5 @@
 import { formatPlaceLabel } from '@estate-erp/shared';
-import type { Deal } from '@estate-erp/api-client';
+import type { DealListItem as Deal } from '@estate-erp/api-client';
 
 /** 정산 화면에서 쓰는 직원 역할 표기 */
 export const PARTICIPANT_ROLE_LABEL: Record<string, string> = {

@@ -15,7 +15,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core';
 import { CalendarClock, Plus } from 'lucide-react';
-import type { Deal } from '@estate-erp/api-client';
+import type { DealListItem as Deal } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format';
 import { DEAL_GROUP_TONE, DealActionsMenu, DealStagePill } from './-deal-shared';
