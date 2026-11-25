@@ -22,11 +22,10 @@ import {
   Tag,
 } from "lucide-react";
 import type { ListingAdvertisementWithListing } from "@estate-erp/api-client";
-import { analyzeOfficeAdvertisementComparison } from "@estate-erp/api-client";
 import { cn } from "@/lib/utils";
-import { formatDateShortYear } from "@/lib/format";
+import { formatRelativeDay } from "@/lib/format";
 import { PROPERTY_TABLE_TAG_CLASS_NAME, rankTone } from "./my-ads-pill";
-import { getCanonicalLocation } from "./my-ads-format";
+import { getCachedComparison, getCanonicalLocation } from "./my-ads-format";
 import { advertisementCheckedAtTime } from "./my-ads-sort";
 import {
   advertisementLocationLabel,
@@ -164,8 +163,8 @@ function AnalysisToggleButton({
 }) {
   const { expandedIds, onToggleExpanded } = useMyAdsTableState();
   const ranking =
-    advertisement.comparison?.mainAdvertisement?.ranking;
-  const comparison = analyzeOfficeAdvertisementComparison(advertisement);
+    advertisement.comparison?.ownAdvertisement?.ranking;
+  const comparison = getCachedComparison(advertisement);
   const expanded = expandedIds.has(advertisement.id);
   const rankingLabel =
     ranking != null
@@ -208,8 +207,10 @@ function AnalysisToggleButton({
  */
 export function buildColumns({
   areAdvertisementSourceColumnsCollapsed,
+  hasMultipleCpAccounts = false,
 }: {
   areAdvertisementSourceColumnsCollapsed: boolean;
+  hasMultipleCpAccounts?: boolean;
 }): ColumnDef<ListingAdvertisementWithListing, unknown>[] {
   return [
     {
@@ -279,7 +280,7 @@ export function buildColumns({
       id: "link",
       ...columnWidth("link"),
       header: () => (
-        <TableHeaderLabel icon={<Home className="size-4" />} label="매물" />
+        <TableHeaderLabel icon={<Home className="size-4" />} label="연결" />
       ),
       cell: ({ row }) => <LinkStatusCell advertisement={row.original} />,
     },
@@ -335,6 +336,30 @@ export function buildColumns({
               <CpAdvertisementCell advertisement={row.original} />
             ),
           },
+          ...(hasMultipleCpAccounts
+            ? ([
+                {
+                  id: "cpAccount",
+                  ...columnWidth("cpAccount"),
+                  header: () => (
+                    <TableHeaderLabel
+                      icon={<Megaphone className="size-4" />}
+                      label="CP 계정"
+                    />
+                  ),
+                  cell: ({ row }) => {
+                    const account = row.original.cpAccount;
+                    if (!account) return <EmptyCellValue />;
+                    const label = account.accountName || account.accountKey;
+                    return (
+                      <CellText title={`${account.accountKey}${account.accountName ? ` (${account.accountName})` : ""}`}>
+                        {label}
+                      </CellText>
+                    );
+                  },
+                },
+              ] satisfies ColumnDef<ListingAdvertisementWithListing, unknown>[])
+            : []),
           {
             id: "naver",
             ...columnWidth("naver"),
@@ -424,7 +449,7 @@ export function buildColumns({
           <EmptyCellValue />
         ) : (
           <CellText className="tabular-nums">
-            {formatDateShortYear(checkedAt)}
+            {formatRelativeDay(checkedAt)}
           </CellText>
         );
       },

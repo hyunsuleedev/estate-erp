@@ -1,5 +1,5 @@
-import { ApiError } from '@estate-erp/api-client';
 import type { Employee } from '@estate-erp/api-client';
+import { apiErrorMessage } from '@/lib/api-error';
 import { USER_LICENSE_TYPE_LABELS } from '@estate-erp/shared';
 
 /**
@@ -65,7 +65,7 @@ const ACTIVITY_ENTITY_LABELS: Record<string, string> = {
   buyerIntakeContact: '구매 의뢰 연락처',
   project: '프로젝트',
   projectStep: '프로젝트 순서',
-  buyerRequirement: '희망조건',
+  buyerRequirement: '희망 조건',
   match: '매칭',
   deal: '거래',
   consultation: '상담',
@@ -75,6 +75,13 @@ const ACTIVITY_ENTITY_LABELS: Record<string, string> = {
   contractDocument: '계약 문서',
   contractClauseTemplate: '특약 서식',
   officePrintTemplate: '인쇄 서식',
+  advertisementChangeRequest: '광고 변경 요청',
+  commissionReceipt: '수수료 입금',
+  settlement: '직원 정산',
+  settlementLine: '정산 내역',
+  // 2026-11-21에 "중개 건"을 프로젝트로 바꾸기 전의 기록
+  brokerageCase: '프로젝트',
+  brokerageCaseStep: '프로젝트 순서',
 };
 
 const ACTIVITY_ACTION_LABELS: Record<string, string> = {
@@ -121,10 +128,12 @@ export function matchesEmployeeSearch(employee: Employee, query: string) {
     .includes(normalized);
 }
 
-export function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError && error.message) return error.message;
-  if (error instanceof Error && error.message) return error.message;
-  return '요청 처리에 실패했습니다.';
+/** 토스트 문구. 서버가 준 안내가 있으면 그것, 없으면 fallback (lib/api-error의 apiErrorMessage) */
+export function getErrorMessage(
+  error: unknown,
+  fallback = '요청을 처리하지 못했습니다. 다시 시도해 주세요.',
+): string {
+  return apiErrorMessage(error, fallback);
 }
 
 /** 사무소 공통 배분 기준에서 숫자 하나를 읽는다. 없거나 숫자가 아니면 기본값 */

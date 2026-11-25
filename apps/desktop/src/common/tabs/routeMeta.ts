@@ -55,7 +55,7 @@ const STATIC_ROUTES: Record<string, RouteMetaCore> = {
   '/projects': { title: '프로젝트', kind: 'contact', iconKey: 'users' },
   '/contacts/new': { title: '연락처 추가', kind: 'contact', iconKey: 'book-user' },
   '/partner-brokers': { title: '파트너 중개사', kind: 'contact', iconKey: 'handshake' },
-  '/service-vendors': { title: '서비스 업체', kind: 'contact', iconKey: 'wrench' },
+  '/service-vendors': { title: '협력업체 찾기', kind: 'contact', iconKey: 'wrench' },
   '/deals': { title: '거래관리', kind: 'deal', iconKey: 'handshake' },
   '/wanted-properties': { title: '희망매물', kind: 'match', iconKey: 'user-search' },
   '/consultations': {
@@ -64,8 +64,9 @@ const STATIC_ROUTES: Record<string, RouteMetaCore> = {
     iconKey: 'message-square',
   },
   '/calls': { title: '상담분석', kind: 'consultation', iconKey: 'phone-call' },
+  '/calls/logs': { title: '통화 이력', kind: 'consultation', iconKey: 'phone-call' },
   '/buyer-requirements/new': {
-    title: '구함 의뢰 추가',
+    title: '희망매물 생성',
     kind: 'contact',
     iconKey: 'user-search',
   },
@@ -93,6 +94,12 @@ const STATIC_ROUTES: Record<string, RouteMetaCore> = {
   },
   '/employees': { title: '직원관리', kind: 'employee', iconKey: 'users' },
   '/settings': { title: '설정', kind: 'settings', iconKey: 'settings' },
+  // 메뉴에서 숨긴 화면도 주소로 열면 탭 제목이 주소 그대로 보이지 않게 둔다
+  '/documents': { title: '자료실', kind: 'generic', iconKey: 'file-text' },
+  '/documents/photos': { title: '사진 자료', kind: 'generic', iconKey: 'file-text' },
+  '/prototypes/buyer-customers': { title: '시안: 구매 손님', kind: 'generic', iconKey: 'users' },
+  '/prototypes/customer-ledger': { title: '시안: 고객 원장', kind: 'generic', iconKey: 'users' },
+  '/prototypes/customer-management': { title: '시안: 고객 관리', kind: 'generic', iconKey: 'users' },
   '/network': { title: '네트워크', kind: 'generic', iconKey: 'network' },
 };
 
@@ -100,6 +107,11 @@ const DYNAMIC_ROUTE_META: Array<{
   match: RegExp;
   meta: (match: RegExpMatchArray) => RouteMetaCore;
 }> = [
+  {
+    // 호실 id로 여는 매물 상세 (관리호수가 아직 없는 호실 포함)
+    match: /^\/properties\/unit\/([^/]+)$/,
+    meta: () => ({ title: '매물 상세', kind: 'property', iconKey: 'building' }),
+  },
   {
     match: /^\/properties\/([^/]+)$/,
     meta: () => ({ title: '매물 상세', kind: 'property', iconKey: 'building' }),
@@ -123,7 +135,7 @@ const DYNAMIC_ROUTE_META: Array<{
   {
     match: /^\/buyer-requirements\/([^/]+)(?:\/edit)?$/,
     meta: (match) => ({
-      title: match[0].endsWith('/edit') ? '구매고객 수정' : '구매고객 상세',
+      title: match[0].endsWith('/edit') ? '희망 조건 수정' : '희망 조건',
       kind: 'contact',
       iconKey: 'user-search',
     }),

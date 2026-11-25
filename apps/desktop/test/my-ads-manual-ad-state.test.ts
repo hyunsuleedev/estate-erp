@@ -10,11 +10,10 @@ import type {
 import {
   assertExternalAdIdAvailable,
   buildMyAdsManualAdPayload,
-  countAdvertisementsBySource,
+  countAdvertisementsBySyncState,
   externalAdIdToVerify,
   initialMyAdsManualAdDraft,
   isManualAdDraftChanged,
-  isManualAdvertisement,
   listingMatchesSearchTokens,
   manualAdChannelOptions,
   manualAdErrorFields,
@@ -26,11 +25,11 @@ import {
   manualAdSuccessMessage,
   myAdsAnalysisSignal,
   myAdsRankingPendingLabel,
-  myAdsSelectionHint,
   pickServerSearchToken,
   splitSearchTokens,
 } from "../src/renderer/routes/_authenticated/properties/-my-ads/my-ads-manual-ad-state";
 import {
+  advertisementSyncState,
   cpChannelLabel,
   getAnalysisSignal,
 } from "../src/renderer/routes/_authenticated/properties/-my-ads/my-ads-format";
@@ -86,7 +85,6 @@ function advertisement(overrides: Partial<ListingAdvertisementWithListing> = {})
     listingId: "listing-1",
     channel: "esiljang",
     status: "active",
-    source: "manual",
     advertisedPrice: 155000,
     advertisedDeposit: null,
     advertisedMonthlyRent: null,
@@ -144,8 +142,12 @@ describe("manual ad listing search", () => {
 
     assert.equal(manualAdListingPriceLabel(listing()), "15억 8,000만");
     assert.equal(
+      manualAdListingPriceLabel(listing({ transactionType: "jeonse", price: 90000, deposit: null })),
+      "9억",
+    );
+    assert.equal(
       manualAdListingPriceLabel(listing({ transactionType: "monthly", price: null, deposit: 5000, monthlyRent: 120 })),
-      "5,000만 / 120",
+      "5,000만 / 120만",
     );
 
     assert.equal(manualAdListingStatusLabel(listing()), null);
@@ -156,7 +158,7 @@ describe("manual ad listing search", () => {
     );
     assert.equal(
       manualAdListingStatusLabel(listing({ deals: [{ id: "deal-1", stage: "contracted", stageChangedAt: null }] })),
-      "거래중",
+      "거래 중",
     );
   });
 
@@ -172,17 +174,26 @@ describe("manual ad listing search", () => {
     assert.equal(new Set(options.map((option) => option.value)).size, 19);
   });
 
-  it("lets an ended record use a channel that already has an active ad", () => {
+  it("does not let an ended record take a channel that already has an active ad", () => {
+    // 같은 매물·같은 채널은 한 줄이다. 종료 기록으로 넣으면 게재 중인 광고가 종료되므로 막는다
     const busy = listing({ activeAdvertisements: [advertisement({ channel: "esiljang" })] });
-    const ended = manualAdChannelOptions(busy, "ended");
-    // 광고 중이라는 사실은 그대로 알리되 고를 수 있다(활성 유일 제약과 무관)
-    assert.deepEqual(ended[0], { value: "esiljang", label: "이실장플러스 · 광고 중", disabled: false });
-    assert.ok(ended.every((option) => !option.disabled));
-    assert.equal(manualAdChannelOptions(busy, "active")[0].disabled, true);
-    // 그 채널로 종료 기록을 만들면 저장 내용도 통과한다
-    const draft = { ...initialMyAdsManualAdDraft(busy), channel: "esiljang", status: "ended" as const, endedAt: "2026-11-15" };
-    assert.equal(buildMyAdsManualAdPayload(busy, draft).channel, "esiljang");
+    assert.deepEqual(manualAdChannelOptions(busy)[0], {
+      value: "esiljang",
+      label: "이실장플러스 · 광고 중",
+      disabled: true,
+    });
+    // 등록일 기본값은 오늘이라 날짜를 고정한다(종료일이 등록일보다 앞서면 막힌다)
+    const draft = {
+      ...initialMyAdsManualAdDraft(busy),
+      channel: "esiljang",
+      status: "ended" as const,
+      startedAt: "2026-11-01",
+      endedAt: "2026-11-15",
+    };
+    assert.throws(() => buildMyAdsManualAdPayload(busy, draft), /진행 중인 광고/);
     assert.throws(() => buildMyAdsManualAdPayload(busy, { ...draft, status: "active", endedAt: "" }), /진행 중인 광고/);
+    // 비어 있는 채널에는 종료 기록을 넣을 수 있다
+    assert.equal(buildMyAdsManualAdPayload(busy, { ...draft, channel: "budongsanbank" }).channel, "budongsanbank");
   });
 });
 
@@ -199,7 +210,7 @@ describe("manual ad payload", () => {
       ...draft, startedAt: "2026-11-15", externalAdId: " BB-77 ", naverArticleNo: "2612345678",
     });
     assert.deepEqual(payload, {
-      listingId: "listing-1", channel: "budongsanbank", source: "manual", status: "active",
+      listingId: "listing-1", channel: "budongsanbank", status: "active",
       advertisedPrice: 158000, startedAt: "2026-11-15T00:00:00.000Z", endedAt: null, url: null, memo: null,
       externalAdId: "BB-77", naverArticleNo: "2612345678",
     });
@@ -213,9 +224,9 @@ describe("manual ad payload", () => {
     assert.throws(() => buildMyAdsManualAdPayload(busy, { ...draft, advertisedPrice: "1.5" }), /금액/);
     assert.throws(() => buildMyAdsManualAdPayload(busy, { ...draft, naverArticleNo: "https://x/1" }), /네이버 매물번호/);
     assert.throws(() => buildMyAdsManualAdPayload(busy, { ...draft, externalAdId: "A 1" }), /CP 광고번호/);
-    // 종료로 기록하면 같은 채널에 진행 중 광고가 있어도 된다
+    // 종료 기록은 진행 중 광고가 없는 채널에 넣는다(같은 채널은 한 줄이라 진행 중 광고를 종료시킨다)
     const ended = buildMyAdsManualAdPayload(busy, {
-      ...draft, channel: "esiljang", status: "ended", startedAt: "2026-10-01", endedAt: "2026-11-01",
+      ...draft, channel: "budongsanbank", status: "ended", startedAt: "2026-10-01", endedAt: "2026-11-01",
     });
     assert.equal(ended.status, "ended");
     assert.equal(ended.endedAt, "2026-11-01T00:00:00.000Z");
@@ -281,15 +292,17 @@ describe("CP ad number uniqueness pre-check", () => {
 
 describe("manual ad messages", () => {
   it("turns server errors into screen copy", () => {
-    assert.match(manualAdErrorMessage(new ApiError(404, { message: "Listing not found" })), /매물을 찾을 수 없습니다/);
-    assert.match(
-      manualAdErrorMessage(new ApiError(400, { message: "active advertisement cannot have endedAt" })),
-      /종료일/,
-    );
+    // 서버는 광고 검증 문구를 한국어로 답한다 — 그대로 보인다
+    const notFound = "선택한 매물을 찾을 수 없습니다. 매물이 삭제되었는지 확인해 주세요.";
+    assert.equal(manualAdErrorMessage(new ApiError(404, { message: notFound })), notFound);
     const conflict = "같은 매물·같은 채널에 이미 게재 중인 광고가 있습니다. 기존 광고를 먼저 종료하세요.";
     assert.equal(manualAdErrorMessage(new ApiError(409, { message: conflict })), conflict);
-    assert.match(manualAdErrorMessage(new ApiError(500, { message: "Internal server error" })), /잠시 후/);
-    assert.match(manualAdErrorMessage(new TypeError("Failed to fetch")), /네트워크/);
+    // 5xx의 프레임워크 문구·서버 문구 없음은 저장 실패 안내로
+    assert.match(manualAdErrorMessage(new ApiError(500, { message: "Internal server error" })), /저장하지 못했습니다/);
+    assert.match(manualAdErrorMessage(new ApiError(400, {})), /저장하지 못했습니다/);
+    // 서버에 닿지 못함
+    assert.match(manualAdErrorMessage(new TypeError("Failed to fetch")), /서버에 연결하지 못했습니다/);
+    // 저장 전에 화면이 던진 확인 문구는 그대로
     assert.equal(manualAdErrorMessage(new Error("광고 채널을 선택해 주세요.")), "광고 채널을 선택해 주세요.");
   });
 
@@ -340,9 +353,16 @@ describe("manual ad messages", () => {
 });
 
 describe("manual ads in the my-ads table", () => {
-  it("marks manual ads and names every channel with one function", () => {
-    assert.ok(isManualAdvertisement(advertisement()));
-    assert.equal(isManualAdvertisement(advertisement({ source: "cp_sync" })), false);
+  it("marks sync states and names every channel with one function", () => {
+    assert.equal(advertisementSyncState(advertisement()), "manual");
+    assert.equal(
+      advertisementSyncState(advertisement({ lastSyncedAt: at })),
+      "synced",
+    );
+    assert.equal(
+      advertisementSyncState(advertisement({ lastSyncedAt: at, manualEditedAt: "2026-11-16T03:00:00.000Z" })),
+      "manual_override",
+    );
     // 매물관리와 같은 네이버 제휴사 이름. 표·필터·수동입력 다이얼로그가 같은 이름을 쓴다
     assert.equal(cpChannelLabel("esiljang"), "이실장플러스");
     assert.equal(cpChannelLabel("budongsanbank"), "부동산뱅크");
@@ -358,25 +378,16 @@ describe("manual ads in the my-ads table", () => {
     );
   });
 
-  it("counts CP and manual ads separately for the status bar", () => {
+  it("counts syncState variants separately for the status bar", () => {
     assert.deepEqual(
-      countAdvertisementsBySource([
+      countAdvertisementsBySyncState([
         advertisement(),
-        advertisement({ source: "cp_sync" }),
-        advertisement({ source: "cp_sync" }),
+        advertisement({ lastSyncedAt: at }),
+        advertisement({ lastSyncedAt: at, manualEditedAt: "2026-11-16T03:00:00.000Z" }),
       ]),
-      { cp: 2, manual: 1 },
+      { synced: 1, manual: 1, manualOverride: 1 },
     );
-    assert.deepEqual(countAdvertisementsBySource([]), { cp: 0, manual: 0 });
-  });
-
-  it("tells that manual ads are edited one at a time", () => {
-    assert.match(myAdsSelectionHint([advertisement()]), /상세 편집에서 바로 수정/);
-    assert.match(myAdsSelectionHint([advertisement(), advertisement({ id: "ad-2" })]), /한 건씩/);
-    assert.equal(
-      myAdsSelectionHint([advertisement(), advertisement({ source: "cp_sync" })]),
-      "가격·월세를 직접 수정하세요",
-    );
+    assert.deepEqual(countAdvertisementsBySyncState([]), { synced: 0, manual: 0, manualOverride: 0 });
   });
 
   it("does not use CP-read wording for manual ads without a Naver comparison", () => {
@@ -391,7 +402,7 @@ describe("manual ads in the my-ads table", () => {
     assert.match(waiting.detail, /2612345678/);
     assert.equal(myAdsRankingPendingLabel(advertisement({ naverArticleNo: "2612345678" })), "분석 대기");
 
-    const cp = advertisement({ source: "cp_sync" });
+    const cp = advertisement({ lastSyncedAt: at });
     assert.deepEqual(myAdsAnalysisSignal(cp), getAnalysisSignal(cp));
     assert.equal(myAdsRankingPendingLabel(cp), "분석 대기");
   });
@@ -408,10 +419,10 @@ describe("manual ads in the my-ads table", () => {
     const compared = advertisement({
       naverArticleNo: "2612345678",
       comparison: {
-        id: "g-1", officeId: "office-1", listingAdvertisementId: "ad-1", mainAdvertisementId: own.id, memo: null,
+        id: "g-1", officeId: "office-1", listingAdvertisementId: "ad-1", ownAdvertisementId: own.id, memo: null,
         ownPrice: 155000, ownDeposit: null, ownMonthlyRent: null, relatedPriceMin: null, relatedPriceMax: null,
         relatedCount: 0, firstSeenAt: at, lastSeenAt: at, lastSyncedAt: at, createdAt: at, updatedAt: at,
-        mainAdvertisement: own, advertisements: [own],
+        ownAdvertisement: own, advertisements: [own],
       },
     });
     const signal = myAdsAnalysisSignal(compared);

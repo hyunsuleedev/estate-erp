@@ -1,5 +1,5 @@
 import type { ListingAdvertisementWithListing } from "@estate-erp/api-client";
-import { analyzeOfficeAdvertisementComparison } from "@estate-erp/api-client";
+import { getCachedComparison } from "./my-ads-format";
 
 /**
  * 펼침 패널(my-ads-analysis-panel.tsx)의 높이(px). 1280·1600 폭에서 잰 값이다:
@@ -53,7 +53,7 @@ export function myAdsAnalysisPanelSummary(
   advertisement: ListingAdvertisementWithListing,
 ): MyAdsAnalysisPanelSummary {
   const group = advertisement.comparison;
-  const hasComparison = Boolean(group && group.mainAdvertisement);
+  const hasComparison = Boolean(group && group.ownAdvertisement);
   const competitorCount = activeComparedAdvertisements(advertisement).filter(
     (comparedAdvertisement) => !comparedAdvertisement.isMine,
   ).length;
@@ -67,7 +67,7 @@ export function myAdsAnalysisPanelSummary(
     };
   }
 
-  const comparison = analyzeOfficeAdvertisementComparison(advertisement);
+  const comparison = getCachedComparison(advertisement);
   const lower = comparison.lowerPricedCompetitorCount;
   if (comparison.ownRanking == null) {
     // 경쟁 광고 가격은 비교할 수 있지만, 그 광고가 내 광고보다 앞서는지는 모른다.

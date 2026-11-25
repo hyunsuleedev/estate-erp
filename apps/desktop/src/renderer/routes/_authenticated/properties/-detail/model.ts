@@ -20,6 +20,7 @@ import {
 } from '@/lib/listing-status';
 import { getStatusMeta } from '@/lib/status-config';
 import { getAdChannelLabel } from '@/lib/advertisement-channels';
+import { splitConsultationTag } from '../../consultations/-consultation-list-model';
 export { getAdChannelLabel } from '@/lib/advertisement-channels';
 
 /*
@@ -87,22 +88,22 @@ export const availabilityMeta: Record<
   { label: string; dot: string; pill: string }
 > = {
   [ListingAvailability.AVAILABLE]: {
-    label: '활성',
+    label: getStatusMeta('listingAvailability', ListingAvailability.AVAILABLE).label,
     dot: 'bg-[#6c9b7a]',
     pill: 'bg-[#eef3ed] text-[#44745a]',
   },
   [ListingAvailability.PAUSED]: {
-    label: '보류',
+    label: getStatusMeta('listingAvailability', ListingAvailability.PAUSED).label,
     dot: 'bg-[#dfab01]',
     pill: 'bg-[#fbf3db] text-[#9f6b00]',
   },
   [ListingAvailability.IN_CONTRACT]: {
-    label: '거래중',
+    label: getStatusMeta('listingAvailability', ListingAvailability.IN_CONTRACT).label,
     dot: 'bg-[#529cca]',
     pill: 'bg-[#e7f3f8] text-[#337ea9]',
   },
   [ListingAvailability.CLOSED]: {
-    label: '종료',
+    label: getStatusMeta('listingAvailability', ListingAvailability.CLOSED).label,
     dot: 'bg-[#b4b4b1]',
     pill: 'bg-[#f1f1ef] text-[#787774]',
   },
@@ -125,7 +126,7 @@ export const directionLabels: Record<string, string> = {
 };
 
 export const contactRoleLabels: Record<string, string> = {
-  owner: '소유주',
+  owner: '소유자',
   co_owner: '공동소유',
   representative: '대리인',
   lawyer: '법무사',
@@ -165,7 +166,7 @@ export function formatShortDate(value?: string | null) {
   const md = `${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
   return date.getFullYear() === new Date().getFullYear()
     ? md
-    : `${String(date.getFullYear()).slice(2)}.${md}`;
+    : `${date.getFullYear()}.${md}`; // 다른 해는 "2027.03.01" (화면 표기 기준)
 }
 
 /** "14:30" */
@@ -297,7 +298,12 @@ function isAdPriceStale(listing: PropertyListing, ad: ListingAdvertisement) {
       (ad.advertisedMonthlyRent != null && ad.advertisedMonthlyRent !== listing.monthlyRent)
     );
   }
-  return ad.advertisedPrice != null && ad.advertisedPrice !== listing.price;
+  const listingPrice = listing.price ?? listing.deposit;
+  const adPrice =
+    listing.transactionType === 'jeonse'
+      ? (ad.advertisedDeposit ?? ad.advertisedPrice)
+      : ad.advertisedPrice;
+  return adPrice != null && listingPrice != null && adPrice !== listingPrice;
 }
 
 export interface OfferAd {
@@ -423,7 +429,7 @@ export type Tone = 'ok' | 'deal' | 'warn' | 'danger' | 'neutral';
 
 export interface ConfirmSummary {
   state: IntakeConfirmationState;
-  /** 카드 큰 글씨: "확인됨" · "재확인 필요" */
+  /** 카드 큰 글씨: "확인 완료" · "재확인 필요" (상태 이름은 공용 status-config와 같다) */
   headline: string;
   /** 카드 작은 글씨: "3일 전 · 11.09 전화 확인" */
   detail: string;
@@ -437,7 +443,7 @@ export function getConfirmSummary(intake: ListingIntake): ConfirmSummary {
     case IntakeConfirmationState.VERIFIED:
       return {
         state,
-        headline: '확인됨',
+        headline: '확인 완료',
         detail: `${formatAgo(intake.lastVerifiedAt)} · ${formatShortDate(intake.lastVerifiedAt)}`,
         chip: `확인 ${formatAgo(intake.lastVerifiedAt)}`,
         tone: 'ok',
@@ -462,7 +468,7 @@ export function getConfirmSummary(intake: ListingIntake): ConfirmSummary {
       return {
         state,
         headline: '미확인',
-        detail: `접수 ${daysSince(intake.receivedAt) ?? 0}일째 · 아직 소유주 확인 기록이 없음`,
+        detail: `접수 ${daysSince(intake.receivedAt) ?? 0}일째 · 아직 소유자 확인 기록이 없음`,
         chip: `미확인 · 접수 ${daysSince(intake.receivedAt) ?? 0}일째`,
         tone: 'warn',
       };
@@ -656,16 +662,15 @@ export function buildRecords({
   for (const consultation of consultations) {
     const content = consultation.content?.trim() ?? '';
     const isConfirm = consultation.purpose === 'listing_confirm';
+    // "[매물확인] 살아있음\n메모" → 제목 "매물 확인 · 유효함", 본문 "메모" (저장된 글은 그대로 두고 보일 때만)
+    const confirmTag = isConfirm && content.startsWith(CONFIRM_PREFIX) ? splitConsultationTag(content) : null;
     items.push({
       id: `consultation-${consultation.id}`,
       kind: isConfirm ? 'confirm' : 'consultation',
       at: consultation.createdAt,
-      title: isConfirm ? '매물 확인' : (consultationTitles[consultation.type] ?? '상담'),
+      title: isConfirm ? (confirmTag?.tag ?? '매물 확인') : (consultationTitles[consultation.type] ?? '상담'),
       meta: consultation.contact?.name ?? null,
-      body:
-        (isConfirm && content.startsWith(CONFIRM_PREFIX)
-          ? content.slice(CONFIRM_PREFIX.length).trim()
-          : content) || null,
+      body: (confirmTag ? confirmTag.body : content) || null,
       summary: null,
       url: null,
       withTime: true,
@@ -724,7 +729,8 @@ export function buildRecords({
 
   for (const deal of deals) {
     const dealType = getTransactionTypeMeta(deal.transactionType).label;
-    const party = deal.buyerContact?.name ? `매수 ${deal.buyerContact.name}` : null;
+    const isLease = deal.transactionType === 'jeonse' || deal.transactionType === 'monthly';
+    const party = deal.buyerContact?.name ? `${isLease ? '임차인' : '매수인'} ${deal.buyerContact.name}` : null;
     items.push({
       id: `deal-${deal.id}`,
       kind: 'deal',

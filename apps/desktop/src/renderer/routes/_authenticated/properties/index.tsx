@@ -109,6 +109,7 @@ import {
 import { useTabStore } from "@/features/tabs/store/useTabStore";
 import { getRouteMeta } from "@/features/tabs/lib/routeMeta";
 import { tabResourceKeys } from "@/features/tabs/lib/tabResource";
+import { splitConsultationTag } from "../consultations/-consultation-list-model";
 import {
   getActiveDealListingIndex,
   getIntakeConfirmationState,
@@ -176,6 +177,11 @@ import {
 import { PropertyInspectorProgressTab } from "./-components/property-inspector-progress-tab";
 import { PropertyRegistrationDrawer } from "./-components/property-registration-drawer";
 import type { PropertyRegistrationResult } from "./-property-registration-form";
+import { ManwonInput } from "./-new-form-ui";
+import { describeManwonText, parseManwonText } from "./-manwon-input";
+import { propertyErrorMessage } from "./-error-message";
+import { formatPyeong } from "@/lib/format";
+import { useAuth } from "@/providers/auth-provider";
 import { getStatusMeta } from "@/lib/status-config";
 import { PropertyListingCell } from "./-components/property-listing-cell";
 import { PROPERTY_LISTING_ITEM_HEIGHT } from "./-property-table-metrics";
@@ -207,11 +213,10 @@ import {
   estimatePropertyMatchPanelHeight,
   getPropertyMatchCount,
 } from "./-components/property-match-panel";
-import { AdTableColumnHeader } from "./-components/property-ad-table-controls";
-import { PropertyPanelSelectionCheckbox } from "./-components/property-panel-selection-checkbox";
-import { PropertyAdEditableCell } from "./-components/property-ad-editable-cell";
-import { adTableColumns, getAdChannelLabel, sortPropertyAdRows, type AdColumnId, type AdTableControls } from "./-components/property-ad-table-state";
+import { PropertyAdPanelContent } from "./-components/property-ad-panel-content";
+import { getAdChannelLabel, type AdTableControls } from "./-components/property-ad-table-state";
 import { matchStageOrder } from "../wanted-properties/-match-view-utils";
+import { useInspectorOutsideClose } from "@/hooks/use-inspector-outside-close";
 
 // ── Labels & Colors ─────────────────────────────────────────────
 
@@ -219,23 +224,27 @@ const listingAvailabilityMeta: Record<
   ListingAvailability,
   { label: string; dotClassName: string; pillClassName: string }
 > = {
+  // "활성"은 공용 상태 이름(lib/status-config)과 같은 낱말. 나머지는 공용 이름을 읽는다.
   [ListingAvailability.AVAILABLE]: {
     label: "활성",
     dotClassName: "bg-[#6c9b7a]",
     pillClassName: "bg-[#eef3ed] text-[#44745a]",
   },
   [ListingAvailability.PAUSED]: {
-    label: "보류",
+    // 낱말은 공용 상태 이름(lib/status-config)을 읽는다 — 화면마다 "거래중"/"거래 중"이 갈리지 않게
+    label: getStatusMeta("listingAvailability", ListingAvailability.PAUSED).label,
     dotClassName: "bg-[#dfab01]",
     pillClassName: "bg-[#fbf3db] text-[#9f6b00]",
   },
   [ListingAvailability.IN_CONTRACT]: {
-    label: "거래중",
+    // 낱말은 공용 상태 이름(lib/status-config)을 읽는다 — 화면마다 "거래중"/"거래 중"이 갈리지 않게
+    label: getStatusMeta("listingAvailability", ListingAvailability.IN_CONTRACT).label,
     dotClassName: "bg-[#529cca]",
     pillClassName: "bg-[#e7f3f8] text-[#337ea9]",
   },
   [ListingAvailability.CLOSED]: {
-    label: "종료",
+    // 낱말은 공용 상태 이름(lib/status-config)을 읽는다 — 화면마다 "거래중"/"거래 중"이 갈리지 않게
+    label: getStatusMeta("listingAvailability", ListingAvailability.CLOSED).label,
     dotClassName: "bg-[#b4b4b1]",
     pillClassName: "bg-[#f1f1ef] text-[#787774]",
   },
@@ -260,13 +269,8 @@ const listingAvailabilityChipOptions: ChipOption[] = Object.entries(
   dotClassName: meta.dotClassName,
 }));
 
-const adStatusMeta: Record<string, { label: string; className: string }> = {
-  active: { label: "광고중", className: "bg-[#eef3ed] text-[#44745a]" },
-  ended: { label: "종료", className: "bg-[#f1f1ef] text-[#787774]" },
-};
-
 const contactRoleLabels: Record<string, string> = {
-  owner: "소유주",
+  owner: "소유자",
   co_owner: "공동소유",
   representative: "대리인",
   lawyer: "법무사",
@@ -276,6 +280,15 @@ const contactRoleLabels: Record<string, string> = {
 const sortDefinitions = propertyTableColumns;
 
 const LISTINGS_PAGE_SIZE = 50;
+function readDetailColumnsCollapsed(key: string | null) {
+  if (!key) return true;
+  try {
+    return localStorage.getItem(key) !== "open";
+  } catch {
+    return true;
+  }
+}
+
 function getMatchStageIndex(stage: string) {
   const normalizedStage = normalizeMatchStage(stage);
   return matchStageOrder.findIndex(
@@ -347,14 +360,14 @@ function handleMutationError(error: unknown) {
     return;
   }
 
-  toast.error("저장에 실패했습니다.");
+  toast.error(propertyErrorMessage(error, "저장하지 못했습니다. 다시 시도해 주세요."));
 }
 
 const MANUAL_INTAKE_CLOSE_REASON_OPTIONS = [
   {
     value: IntakeClosedReason.WITHDRAWN,
     label: "의뢰 철회",
-    description: "소유주가 매도·임대 의뢰를 거둬들였습니다.",
+    description: "소유자가 매도·임대 의뢰를 거둬들였습니다.",
   },
   {
     value: IntakeClosedReason.EXTERNAL_DEAL_COMPLETED,
@@ -381,6 +394,15 @@ function getClosedStatusLabel(closedReason?: string | null) {
     [IntakeClosedReason.OTHER]: "종료 · 기타",
   };
   return (closedReason && labels[closedReason]) || "종료";
+}
+
+/**
+ * 표의 매물상태 칸에 적는 종료 이름. 사유를 다 적지 않고 둘로만 가른다 (사용자 결정 2026-11-22):
+ * 우리 거래로 끝난 것은 "거래 완료", 나머지(의뢰 철회 · 타 거래 · 거래 불가 · 기타)는 "종료".
+ * 표는 훑는 곳이라 "우리가 성사시켰는가"만 보이면 되고, 자세한 사유는 알약에 올리면 뜨고 옆 패널에도 그대로 있다.
+ */
+function getClosedStatusCellLabel(closedReason?: string | null) {
+  return closedReason === IntakeClosedReason.DEAL_COMPLETED ? "거래 완료" : "종료";
 }
 const PROPERTY_LISTING_STACK_ITEM_HEIGHT = PROPERTY_LISTING_ITEM_HEIGHT;
 const PROPERTY_MAP_CLUSTER_GRID_SIZE = 84;
@@ -590,10 +612,31 @@ function PropertiesPage() {
   const [expandedPanels, setExpandedPanels] = useState<
     ReadonlyMap<string, "match" | "ad">
   >(() => new Map());
+  // 타입–확인 열 묶음은 기본으로 접혀 있다(사용자가 정한 열 구성). 확인 전화를 하는 사람이
+  // 한 번 펼치면 이 PC에서는 계속 펼쳐 두도록 사용자·사무소별로 기억한다.
+  const authUser = useAuth().user;
+  const detailColumnsKey = authUser
+    ? `estate:property-list:detail-columns:v1:${authUser.office?.id ?? "none"}:${authUser.id}`
+    : null;
   const [
     arePropertyDetailColumnsCollapsed,
     setArePropertyDetailColumnsCollapsed,
-  ] = useState(true);
+  ] = useState(() => readDetailColumnsCollapsed(detailColumnsKey));
+  const loadedDetailColumnsKeyRef = useRef(detailColumnsKey);
+  useEffect(() => {
+    if (loadedDetailColumnsKeyRef.current !== detailColumnsKey) {
+      // 로그인 정보가 늦게 오거나 사용자가 바뀌면 그 사람의 기억을 다시 읽는다(덮어쓰지 않게)
+      loadedDetailColumnsKeyRef.current = detailColumnsKey;
+      setArePropertyDetailColumnsCollapsed(readDetailColumnsCollapsed(detailColumnsKey));
+      return;
+    }
+    if (!detailColumnsKey) return;
+    try {
+      localStorage.setItem(detailColumnsKey, arePropertyDetailColumnsCollapsed ? "collapsed" : "open");
+    } catch {
+      /* 저장소를 못 써도 이번 화면에서는 그대로 쓴다 */
+    }
+  }, [detailColumnsKey, arePropertyDetailColumnsCollapsed]);
   const [isPriceFilterOpen, setIsPriceFilterOpen] = useState(false);
   const [isMonthlyRentFilterOpen, setIsMonthlyRentFilterOpen] = useState(false);
   const [isAreaFilterOpen, setIsAreaFilterOpen] = useState(false);
@@ -928,11 +971,15 @@ function PropertiesPage() {
     }) =>
       api.listingIntakes.confirm(intakeId, {
         result,
-        channel: "note",
+        // 빠른 메뉴는 "오늘 연락한 결과" — 전화로 확인한 것으로 남긴다(자세히 기록에서는 고른 방법 그대로)
+        channel: "phone",
         expectedUpdatedAt,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
+      // 매칭의 거래 전환은 확인 상태로 막히고 풀린다 — 매칭 목록(희망매물 쪽 포함)도 다시 읽는다
+      queryClient.invalidateQueries({ queryKey: ["matches"] });
+      queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] });
       if (selectedIntakeId) {
         queryClient.invalidateQueries({
           queryKey: ["listing-intakes", "inspector", selectedIntakeId],
@@ -952,6 +999,8 @@ function PropertiesPage() {
       ["deals"],
       ["dashboard"],
       ["network"],
+      ["matches"],
+      ["buyer-requirements"],
     ]) {
       void queryClient.invalidateQueries({ queryKey });
     }
@@ -1129,9 +1178,11 @@ function PropertiesPage() {
         value,
         listingsWithIntake,
       );
+      const dongName = getDongName(group.property);
       const propertyLabel = [
         group.property?.site?.name,
-        getDongName(group.property),
+        // 창 문구에서는 "101 1201호"가 아니라 "101동 1201호"로 읽히게
+        dongName !== "-" && /^\d+$/.test(dongName) ? `${dongName}동` : dongName,
         formatPropertySpaceLabel(group.property?.unit, group.property?.site?.type),
       ]
         .filter((part) => part && part !== "-")
@@ -1183,14 +1234,14 @@ function PropertiesPage() {
       if (plan.kind === "blocked") {
         toast.info(
           plan.reason === "allHaveActiveDeals"
-            ? "모든 거래유형에 이미 진행 중인 Deal이 있습니다."
+            ? "모든 거래유형에 이미 진행 중인 거래가 있습니다."
             : plan.reason === "completedDeal"
-              ? "이미 거래 완료된 Deal이 있어 종료된 매물입니다."
+              ? "이미 거래가 완료되어 종료된 매물입니다."
               : plan.reason === "closedIntake"
                 ? "종료된 의뢰입니다. 먼저 활성으로 재개해 주세요."
                 : plan.reason === "noCandidates"
-                  ? "Deal을 생성할 수 있는 거래유형이 없습니다."
-                  : "거래중 상태는 연결된 Deal에서 단계를 변경하거나 취소해 주세요.",
+                  ? "거래를 만들 수 있는 거래유형이 없습니다."
+                  : "거래 중 상태는 거래관리에서 단계를 바꾸거나 거래를 취소해 주세요.",
         );
         return;
       }
@@ -1466,11 +1517,12 @@ function PropertiesPage() {
     ReadonlyMap<string, number>
   >(() => new Map());
   const handleMatchPanelHeightChange = useCallback(
-    (groupId: string, height: number) => {
+    (groupId: string, height: number, tab: "match" | "ad" = "match") => {
+      const key = `${groupId}:${tab}`;
       setMatchPanelHeights((previous) => {
-        if (previous.get(groupId) === height) return previous;
+        if (previous.get(key) === height) return previous;
         const next = new Map(previous);
-        next.set(groupId, height);
+        next.set(key, height);
         return next;
       });
     },
@@ -1497,10 +1549,15 @@ function PropertiesPage() {
   const getExpandedPropertyRowHeight = useCallback(
     (group: PropertyListingGroup) => {
       const tab = expandedPanels.get(group.id);
-      if (tab === "ad") return estimatePropertyAdPanelHeight(group);
+      if (tab === "ad") {
+        return (
+          matchPanelHeights.get(`${group.id}:ad`) ??
+          estimatePropertyAdPanelHeight(group)
+        );
+      }
       if (tab === "match")
         return (
-          matchPanelHeights.get(group.id) ??
+          matchPanelHeights.get(`${group.id}:match`) ??
           estimatePropertyMatchPanelHeight(group)
         );
       return 0;
@@ -1610,13 +1667,19 @@ function PropertiesPage() {
         header: () => (
           <TableHeaderLabel icon={<List className="size-4" />} label="호" />
         ),
-        size: 58,
+        size: 72,
         enableSorting: true,
-        cell: ({ row }) => (
-          <span className="truncate text-[14px] font-medium leading-[21px] text-foreground">
-            {formatPropertySpaceLabel(row.original.property?.unit, row.original.property?.site?.type)}
-          </span>
-        ),
+        cell: ({ row }) => {
+          const label = formatPropertySpaceLabel(row.original.property?.unit, row.original.property?.site?.type);
+          // 칸이 나뉜 표에서는 동 칸이 "103"이듯 호 칸도 "1502"로 (화면 표기 기준). "1502호"는 칸이 좁아 "150…"으로 잘렸다.
+          const cellLabel = label.replace(/^([A-Za-z]?\d+(?:-\d+)?)호$/, "$1");
+          // 칸이 좁아 "건물 전체"·"2~4층 점포"가 잘릴 때 말줄임(…)과 전체 이름(title)
+          return (
+            <span title={label || undefined} className="block min-w-0 truncate text-[14px] font-medium leading-[21px] text-foreground">
+              {cellLabel}
+            </span>
+          );
+        },
       },
       {
         id: "supplyArea",
@@ -1850,7 +1913,8 @@ function PropertiesPage() {
             label="입주가능일"
           />
         ),
-        size: 120,
+        // 다른 해 날짜는 "2027.03.01 이후"처럼 해까지 적어 120px에서는 잘렸다
+        size: 150,
         enableSorting: true,
         meta: { listingCell: true },
         cell: ({ row }) => (
@@ -2246,14 +2310,16 @@ function PropertiesPage() {
                 ref={createPropertyButtonRef}
                 size="sm"
                 aria-label="새 매물 등록"
+                title="새 매물 등록"
                 aria-expanded={registrationState === "open"}
                 aria-controls={registrationState !== "closed" ? "property-registration" : undefined}
                 className="h-[30px] shrink-0 rounded-[8px] px-3"
                 onClick={handleCreateProperty}
               >
                 <Plus className="size-3.5" />
-                {/* 툴바 폭이 768px보다 좁으면 아이콘만 */}
-                <span className="@max-3xl:hidden">새 매물 등록</span>
+                {/* 툴바 폭이 896px보다 좁으면 아이콘만 — 작은 노트북(1100px 창)에서 동·호를 입력하면
+                    단추가 화면 밖으로 밀려 잘리던 문제 */}
+                <span className="@max-4xl:hidden">새 매물 등록</span>
               </Button>
             </div>
           </div>
@@ -2503,8 +2569,8 @@ function PropertiesPage() {
                 onEndReached={handleEndReached}
                 emptyMessage={
                   hasActiveFilters
-                    ? "조건에 맞는 매물이 없습니다."
-                    : "등록된 매물이 없습니다."
+                    ? "조건에 맞는 매물이 없습니다. 필터 줄 오른쪽의 초기화로 조건을 풀 수 있습니다."
+                    : "등록된 매물이 없습니다. 오른쪽 위 '새 매물 등록'으로 첫 매물을 등록하세요."
                 }
                 renderBulkActions={(selectedRows) => (
                   <PropertyBulkActions groups={selectedRows} />
@@ -2555,6 +2621,7 @@ function PropertiesPage() {
               }
               onSaveListing={handleInspectorListingUpdate}
               onAvailabilityChange={handleInspectorAvailabilityChange}
+              onCreateProperty={handleCreateProperty}
             />
         )}
         {registrationState !== "closed" && (
@@ -3314,6 +3381,7 @@ function PropertyInspector({
   isConfirming,
   onSaveListing,
   onAvailabilityChange,
+  onCreateProperty,
 }: {
   intakeId: string;
   closing: boolean;
@@ -3328,6 +3396,8 @@ function PropertyInspector({
     property: Property,
     value: ListingAvailability,
   ) => void;
+  /** 패널이 툴바의 "새 매물 등록"을 가리므로 패널 머리에도 둔다(전화 받으며 연달아 접수) */
+  onCreateProperty?: () => void;
 }) {
   const [width, setWidth] = useState(PROPERTY_INSPECTOR_DEFAULT_WIDTH);
   useEffect(() => {
@@ -3349,7 +3419,12 @@ function PropertyInspector({
   } = useQuery({
     queryKey: ["listing-intakes", "inspector", intakeId],
     queryFn: () => api.listingIntakes.findOne(intakeId),
+    // 닫히는 동안에는 다시 받지 않는다(마지막 조건을 지워 의뢰가 사라진 직후 404를 부르지 않게)
+    enabled: !closing,
   });
+
+  // 패널 밖을 누르면 닫는다 (떠 있는 창 · 줄의 열기 단추는 밖이 아니다)
+  useInspectorOutsideClose(() => onClose());
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -3449,6 +3524,7 @@ function PropertyInspector({
           isConfirming={isConfirming}
           onSaveListing={onSaveListing}
           onAvailabilityChange={onAvailabilityChange}
+          onCreateProperty={onCreateProperty}
         />
       )}
       {!isLoading && !isError && !intake?.property && (
@@ -3564,6 +3640,7 @@ function PropertyInspectorContent({
   isConfirming,
   onSaveListing,
   onAvailabilityChange,
+  onCreateProperty,
 }: {
   intake: ListingIntake;
   property: Property;
@@ -3576,6 +3653,7 @@ function PropertyInspectorContent({
     property: Property,
     value: ListingAvailability,
   ) => void;
+  onCreateProperty?: () => void;
 }) {
   const queryClient = useQueryClient();
   const createTab = useTabStore((s) => s.createTab);
@@ -3733,11 +3811,7 @@ function PropertyInspectorContent({
       }
       onClose();
     } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "매물 상세 창을 열지 못했습니다.",
-      );
+      toast.error(propertyErrorMessage(error, "매물 상세 창을 열지 못했습니다."));
     } finally {
       setIsOpeningNewWindow(false);
     }
@@ -3821,19 +3895,34 @@ function PropertyInspectorContent({
       onEdit={() => setIsEditOpen(true)}
       onAddContact={() => setIsContactOpen(true)}
       headerActions={
+        <>
+        {onCreateProperty && (
+          <button
+            type="button"
+            onClick={onCreateProperty}
+            title="새 매물 등록"
+            className="mr-1 inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Plus className="size-3.5" strokeWidth={1.75} />
+            새 매물
+          </button>
+        )}
         <PropertyRowActions
           listings={listings}
           intake={intake}
           triggerLabel="매물 작업 메뉴"
+          onIntakeRemoved={() => onClose(false)}
           onOpenInNewWindow={
             window.electronBridge?.tabs ? () => void openInNewWindow() : undefined
           }
           isOpeningNewWindow={isOpeningNewWindow}
         />
+        </>
       }
       progressTab={
         <PropertyInspectorProgressTab
           listingIds={inspectorListingIds}
+          connectTarget={{ property, listings }}
           matches={(propertyMatches ?? []).filter((match) =>
             intakeListingIdSet.has(match.listingId),
           )}
@@ -4056,8 +4145,8 @@ function buildPropertyInspectorModel({
   const exclusiveAreaM2 =
     property.unit?.exclusiveAreaM2 ?? unitTypeDetail?.exclusiveAreaM2 ?? null;
   const areaText = [
-    supplyAreaM2 ? `공급 ${formatAreaPyeong(supplyAreaM2)}` : null,
-    exclusiveAreaM2 ? `전용 ${formatAreaPyeong(exclusiveAreaM2)}` : null,
+    supplyAreaM2 ? `공급 ${formatPyeong(supplyAreaM2)}` : null,
+    exclusiveAreaM2 ? `전용 ${formatPyeong(exclusiveAreaM2)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -4191,7 +4280,7 @@ function buildPropertyInspectorModel({
       ? {
           key: "confirm",
           label: "확인",
-          value: "확인됨",
+          value: "확인 완료",
           detail: [formatDaysAgo(intake.lastVerifiedAt), nextConfirmText]
             .filter(Boolean)
             .join(" · "),
@@ -4259,7 +4348,7 @@ function buildPropertyInspectorModel({
       ? {
           key: "ad",
           label: "광고",
-          value: `${getAdChannelLabel(activeAds[0].advertisement.channel)} 게재중`,
+          value: `${getAdChannelLabel(activeAds[0].advertisement.channel)} 게재 중`,
           detail: [
             formatAdvertisementPrice(
               activeAds[0].listing,
@@ -4321,7 +4410,7 @@ function buildPropertyInspectorModel({
           key: "buyer",
           label: "매칭",
           value: `${buyerCount}명`,
-          detail: `${topMatch.buyerRequirement?.contact?.name ?? "매수 고객"} ${getStatusMeta("matchStage", normalizeMatchStage(topMatch.stage)).label}${buyerCount > 1 ? ` 외 ${buyerCount - 1}명` : ""}`,
+          detail: `${topMatch.buyerRequirement?.contact?.name ?? "고객"} ${getStatusMeta("matchStage", normalizeMatchStage(topMatch.stage)).label}${buyerCount > 1 ? ` 외 ${buyerCount - 1}명` : ""}`,
           tone: "active",
         }
       : {
@@ -4388,9 +4477,9 @@ function buildPropertyInspectorModel({
         confirmState === IntakeConfirmationState.OVERDUE
           ? "재확인 기한이 지났습니다"
           : confirmState === IntakeConfirmationState.NO_ANSWER
-            ? "소유주가 부재중이었습니다"
+            ? "소유자가 부재중이었습니다"
             : "한 번도 확인하지 않은 매물",
-      detail: "광고 유지 전에 소유주에게 가격·거래 가능 여부를 확인하세요.",
+      detail: "광고 유지 전에 소유자에게 가격·거래 가능 여부를 확인하세요.",
       tone: "warning",
       action: { label: "확인 완료", onClick: actions.confirm },
     });
@@ -4398,8 +4487,8 @@ function buildPropertyInspectorModel({
   if (!ownerPhone) {
     todos.push({
       id: "owner",
-      title: "소유주 연락처 없음",
-      detail: "확인 전화를 하려면 소유주 또는 대리인 번호가 필요합니다.",
+      title: "소유자 연락처 없음",
+      detail: "확인 전화를 하려면 소유자 또는 대리인 번호가 필요합니다.",
       tone: "danger",
       action: { label: "등록", onClick: actions.addContact },
     });
@@ -4461,6 +4550,11 @@ function buildPropertyInspectorModel({
     ...consultations.map((consultation) => {
       const content = consultation.content ?? "";
       const isConfirmRecord = consultation.purpose === "listing_confirm";
+      // "[매물확인] 살아있음\n메모" → 제목 "매물 확인 · 유효함", 본문 "메모" (보일 때만 화면 낱말로)
+      const confirmTag =
+        isConfirmRecord && content.startsWith(CONFIRM_RECORD_PREFIX)
+          ? splitConsultationTag(content)
+          : null;
       return {
         id: `consultation-${consultation.id}`,
         kind: (isConfirmRecord
@@ -4472,13 +4566,10 @@ function buildPropertyInspectorModel({
         // 상담은 하루에도 여러 번 오가므로 시각까지 보여준다.
         timeText: formatInspectorTime(consultation.createdAt),
         title: isConfirmRecord
-          ? "매물 확인"
+          ? (confirmTag?.tag ?? "매물 확인")
           : (consultationTitles[consultation.type] ?? "상담"),
         who: consultation.contact?.name ?? null,
-        text:
-          isConfirmRecord && content.startsWith(CONFIRM_RECORD_PREFIX)
-            ? content.slice(CONFIRM_RECORD_PREFIX.length).trim()
-            : content,
+        text: confirmTag ? confirmTag.body : content,
         quote: true,
         url: null,
       };
@@ -4568,7 +4659,7 @@ function buildPropertyInspectorModel({
       const listing = listings.find((item) => item.id === match.listingId);
       return {
         id: match.id,
-        buyerName: match.buyerRequirement?.contact?.name ?? "매수 고객",
+        buyerName: match.buyerRequirement?.contact?.name ?? "고객",
         stageLabel: getStatusMeta("matchStage", stage).label,
         typeLabel: listing ? typeLabelOf(listing) : "",
         dateText: formatInspectorMonthDay(
@@ -4585,7 +4676,7 @@ function buildPropertyInspectorModel({
       priceText: `${typeLabelOf(listing)} ${formatAdvertisementPrice(listing, advertisement)}`,
       periodText: `${formatInspectorMonthDay(advertisement.startedAt ?? advertisement.firstSeenAt)} ~ ${
         advertisement.status === "active"
-          ? "게재중"
+          ? "게재 중"
           : formatInspectorMonthDay(advertisement.endedAt)
       }`,
       url: advertisement.url ?? null,
@@ -4694,7 +4785,15 @@ function PropertyInspectorEditDialog({
       return listing ? hasPropertyInspectorPriceChange(listing, draft) : false;
     });
 
+  const hasInvalidAmount = drafts.some((draft) =>
+    (draft.transactionType === "monthly"
+      ? [draft.deposit, draft.monthlyRent]
+      : [draft.price]
+    ).some((value) => !parseManwonText(value).valid),
+  );
+
   const handleSave = async () => {
+    if (hasInvalidAmount) return;
     setIsSaving(true);
     try {
       const changedDrafts = drafts.filter((draft) => {
@@ -4767,7 +4866,7 @@ function PropertyInspectorEditDialog({
               </SelectContent>
             </Select>
             <p className="mt-1.5 text-[11px] leading-5 text-muted-foreground">
-              거래중 전환은 연결할 Deal을 선택하는 단계로 이어질 수 있습니다.
+              거래 중으로 바꾸면 거래를 만드는 단계로 이어집니다.
             </p>
           </div>
 
@@ -4778,45 +4877,36 @@ function PropertyInspectorEditDialog({
                 {draft.transactionType === "monthly" ? (
                   <div className="mt-2 grid grid-cols-2 gap-3">
                     <label className="text-xs text-muted-foreground">
-                      보증금 (만원)
-                      <Input
-                        type="number"
-                        min={0}
+                      보증금
+                      <ManwonInput
                         value={draft.deposit}
-                        onChange={(event) =>
-                          updateDraft(draft.id, { deposit: event.target.value })
-                        }
+                        onChange={(value) => updateDraft(draft.id, { deposit: value })}
+                        placeholder="예: 5천"
                         className="mt-1 h-9 text-right tabular-nums"
                       />
+                      <InspectorManwonHint value={draft.deposit} />
                     </label>
                     <label className="text-xs text-muted-foreground">
                       월세 (만원)
-                      <Input
-                        type="number"
-                        min={0}
+                      <ManwonInput
                         value={draft.monthlyRent}
-                        onChange={(event) =>
-                          updateDraft(draft.id, {
-                            monthlyRent: event.target.value,
-                          })
-                        }
+                        onChange={(value) => updateDraft(draft.id, { monthlyRent: value })}
+                        placeholder="예: 180"
                         className="mt-1 h-9 text-right tabular-nums"
                       />
+                      <InspectorManwonHint value={draft.monthlyRent} />
                     </label>
                   </div>
                 ) : (
                   <label className="mt-2 block text-xs text-muted-foreground">
-                    {draft.transactionType === "sale" ? "매매가" : "전세가"}{" "}
-                    (만원)
-                    <Input
-                      type="number"
-                      min={0}
+                    {draft.transactionType === "sale" ? "매매가" : "전세가"}
+                    <ManwonInput
                       value={draft.price}
-                      onChange={(event) =>
-                        updateDraft(draft.id, { price: event.target.value })
-                      }
+                      onChange={(value) => updateDraft(draft.id, { price: value })}
+                      placeholder="예: 15억 8천"
                       className="mt-1 h-9 text-right tabular-nums"
                     />
+                    <InspectorManwonHint value={draft.price} />
                   </label>
                 )}
               </div>
@@ -4831,7 +4921,7 @@ function PropertyInspectorEditDialog({
           >
             취소
           </Button>
-          <Button disabled={!hasChanges || isSaving} onClick={handleSave}>
+          <Button disabled={!hasChanges || hasInvalidAmount || isSaving} onClick={handleSave}>
             {isSaving && <Loader2 className="size-4 animate-spin" />}
             저장
           </Button>
@@ -4867,10 +4957,25 @@ function hasPropertyInspectorPriceChange(
 }
 
 function parsePropertyInspectorNumber(value: string) {
-  const normalized = value.trim();
-  if (!normalized) return null;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : null;
+  // "15억", "15억 8천", "158000"(만원) 모두 받는다. 못 읽은 값은 저장 단추가 막는다.
+  const parsed = parseManwonText(value);
+  return parsed.valid ? parsed.value : null;
+}
+
+function InspectorManwonHint({ value }: { value: string }) {
+  const described = describeManwonText(value);
+  if (!described.text) return null;
+  return (
+    <span
+      aria-live="polite"
+      className={cn(
+        "mt-1 block text-right text-[11px] tabular-nums",
+        described.invalid ? "text-destructive-strong" : "text-muted-foreground",
+      )}
+    >
+      {described.text}
+    </span>
+  );
 }
 
 function formatInspectorListingPrice(
@@ -4888,7 +4993,16 @@ function formatInspectorListingPrice(
   return price ? formatPrice(price) : "-";
 }
 
-function StatusIndicator({ value, label }: { value: string; label?: string }) {
+function StatusIndicator({
+  value,
+  label,
+  title,
+}: {
+  value: string;
+  label?: string;
+  /** 올렸을 때 뜨는 글 (표에서 줄여 적은 종료 사유 등) */
+  title?: string;
+}) {
   const meta = listingAvailabilityMeta[value as ListingAvailability] ?? {
     label: value,
     dotClassName: "bg-[#b4b4b1]",
@@ -4897,6 +5011,7 @@ function StatusIndicator({ value, label }: { value: string; label?: string }) {
 
   return (
     <span
+      title={title}
       className={cn(
         "inline-flex h-5 max-w-full items-center gap-[5px] rounded-full pl-[7px] pr-[9px] text-[14px] font-[450] leading-5",
         meta.pillClassName,
@@ -5169,7 +5284,7 @@ function ResumeClosedListingDialog({
           <DialogDescription>
             {prompt.canResume
               ? `${propertyLabel}의 종료된 의뢰를 다시 엽니다.`
-              : `${propertyLabel}은 거래 완료된 Deal 때문에 종료 상태입니다.`}
+              : `${propertyLabel}은 거래가 완료되어 종료 상태입니다.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -5177,7 +5292,7 @@ function ResumeClosedListingDialog({
           {prompt.canResume ? (
             prompt.completedListingCount > 0 ? (
               <>
-                완료 Deal이 없는 거래유형 {prompt.resumableListingCount}개를
+                완료된 거래가 없는 거래유형 {prompt.resumableListingCount}개를
                 재개합니다. 거래 완료된 거래유형 {prompt.completedListingCount}
                 개는 종료 상태를 유지합니다.
               </>
@@ -5185,7 +5300,7 @@ function ResumeClosedListingDialog({
               `재개하면 종료 상태가 해제되고 매물 상태가 ${targetLabelWithParticle} 표시됩니다.`
             )
           ) : (
-            "기존 완료 Deal의 단계를 되돌리거나 취소해야 합니다. 새로운 거래라면 새 의뢰를 등록해 주세요."
+            "거래관리에서 완료된 거래의 단계를 되돌리거나 취소해야 합니다. 새로운 거래라면 새 의뢰를 등록해 주세요."
           )}
         </div>
 
@@ -5207,6 +5322,7 @@ function ResumeClosedListingDialog({
             </>
           ) : (
             <Button type="button" onClick={onClose}>
+              {/* i18n: dialog */}
               확인
             </Button>
           )}
@@ -5235,7 +5351,7 @@ function StartDealFromStatusDialog({
   const mutation = useMutation({
     mutationFn: () => {
       if (!selectedListing) {
-        throw new Error("Deal을 생성할 거래유형을 선택해 주세요.");
+        throw new Error("거래를 만들 거래유형을 선택해 주세요.");
       }
       return api.deals.create({
         propertyId: prompt.propertyId,
@@ -5246,11 +5362,11 @@ function StartDealFromStatusDialog({
     },
     onSuccess: () => {
       onSuccess();
-      toast.success("Deal을 생성하고 매물 상태를 거래중으로 변경했습니다.");
+      toast.success("거래를 만들고 매물 상태를 거래 중으로 바꿨습니다.");
       onClose();
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Deal 생성에 실패했습니다.");
+      toast.error(propertyErrorMessage(error, "거래를 만들지 못했습니다. 다시 시도해 주세요."));
     },
   });
 
@@ -5269,13 +5385,13 @@ function StartDealFromStatusDialog({
         <DialogHeader>
           <DialogTitle>
             {isSingleListing
-              ? "Deal을 생성하시겠습니까?"
-              : "거래중으로 변경할 거래유형 선택"}
+              ? "거래를 만들까요?"
+              : "거래 중으로 바꿀 거래유형 선택"}
           </DialogTitle>
           <DialogDescription>
             {isSingleListing
-              ? `${prompt.propertyLabel || "선택한 매물"}에 Deal을 생성하면 상태가 거래중으로 변경됩니다.`
-              : "Deal을 생성할 거래유형을 선택하세요. 선택한 거래유형만 거래중으로 전환됩니다."}
+              ? `${prompt.propertyLabel || "선택한 매물"}에 거래를 만들면 상태가 거래 중으로 바뀝니다.`
+              : "거래를 만들 거래유형을 선택하세요. 선택한 거래유형만 거래 중으로 바뀝니다."}
           </DialogDescription>
         </DialogHeader>
 
@@ -5309,7 +5425,7 @@ function StartDealFromStatusDialog({
 
         {resumesPausedListing && (
           <p className="rounded-md bg-[#fbf3db] px-3 py-2 text-xs text-[#9f6b00]">
-            Deal 생성과 함께 선택한 매물의 보류 상태를 해제합니다.
+            거래를 만들면서 선택한 매물의 보류도 풉니다.
           </p>
         )}
 
@@ -5332,7 +5448,7 @@ function StartDealFromStatusDialog({
             ) : (
               <Handshake className="size-4" />
             )}
-            Deal 생성
+            거래 만들기
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -5513,13 +5629,18 @@ function ListingAvailabilityCell({
                 value={availability}
                 label={
                   availability === ListingAvailability.CLOSED
+                    ? getClosedStatusCellLabel(intake.closedReason)
+                    : undefined
+                }
+                title={
+                  availability === ListingAvailability.CLOSED
                     ? getClosedStatusLabel(intake.closedReason)
                     : undefined
                 }
               />
               {showActiveDealConnector && activeTransactionLabel && (
                 <span className="sr-only">
-                  {activeTransactionLabel} listing에 활성 Deal 연결
+                  {activeTransactionLabel} 조건이 거래 진행 중
                 </span>
               )}
             </span>
@@ -5688,7 +5809,7 @@ function IntakeConfirmationCell({
               <span className="size-[7px] shrink-0 rounded-full bg-success" />
               유효함
               <span className="ml-auto text-xs text-muted-foreground">
-                오늘 확인됨
+                오늘 확인 완료
               </span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onConfirm(intake.id, "no_answer")}>
@@ -5782,7 +5903,7 @@ function ListingPriceDepositStack({
                   )}
                   <PriceDepositValue listing={listing} />
                   {isActiveDealListing && (
-                    <span className="sr-only">활성 Deal 연결 대상</span>
+                    <span className="sr-only">거래 진행 중인 조건</span>
                   )}
                 </span>
               </EditableCell>
@@ -5810,7 +5931,7 @@ function ListingPriceDepositStack({
                   )}
                   <PriceDepositValue listing={listing} />
                   {isActiveDealListing && (
-                    <span className="sr-only">활성 Deal 연결 대상</span>
+                    <span className="sr-only">거래 진행 중인 조건</span>
                   )}
                 </span>
               </EditableCell>
@@ -5941,6 +6062,26 @@ function ListingNumberFieldStack({
 
 function PriceDepositValue({ listing }: { listing: ListingSummary }) {
   const value = getListingPrimaryPrice(listing);
+  // 거래가 끝난 조건은 거래가를 앞에, 내놓은 가격은 흐리게 곁에 둔다
+  const completed = (listing.deals ?? []).find(
+    (deal) => deal.stage === "completed" || deal.stage === "closed",
+  );
+  const dealValue =
+    listing.transactionType === "monthly"
+      ? completed?.agreedDeposit
+      : (completed?.agreedPrice ?? completed?.agreedDeposit);
+  if (completed && dealValue) {
+    return (
+      <span className="flex min-w-0 items-baseline gap-1.5 tabular-nums leading-[21px]" title={value ? `내놓은 가격 ${formatPrice(value)}` : undefined}>
+        <span className="shrink-0 text-[14px] font-[450]">거래가 {formatPrice(dealValue)}</span>
+        {value && value !== dealValue ? (
+          <span className="min-w-0 truncate text-[12px] text-muted-foreground">
+            {formatPrice(value)}
+          </span>
+        ) : null}
+      </span>
+    );
+  }
 
   return (
     <span className="tabular-nums text-[14px] font-[450] leading-[21px]">
@@ -6036,7 +6177,7 @@ function ListingMatchToggle({
         icon={<GitBranch className="size-3" />}
         isOpen={isOpen}
         panelId={`property-expand-panel-${group.id}`}
-        label="연결 구매고객"
+        label="연결 고객"
         onToggle={() => onToggle(group.id)}
       />
     </div>
@@ -6073,8 +6214,8 @@ function ListingAdToggle({
 }
 
 function estimatePropertyAdPanelHeight(group: PropertyListingGroup) {
-  // Panel padding/border 25 + tabs 32 + header 36 + 37px data rows.
-  return 93 + Math.max(1, getPropertyAdRows(group).length) * 37;
+  // Panel padding/border 25 + tabs 32 + header 36 + 37px data rows + 36px add row.
+  return 129 + Math.max(1, getPropertyAdRows(group).length) * 37;
 }
 
 function getPropertyAdRows(group: PropertyListingGroup) {
@@ -6098,127 +6239,9 @@ function getPropertyActiveAdvertisementCount(group: PropertyListingGroup) {
 }
 
 // 연결 구매고객 패널의 '광고' 탭 내용. 바깥 배경·여백·머리글은 그 패널이
-// 대고, 여기서는 광고 목록만 그린다.
+// 대고, 여기서는 공용 표 본문(PropertyAdPanelContent)으로 광고 목록과 인라인 요청을 그린다.
 function PropertyAdPanel({ group, controls }: { group: PropertyListingGroup; controls: AdTableControls }) {
-  const { preferences, selection, ...headerControls } = controls;
-  const adRows = sortPropertyAdRows(getPropertyAdRows(group), preferences.sort);
-  const allSelected = adRows.length > 0 && adRows.every(row => selection.selectedIds.has(row.advertisement.id));
-  const icons: Record<AdColumnId, ReactNode> = {
-    trade: <Tag />, channel: <Megaphone />, status: <Info />, price: <WonCircleIcon />,
-    monthlyRent: <WonCircleIcon />, startedAt: <CalendarDays />, memo: <PencilLine />, url: <ExternalLink />,
-  };
-
-  return (
-    <div
-      data-property-ad-panel
-      role="region"
-      aria-label={`${group.property?.site?.name ?? "매물"} 광고 현황`}
-    >
-      <div role="table" aria-label="광고 현황 표">
-        <div className="relative -ml-9 pl-9">
-          {adRows.length > 0 && (
-            <PropertyPanelSelectionCheckbox
-              kind="ad"
-              label="표시된 광고 모두 선택"
-              checked={allSelected ? true : selection.selectedIds.size > 0 ? 'indeterminate' : false}
-              onCheckedChange={selection.onSelectAll}
-            />
-          )}
-        <div data-property-ad-header role="row" className="grid h-9 grid-cols-[var(--ad-table-columns)] border-b border-border text-[13px] font-normal leading-[1.6154] text-muted-foreground">
-          {adTableColumns.map(column => (
-            <AdTableColumnHeader
-              key={column.id} column={column} icon={icons[column.id]}
-              sort={preferences.sort} {...headerControls}
-            />
-          ))}
-        </div>
-        </div>
-        <div role="rowgroup">
-          {adRows.length === 0 ? (
-            <div role="row">
-              <div role="cell" aria-colspan={adTableColumns.length} className="flex h-[37px] items-center border-b border-border px-2.5 text-[13px] text-muted-foreground">
-                등록된 광고가 없습니다.
-              </div>
-            </div>
-          ) : adRows.map(({ listing, advertisement }) => {
-            const statusMeta = adStatusMeta[advertisement.status] ?? adStatusMeta.active;
-            const priceField = listing.transactionType === "sale" ? "advertisedPrice" : "advertisedDeposit";
-            const advertisedPrice = advertisement[priceField];
-            const priceText = advertisedPrice != null ? formatPrice(advertisedPrice) : "—";
-            const rentText = advertisement.advertisedMonthlyRent != null
-              ? formatPrice(advertisement.advertisedMonthlyRent) : "—";
-            const channelLabel = getAdChannelLabel(advertisement.channel);
-            const cellLabel = `${channelLabel} ${transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType} 광고`;
-            const isSelected = selection.selectedIds.has(advertisement.id);
-
-            return (
-              <div key={advertisement.id} className="group/ad-selection relative -ml-9 pl-9">
-                <PropertyPanelSelectionCheckbox
-                  kind="ad"
-                  label={`${channelLabel} ${transactionTypeMeta[listing.transactionType]?.label ?? listing.transactionType} 광고 선택`}
-                  checked={isSelected}
-                  onCheckedChange={selected => selection.onChange(advertisement.id, selected)}
-                />
-              <div
-                role="row"
-                data-property-ad-row={advertisement.id}
-                data-selected={isSelected || undefined}
-                aria-selected={isSelected}
-                className="grid h-[37px] grid-cols-[var(--ad-table-columns)] border-b border-border text-[14px] font-[450] leading-[1.5] text-foreground hover:bg-muted data-[selected=true]:bg-info-soft/40 [&>div]:min-w-0 [&>div]:content-center [&>div]:px-2.5 [&>div:not(:last-child)]:border-r [&>div:not(:last-child)]:border-border"
-              >
-                <div role="cell">
-                  <TransactionMiniLabel
-                    transactionType={listing.transactionType}
-                    className="h-5 rounded-[3px] py-0 text-[13px] font-normal leading-none"
-                  />
-                </div>
-                <div role="cell" title={channelLabel} className="px-0!">
-                  <PropertyAdEditableCell advertisement={advertisement} field="channel" label={`${cellLabel} 채널`}>
-                    <span className="block truncate">{channelLabel}</span>
-                  </PropertyAdEditableCell>
-                </div>
-                <div role="cell" className="px-0!">
-                  <PropertyAdEditableCell advertisement={advertisement} field="status" label={`${cellLabel} 상태`}>
-                  <span className={cn(
-                    "inline-flex h-5 items-center gap-1.5 whitespace-nowrap rounded-full pl-[7px] pr-[9px] text-[13px] font-normal leading-none",
-                    statusMeta.className,
-                  )}>
-                    <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-current opacity-70" />
-                    {statusMeta.label}
-                  </span>
-                  </PropertyAdEditableCell>
-                </div>
-                <div role="cell" title={priceText} className="px-0! tabular-nums">
-                  <PropertyAdEditableCell advertisement={advertisement} field={priceField} label={`${cellLabel} ${listing.transactionType === "sale" ? "가격" : "보증금"}`}>
-                    <span className="block truncate">{priceText}</span>
-                  </PropertyAdEditableCell>
-                </div>
-                <div role="cell" title={rentText} className={cn("tabular-nums", listing.transactionType === "monthly" && "px-0!")}>
-                  {listing.transactionType === "monthly" ? <PropertyAdEditableCell advertisement={advertisement} field="advertisedMonthlyRent" label={`${cellLabel} 월세`}>
-                    <span className="block truncate">{rentText}</span>
-                  </PropertyAdEditableCell> : <span className="block truncate">{rentText}</span>}
-                </div>
-                <div role="cell" className="px-0! tabular-nums">
-                  <PropertyAdEditableCell advertisement={advertisement} field="startedAt" label={`${cellLabel} 등록일`}>{formatDateShort(advertisement.startedAt)}</PropertyAdEditableCell>
-                </div>
-                <div role="cell" title={advertisement.memo?.trim() || undefined} className="px-0!">
-                  <PropertyAdEditableCell advertisement={advertisement} field="memo" label={`${cellLabel} 메모`}>
-                    <span className="block truncate">{advertisement.memo?.trim() || "—"}</span>
-                  </PropertyAdEditableCell>
-                </div>
-                <div role="cell" className="px-0!">
-                  <PropertyAdEditableCell advertisement={advertisement} field="url" label={`${cellLabel} 원문 주소`}>
-                    <span className="block truncate text-[13px] text-muted-foreground">{advertisement.url ? "원문 주소" : "—"}</span>
-                  </PropertyAdEditableCell>
-                </div>
-              </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
+  return <PropertyAdPanelContent group={group} controls={controls} />;
 }
 
 function IntakeMemoCell({

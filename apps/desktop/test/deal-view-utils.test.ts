@@ -64,7 +64,7 @@ describe('deal view utilities', () => {
   it('maps the post-matching deal stages into five execution groups', () => {
     assert.deepEqual(
       dealDisplayGroups.map((group) => group.label),
-      ['계약 준비', '가계약', '본계약', '중도금·잔금', '잔금 완료'],
+      ['계약 준비', '가계약', '본계약', '중도금/잔금', '잔금 완료'],
     );
 
     assert.equal(getDealDisplayGroupKey('preparing'), 'preparing');

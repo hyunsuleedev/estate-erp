@@ -27,11 +27,11 @@ const columnsPath = resolve(
 
 type Ad = ListingAdvertisementWithListing;
 
-function monthlyAd(source: "cp_sync" | "manual" = "cp_sync"): Ad {
+function monthlyAd(sync: "synced" | "manual" = "synced"): Ad {
   return {
     id: "ad-1",
     status: "active",
-    source,
+    lastSyncedAt: sync === "synced" ? "2026-11-15T00:00:00.000Z" : null,
     channel: "esiljang",
     advertisedPrice: null,
     advertisedDeposit: 2000,
@@ -73,7 +73,7 @@ describe("my ads column definitions stay stable while editing", () => {
     // 열 정의가 바뀌면 TanStack이 모든 칸을 새로 마운트해 입력 중인 가격 칸이 닫힌다(포커스 빠짐).
     assert.match(
       page,
-      /const columns = useMemo\(\s*\(\) => buildColumns\(\{ areAdvertisementSourceColumnsCollapsed \}\),\s*\[areAdvertisementSourceColumnsCollapsed\],\s*\)/,
+      /const columns = useMemo\(\s*\(\) =>\s*buildColumns\(\{\s*areAdvertisementSourceColumnsCollapsed,\s*hasMultipleCpAccounts,\s*\}\),\s*\[areAdvertisementSourceColumnsCollapsed,\s*hasMultipleCpAccounts\],\s*\)/,
     );
     assert.match(page, /<MyAdsTableStateContext\.Provider value=\{tableRowState\}>/);
     const columns = readFileSync(columnsPath, "utf8");
@@ -128,10 +128,12 @@ describe("my ads column definitions stay stable while editing", () => {
     const advertisement = monthlyAd();
     const drafting = state({ mode: "request", drafts: { [advertisement.id]: { monthlyRent: 95 } } });
 
-    // 요청한 칸(월세)에만 줄이 그어지고, 바꿀 값(95)은 칸에 나오지 않는다
+    // 요청한 칸(월세)에만 줄이 그어지고, 바꿀 값(→ 95만)이 바로 아래에 표시된다
     const rentHtml = renderCell(rent, advertisement, drafting);
     assert.match(rentHtml, /line-through/);
-    assert.doesNotMatch(rentHtml, /95/);
+    assert.match(rentHtml, /data-my-ads-requested-value="monthlyRent"/);
+    assert.match(rentHtml, /data-request-origin="draft"/);
+    assert.match(rentHtml, /→ 95만/);
     assert.doesNotMatch(renderCell(price, advertisement, drafting), /line-through/);
     // 요청 칸은 있다는 표시만 한다
     const marker = renderCell(request, advertisement, drafting);
@@ -145,14 +147,18 @@ describe("my ads column definitions stay stable while editing", () => {
       /value="95"/,
     );
 
-    // 보낸 요청: 가격 요청이 건드린 칸(보증금)에 줄, 요청 칸은 "요청 중"
+    // 보낸 요청: 가격 요청이 건드린 칸(보증금)에 줄과 요청값, 요청 칸은 "요청 중"
     const pending = {
       ...advertisement,
       changeRequests: [
-        { id: "r1", kind: "price", fromValue: { deposit: 2000 }, toValue: { deposit: 1500 }, task: { id: "t1", status: "pending", assignedToId: null, updatedAt: "" } },
+        { id: "r1", action: "update", status: "requested", baseSnapshot: { deposit: 2000 }, targetValue: { deposit: 1500 }, task: { id: "t1", status: "pending", assignedToId: null, updatedAt: "" } },
       ],
     } as unknown as Ad;
-    assert.match(renderCell(price, pending, state()), /line-through/);
+    const pendingPriceHtml = renderCell(price, pending, state());
+    assert.match(pendingPriceHtml, /line-through/);
+    assert.match(pendingPriceHtml, /data-my-ads-requested-value="primary"/);
+    assert.match(pendingPriceHtml, /data-request-origin="pending"/);
+    assert.match(pendingPriceHtml, /→ 1,500만/);
     assert.doesNotMatch(renderCell(rent, pending, state()), /line-through/);
     const pendingMarker = renderCell(request, pending, state());
     assert.match(pendingMarker, /data-my-ads-request-marker="pending"/);
@@ -161,27 +167,25 @@ describe("my ads column definitions stay stable while editing", () => {
     assert.equal(pendingMarker.replace(/<[^>]*>/g, ""), "요청 중");
   });
 
-  it("does not let a request be drafted where it cannot be sent", () => {
+  it("allows request drafting on manual ads and blocks duplicate open requests", () => {
     const [price] = buildColumns({ areAdvertisementSourceColumnsCollapsed: true }).filter(
       (column) => column.id === "price",
     );
-    // 직접 입력한 광고는 요청할 곳이 없다. 기록 수정으로는 고칠 수 있다.
+    // 직접 기록 광고도 요청 모드 · 기록 수정 모드 모두에서 수정할 수 있다
     const manual = monthlyAd("manual");
-    const blocked = renderCell(price, manual, state({ mode: "request" }));
-    assert.doesNotMatch(blocked, /<button|<input/);
-    assert.match(blocked, /직접 입력한 광고는 요청할 곳이 없습니다/);
+    assert.match(renderCell(price, manual, state({ mode: "request" })), /<button/);
     assert.match(renderCell(price, manual, state({ mode: "edit" })), /<button/);
 
-    // 같은 종류의 요청이 걸려 있으면 또 요청하지 못한다
+    // 열린 요청이 걸려 있으면 또 요청하지 못한다
     const pending = {
       ...monthlyAd(),
       changeRequests: [
-        { id: "r1", kind: "price", fromValue: {}, toValue: { deposit: 1500 }, task: { id: "t1", status: "in_progress", assignedToId: null, updatedAt: "" } },
+        { id: "r1", action: "update", status: "in_progress", baseSnapshot: {}, targetValue: { deposit: 1500 }, task: { id: "t1", status: "in_progress", assignedToId: null, updatedAt: "" } },
       ],
     } as unknown as Ad;
     const again = renderCell(price, pending, state({ mode: "request" }));
     assert.doesNotMatch(again, /<button/);
-    assert.match(again, /처리되지 않은 가격 변경 요청이 이미 있습니다/);
+    assert.match(again, /처리 중인 요청이 이미 있습니다/);
   });
 
   it("reads the expansion of the ranking toggle from context", () => {

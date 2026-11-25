@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, Loader2, X } from "lucide-react";
 import type { ListingAdvertisementWithListing } from "@estate-erp/api-client";
 import { api } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { formatRelativeDay } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -60,6 +60,13 @@ export function MyAdsRequestSendDialog({
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [memo, setMemo] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    setAssignee(AGENT);
+    setDueDate(undefined);
+    setIsCalendarOpen(false);
+    setMemo("");
+  }, [open]);
   const employeesQuery = useQuery({
     queryKey: ["employees"],
     queryFn: () => api.employees.findAll(),
@@ -84,7 +91,7 @@ export function MyAdsRequestSendDialog({
         <DialogHeader className="border-b px-5 py-4">
           <DialogTitle className="text-[15px]">요청 보내기</DialogTitle>
           <DialogDescription className="mt-1 text-xs">
-            광고마다 업무가 하나씩 생깁니다. 광고 값은 CP에서 처리된 뒤에 바뀝니다.
+            선택한 요청들을 하나의 묶음 업무로 등록합니다. 광고 값은 CP에서 처리된 뒤 스냅샷 동기화로 반영됩니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -140,11 +147,11 @@ export function MyAdsRequestSendDialog({
                       variant="outline"
                       size="sm"
                       className="h-8 gap-1.5 px-2.5 text-[13px] font-normal"
-                      aria-label={dueDate ? `기한 ${formatDate(dueDate)}, 눌러서 변경` : "기한 정하기"}
+                      aria-label={dueDate ? `기한 ${formatRelativeDay(dueDate)}, 눌러서 변경` : "기한 정하기"}
                     >
                       <CalendarDays className="size-3.5 text-muted-foreground" />
                       {dueDate ? (
-                        <span className="tabular-nums">{formatDate(dueDate)}</span>
+                        <span className="tabular-nums">{formatRelativeDay(dueDate)}</span>
                       ) : (
                         <span className="text-muted-foreground">기한 없음</span>
                       )}

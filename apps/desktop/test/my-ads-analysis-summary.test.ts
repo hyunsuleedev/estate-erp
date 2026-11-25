@@ -52,7 +52,7 @@ function ad({
     comparison: group
       ? {
           observedAt: "2026-11-18T00:00:00.000Z",
-          mainAdvertisement: mine,
+          ownAdvertisement: mine,
           advertisements: [mine, ...compared.map(row)],
         }
       : null,

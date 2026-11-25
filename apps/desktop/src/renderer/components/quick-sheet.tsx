@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { formatRelativeDay, formatRelativeDayTime } from '@/lib/format';
 
 /**
  * 빠른 확인 시트의 공통 프리미티브 + 날짜 헬퍼.
@@ -66,25 +67,14 @@ export function SheetNoticeRow({ notice }: { notice: QuickSheetNotice }) {
   );
 }
 
-/** "3/25" 짧은 한국어 날짜 포맷. 잘못된 값이면 "-". */
+/** "오늘" · "어제" · "11.19 (목)" — 앱 공통 날짜 표기(lib/format의 formatRelativeDay). 잘못된 값이면 "-". */
 export function formatDateShort(value?: string | null) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+  return formatRelativeDay(value) || '-';
 }
 
-/** "3/25 오후 2:30" 한국어 일시 포맷. */
+/** "오늘 14:20" · "11.19 (목) 09:05" — 앱 공통 일시 표기(lib/format의 formatRelativeDayTime). */
 export function formatDateTime(value?: string | null) {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString('ko-KR', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatRelativeDayTime(value) || '-';
 }
 
 /** 주어진 시간으로부터 지금까지 며칠 경과했는지. 미래/잘못된 값이면 null. */

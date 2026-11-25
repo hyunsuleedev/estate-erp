@@ -43,6 +43,9 @@ import { ConfirmDialog } from '@/components/domain';
 import { getStatusMeta } from '@/lib/status-config';
 import { formatMoney } from '@/lib/format';
 import { formatDateShort } from '@/components/quick-sheet';
+import { propertyErrorMessage } from './-error-message';
+import { canDeleteListing } from './-property-permissions';
+import { useAuth } from '@/providers/auth-provider';
 
 // (desktop) 웹의 ListingSummary/PropertyListingGroup 대신 최소 구조 타입 사용 —
 // 데스크톱의 의뢰(ListingIntake) 중심 그룹 모델과 웹의 매물(Listing) 중심 모델
@@ -58,7 +61,14 @@ export interface BulkActionGroup {
 
 // ── 공통 invalidate ──────────────────────────────────────────────
 
-const RELATED_QUERY_KEYS = [['listings'], ['listing-intakes'], ['properties']] as const;
+// 매칭(매물 쪽 패널·희망매물)도 의뢰의 확인·상태를 보고 거래 전환을 막거나 풀므로 함께 다시 읽는다
+const RELATED_QUERY_KEYS = [
+  ['listings'],
+  ['listing-intakes'],
+  ['properties'],
+  ['matches'],
+  ['buyer-requirements'],
+] as const;
 
 function useInvalidatePropertyLists() {
   const queryClient = useQueryClient();
@@ -85,7 +95,7 @@ const CONFIRM_RESULTS = [
   {
     value: 'no_answer',
     label: '연락 안 됨',
-    description: '소유주와 연락이 닿지 않았습니다.',
+    description: '소유자와 연락이 닿지 않았습니다.',
   },
   {
     value: 'unavailable',
@@ -110,7 +120,7 @@ const CONFIRM_CHANNELS = [
   { value: 'phone', label: '전화' },
   { value: 'sms', label: '문자' },
   { value: 'visit', label: '방문' },
-  { value: 'owner_message', label: '소유주 먼저 연락' },
+  { value: 'owner_message', label: '소유자 먼저 연락' },
   { value: 'note', label: '기타 메모' },
 ] as const;
 
@@ -118,10 +128,13 @@ export function IntakeConfirmDialog({
   intake,
   open,
   onOpenChange,
+  onSaved,
 }: {
   intake: ListingIntake;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** 저장한 뒤(창이 닫힌 뒤) 부른다. "가격 변경됨"이면 가격 수정 창으로 이어 가는 데 쓴다 */
+  onSaved?: (result: IntakeCheckResult) => void;
 }) {
   const invalidate = useInvalidatePropertyLists();
   const [result, setResult] = useState<IntakeCheckResult>(
@@ -144,9 +157,16 @@ export function IntakeConfirmDialog({
         nextConfirmAt: nextConfirmAt || undefined,
       }),
     onSuccess: () => {
-      toast.success('확인 기록을 저장했습니다.');
+      toast.success(
+        result === IntakeCheckResult.UNAVAILABLE
+          ? '의뢰를 종료했습니다. 진행 중이던 매칭도 함께 닫았습니다.'
+          : result === IntakeCheckResult.PRICE_CHANGED
+            ? '확인 기록을 저장했습니다. 바뀐 가격을 적으세요.'
+            : '확인 기록을 저장했습니다.',
+      );
       invalidate();
       onOpenChange(false);
+      onSaved?.(result);
       setResult(IntakeCheckResult.ALIVE);
       setChannel('phone');
       setMemo('');
@@ -154,7 +174,7 @@ export function IntakeConfirmDialog({
       setClosedReason(null);
     },
     onError: (error: Error) => {
-      toast.error(error.message || '확인 기록 저장에 실패했습니다.');
+      toast.error(propertyErrorMessage(error, '확인 기록을 저장하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -284,7 +304,11 @@ export function IntakeConfirmDialog({
             }
             onClick={() => mutation.mutate()}
           >
-            {mutation.isPending ? '저장 중...' : '확인 기록 저장'}
+            {mutation.isPending
+              ? '저장 중...'
+              : result === IntakeCheckResult.UNAVAILABLE
+                ? '의뢰 종료'
+                : '확인 기록 저장'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -300,6 +324,7 @@ export function PropertyRowActions({
   triggerLabel = '행 작업 메뉴',
   onOpenInNewWindow,
   isOpeningNewWindow = false,
+  onIntakeRemoved,
 }: {
   listings: RowActionListing[];
   intake: ListingIntake | null;
@@ -307,20 +332,30 @@ export function PropertyRowActions({
   triggerLabel?: string;
   onOpenInNewWindow?: () => void;
   isOpeningNewWindow?: boolean;
+  /** 마지막 거래 조건을 지워 의뢰가 함께 지워졌을 때(패널을 닫는다) */
+  onIntakeRemoved?: () => void;
 }) {
   const invalidate = useInvalidatePropertyLists();
+  // 지우기는 대표·매니저만(서버도 같은 기준으로 막는다). 직원에게는 메뉴를 보이지 않는다.
+  const mayDelete = canDeleteListing(useAuth().user?.role);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<RowActionListing | null>(null);
 
   const deleteMutation = useMutation({
     mutationFn: (listingId: string) => api.listings.remove(listingId),
-    onSuccess: () => {
-      toast.success('매물을 삭제했습니다.');
-      invalidate();
+    onSuccess: (result) => {
+      toast.success(result?.intakeRemoved ? '매물을 삭제했습니다.' : '거래 조건을 삭제했습니다.');
       setDeleteTarget(null);
+      if (result?.intakeRemoved && onIntakeRemoved) {
+        // 패널을 먼저 닫고 목록을 다시 받는다 — 사라진 의뢰를 패널이 다시 부르지 않게
+        onIntakeRemoved();
+        window.setTimeout(invalidate, 0);
+      } else {
+        invalidate();
+      }
     },
     onError: (error: Error) => {
-      toast.error(error.message || '매물 삭제에 실패했습니다.');
+      toast.error(propertyErrorMessage(error, '삭제하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -354,20 +389,22 @@ export function PropertyRowActions({
                 <PhoneCall className="size-3.5" />
                 확인 기록...
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
+              {mayDelete && <DropdownMenuSeparator />}
             </>
           )}
-          <DropdownMenuLabel className="text-[11px] text-muted-foreground">
-            거래별 작업
-          </DropdownMenuLabel>
-          {listings.map((listing) => (
+          {mayDelete && listings.length > 0 && (
+            <DropdownMenuLabel className="text-[11px] text-muted-foreground">
+              거래별 작업
+            </DropdownMenuLabel>
+          )}
+          {mayDelete && listings.map((listing) => (
             <DropdownMenuItem
               key={`delete-${listing.id}`}
               variant="destructive"
               onSelect={() => setDeleteTarget(listing)}
             >
               <Trash2 className="size-3.5" />
-              {transactionLabel(listing.transactionType)} 매물 삭제...
+              {listings.length <= 1 ? '매물 삭제…' : `${transactionLabel(listing.transactionType)} 조건 삭제…`}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -380,10 +417,12 @@ export function PropertyRowActions({
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(next) => !next && setDeleteTarget(null)}
-        title="매물 삭제"
+        title={listings.length <= 1 ? '매물 삭제' : '거래 조건 삭제'}
         description={
           deleteTarget
-            ? `${transactionLabel(deleteTarget.transactionType)} 매물을 삭제합니다. 가격 이력·광고 기록도 함께 삭제되며 되돌릴 수 없습니다.`
+            ? listings.length <= 1
+              ? `${transactionLabel(deleteTarget.transactionType)} 조건이 이 매물의 마지막 거래 조건이라 매물이 목록에서 사라집니다. 가격 이력과 접수일·확인 이력도 함께 사라지며 되돌릴 수 없습니다(연락처·상담 기록은 남습니다). 거래가 끝난 것이면 지우지 말고 의뢰 종료를 쓰세요.`
+              : `${transactionLabel(deleteTarget.transactionType)} 조건만 삭제합니다. 가격 이력도 함께 지워지며 되돌릴 수 없습니다.`
             : undefined
         }
         confirmLabel="삭제"
@@ -440,12 +479,12 @@ export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
           `${total - failed}건 변경, ${failed}건 실패했습니다. (허용되지 않는 상태 전환 포함)`,
         );
       } else {
-        toast.success(`의뢰 ${total}건의 생명주기를 변경했습니다.`);
+        toast.success(`매물 ${total}건의 상태를 바꿨습니다.`);
       }
       invalidate();
     },
     onError: (error: Error) => {
-      toast.error(error.message || '일괄 상태 변경에 실패했습니다.');
+      toast.error(propertyErrorMessage(error, '상태를 바꾸지 못했습니다. 다시 시도해 주세요.'));
     },
     onSettled: () => setStatusValue(''),
   });
@@ -454,7 +493,7 @@ export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-muted-foreground">거래 {listingIds.length}건 대상</span>
+      <span className="text-muted-foreground">매물 {groups.length}건 선택</span>
       <Select
         value={statusValue || undefined}
         onValueChange={(value) => {
@@ -464,12 +503,13 @@ export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
         disabled={busy}
       >
         <SelectTrigger size="sm" className="h-7 w-40 bg-white text-xs">
-          <SelectValue placeholder="의뢰상태 일괄 변경" />
+          <SelectValue placeholder="상태 한꺼번에 바꾸기" />
         </SelectTrigger>
         <SelectContent>
           {BULK_LIFECYCLE_VALUES.map((value) => (
             <SelectItem key={value} value={value} className="text-xs">
-              {getStatusMeta('intakeLifecycle', value).label}
+              {/* 목록의 매물상태 낱말과 같게(활성 · 보류) */}
+              {value === IntakeLifecycleStatus.OPEN ? '활성' : getStatusMeta('intakeLifecycle', value).label}
             </SelectItem>
           ))}
         </SelectContent>

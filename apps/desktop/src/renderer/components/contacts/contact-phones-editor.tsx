@@ -2,6 +2,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import type { ContactPhone, ContactPhoneInput } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/contacts';
+import { formatPhoneWhileTyping, phoneInputProblem } from '@/lib/phone';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -128,7 +129,8 @@ export function ContactPhonesEditor({
   return (
     <div className="space-y-2">
       {phones.map((row) => (
-        <div key={row.key} className="flex items-center gap-2">
+        <div key={row.key} className="space-y-1">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => setPrimary(row.key)}
@@ -144,13 +146,17 @@ export function ContactPhonesEditor({
           </button>
           <Input
             type="tel"
+            inputMode="tel"
             value={row.phone}
-            onChange={(event) => updateRow(row.key, { phone: event.target.value })}
+            // 치는 동안 하이픈을 넣고 숫자가 아닌 글자는 받지 않는다 ("010가나"가 들어가지 않게)
+            onChange={(event) => updateRow(row.key, { phone: formatPhoneWhileTyping(event.target.value) })}
             placeholder="010-1234-5678"
+            aria-invalid={phoneInputProblem(row.phone) ? true : undefined}
             className="min-w-0 flex-1"
           />
           <Input
             type="text"
+            list="contact-phone-label-presets"
             value={row.label}
             onChange={(event) => updateRow(row.key, { label: event.target.value })}
             placeholder="라벨 (사무실)"
@@ -167,18 +173,35 @@ export function ContactPhonesEditor({
             <Trash2 className="size-3.5" />
           </Button>
         </div>
+        {phoneInputProblem(row.phone) && (
+          <p className="pl-9 text-[12px] text-muted-foreground">{phoneInputProblem(row.phone)}</p>
+        )}
+        </div>
       ))}
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-7 gap-1 px-2 text-xs text-muted-foreground"
-        onClick={() => onChange([...phones, createEmptyPhone(phones.length === 0)])}
-      >
-        <Plus className="size-3.5" />
-        전화번호 추가
-      </Button>
+      <datalist id="contact-phone-label-presets">
+        <option value="사무실" />
+        <option value="직통" />
+        <option value="집" />
+        <option value="비서" />
+        <option value="팩스" />
+      </datalist>
+
+      <div className="flex items-center justify-between gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+          onClick={() => onChange([...phones, createEmptyPhone(phones.length === 0)])}
+        >
+          <Plus className="size-3.5" />
+          전화번호 추가
+        </Button>
+      </div>
+      <p className="rounded-md bg-muted/50 px-2.5 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+        이 연락처 본인의 추가 번호(직통·사무실·집 등)만 등록하세요. 배우자·가족이나 법인 담당자의 번호는 &apos;세대 · 법인 소속&apos;에서 별도 연락처로 연결해 주세요.
+      </p>
     </div>
   );
 }

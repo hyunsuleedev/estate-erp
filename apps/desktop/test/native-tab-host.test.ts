@@ -123,6 +123,14 @@ class FakeWindowHost implements NativeTabHostPort {
     if (this.front === view) this.front = null;
   }
 
+  /** 맨 아래에 붙인 화면(보이는 탭 뒤). */
+  readonly behind = new Set<NativeTabViewPort>();
+
+  attachBehind(view: NativeTabViewPort): void {
+    this.attached.add(view);
+    this.behind.add(view);
+  }
+
   bringToFront(view: NativeTabViewPort): void {
     assert.ok(
       this.attached.has(view),
@@ -1030,6 +1038,114 @@ describe('NativeTabHost prewarmed spare view', () => {
     await settle();
     assert.equal(nativeTabs.hasSpare(), true, 'a new spare is prepared after one is used');
     assert.equal(factory.views.length, 3);
+  });
+
+  it('keeps the spare attached to the window, hidden, at the tab area size', async () => {
+    const { factory, nativeTabs, host } = setupWithSpare();
+    await nativeTabs.openOrUpdateTab(1, makeTab('first', { route: '/properties' }));
+    await settle();
+
+    // 창에 붙어 있지 않은 화면은 크기가 0이라 사이드바와 틀을 미리 그려 둘 수 없다.
+    const spare = factory.views[1];
+    assert.equal(host.attached.has(spare), true);
+    assert.equal(host.behind.has(spare), true, 'it was laid out behind the shown tab');
+    assert.equal(spare.visible, false, 'and hidden again once its frame was drawn');
+    assert.deepEqual(spare.bounds, { x: 0, y: 40, width: 1200, height: 800 });
+    assert.equal(nativeTabs.getActiveTabId(1), 'first', 'the spare never becomes the shown tab');
+
+    nativeTabs.updateBounds(1, { x: 0, y: 40, width: 900, height: 600 });
+    assert.deepEqual(spare.bounds, { x: 0, y: 40, width: 900, height: 600 });
+  });
+
+  it('shows the spare behind the shown tab only until it reports its frame, and never hides a tab it became', async () => {
+    class SlowReadyView extends AssignableView {
+      release: () => void = () => {};
+      private readonly ready = new Promise<void>((resolve) => {
+        this.release = resolve;
+      });
+      whenReady(): Promise<void> {
+        return this.ready;
+      }
+    }
+    class SlowReadyFactory extends FakeFactory {
+      create(): FakeView {
+        const view = new SlowReadyView(this.nextSenderId++);
+        this.views.push(view);
+        return view;
+      }
+    }
+    const factory = new SlowReadyFactory();
+    let sequence = 0;
+    const nativeTabs = new NativeTabHost(factory, {
+      spare: {
+        replenishDelayMs: 0,
+        createTab: () => makeTab(`spare-${(sequence += 1)}`, { route: '/dashboard' }),
+      },
+    });
+    const host = new FakeWindowHost(1);
+    nativeTabs.registerHost(host, { x: 0, y: 40, width: 1200, height: 800 });
+
+    // 가려 줄 탭이 없는 동안에는 예비 화면을 보이게 두지 않는다.
+    nativeTabs.prepareSpare();
+    const spare = factory.views[0] as SlowReadyView;
+    assert.equal(spare.visible, false);
+    assert.equal(host.behind.has(spare), false);
+
+    const opening = nativeTabs.openOrUpdateTab(1, makeTab('first', { route: '/properties' }));
+    await settle();
+    // 아직 뜨는 중인 예비 화면은 쓰지 않고 새 화면을 만든다.
+    const first = factory.views[1] as SlowReadyView;
+    first.release();
+    await opening;
+    assert.equal(nativeTabs.getActiveTabId(1), 'first');
+    assert.equal(spare.visible, true, 'shown behind the first tab to get its real size');
+    assert.equal(host.behind.has(spare), true);
+
+    // 틀을 다 그리기 전에 새 탭으로 넘어갔다.
+    const second = nativeTabs.openOrUpdateTab(1, makeTab('second', { route: '/contacts' }));
+    spare.release();
+    const opened = await second;
+    await settle();
+    assert.equal(opened.senderId, spare.senderId);
+    assert.equal(nativeTabs.getActiveTabId(1), 'second');
+    assert.equal(spare.visible, true, 'the tab it became stays shown');
+  });
+
+  it('moves the spare to the window that uses it and off a window that closes', async () => {
+    const { factory, nativeTabs, host } = setupWithSpare();
+    const other = new FakeWindowHost(2);
+    nativeTabs.registerHost(other, { x: 0, y: 40, width: 700, height: 500 });
+    await nativeTabs.openOrUpdateTab(1, makeTab('first', { route: '/properties' }));
+    await settle();
+    const spare = factory.views[1];
+    assert.equal(host.attached.has(spare), true);
+
+    // 다른 창에서 새 탭을 열면 예비 화면이 그 창으로 옮겨 간다.
+    await nativeTabs.openOrUpdateTab(2, makeTab('second', { route: '/contacts' }));
+    assert.equal(host.attached.has(spare), false);
+    assert.equal(other.attached.has(spare), true);
+    assert.deepEqual(spare.bounds, { x: 0, y: 40, width: 700, height: 500 });
+
+    await settle();
+    const nextSpare = factory.views[2];
+    assert.equal(other.attached.has(nextSpare), true, 'the next spare waits in the window last used');
+
+    // 예비 화면이 붙어 있던 창이 닫히면 남은 창으로 옮긴다.
+    nativeTabs.unregisterHost(2);
+    assert.equal(nextSpare.destroyed, false);
+    assert.equal(host.attached.has(nextSpare), true);
+    assert.deepEqual(nextSpare.bounds, { x: 0, y: 40, width: 1200, height: 800 });
+  });
+
+  it('detaches the spare from its window when it is discarded', async () => {
+    const { factory, nativeTabs, host } = setupWithSpare();
+    await nativeTabs.openOrUpdateTab(1, makeTab('first', { route: '/properties' }));
+    await settle();
+    const spare = factory.views[1];
+
+    nativeTabs.discardSpare();
+    assert.equal(host.attached.has(spare), false);
+    assert.equal(spare.destroyed, true);
   });
 
   it('discards the spare when the signed-in workspace is cleared', async () => {

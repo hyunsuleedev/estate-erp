@@ -17,49 +17,57 @@ const dashboardCss = readFileSync(
 const dashboardCode = dashboardSource.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
 
 describe('dashboard', () => {
-  it('is a pure-white three-column bento dashboard: calendar & upcoming / tasks, deals, consultations / right rail', () => {
+  it('is a pure-white three-column dashboard: calendar & upcoming / tasks, consultations / deals, news, guide', () => {
     for (const component of [
       'MiniCalendarCard',
       'ScheduleCard',
       'TaskSection',
       'DealsSection',
       'ConsultationsSection',
-      'CollectionCard',
       'NoticeSection',
       'GuideBannerCard',
-      'NewsCard',
     ]) {
       assert.match(dashboardSource, new RegExp(`<${component}\\b`));
     }
     assert.match(dashboardSource, /dash-canvas/);
     assert.match(dashboardSource, /dash-bento-grid/);
     assert.match(dashboardSource, /dash-bento-card/);
-    // 진행 거래는 보드가 아니라 표다.
-    assert.match(dashboardSource, /className="dash-table/);
+    // 진행 거래는 오른쪽 단에 있고, 줄마다 단계 띠를 그린다 (2026-11-23, 표에서 바꿨다).
+    // '내 담당'이면 내가 담당인 거래만 보이도록 범위를 함께 넘긴다 (6차 검수).
+    assert.match(dashboardSource, /<aside className="dash-rail">\s*<DealsSection deals=\{deals\} scope=\{scope\} userId=\{user\?\.id\} \/>/);
+    assert.match(dashboardSource, /className="dash-band"/);
+    // 공지사항과 부동산 뉴스는 '소식' 카드 하나의 탭이다.
+    assert.match(dashboardSource, /aria-pressed=\{feed === 'notice'\}/);
+    assert.match(dashboardSource, /aria-pressed=\{feed === 'news'\}/);
     // 부동산 · 시장 뉴스는 아직 서버 데이터가 없어 정직하게 '준비 중'만 둔다.
     assert.match(dashboardSource, /부동산 · 시장 뉴스[\s\S]*?준비 중/);
     assert.doesNotMatch(dashboardCode, /BROKERAGE_NEWS/);
     // 제거된 옛 구성 요소가 돌아오지 않는다.
     assert.doesNotMatch(dashboardCode, /<Lead\b|<SoonSection\b|DOC_COLUMN/);
-    assert.doesNotMatch(dashboardCode, /관리단지|통화 제안|매물 신호/);
+    assert.doesNotMatch(dashboardCode, /통화 제안|매물 신호/);
+    // '관리단지'는 새 사무소의 '처음 할 일' 첫 단계(관리단지 고르기)에만 나온다. 옛 관리단지 위젯은 돌아오지 않는다.
+    assert.equal(dashboardCode.match(/관리단지/g)?.length ?? 0, 1);
+    assert.match(dashboardCode, /title: '관리단지 고르기'/);
   });
 
-  it('gates the monthly collection card on owner/manager role, avoids KPI tiles, and keeps QuickCreate', () => {
-    assert.match(dashboardSource, /const canViewCashflow = user\?\.role === 'owner' \|\| user\?\.role === 'manager';/);
-    assert.match(dashboardSource, /useMonthlyLedgerQuery\(canViewCashflow\)/);
-    assert.match(dashboardSource, /\{canViewCashflow && <CollectionCard ledger=\{ledger\} \/>\}/);
-    assert.match(dashboardSource, /api\.finance\.ledger\.get\(\{ preset: 'this-month' \}\)/);
-    assert.match(dashboardSource, /collectPercent\(/);
-    assert.match(dashboardSource, /formatMoney\(/);
+  it('keeps money off the dashboard, avoids KPI tiles, and keeps QuickCreate', () => {
+    // 이달 수금 카드와 할 일 머리의 수금 단추는 뺐다 (사용자 결정 2026-11-23). 수금은 수수료/정산 화면에서 본다.
+    assert.doesNotMatch(dashboardCode, /CollectionCard|useMonthlyLedgerQuery|api\.finance\.ledger|collectPercent\(/);
     assert.doesNotMatch(dashboardCode, /KpiRow|AttentionList|PipelineCard|NotificationBell|api\.dashboard\.summary/);
     assert.match(dashboardSource, /<QuickCreate \/>/);
   });
 
-  it('uses CSS container queries for responsive rail hiding without ResizeObserver hacks', () => {
+  it('uses CSS container queries and never hides the right rail, without ResizeObserver hacks', () => {
     assert.match(dashboardCss, /\.dash-canvas\s*\{[^}]*container-type:\s*inline-size;[^}]*container-name:\s*dash-canvas;[^}]*background:\s*var\(--color-background\)/s);
-    assert.match(dashboardCss, /@container dash-canvas \(max-width: 1259px\)[\s\S]*?\.dash-rail\s*\{\s*display:\s*none;/);
-    assert.match(dashboardCss, /@container dash-canvas \(max-width: 1259px\)[\s\S]*?\.dash-compact-actions\s*\{\s*display:\s*inline-flex;/);
-    assert.match(dashboardCss, /@container dash-canvas \(max-width: 959px\)[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    // 오른쪽 단(거래 · 소식)은 좁아져도 숨기지 않는다. 세 단이 들어가지 않으면 두 단 아래로 내려온다.
+    assert.doesNotMatch(dashboardCss, /\.dash-rail\s*\{[^}]*display:\s*none/);
+    assert.match(dashboardCss, /@container dash-canvas \(max-width: 959px\)[\s\S]*?\.dash-rail\s*\{[^}]*grid-column:\s*1 \/ -1;/);
+    // 두 단일 때는 왼쪽 단(달력 · 일정)을 붙여 두지 않는다. 붙여 두면 굴렸을 때 아래로 내려온 거래 카드를 덮는다.
+    assert.match(dashboardCss, /@container dash-canvas \(max-width: 959px\)[\s\S]*?\.dash-left\s*\{\s*position:\s*static;\s*\}\s*\.dash-rail/);
+    // 숨긴 단을 대신 열던 단추와 요약 창은 없앴다.
+    assert.doesNotMatch(dashboardCode, /digestOpen|onOpenDigest|dash-compact-actions/);
+    // 한 줄로 쌓는 것은 정말 좁을 때만(759px 아래). 작은 노트북(판 약 830px)은 두 단이라 달력 옆에 할 일이 보인다 (6차 검수).
+    assert.match(dashboardCss, /@container dash-canvas \(max-width: 759px\)[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)/);
     assert.doesNotMatch(dashboardCode, /ResizeObserver|useRowCapacity/);
   });
 
@@ -69,9 +77,7 @@ describe('dashboard', () => {
     assert.match(dashboardSource, /if \(isQueryPaused\(query\)\) return 'offline'/);
     assert.match(dashboardSource, /<OfflineState/);
     // 다섯 목록 구획(일정, 할 일, 거래, 상담, 공지) 모두 불러오는 중·오프라인·오류를 목록보다 먼저 그린다.
-    assert.equal(dashboardCode.match(/\{status \?\?/g)?.length, 5);
-    assert.match(dashboardSource, /ledger\.isPending/);
-    assert.match(dashboardSource, /isQueryPaused\(ledger\)/);
+    assert.equal(dashboardCode.match(/[{(]status \?\?/g)?.length, 5);
   });
 
   it('drives the monthly calendar, selected day schedule, and upcoming events without breaking multi-day spans', () => {
@@ -97,11 +103,18 @@ describe('dashboard', () => {
     assert.match(dashboardSource, /opacity-0 group-hover\/task:opacity-100 group-focus-within\/task:opacity-100/);
   });
 
-  it('groups tasks into foldable buckets and adds a task for today in place', () => {
-    assert.match(dashboardSource, /useState<Record<TaskBucket, boolean>>\(\{ overdue: true, today: true, upcoming: false \}\)/);
-    assert.match(dashboardSource, /aria-expanded=\{isOpen\}/);
-    // 알약을 누르면 그 묶음을 펴고 묶음 머리로 포커스를 옮긴다.
-    assert.match(dashboardSource, /setOpened\(\(prev\) => \(\{ \.\.\.prev, \[reveal\.bucket\]: true \}\)\)/);
+  it('splits tasks into tabs that scroll inside the card and adds a task for today in place', () => {
+    // 지남 · 오늘 · 다가옴은 접는 묶음이 아니라 탭이다. 고르기 전에는 일이 있는 첫 탭을 보인다.
+    assert.match(dashboardSource, /const \[pickedTab, setPickedTab\] = useState<TaskBucket \| null>\(null\);/);
+    assert.match(dashboardSource, /pickedTab \?\? TASK_TABS\.find\(\(item\) => groups\[item\.key\]\.length > 0\)\?\.key \?\? 'today'/);
+    assert.match(dashboardSource, /aria-pressed=\{activeTab === item\.key\}/);
+    // 탭의 일은 모두 싣고 카드 안에서 굴린다('더 보기' 없음). 탭을 바꾸면 목록이 맨 위에서 시작한다.
+    assert.doesNotMatch(dashboardSource, /TASK_PREVIEW|DEAL_PREVIEW|NOTICE_PREVIEW/);
+    assert.match(dashboardSource, /<ul key=\{activeTab\} className="dash-scroll flex flex-col">/);
+    // 인사 영역의 알약을 누르면 그 탭을 고르고 탭으로 포커스를 옮긴다.
+    assert.match(dashboardSource, /setPickedTab\(reveal\.bucket\);/);
+    // 기한은 글자가 아니라 점 알약이다 (지남 빨강 · 오늘 노랑 · 그 밖 회색).
+    assert.match(dashboardSource, /DUE_PILL_CLASS\[bucket === 'overdue' \? 'late' : days === 0 \? 'today' : 'later'\]/);
     // 바로 추가: 기한은 오늘, 담당은 나. 저장되는 사이에 적기 시작한 글은 지우지 않는다.
     assert.match(dashboardSource, /api\.tasks\.create\(\{ title, dueDate: due\.toISOString\(\), assignedToId: userId \}\)/);
     assert.match(dashboardSource, /setDraft\(\(current\) => \(current\.trim\(\) === title \? '' : current\)\)/);
@@ -172,7 +185,9 @@ describe('dashboard', () => {
     assert.match(dashboardSource, /from '\.\/deals\/-deal-view-utils'/);
     assert.match(dashboardSource, /getDealPipelineHealth\(/);
     assert.match(dashboardSource, /sortDealsForDisplay\(/);
-    assert.match(dashboardSource, /<StatusBadge kind="dealStage" status=\{deal\.stage\} \/>/);
+    // 단계는 꼬리표 대신 띠로 그린다. 단계 목록과 이름은 거래관리 · 공용 상태 이름에서 읽는다.
+    assert.match(dashboardSource, /dealPipelineStages\.map\(\(stage, index\) =>/);
+    assert.match(dashboardSource, /getStatusMeta\('dealStage', stage\)/);
     // 거래 줄은 통째로 링크다. role="row"를 씌우면 보조 기술에서 링크가 사라진다.
     assert.doesNotMatch(dashboardCode, /role="(row|cell|table|columnheader)"/);
   });

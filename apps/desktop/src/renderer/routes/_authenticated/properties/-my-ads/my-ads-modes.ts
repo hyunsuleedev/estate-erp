@@ -1,15 +1,15 @@
 import type {
+  AdvertisementChangeAction,
   CreateAdvertisementChangeRequestDto,
   ListingAdvertisementWithListing,
   UpdateListingAdvertisementDto,
 } from "@estate-erp/api-client";
-import { analyzeOfficeAdvertisementComparison } from "@estate-erp/api-client";
 import { formatMoney } from "@/lib/format";
 import {
   advertisementTransactionType,
   pendingChangeRequests,
 } from "./my-ads-link";
-import { isManualAdvertisement } from "./my-ads-manual-ad-state";
+import { advertisementSyncState, getCachedComparison } from "./my-ads-format";
 
 /**
  * 내광고관리의 두 가지 고치기.
@@ -65,34 +65,55 @@ export function currentAmount(
   advertisement: ListingAdvertisementWithListing,
   field: "primary" | "monthlyRent",
 ): number | null {
-  return field === "monthlyRent"
-    ? advertisement.advertisedMonthlyRent
-    : advertisement[primaryAmountKey(advertisement)];
+  if (field === "monthlyRent") return advertisement.advertisedMonthlyRent;
+  const key = primaryAmountKey(advertisement);
+  return (
+    advertisement[key] ??
+    (advertisementTransactionType(advertisement) === "jeonse"
+      ? advertisement.advertisedPrice
+      : null)
+  );
 }
 
 /** 지금 네이버에 보이는 층 노출 방식. 비교를 읽은 적이 없으면 우리 기록의 값 */
 export function currentFloorExposure(
   advertisement: ListingAdvertisementWithListing,
 ): "exact" | "band" | null {
-  const observed = advertisement.comparison?.mainAdvertisement
-    ? analyzeOfficeAdvertisementComparison(advertisement).ownFloorExposureMode
+  const observed = advertisement.comparison?.ownAdvertisement
+    ? getCachedComparison(advertisement).ownFloorExposureMode
     : null;
   const value = observed === "exact" || observed === "band" ? observed : advertisement.floorExposure;
   return value === "exact" || value === "band" ? value : null;
 }
 
-/** 칸이 속한 요청 종류. 가격과 월세는 "가격 변경" 한 종류다 */
-function kindOfField(field: MyAdsEditableField): "price" | "floor_exposure" {
-  return field === "floorExposure" ? "floor_exposure" : "price";
-}
-
 export function hasPendingRequest(
   advertisement: ListingAdvertisementWithListing,
-  kind: string,
+  kind?: "price" | "floor_exposure" | AdvertisementChangeAction,
 ): boolean {
-  return pendingChangeRequests(advertisement).some(
-    (request) => request.kind === kind,
-  );
+  const pending = pendingChangeRequests(advertisement);
+  if (!kind) return pending.length > 0;
+  return pending.some((request) => {
+    const target = request.targetValue ?? {};
+    if (kind === "price") {
+      return (
+        (request.action === "update" ||
+          request.action === "publish" ||
+          request.action === "readvertise") &&
+        (target.price !== undefined ||
+          target.deposit !== undefined ||
+          target.monthlyRent !== undefined)
+      );
+    }
+    if (kind === "floor_exposure") {
+      return (
+        (request.action === "update" ||
+          request.action === "publish" ||
+          request.action === "readvertise") &&
+        target.floorExposure !== undefined
+      );
+    }
+    return request.action === kind;
+  });
 }
 
 /**
@@ -114,17 +135,14 @@ export function editBlockReason(
   if (mode === "edit") {
     // 층 노출은 네이버 · CP에서 읽어 온 값이라 우리 기록만 고쳐서는 뜻이 없다
     return field === "floorExposure"
-      ? "층 노출은 읽어 온 값입니다. 바꾸려면 변경 요청으로 보내세요."
+      ? "층 노출은 읽어 온 값입니다. 바꾸려면 광고 요청으로 보내세요."
       : null;
-  }
-  if (isManualAdvertisement(advertisement)) {
-    return "직접 입력한 광고는 요청할 곳이 없습니다. 기록 수정으로 고쳐 주세요.";
   }
   if (field === "floorExposure" && currentFloorExposure(advertisement) === null) {
     return "지금 층 노출 방식을 알 수 없어 바꿔 달라고 할 수 없습니다.";
   }
-  if (hasPendingRequest(advertisement, kindOfField(field))) {
-    return `처리되지 않은 ${field === "floorExposure" ? "층 노출" : "가격"} 변경 요청이 이미 있습니다. 펼쳐서 요청 탭에서 거둔 뒤 다시 요청하세요.`;
+  if (pendingChangeRequests(advertisement).length > 0) {
+    return "처리 중인 요청이 이미 있습니다. 펼쳐서 요청 탭에서 거둔 뒤 다시 요청하세요.";
   }
   return null;
 }
@@ -134,14 +152,11 @@ export function flagBlockReason(
   advertisement: ListingAdvertisementWithListing,
   flag: "readvertise" | "takedown",
 ): string | null {
-  if (isManualAdvertisement(advertisement)) {
-    return "직접 입력한 광고는 요청할 곳이 없습니다.";
-  }
   if (flag === "takedown" && advertisement.status !== "active") {
     return "게재 중인 광고만 내려 달라고 할 수 있습니다.";
   }
-  if (hasPendingRequest(advertisement, flag)) {
-    return `처리되지 않은 ${flag === "readvertise" ? "재광고" : "내리기"} 요청이 이미 있습니다.`;
+  if (pendingChangeRequests(advertisement).length > 0) {
+    return "처리 중인 요청이 이미 있습니다. 펼쳐서 요청 탭에서 거둔 뒤 다시 요청하세요.";
   }
   return null;
 }
@@ -195,7 +210,6 @@ export function isDraftEmpty(draft: MyAdsRequestDraft | undefined): boolean {
 
 /**
  * 이 칸의 값에 줄을 그을지: 바꿔 달라는 요청이 작성 중이거나 걸려 있다.
- * 새 값은 칸에 적지 않는다 — 무엇으로 바꾸는지는 펼친 요청 탭에서 본다.
  */
 export function isValueAsked(
   advertisement: ListingAdvertisementWithListing,
@@ -204,12 +218,65 @@ export function isValueAsked(
 ): boolean {
   if (draft?.[field] !== undefined) return true;
   return pendingChangeRequests(advertisement).some((request) => {
-    const target = request.toValue ?? {};
-    if (field === "floorExposure") return request.kind === "floor_exposure";
-    if (request.kind !== "price") return false;
+    const target = request.targetValue ?? {};
+    if (field === "floorExposure") return target.floorExposure !== undefined;
     if (field === "monthlyRent") return target.monthlyRent !== undefined;
     return target.price !== undefined || target.deposit !== undefined;
   });
+}
+
+const FLOOR_REQUEST_LABELS = { exact: "정확한 층", band: "고·중·저" } as const;
+
+/** 칸 바로 아래에 표시할 요청 값 (작성 중인 초안 우선, 없으면 서버에 걸린 미완료 요청). */
+export function requestedCellDisplay(
+  advertisement: ListingAdvertisementWithListing,
+  draft: MyAdsRequestDraft | undefined,
+  field: MyAdsEditableField,
+): { kind: "draft" | "pending"; text: string } | null {
+  if (draft?.[field] !== undefined) {
+    if (field === "floorExposure") {
+      const value = draft.floorExposure;
+      return value ? { kind: "draft", text: FLOOR_REQUEST_LABELS[value] } : null;
+    }
+    const amount = draft[field];
+    if (typeof amount !== "number" || !Number.isFinite(amount)) return null;
+    return {
+      kind: "draft",
+      text: amount === 0 ? "0원" : formatMoney(amount),
+    };
+  }
+
+  for (const request of pendingChangeRequests(advertisement)) {
+    if (request.action === "takedown") continue;
+    const target = request.targetValue ?? {};
+    if (field === "floorExposure") {
+      if (target.floorExposure === "exact" || target.floorExposure === "band") {
+        return {
+          kind: "pending",
+          text: FLOOR_REQUEST_LABELS[target.floorExposure],
+        };
+      }
+      continue;
+    }
+    if (field === "monthlyRent") {
+      if (typeof target.monthlyRent === "number" && Number.isFinite(target.monthlyRent)) {
+        return { kind: "pending", text: formatMoney(target.monthlyRent) };
+      }
+      continue;
+    }
+    const rawPrimary =
+      primaryAmountKey(advertisement) === "advertisedDeposit"
+        ? (target.deposit ?? target.price)
+        : (target.price ?? target.deposit);
+    if (typeof rawPrimary === "number" && Number.isFinite(rawPrimary)) {
+      return {
+        kind: "pending",
+        text: rawPrimary === 0 ? "0원" : formatMoney(rawPrimary),
+      };
+    }
+  }
+
+  return null;
 }
 
 const FLOOR_LABELS = { exact: "노출", band: "미노출" } as const;
@@ -259,68 +326,88 @@ export function draftLines(
 }
 
 /**
- * 초안을 서버에 보낼 요청으로 바꾼다. 종류마다 하나다 — 가격과 월세는 "가격 변경" 한 건으로 묶인다.
- * 보내기 직전에 다시 걸러, 그 사이 같은 종류의 요청이 걸렸거나 요청할 수 없게 된 것은 뺀다.
+ * 초안을 서버에 보낼 요청 하나로 바꾼다 (광고 1건당 열린 요청 1개).
+ * 내리기(takedown)가 켜지면 재광고·값 수정과 배타적이라 takedown만 보낸다.
+ * 직접 기록(manual) 광고이고 아직 CP에 올라가지 않았다면 update 대신 publish도 가능하지만,
+ * 기존 광고 행에 대한 요청은 advertisementId를 달아 update/readvertise/takedown으로 보낸다.
  */
 export function draftToRequests(
   advertisement: ListingAdvertisementWithListing,
   draft: MyAdsRequestDraft | undefined,
-  shared: Pick<CreateAdvertisementChangeRequestDto, "memo" | "dueDate" | "assignedToId">,
+  shared?: Pick<CreateAdvertisementChangeRequestDto, "memo" | "dueDate" | "assignedToId">,
 ): CreateAdvertisementChangeRequestDto[] {
   if (!draft) return [];
-  const requests: CreateAdvertisementChangeRequestDto[] = [];
-  const price: Record<string, number> = {};
+  const baseIds = {
+    advertisementId: advertisement.id,
+    listingId: advertisement.listingId ?? null,
+    channel: advertisement.channel,
+    ...(advertisement.cpAccountId ? { cpAccountId: advertisement.cpAccountId } : {}),
+    ...(shared ?? {}),
+  };
+
+  if (draft.takedown && flagBlockReason(advertisement, "takedown") === null) {
+    return [{ ...baseIds, action: "takedown", targetValue: {} }];
+  }
+
+  const targetValue: Record<string, unknown> = {};
   if (
     draft.primary !== undefined &&
     editBlockReason(advertisement, "primary", "request") === null
   ) {
-    price[primaryAmountKey(advertisement) === "advertisedDeposit" ? "deposit" : "price"] =
+    targetValue[primaryAmountKey(advertisement) === "advertisedDeposit" ? "deposit" : "price"] =
       draft.primary;
   }
   if (
     draft.monthlyRent !== undefined &&
     editBlockReason(advertisement, "monthlyRent", "request") === null
   ) {
-    price.monthlyRent = draft.monthlyRent;
-  }
-  if (Object.keys(price).length > 0) {
-    requests.push({ kind: "price", toValue: price, ...shared });
+    targetValue.monthlyRent = draft.monthlyRent;
   }
   if (
     draft.floorExposure !== undefined &&
     editBlockReason(advertisement, "floorExposure", "request") === null
   ) {
-    requests.push({
-      kind: "floor_exposure",
-      toValue: { floorExposure: draft.floorExposure },
-      ...shared,
-    });
+    targetValue.floorExposure = draft.floorExposure;
   }
-  for (const flag of ["readvertise", "takedown"] as const) {
-    if (draft[flag] && flagBlockReason(advertisement, flag) === null) {
-      requests.push({ kind: flag, ...shared });
-    }
+
+  const wantsReadvertise =
+    Boolean(draft.readvertise) &&
+    flagBlockReason(advertisement, "readvertise") === null;
+  if (wantsReadvertise) {
+    return [{ ...baseIds, action: "readvertise", targetValue }];
   }
-  return requests;
+
+  if (Object.keys(targetValue).length > 0) {
+    const action: AdvertisementChangeAction =
+      advertisementSyncState(advertisement) === "manual" && !advertisement.externalAdId
+        ? "update"
+        : "update";
+    return [{ ...baseIds, action, targetValue }];
+  }
+
+  return [];
 }
 
 /**
- * 이미 요청으로 만들어진 종류를 초안에서 뺀다. 한 광고의 요청 중 일부만 만들어지고 끊겼을 때 쓴다 —
- * 그대로 두면 다시 보낼 때 이미 걸린 종류부터 거절돼 남은 것을 영영 보내지 못한다.
- * 남는 것이 없으면 null.
+ * 이미 요청으로 만들어진 동작을 초안에서 뺀다. 남는 것이 없으면 null.
  */
-export function withoutSentKinds(
+export function withoutSentActions(
   draft: MyAdsRequestDraft,
-  kinds: readonly CreateAdvertisementChangeRequestDto["kind"][],
+  actions: readonly AdvertisementChangeAction[],
 ): MyAdsRequestDraft | null {
   const next: MyAdsRequestDraft = { ...draft };
-  for (const kind of kinds) {
-    if (kind === "price") {
+  for (const action of actions) {
+    if (action === "takedown") delete next.takedown;
+    else if (action === "readvertise") {
+      delete next.readvertise;
       delete next.primary;
       delete next.monthlyRent;
-    } else if (kind === "floor_exposure") delete next.floorExposure;
-    else if (kind === "readvertise") delete next.readvertise;
-    else if (kind === "takedown") delete next.takedown;
+      delete next.floorExposure;
+    } else if (action === "update" || action === "publish") {
+      delete next.primary;
+      delete next.monthlyRent;
+      delete next.floorExposure;
+    }
   }
   return Object.keys(next).length > 0 ? next : null;
 }

@@ -41,7 +41,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog, EntityChip } from '@/components/domain';
-import { PurposeBadge, TypeBadge, getInitial } from './-consultation-badges';
+import { ConsultationContent, PurposeBadge, TypeBadge, getInitial } from './-consultation-badges';
 import {
   getConsultationActionLabel,
   getConsultationContextCards,
@@ -52,6 +52,7 @@ import {
   type ConsultationListItem,
 } from './-consultation-view-utils';
 import { CallAnalysisPanel } from '../calls/-call-analysis-panel';
+import { apiErrorMessage, placeLabelOf } from '../contacts/-detail-cards';
 
 type DetailTab = 'analysis' | 'consultation';
 
@@ -89,8 +90,10 @@ export function ConsultationDetailSheet({
   const deleteMutation = useMutation({
     mutationFn: () => api.consultations.remove(consultation.id),
     onSuccess: () => {
-      toast.success('상담 기록이 삭제되었습니다');
+      toast.success('상담 기록을 지웠습니다.');
       void queryClient.invalidateQueries({ queryKey: ['consultations'] });
+      // 연락처 상세와 목록의 최근 상담에서도 빠져야 한다
+      void queryClient.invalidateQueries({ queryKey: ['contacts'] });
       setDeleteOpen(false);
       onDeleted();
     },
@@ -123,7 +126,7 @@ export function ConsultationDetailSheet({
         </div>
         <div className="mt-1 flex items-center gap-1.5">
           <Button variant="outline" size="xs" className="gap-1" onClick={() => setTaskOpen(true)}>
-            <ClipboardList className="size-3.5" />할 일 만들기
+            <ClipboardList className="size-3.5" />업무 추가
           </Button>
           <Button variant="outline" size="xs" className="gap-1" onClick={onEdit}>
             <Pencil className="size-3.5" />수정
@@ -174,7 +177,7 @@ export function ConsultationDetailSheet({
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-5 text-sm text-muted-foreground">
-                  연결된 매물, 의뢰, 매칭, 구매요건이 없습니다.
+                  연결된 매물, 의뢰, 매칭, 희망 조건이 없습니다.
                 </div>
               )}
             </PanelSection>
@@ -186,7 +189,7 @@ export function ConsultationDetailSheet({
                   <div>
                     <p className="text-sm font-medium text-indigo-950">{actionLabel}</p>
                     <p className="mt-1 text-xs leading-5 text-indigo-900/80">
-                      이 상담에 연결된 할 일을 만들어 후속 업무로 이어갑니다.
+                      이 상담에 이어지는 업무를 만들어 다음 일을 챙깁니다.
                     </p>
                     <Button
                       variant="outline"
@@ -194,7 +197,7 @@ export function ConsultationDetailSheet({
                       className="mt-3 gap-1 border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-100"
                       onClick={() => setTaskOpen(true)}
                     >
-                      <ClipboardList className="size-3.5" />이 상담으로 할 일 만들기
+                      <ClipboardList className="size-3.5" />이 상담으로 업무 추가
                     </Button>
                   </div>
                 </div>
@@ -203,7 +206,7 @@ export function ConsultationDetailSheet({
 
             <PanelSection title="상담 전문">
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{consultation.content}</p>
+                <ConsultationContent content={consultation.content} className="text-sm leading-6 text-slate-800" />
               </div>
             </PanelSection>
 
@@ -225,8 +228,7 @@ export function ConsultationDetailSheet({
                   <EntityChip
                     kind="property"
                     id={consultation.propertyId}
-                    label={consultation.property?.site?.name ?? '매물'}
-                    sublabel={formatUnitName(consultation.property?.unit) || undefined}
+                    label={placeLabelOf(consultation.property) || '매물'}
                   />
                 )}
               </div>
@@ -375,20 +377,20 @@ export function CreateTaskDialog({
         buyerReqId: consultation.buyerReqId ?? undefined,
       }),
     onSuccess: () => {
-      toast.success('할 일이 생성되었습니다');
+      toast.success('업무를 추가했습니다.');
       void queryClient.invalidateQueries({ queryKey: ['tasks'] });
       onOpenChange(false);
     },
-    onError: () => toast.error('할 일 생성에 실패했습니다'),
+    onError: (caught) => toast.error(apiErrorMessage(caught, '업무를 추가하지 못했습니다. 다시 시도해 주세요.')),
   });
 
   return (
     <Dialog open={open} onOpenChange={(next) => !createTask.isPending && onOpenChange(next)}>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="text-base">상담으로 할 일 만들기</DialogTitle>
+          <DialogTitle className="text-base">이 상담으로 업무 추가</DialogTitle>
           <DialogDescription className="text-xs">
-            이 상담과 연결된 고객·매물 정보가 할 일에 자동으로 연결됩니다.
+            이 상담의 고객·매물이 업무에 함께 연결됩니다.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -413,7 +415,7 @@ export function CreateTaskDialog({
           </Button>
           <Button size="sm" disabled={!title.trim() || createTask.isPending} onClick={() => createTask.mutate()}>
             {createTask.isPending && <Loader2 className="size-3.5 animate-spin" />}
-            할 일 생성
+            추가
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import {
   ClipboardList,
   Globe,
@@ -14,8 +15,8 @@ import type {
   BuyerRequirementConsultation,
 } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
-import { formatDate } from '@/lib/format';
-import { EmptyState } from '@/components/domain';
+import { apiErrorMessage } from '@/lib/api-error';
+import { formatRelativeDay } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -35,6 +36,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { RailSection } from '../properties/-detail/rail';
+import { nb } from '../properties/-detail/ui';
 import { CONSULTATION_TYPE_LABELS } from './-buyer-utils';
 
 /** 상담 유형별 타임라인 아이콘 (라벨은 CONSULTATION_TYPE_LABELS와 쌍) */
@@ -53,18 +56,9 @@ function formatTime(d: string): string {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
-/** 날짜 그룹 헤더 라벨 — 오늘/어제는 상대 표기, 그 외 "2026.08.05" */
+/** 날짜 그룹 헤더 라벨 — 앱 공용 표기("오늘 · 어제 · 11.19 (목)") */
 function formatDayLabel(d: string): string {
-  const date = new Date(d);
-  if (Number.isNaN(date.getTime())) return '';
-  const startOfDay = (x: Date) =>
-    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diffDays = Math.round(
-    (startOfDay(new Date()) - startOfDay(date)) / 86_400_000,
-  );
-  if (diffDays === 0) return '오늘';
-  if (diffDays === 1) return '어제';
-  return formatDate(date);
+  return formatRelativeDay(d);
 }
 
 interface ConsultationGroup {
@@ -99,6 +93,19 @@ function groupByDay(
 
 export function ConsultationPanel({ requirement }: { requirement: BuyerRequirement }) {
   const queryClient = useQueryClient();
+  const participants = useMemo(
+    () => (requirement.buyerIntake?.contacts ?? []).filter((p) => p.contact),
+    [requirement.buyerIntake?.contacts],
+  );
+  const participantNameById = useMemo(
+    () => new Map(participants.map((p) => [p.contactId, p.contact?.name ?? ''])),
+    [participants],
+  );
+  const defaultContactId =
+    participants.find((p) => p.isPrimary)?.contactId ??
+    participants[0]?.contactId ??
+    requirement.contactId;
+
   const consultationGroups = useMemo(
     () => groupByDay(requirement.consultations ?? []),
     [requirement.consultations],
@@ -107,14 +114,21 @@ export function ConsultationPanel({ requirement }: { requirement: BuyerRequireme
 
   // ── 상담 추가 ──────────────────────────────────────────────
   const [consultOpen, setConsultOpen] = useState(false);
+  const [consultContactId, setConsultContactId] = useState(defaultContactId);
   const [consultType, setConsultType] = useState('phone');
   const [consultContent, setConsultContent] = useState('');
   const [touchLastContact, setTouchLastContact] = useState(true);
 
+  useEffect(() => {
+    if (consultOpen) {
+      setConsultContactId(defaultContactId);
+    }
+  }, [consultOpen, defaultContactId]);
+
   const createConsultation = useMutation({
     mutationFn: async () => {
       await api.consultations.create({
-        contactId: requirement.contactId,
+        contactId: consultContactId || requirement.contactId,
         type: consultType,
         content: consultContent.trim(),
         buyerReqId: requirement.id,
@@ -126,7 +140,7 @@ export function ConsultationPanel({ requirement }: { requirement: BuyerRequireme
       }
     },
     onSuccess: async () => {
-      toast.success('상담 기록이 추가되었습니다.');
+      toast.success('상담을 적었습니다.');
       setConsultOpen(false);
       setConsultContent('');
       await Promise.all([
@@ -134,8 +148,8 @@ export function ConsultationPanel({ requirement }: { requirement: BuyerRequireme
         queryClient.invalidateQueries({ queryKey: ['consultations'] }),
       ]);
     },
-    onError: () => {
-      toast.error('상담 기록 추가에 실패했습니다.');
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, '상담을 저장하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -155,109 +169,124 @@ export function ConsultationPanel({ requirement }: { requirement: BuyerRequireme
         buyerReqId: requirement.id,
       }),
     onSuccess: async () => {
-      toast.success('후속 태스크가 생성되었습니다.');
+      toast.success('업무를 추가했습니다.');
       setTaskOpen(false);
       setTaskTitle('');
       setTaskDueDate('');
       setTaskContent('');
       await queryClient.invalidateQueries({ queryKey: ['tasks'] });
     },
-    onError: () => {
-      toast.error('태스크 생성에 실패했습니다.');
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, '업무를 만들지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
+  // 오른쪽 열의 한 구역(매물 상세 · 프로젝트 상세의 RailSection과 같은 모양): 제목 줄 + 날짜별 상담 + 아래 단추
   return (
-    <aside className="flex h-full flex-col rounded-lg border bg-card">
-      <div className="flex items-center justify-between border-b bg-muted/40 px-4 py-2.5">
-        <h3 className="text-sm font-semibold">
-          상담내역{' '}
-          <span className="font-normal text-muted-foreground">
-            최근 {consultationCount}건
-          </span>
-        </h3>
-      </div>
-
-      {/* 독립 스크롤 영역 — 여러 줄 내용을 그대로 읽을 수 있어야 함 */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+    <RailSection
+      title="상담"
+      count={consultationCount}
+      action={
+        <button type="button" className={nb.ghost} onClick={() => setConsultOpen(true)}>
+          <Plus />
+          상담 적기
+        </button>
+      }
+    >
+      <div data-requirement-consultations>
         {consultationGroups.length === 0 ? (
-          <div className="px-4 py-4">
-            <EmptyState
-              icon={MessageSquare}
-              title="상담 기록이 없습니다"
-              description="전화·방문·온라인 상담을 기록하면 날짜별 타임라인으로 쌓입니다. 아래 '상담 추가' 버튼으로 첫 상담을 남겨보세요."
-            />
-          </div>
+          <p className="py-1 break-keep text-[13px] leading-5 text-[#37352f]/65">
+            이 조건으로 남긴 상담이 없습니다. 전화 · 방문 뒤 &lsquo;상담 적기&rsquo;로 남기면 날짜별로 쌓입니다.
+          </p>
         ) : (
-          <div className="space-y-4 px-4 py-4">
+          <ol>
             {consultationGroups.map((group) => (
-              <section key={group.key}>
-                {/* 날짜 그룹 헤더 — 스크롤해도 현재 날짜가 보이도록 sticky */}
-                <div className="sticky top-0 z-10 flex items-baseline gap-1.5 bg-card py-1">
-                  <span className="text-xs font-semibold">{group.label}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {group.items.length}건
-                  </span>
+              <li key={group.key} className="py-1.5 [&+&]:border-t [&+&]:border-[#37352f]/[0.06]">
+                <div className="flex items-baseline gap-1.5 text-[12.5px] leading-[18px] text-[#37352f]/65">
+                  <span className="font-medium text-[#37352f]">{group.label}</span>
+                  <span>{group.items.length}건</span>
                 </div>
-                <ul className="mt-1 ml-2 space-y-4 border-l border-border pl-4">
+                <ul>
                   {group.items.map((c) => {
-                    const TypeIcon =
-                      CONSULTATION_TYPE_ICONS[c.type] ?? MessageSquare;
+                    const TypeIcon = CONSULTATION_TYPE_ICONS[c.type] ?? MessageSquare;
+                    const participantName =
+                      participants.length > 1 ? participantNameById.get(c.contactId) : undefined;
                     return (
-                      <li key={c.id} className="relative">
-                        {/* 타임라인 노드 — 상담 유형 아이콘 */}
-                        <span className="absolute top-0.5 -left-[26px] flex size-5 items-center justify-center rounded-full border bg-card text-muted-foreground">
+                      <li key={c.id} className="py-1">
+                        <div className="flex items-center gap-1.5 text-[12.5px] leading-[18px] text-[#37352f]/65">
                           <TypeIcon className="size-3" aria-hidden="true" />
-                        </span>
-                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-foreground/70">
-                            {CONSULTATION_TYPE_LABELS[c.type] ?? c.type}
-                          </span>
-                          <span className="tabular-nums">
-                            {formatTime(c.createdAt)}
-                          </span>
+                          <span>{CONSULTATION_TYPE_LABELS[c.type] ?? c.type}</span>
+                          {participantName && (
+                            <span className="truncate font-medium text-[#37352f]/80">
+                              {participantName}
+                            </span>
+                          )}
+                          <span className="tabular-nums">{formatTime(c.createdAt)}</span>
                         </div>
-                        <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">
+                        <p className="mt-0.5 whitespace-pre-wrap break-keep text-[13.5px] leading-5 text-[#37352f]/90 [overflow-wrap:anywhere]">
                           {c.content}
                         </p>
                       </li>
                     );
                   })}
                 </ul>
-              </section>
+              </li>
             ))}
-          </div>
+          </ol>
         )}
-      </div>
-
-      {/* 하단 고정 액션 — 스크롤 위치와 무관하게 상담 추가 가능 */}
-      <div className="flex gap-2 border-t p-3">
-        <Button
-          size="sm"
-          className="h-8 flex-1 text-xs"
-          onClick={() => setConsultOpen(true)}
-        >
-          <Plus className="size-3.5" />
-          상담 추가
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 flex-1 text-xs"
-          onClick={() => setTaskOpen(true)}
-        >
-          <ClipboardList className="size-3.5" />
-          후속 태스크
-        </Button>
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          <button type="button" className={nb.ghost} onClick={() => setTaskOpen(true)}>
+            <ClipboardList />
+            다음 업무
+          </button>
+          {/* 여기에는 이 조건에 걸린 상담만 보인다. 연락처에서 적은 이 손님의 다른 상담은 연락처 상세에 있다 */}
+          {requirement.contact?.id && (
+            <Link
+              to="/contacts/$id"
+              params={{ id: requirement.contact.id }}
+              className={nb.ghost}
+              data-requirement-contact-consultations
+            >
+              <MessageSquare />
+              이 손님의 모든 상담
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* ── 상담 추가 Dialog ── */}
       <Dialog open={consultOpen} onOpenChange={setConsultOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent
+          className="sm:max-w-md"
+          // 적다가 창 밖을 잘못 눌러도 적은 내용이 말없이 사라지지 않게 한다 (닫기는 취소 · Esc)
+          onInteractOutside={(event) => {
+            if (consultContent.trim()) event.preventDefault();
+          }}
+        >
           <DialogHeader>
-            <DialogTitle>상담 기록 추가</DialogTitle>
+            <DialogTitle>상담 적기</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {participants.length > 1 && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">상담 대상</Label>
+                <Select value={consultContactId} onValueChange={setConsultContactId}>
+                  <SelectTrigger className="h-8 w-full text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {participants.map((p) => (
+                      <SelectItem key={p.contactId} value={p.contactId}>
+                        <span>{p.contact?.name ?? ''}</span>
+                        {p.isPrimary && (
+                          <span className="ml-1 text-xs text-muted-foreground">(대표)</span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">상담 유형</Label>
               <Select value={consultType} onValueChange={setConsultType}>
@@ -308,11 +337,11 @@ export function ConsultationPanel({ requirement }: { requirement: BuyerRequireme
         </DialogContent>
       </Dialog>
 
-      {/* ── 후속 태스크 Dialog ── */}
+      {/* ── 다음 업무 Dialog ── */}
       <Dialog open={taskOpen} onOpenChange={setTaskOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>후속 태스크 추가</DialogTitle>
+            <DialogTitle>다음 업무</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -354,11 +383,11 @@ export function ConsultationPanel({ requirement }: { requirement: BuyerRequireme
               disabled={createTask.isPending || !taskTitle.trim()}
               onClick={() => createTask.mutate()}
             >
-              {createTask.isPending ? '생성 중…' : '태스크 생성'}
+              {createTask.isPending ? '추가하는 중…' : '업무 추가'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </aside>
+    </RailSection>
   );
 }

@@ -1,14 +1,15 @@
 /**
- * 캐시플로우. 맨 위 줄은 수금 − 고정비 = 순이익 식으로 읽고,
+ * 캐시플로우. 맨 위 줄은 수금 · 공동중개 줄 몫 · 받을 돈 · 그달 계약 수수료 (고정비·순이익은 2026-11-22에 내렸다),
  * 왼쪽은 오늘 처리할 일, 오른쪽은 월별 수금과 그달 계약 수수료를 둔다.
  *
- * summary.collected·netProfit은 진행 거래 전체 누계라 쓰지 않는다.
- * 월 수금과 순이익은 입금일 기준으로 집계한 monthlyTrend에서 읽고,
+ * 월 수금과 줄 몫은 입금 기록의 받은 날(한국 시각) 기준으로 집계한 monthlyTrend에서 읽는다
+ * (summary.collected 도 이제 같은 값이다). 금액은 부가세를 뺀 수수료다.
  * 받을 돈은 부분수금 잔액까지 계산하도록 원장에서 직접 구한다.
  */
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -42,11 +43,13 @@ import {
   PaymentDialogHost,
   useAdjustmentDecision,
   useCreateDunningTasks,
+  useOpenDunning,
   type LedgerAdjustment,
   type PaymentDialogKind,
   type PaymentDialogState,
 } from './-payment-dialogs';
 import {
+  CashflowBand,
   CashflowError,
   CashflowLoading,
   CashflowPage,
@@ -72,7 +75,8 @@ import {
   relativeDueLabel,
   receivedAmount,
   rollupPayments,
-  shortDate,
+  dayLabel,
+  markCancelledDeals,
   stepMonth,
   type QueueItem,
   type TrendBar,
@@ -114,6 +118,8 @@ function CashflowDashboard() {
   const ledger = useQuery({
     queryKey: ['finance', 'ledger', 'all'],
     queryFn: () => api.finance.ledger.get({ preset: 'all' }),
+    // 취소한 거래의 청구는 받을 돈이 아니다 (받은 돈은 수금에 남는다)
+    select: (view) => ({ ...view, groups: markCancelledDeals(view.groups) }),
   });
 
   const isThisMonth =
@@ -128,7 +134,7 @@ function CashflowDashboard() {
     setDialog({
       kind,
       payment,
-      label: `${dealLocation(group.deal)} · ${clientSideLabel(payment.clientSide)} ${payment.code ?? ''}`.trim(),
+      label: `${dealLocation(group.deal)} · ${clientSideLabel(payment.clientSide, group.deal.transactionType)} ${payment.code ?? ''}`.trim(),
     });
 
   const toolbar = (
@@ -215,40 +221,23 @@ function CashflowDashboard() {
     <CashflowPage title="캐시플로우">
       {toolbar}
 
+      {/* 고정비·순이익은 2026-11-22에 내렸다(이 영역의 목적은 직원 정산 계산). 받은 수수료 기준의 숫자만 둔다. */}
       <SummaryStrip>
         <SummaryStat
-          className="min-w-[118px] flex-none border-r-0 pr-2"
           label="수금"
           value={formatMoney(thisMonth?.collected ?? 0)}
-          hint={`${previousLabel}월 ${formatMoney(previousMonth?.collected ?? 0)}`}
-        />
-        <Operator>−</Operator>
-        <SummaryStat
-          className="min-w-[118px] flex-none border-r-0 pr-2"
-          label="고정비"
-          value={formatMoney(selectedSummary.data.monthlyExpense)}
           hint={
-            <Link
-              to="/cashflow/expenses"
-              className="underline decoration-[#d8d6d0] underline-offset-2 hover:decoration-current"
-            >
-              고정비 설정
-            </Link>
+            previousMonth?.collected
+              ? `${previousLabel}월 ${formatMoney(previousMonth.collected)}`
+              : `${previousLabel}월 수금 없음`
           }
         />
-        <Operator>=</Operator>
         <SummaryStat
-          className="min-w-[118px] flex-none border-r-0 pr-2"
-          label="순이익"
-          value={formatMoney(thisMonth?.net ?? 0)}
-          valueClassName={
-            (thisMonth?.net ?? 0) < 0 ? 'text-destructive-strong' : undefined
-          }
-          hint="직원·파트너 배분 전"
+          label="공동중개 줄 몫"
+          value={formatMoney(thisMonth?.partnerShare ?? 0)}
+          hint="수금 가운데 상대 사무소 몫"
         />
-        <div className="flex-1" />
         <SummaryStat
-          className="min-w-[136px] flex-none border-r-0 border-l pr-5"
           label="받을 돈"
           value={formatMoney(owed.pending + owed.overdue)}
           hint={
@@ -266,12 +255,27 @@ function CashflowDashboard() {
           }
         />
         <SummaryStat
-          className="min-w-[136px] flex-none border-r-0 border-l pr-5"
           label={`${selected.month}월 계약 수수료`}
           value={formatMoney(contractsBilled)}
           hint={`계약 ${contracts.length}건`}
         />
       </SummaryStrip>
+
+      {ledger.data && !ledger.data.hasAnyPayment && (
+        // 처음 온 사무소: "—"만 보이면 무엇부터 할지 모른다. 첫 단계를 한 줄로 알려 준다.
+        <CashflowBand className="whitespace-normal text-foreground">
+          <span>
+            아직 받을 수수료가 없습니다. 거래가 본계약 단계로 넘어가면 그 거래의 수수료가 여기에
+            받을 돈으로 잡히고, 받은 돈을 기록하면 수금이 계산됩니다.
+          </span>
+          <Link
+            to="/deals"
+            className="ml-auto shrink-0 underline decoration-[#d8d6d0] underline-offset-2 hover:decoration-current"
+          >
+            거래관리로 가기
+          </Link>
+        </CashflowBand>
+      )}
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_minmax(372px,1fr)]">
         <TodayPane
@@ -287,7 +291,6 @@ function CashflowDashboard() {
           <TrendPanel
             bars={buildTrendBars(currentSummary.data.monthlyTrend, groups)}
             selected={selected}
-            expense={currentSummary.data.monthlyExpense}
             onSelect={setSelected}
           />
           <ContractsPanel
@@ -309,6 +312,7 @@ function CashflowDashboard() {
           key={decision.id}
           adjustment={decision}
           label={adjustmentLabel(decision, groups)}
+          transactionType={groups.find((g) => g.deal.id === decision.dealId)?.deal.transactionType}
           onClose={() => setDecision(null)}
         />
       )}
@@ -333,16 +337,6 @@ function canApproveNow(
   return payment !== null && adjustmentProblem(adjustment, payment) === null;
 }
 
-function Operator({ children }: { children: ReactNode }) {
-  return (
-    <div
-      aria-hidden
-      className="flex shrink-0 items-center pt-4 pr-2 text-lg text-[#a5a39f]"
-    >
-      {children}
-    </div>
-  );
-}
 
 // ── 오늘 처리할 것 ──────────────────────────────────────
 
@@ -370,6 +364,14 @@ function TodayPane({
   const canDecide = user?.role === 'owner';
   const { approve, reject } = useAdjustmentDecision();
   const dunning = useCreateDunningTasks();
+  const openDunning = useOpenDunning();
+  // 승인 단추를 한 번 누른 조정. 4초 안에 다시 눌러야 반영된다.
+  const [armed, setArmed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armed) return;
+    const timer = window.setTimeout(() => setArmed(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [armed]);
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const queue = useMemo(() => buildTodayQueue(groups), [groups]);
   const total =
@@ -398,13 +400,14 @@ function TodayPane({
       <button
         type="button"
         className="max-w-full shrink-0 truncate rounded-sm text-left font-medium decoration-[#d8d6d0] underline-offset-2 hover:underline"
+        title={dealLocation(item.group.deal)}
         onClick={() => onOpenDeal(item.group.deal.id, item.payment.id)}
       >
         {dealLocation(item.group.deal)}
       </button>
       <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
         {[
-          clientSideLabel(item.payment.clientSide),
+          clientSideLabel(item.payment.clientSide, item.group.deal.transactionType),
           payerName(item.group.deal, item.payment),
         ]
           .filter(Boolean)
@@ -448,21 +451,35 @@ function TodayPane({
               {relativeDueLabel(item.due)}
             </When>
             <Amount>{formatMoney(item.remaining)}</Amount>
-            <div className="flex justify-end gap-1">
-              <RowButton
-                disabled={dunning.isPending}
-                onClick={() =>
-                  dunning.mutate([
-                    {
-                      payment: item.payment,
-                      location: dealLocation(item.group.deal),
-                      dealId: item.group.deal.id,
-                    },
-                  ])
-                }
-              >
-                독촉
-              </RowButton>
+            <div className="flex items-center justify-end gap-1">
+              {(() => {
+                const task = openDunning(item.payment, item.group.deal.id);
+                return task ? (
+                  <Link
+                    to="/tasks"
+                    title={`${dayLabel(task.createdAt, false)}에 만든 독촉 업무가 아직 끝나지 않았습니다 · ${task.title}`}
+                    className="px-1 text-xs whitespace-nowrap text-muted-foreground underline decoration-[#d8d6d0] underline-offset-2 hover:text-foreground"
+                  >
+                    독촉함
+                  </Link>
+                ) : (
+                  <RowButton
+                    disabled={dunning.isPending}
+                    onClick={() =>
+                      dunning.mutate([
+                        {
+                          payment: item.payment,
+                          location: dealLocation(item.group.deal),
+                          dealId: item.group.deal.id,
+                          transactionType: item.group.deal.transactionType,
+                        },
+                      ])
+                    }
+                  >
+                    독촉
+                  </RowButton>
+                );
+              })()}
               {collectButton(item)}
             </div>
           </div>
@@ -492,8 +509,22 @@ function TodayPane({
                 className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
                 title={adjustment.reason}
               >
-                {ADJUSTMENT_LABEL[adjustment.type] ?? adjustment.type} ·{' '}
-                {adjustment.reason}
+                {[
+                  (() => {
+                    const target = paymentOfAdjustment(groups, adjustment);
+                    return target
+                      ? clientSideLabel(
+                          target.clientSide,
+                          groups.find((g) => g.deal.id === adjustment.dealId)?.deal.transactionType,
+                        )
+                      : null;
+                  })(),
+                  ADJUSTMENT_LABEL[adjustment.type] ?? adjustment.type,
+                  adjustment.requestedByName && `${adjustment.requestedByName} 요청`,
+                  adjustment.reason,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
               </span>
             </div>
             <When />
@@ -508,12 +539,20 @@ function TodayPane({
                     반려
                   </RowButton>
                   {canApproveNow(adjustment, groups) ? (
+                    // 승인은 되돌릴 수 없어 한 번 더 누르게 한다 (창은 띄우지 않는다)
                     <RowButton
                       primary
                       disabled={approve.isPending || reject.isPending}
-                      onClick={() => approve.mutate({ adjustment })}
+                      onClick={() => {
+                        if (armed !== adjustment.id) {
+                          setArmed(adjustment.id);
+                          return;
+                        }
+                        setArmed(null);
+                        approve.mutate({ adjustment });
+                      }}
                     >
-                      승인
+                      {armed === adjustment.id ? '승인 · 확인' : '승인'}
                     </RowButton>
                   ) : (
                     <RowButton primary onClick={() => onReview(adjustment)}>
@@ -551,7 +590,7 @@ function TodayPane({
       <QueueSection
         {...sectionProps('tax')}
         icon={<ReceiptText className="size-3.5 text-muted-foreground" />}
-        label="세금계산서 미기록"
+        label="현금영수증·계산서 미기록"
         count={queue.taxInvoice.length}
         amount={queue.taxInvoice.reduce(
           (acc, item) => acc + receivedAmount(item.payment),
@@ -561,13 +600,13 @@ function TodayPane({
         {queue.taxInvoice.map((item) => (
           <div key={item.payment.id} className={ROW_GRID}>
             {nameCell(item)}
-            <When>{shortDate(item.payment.paidAt)} 수금</When>
+            <When>{dayLabel(item.payment.paidAt, false)} 수금</When>
             <Amount>{formatMoney(receivedAmount(item.payment))}</Amount>
             <div className="flex justify-end">
               <RowButton
                 onClick={() => onAction('tax', item.group, item.payment)}
               >
-                계산서 기록
+                영수증 기록
               </RowButton>
             </div>
           </div>
@@ -683,12 +722,10 @@ const CHART_HEIGHT = 172;
 function TrendPanel({
   bars,
   selected,
-  expense,
   onSelect,
 }: {
   bars: TrendBar[];
   selected: { year: number; month: number };
-  expense: number;
   onSelect: (month: { year: number; month: number }) => void;
 }) {
   const [mode, setMode] = useState<'chart' | 'table'>('chart');
@@ -741,11 +778,7 @@ function TrendPanel({
               />
               예정
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <i className="inline-block w-3 border-t-[1.5px] border-muted-foreground" />
-              월 고정비 {formatMoney(expense)}
-            </span>
-            <span className="ml-auto text-[#a5a39f]">단위 만원</span>
+            <span className="ml-auto text-[#a5a39f]">단위 만원 · 부가세 별도</span>
           </div>
           <TrendChart bars={bars} selected={selected} onSelect={onSelect} />
         </div>
@@ -756,8 +789,7 @@ function TrendPanel({
               <th>월</th>
               <th>수금</th>
               <th>예정</th>
-              <th>고정비</th>
-              <th>순이익</th>
+              <th title="수금 가운데 공동중개 상대에게 넘겨줄 몫">줄 몫</th>
             </tr>
           </thead>
           <tbody>
@@ -774,10 +806,7 @@ function TrendPanel({
                 <td>{bar.label}</td>
                 <td>{formatMoney(bar.collected)}</td>
                 <td>{formatMoney(bar.forecast)}</td>
-                <td>{formatMoney(bar.expense)}</td>
-                <td className={cn(bar.net < 0 && 'text-destructive-strong')}>
-                  {formatMoney(bar.net)}
-                </td>
+                <td>{formatMoney(bar.partnerShare)}</td>
               </tr>
             ))}
           </tbody>
@@ -829,12 +858,7 @@ function TrendChart({
   const right = 4;
   const top = 18;
   const bottom = 24;
-  const expense = bars[0]?.expense ?? 0;
-  const peak = Math.max(
-    ...bars.map((b) => b.collected + b.forecast),
-    expense,
-    1,
-  );
+  const peak = Math.max(...bars.map((b) => b.collected + b.forecast), 1);
   const step = niceStep(peak);
   const max = Math.ceil(peak / step) * step;
   const y = (value: number) => top + (H - top - bottom) * (1 - value / max);
@@ -885,7 +909,7 @@ function TrendChart({
               key={bar.key}
               role="button"
               tabIndex={0}
-              aria-label={`${bar.label} 수금 ${formatMoney(bar.collected)}, 예정 ${formatMoney(bar.forecast)}, 고정비 ${formatMoney(bar.expense)}`}
+              aria-label={`${bar.label} 수금 ${formatMoney(bar.collected)}, 예정 ${formatMoney(bar.forecast)}`}
               className="cursor-pointer outline-none [&:focus-visible_.cf-hit]:fill-[#f7f7f5] [&:hover_.cf-hit]:fill-[#f7f7f5]"
               onClick={pick}
               onKeyDown={(event) => {
@@ -970,15 +994,6 @@ function TrendChart({
             </g>
           );
         })}
-        <line
-          x1={left}
-          x2={width - right}
-          y1={y(expense)}
-          y2={y(expense)}
-          stroke="var(--color-muted-foreground)"
-          strokeWidth={1.5}
-          pointerEvents="none"
-        />
       </svg>
       {hover && (
         <div
@@ -996,12 +1011,9 @@ function TrendChart({
           {hover.bar.forecast > 0 && (
             <TooltipRow color={COLOR_FORECAST} label="예정" value={hover.bar.forecast} />
           )}
-          <TooltipRow
-            color="var(--color-muted-foreground)"
-            label="고정비"
-            value={hover.bar.expense}
-          />
-          <TooltipRow label="순이익" value={hover.bar.net} />
+          {hover.bar.partnerShare > 0 && (
+            <TooltipRow label="공동중개 줄 몫" value={hover.bar.partnerShare} />
+          )}
         </div>
       )}
     </div>
@@ -1049,9 +1061,10 @@ function ContractsPanel({
 }) {
   const totals = contracts.reduce(
     (acc, g) => {
-      const { billed, collected } = rollupPayments(g.payments);
+      // 진행 %는 청구가 얼마나 받아졌는지(상대가 받은 돈 포함)로 센다
+      const { billed, claimCollected } = rollupPayments(g.payments);
       acc.billed += billed;
-      acc.collected += collected;
+      acc.collected += claimCollected;
       return acc;
     },
     { billed: 0, collected: 0 },
@@ -1077,8 +1090,8 @@ function ContractsPanel({
         </p>
       ) : (
         contracts.map((group) => {
-          const { billed, collected } = rollupPayments(group.payments);
-          const rowPercent = collectPercent(collected, billed);
+          const { billed, claimCollected } = rollupPayments(group.payments);
+          const rowPercent = collectPercent(claimCollected, billed);
           return (
             <button
               key={group.deal.id}

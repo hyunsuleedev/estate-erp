@@ -513,3 +513,18 @@ describe('status columns in the drag-sortable list', () => {
     assert.deepEqual(listStatusColumns('', false), ['in_progress', 'pending']);
   });
 });
+
+describe('끝난 일에 걸린 열린 업무', () => {
+  it('의뢰가 끝난 매물·끝난 거래·취소된 거래를 알려 주고, 끝난 업무에는 붙이지 않는다', async () => {
+    const { taskEndedTags } = await import('../src/renderer/routes/_authenticated/tasks/-task-filters');
+    const base = { status: 'pending', deal: null, listingIntake: null, listing: null, property: null } as never;
+    assert.deepEqual(taskEndedTags(base), []);
+    assert.deepEqual(
+      taskEndedTags({ ...(base as object), property: { listingIntakes: [{ id: 'i', lifecycleStatus: 'closed', closedReason: 'sold' }] } } as never),
+      ['종료된 매물'],
+    );
+    assert.deepEqual(taskEndedTags({ ...(base as object), deal: { id: 'd', stage: 'completed' } } as never), ['끝난 거래']);
+    assert.deepEqual(taskEndedTags({ ...(base as object), deal: { id: 'd', stage: 'contracted', isCancelled: true } } as never), ['취소된 거래']);
+    assert.deepEqual(taskEndedTags({ ...(base as object), status: 'completed', deal: { id: 'd', stage: 'completed' } } as never), []);
+  });
+});

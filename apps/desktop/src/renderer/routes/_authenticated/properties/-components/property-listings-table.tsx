@@ -732,8 +732,11 @@ export function PropertyListingsTable({
             {isLoading && <LoadingRows columns={visibleColumnCount} />}
             {!isLoading && rows.length === 0 && (
               <tr>
-                <td colSpan={visibleColumnCount} className="h-32 text-center text-sm text-muted-foreground">
-                  {emptyMessage}
+                <td colSpan={visibleColumnCount} className="h-32 p-0 text-center text-sm text-muted-foreground">
+                  {/* 표가 화면보다 넓어도 문구가 보이는 폭 가운데에 오게 (펼친 줄과 같은 sticky 방식) */}
+                  <div className="sticky left-0 flex min-h-32 w-[100cqw] items-center justify-center break-keep px-6 text-center">
+                    {emptyMessage}
+                  </div>
                 </td>
               </tr>
             )}

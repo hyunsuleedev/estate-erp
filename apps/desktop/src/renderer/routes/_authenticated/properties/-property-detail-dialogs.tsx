@@ -19,6 +19,9 @@ import {
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatMoney, formatPhone, formatRent } from '@/lib/format';
+import { parseManwonText } from './-manwon-input';
+import { MOVE_IN_TYPES, toDateInputValue } from './-move-in-options';
+import { propertyErrorMessage } from './-error-message';
 import { StatusBadge } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -43,15 +46,35 @@ import {
 
 // ── 공통 헬퍼 ──────────────────────────────────────────────────────
 
+/** 저장할 금액(만원). "15억", "15억 8천", "158000" 모두 받고, 못 읽으면 저장을 멈춘다. */
 function parseManwon(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed.replace(/,/g, ''));
-  return Number.isFinite(parsed) ? Math.round(parsed) : null;
+  const parsed = parseManwonText(value);
+  if (!parsed.valid) {
+    throw new Error(`"${value.trim()}"을(를) 금액으로 읽을 수 없습니다. 예: 15억, 15억 8천, 158000(만원)`);
+  }
+  return parsed.value;
+}
+
+/** 화면에 보여 줄 읽은 값. 못 읽으면 null. */
+function previewManwon(value: string): number | null {
+  const parsed = parseManwonText(value);
+  return parsed.valid ? parsed.value : null;
+}
+
+/**
+ * 매물의 사람·조건이 바뀌면 같은 내용을 보여 주는 다른 화면도 다시 읽게 한다:
+ * 매물관리 목록·옆 패널(listing-intakes), 관리단지 호수 목록(['sites', 단지, 'units', …]).
+ * 관리단지 화면도 이 창들을 가져다 쓴다.
+ */
+function invalidatePropertyViews(queryClient: ReturnType<typeof useQueryClient>) {
+  void queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
+  void queryClient.invalidateQueries({
+    predicate: (query) => query.queryKey[0] === 'sites' && query.queryKey[2] === 'units',
+  });
 }
 
 function getErrorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
+  return propertyErrorMessage(err, fallback);
 }
 
 const ROLE_OPTIONS = [
@@ -262,11 +285,17 @@ interface ListingFormState {
   premium: string;
   privateMemo: string;
   memo: string;
+  moveInAvailableType: string;
+  moveInAvailableFrom: string;
+  moveInAvailableTo: string;
 }
 
-function initListingForm(listing: Listing | null): ListingFormState {
+function initListingForm(listing: Listing | null, existingTypes: readonly string[] = []): ListingFormState {
+  // 새 조건은 아직 없는 거래유형으로 시작한다(매매가 있으면 전세부터) — 있는 유형을 고르면 저장 때 막힌다
+  const firstFreeType =
+    Object.keys(TRANSACTION_TYPE_LABELS).find((type) => !existingTypes.includes(type)) ?? 'sale';
   return {
-    transactionType: listing?.transactionType ?? 'sale',
+    transactionType: listing?.transactionType ?? firstFreeType,
     price: listing?.price != null ? String(listing.price) : '',
     deposit: listing?.deposit != null ? String(listing.deposit) : '',
     monthlyRent: listing?.monthlyRent != null ? String(listing.monthlyRent) : '',
@@ -276,6 +305,10 @@ function initListingForm(listing: Listing | null): ListingFormState {
     premium: listing?.premium != null ? String(listing.premium) : '',
     privateMemo: listing?.privateMemo ?? '',
     memo: listing?.memo ?? '',
+    // 모르는 값은 비워 두고 "확인 필요"로 보인다(새 조건은 등록 화면과 같이 "날짜 협의")
+    moveInAvailableType: listing ? (listing.moveInAvailableType ?? 'unknown') : 'negotiable',
+    moveInAvailableFrom: toDateInputValue(listing?.moveInAvailableFrom),
+    moveInAvailableTo: toDateInputValue(listing?.moveInAvailableTo),
   };
 }
 
@@ -285,6 +318,7 @@ export function ListingFormDialog({
   propertyId,
   siteType,
   listing,
+  existingTypes = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -292,14 +326,17 @@ export function ListingFormDialog({
   siteType?: string | null;
   /** null이면 신규 등록, 있으면 수정 */
   listing: Listing | null;
+  /** 진행 중인 의뢰에 이미 있는 거래유형(새 조건을 추가할 때 고르지 못하게) */
+  existingTypes?: readonly string[];
 }) {
   const queryClient = useQueryClient();
   const isEdit = !!listing;
-  const [form, setForm] = useState<ListingFormState>(() => initListingForm(listing));
+  const [form, setForm] = useState<ListingFormState>(() => initListingForm(listing, existingTypes));
+  const existingTypesKey = existingTypes.join(',');
 
   useEffect(() => {
-    if (open) setForm(initListingForm(listing));
-  }, [open, listing]);
+    if (open) setForm(initListingForm(listing, existingTypesKey ? existingTypesKey.split(',') : []));
+  }, [open, listing, existingTypesKey]);
 
   const set = (patch: Partial<ListingFormState>) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -318,26 +355,43 @@ export function ListingFormDialog({
         premium: isCommercial ? parseManwon(form.premium) : null,
         privateMemo: form.privateMemo.trim() || null,
       };
+      const moveInType = form.moveInAvailableType;
+      const usesFrom = moveInType === 'date' || moveInType === 'range';
+      const usesTo = moveInType === 'range';
+      if (usesFrom && !form.moveInAvailableFrom) {
+        throw new Error(moveInType === 'date' ? '입주 가능일을 고르세요.' : '입주 가능 기간의 시작일을 고르세요.');
+      }
+      if (usesTo && form.moveInAvailableTo && form.moveInAvailableTo < form.moveInAvailableFrom) {
+        throw new Error('입주 가능 기간의 끝날이 시작날보다 빠릅니다.');
+      }
       if (isEdit) {
         return api.listings.update(listing.id, {
           ...common,
-          memo: form.memo.trim() || undefined,
+          moveInAvailableType: moveInType,
+          moveInAvailableFrom: usesFrom ? form.moveInAvailableFrom : null,
+          moveInAvailableTo: usesTo ? form.moveInAvailableTo || null : null,
+          // 비우면 지운다(예전에는 빈 메모를 보내지 않아 지운 메모가 그대로 남았다)
+          memo: form.memo.trim() || null,
         });
       }
       return api.listings.create({
         propertyId,
         transactionType: form.transactionType,
         ...common,
+        moveInAvailableType: moveInType,
+        moveInAvailableFrom: usesFrom ? form.moveInAvailableFrom : undefined,
+        moveInAvailableTo: usesTo ? form.moveInAvailableTo || undefined : undefined,
         memo: form.memo.trim() || undefined,
       });
     },
     onSuccess: () => {
-      toast.success(isEdit ? '매물 정보가 수정되었습니다.' : '매물이 등록되었습니다.');
+      toast.success(isEdit ? '거래 조건을 저장했습니다.' : '거래 조건을 추가했습니다.');
       queryClient.invalidateQueries({ queryKey: ['listings'] });
       queryClient.invalidateQueries({ queryKey: ['properties', propertyId] });
+      invalidatePropertyViews(queryClient);
       onOpenChange(false);
     },
-    onError: (err) => toast.error(getErrorMessage(err, '매물 저장에 실패했습니다.')),
+    onError: (err) => toast.error(getErrorMessage(err, '거래 조건을 저장하지 못했습니다.')),
   });
 
   const priceLabel =
@@ -347,7 +401,7 @@ export function ListingFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isEdit ? '매물 수정' : '매물 추가'}</DialogTitle>
+          <DialogTitle>{isEdit ? '가격·조건 수정' : '거래 조건 추가'}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[65vh] space-y-3 overflow-y-auto pr-1">
           <div>
@@ -367,8 +421,9 @@ export function ListingFormDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
+                      <SelectItem key={value} value={value} disabled={existingTypes.includes(value)}>
                         {label}
+                        {existingTypes.includes(value) ? ' · 이미 있음' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -382,7 +437,8 @@ export function ListingFormDialog({
               <div>
                 <Label className="text-xs">보증금 (만원) *</Label>
                 <Input
-                  type="number"
+                  type="text"
+                  autoComplete="off"
                   value={form.deposit}
                   onChange={(e) => set({ deposit: e.target.value })}
                   placeholder="예: 10000"
@@ -392,7 +448,8 @@ export function ListingFormDialog({
               <div>
                 <Label className="text-xs">월세 (만원) *</Label>
                 <Input
-                  type="number"
+                  type="text"
+                  autoComplete="off"
                   value={form.monthlyRent}
                   onChange={(e) => set({ monthlyRent: e.target.value })}
                   placeholder="예: 120"
@@ -404,25 +461,78 @@ export function ListingFormDialog({
             <div>
               <Label className="text-xs">{priceLabel}</Label>
               <Input
-                type="number"
+                type="text"
+                autoComplete="off"
                 value={form.price}
                 onChange={(e) => set({ price: e.target.value })}
-                placeholder="예: 158000 (15억 8,000)"
+                placeholder="예: 15억 8천 또는 158000"
                 className="mt-1 h-8 text-sm tabular-nums"
               />
-              {parseManwon(form.price) != null && (
+              {previewManwon(form.price) != null ? (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  = {formatMoney(parseManwon(form.price))}
+                  = {formatMoney(previewManwon(form.price))}
                 </p>
-              )}
+              ) : form.price.trim() ? (
+                <p className="mt-1 text-xs text-destructive-strong">금액을 읽을 수 없습니다. 예: 15억 8천</p>
+              ) : null}
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <Label className="text-xs">입주 가능</Label>
+              <Select
+                value={form.moveInAvailableType}
+                onValueChange={(v) => set({ moveInAvailableType: v })}
+              >
+                <SelectTrigger aria-label="입주 가능" className="mt-1 h-8 w-full text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MOVE_IN_TYPES.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {(form.moveInAvailableType === 'date' || form.moveInAvailableType === 'range') && (
+              <div className={form.moveInAvailableType === 'range' ? 'col-span-2' : undefined}>
+                <Label className="text-xs">
+                  {form.moveInAvailableType === 'date' ? '입주 가능일 *' : '입주 가능 기간 *'}
+                </Label>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <Input
+                    type="date"
+                    aria-label={form.moveInAvailableType === 'date' ? '입주 가능일' : '입주 가능 시작일'}
+                    value={form.moveInAvailableFrom}
+                    onChange={(e) => set({ moveInAvailableFrom: e.target.value })}
+                    className="h-8 min-w-0 text-sm"
+                  />
+                  {form.moveInAvailableType === 'range' && (
+                    <>
+                      <span className="text-xs text-muted-foreground">~</span>
+                      <Input
+                        type="date"
+                        aria-label="입주 가능 종료일"
+                        value={form.moveInAvailableTo}
+                        onChange={(e) => set({ moveInAvailableTo: e.target.value })}
+                        className="h-8 min-w-0 text-sm"
+                      />
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <Label className="text-xs">관리비 (만원)</Label>
               <Input
-                type="number"
+                type="text"
+                autoComplete="off"
                 value={form.maintenanceFee}
                 onChange={(e) => set({ maintenanceFee: e.target.value })}
                 placeholder="예: 15"
@@ -432,7 +542,8 @@ export function ListingFormDialog({
             <div>
               <Label className="text-xs">융자금/근저당 (만원)</Label>
               <Input
-                type="number"
+                type="text"
+                autoComplete="off"
                 value={form.loanAmount}
                 onChange={(e) => set({ loanAmount: e.target.value })}
                 placeholder="예: 30000"
@@ -475,7 +586,8 @@ export function ListingFormDialog({
             <div>
               <Label className="text-xs">권리금 (만원)</Label>
               <Input
-                type="number"
+                type="text"
+                autoComplete="off"
                 value={form.premium}
                 onChange={(e) => set({ premium: e.target.value })}
                 placeholder="예: 5000"
@@ -581,6 +693,7 @@ export function PropertyContactAddDialog({
       toast.success('관련인이 추가되었습니다.');
       queryClient.invalidateQueries({ queryKey: ['property-contacts', propertyId] });
       queryClient.invalidateQueries({ queryKey: ['properties', propertyId] });
+      invalidatePropertyViews(queryClient);
       onOpenChange(false);
     },
     onError: (err) => toast.error(getErrorMessage(err, '관련인 추가에 실패했습니다.')),
@@ -592,7 +705,7 @@ export function PropertyContactAddDialog({
         <DialogHeader>
           <DialogTitle>관련인 추가</DialogTitle>
           <DialogDescription>
-            소유주나 대리인을 기존 연락처에서 선택하거나 새로 등록합니다.
+            소유자나 대리인을 기존 연락처에서 선택하거나 새로 등록합니다.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -705,18 +818,18 @@ export function ConsultationAddDialog({
       });
     },
     onSuccess: () => {
-      toast.success('상담 기록이 추가되었습니다.');
+      toast.success('상담을 적었습니다.');
       queryClient.invalidateQueries({ queryKey: ['consultations'] });
       onOpenChange(false);
     },
-    onError: (err) => toast.error(getErrorMessage(err, '상담 기록 추가에 실패했습니다.')),
+    onError: (err) => toast.error(getErrorMessage(err, '상담을 저장하지 못했습니다. 다시 시도해 주세요.')),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>상담 기록 추가</DialogTitle>
+          <DialogTitle>상담 적기</DialogTitle>
           <DialogDescription>
             상담 상대와 내용을 기록해 이 매물에 연결합니다.
           </DialogDescription>
@@ -799,7 +912,7 @@ export function TenantAddDialog({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (!selection) throw new Error('임차인 연락처를 선택하세요.');
+      if (!selection) throw new Error('세입자를 고르거나 새로 적으세요.');
       const common = {
         propertyId,
         deposit: parseManwon(deposit) ?? undefined,
@@ -818,19 +931,20 @@ export function TenantAddDialog({
       return api.tenants.create({ ...common, contactId: selection.contact.id });
     },
     onSuccess: () => {
-      toast.success('임차인이 추가되었습니다.');
+      toast.success('세입자를 추가했습니다.');
       queryClient.invalidateQueries({ queryKey: ['tenants', propertyId] });
       queryClient.invalidateQueries({ queryKey: ['properties', propertyId] });
+      invalidatePropertyViews(queryClient);
       onOpenChange(false);
     },
-    onError: (err) => toast.error(getErrorMessage(err, '임차인 추가에 실패했습니다.')),
+    onError: (err) => toast.error(getErrorMessage(err, '세입자를 추가하지 못했습니다. 다시 시도해 주세요.')),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>임차인 추가</DialogTitle>
+          <DialogTitle>세입자 추가</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <ContactSelector value={selection} onChange={setSelection} />
@@ -838,7 +952,8 @@ export function TenantAddDialog({
             <div>
               <Label className="text-xs">보증금 (만원)</Label>
               <Input
-                type="number"
+                type="text"
+                autoComplete="off"
                 value={deposit}
                 onChange={(e) => setDeposit(e.target.value)}
                 placeholder="예: 10000"
@@ -848,7 +963,8 @@ export function TenantAddDialog({
             <div>
               <Label className="text-xs">월세 (만원)</Label>
               <Input
-                type="number"
+                type="text"
+                autoComplete="off"
                 value={monthlyRent}
                 onChange={(e) => setMonthlyRent(e.target.value)}
                 placeholder="예: 120"
@@ -956,33 +1072,37 @@ export function DealAddDialog({
   const mutation = useMutation({
     mutationFn: async () => {
       if (!selectedListing) throw new Error('거래할 매물을 선택하세요.');
+      // 금액을 먼저 읽는다 — 못 읽으면 연락처를 만들기 전에 멈춘다
+      const agreed = {
+        agreedPrice: parseManwon(agreedPrice) ?? undefined,
+        agreedDeposit: parseManwon(agreedDeposit) ?? undefined,
+        agreedMonthlyRent: parseManwon(agreedMonthlyRent) ?? undefined,
+      };
       const buyerContactId = buyer && isContactSelectionValid(buyer) ? await resolveContactId(buyer) : undefined;
       return api.deals.create({
         propertyId,
         listingId: selectedListing.id,
         transactionType: selectedListing.transactionType,
-        agreedPrice: parseManwon(agreedPrice) ?? undefined,
-        agreedDeposit: parseManwon(agreedDeposit) ?? undefined,
-        agreedMonthlyRent: parseManwon(agreedMonthlyRent) ?? undefined,
+        ...agreed,
         buyerContactId,
         memo: memo.trim() || undefined,
       });
     },
     onSuccess: () => {
-      toast.success('거래가 생성되었습니다.');
+      toast.success('거래를 만들었습니다.');
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       queryClient.invalidateQueries({ queryKey: ['listings'] });
       onCreated?.();
       onOpenChange(false);
     },
-    onError: (err) => toast.error(getErrorMessage(err, '거래 생성에 실패했습니다.')),
+    onError: (err) => toast.error(getErrorMessage(err, '거래를 만들지 못했습니다. 다시 시도해 주세요.')),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>거래 추가</DialogTitle>
+          <DialogTitle>거래 바로 만들기</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -1008,7 +1128,8 @@ export function DealAddDialog({
               <div>
                 <Label className="text-xs">합의 보증금 (만원)</Label>
                 <Input
-                  type="number"
+                  type="text"
+                  autoComplete="off"
                   value={agreedDeposit}
                   onChange={(e) => setAgreedDeposit(e.target.value)}
                   className="mt-1 h-8 text-sm tabular-nums"
@@ -1017,7 +1138,8 @@ export function DealAddDialog({
               <div>
                 <Label className="text-xs">합의 월세 (만원)</Label>
                 <Input
-                  type="number"
+                  type="text"
+                  autoComplete="off"
                   value={agreedMonthlyRent}
                   onChange={(e) => setAgreedMonthlyRent(e.target.value)}
                   className="mt-1 h-8 text-sm tabular-nums"
@@ -1028,14 +1150,15 @@ export function DealAddDialog({
             <div>
               <Label className="text-xs">합의 가격 (만원)</Label>
               <Input
-                type="number"
+                type="text"
+                autoComplete="off"
                 value={agreedPrice}
                 onChange={(e) => setAgreedPrice(e.target.value)}
                 className="mt-1 h-8 text-sm tabular-nums"
               />
-              {parseManwon(agreedPrice) != null && (
+              {previewManwon(agreedPrice) != null && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  = {formatMoney(parseManwon(agreedPrice))}
+                  = {formatMoney(previewManwon(agreedPrice))}
                 </p>
               )}
             </div>
@@ -1062,7 +1185,7 @@ export function DealAddDialog({
           </Button>
           <Button size="sm" onClick={() => mutation.mutate()} disabled={!selectedListing || mutation.isPending}>
             {mutation.isPending && <Loader2 className="size-3.5 animate-spin" />}
-            거래 생성
+            거래 만들기
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1120,19 +1243,19 @@ export function MatchCreateDialog({
         memo: memo.trim() || undefined,
       }),
     onSuccess: () => {
-      toast.success('매칭이 생성되었습니다.');
+      toast.success('고객을 연결했습니다.');
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       onCreated?.();
       onOpenChange(false);
     },
-    onError: (err) => toast.error(getErrorMessage(err, '매칭 생성에 실패했습니다.')),
+    onError: (err) => toast.error(getErrorMessage(err, '고객을 연결하지 못했습니다. 다시 시도해 주세요.')),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>매칭 생성</DialogTitle>
+          <DialogTitle>고객 연결</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -1226,7 +1349,7 @@ export function MatchCreateDialog({
             disabled={!listingId || !buyerReqId || mutation.isPending}
           >
             {mutation.isPending && <Loader2 className="size-3.5 animate-spin" />}
-            매칭 생성
+            고객 연결
           </Button>
         </DialogFooter>
       </DialogContent>

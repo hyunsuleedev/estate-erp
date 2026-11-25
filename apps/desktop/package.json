@@ -13,7 +13,8 @@
     "make": "electron-vite build && electron-builder --config electron-builder.config.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint --ext .ts,.tsx ."
+    "lint": "eslint --ext .ts,.tsx .",
+    "i18n:check": "node scripts/i18n/extract.mjs --check"
   },
   "keywords": [],
   "author": {

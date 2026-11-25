@@ -8,6 +8,8 @@ import type {
   UpdatePartnerBrokerDto,
 } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
+import { formatPhoneWhileTyping } from '@/lib/phone-format';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -21,31 +23,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
-/** 입력 중 자동 하이픈 포맷팅 — 02 지역번호 / 휴대폰 / 1588 대표번호 패턴 지원 */
+/** 입력 중 자동 하이픈 — 앱 공통 규칙(lib/phone-format의 formatPhoneWhileTyping)을 그대로 쓴다 */
 export function formatPhoneInput(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 11);
-  if (!digits) return '';
-
-  if (digits.startsWith('02')) {
-    if (digits.length <= 2) return digits;
-    if (digits.length <= 5) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
-    if (digits.length <= 9) {
-      return `${digits.slice(0, 2)}-${digits.slice(2, digits.length - 4)}-${digits.slice(-4)}`;
-    }
-    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
-  }
-
-  if (/^1[568]\d{2}/.test(digits) && digits.length <= 8) {
-    if (digits.length <= 4) return digits;
-    return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-  }
-
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-  if (digits.length <= 10) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, digits.length - 4)}-${digits.slice(-4)}`;
-  }
-  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  return formatPhoneWhileTyping(raw);
 }
 
 export function CreateDialog({
@@ -66,7 +46,8 @@ export function CreateDialog({
       onOpenChange(false);
       setForm({ name: '' });
     },
-    onError: () => toast.error('파트너 등록에 실패했습니다. 다시 시도해 주세요.'),
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, '파트너를 등록하지 못했습니다. 다시 시도해 주세요.')),
   });
 
   return (
@@ -140,7 +121,8 @@ export function EditDialog({
       void qc.invalidateQueries({ queryKey: ['partner-brokers'] });
       handleOpenChange(false);
     },
-    onError: () => toast.error('파트너 수정에 실패했습니다. 다시 시도해 주세요.'),
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, '파트너 정보를 저장하지 못했습니다. 다시 시도해 주세요.')),
   });
 
   if (!broker) return null;

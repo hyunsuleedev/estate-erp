@@ -20,6 +20,7 @@ export const myAdsResizableColumns = [
   { id: "price", width: 155, minWidth: 110 },
   { id: "monthlyRent", width: 86, minWidth: 64 },
   { id: "channel", width: 140, minWidth: 72 },
+  { id: "cpAccount", width: 112, minWidth: 80 },
   { id: "naver", width: 96, minWidth: 84 },
   { id: "verification", width: 104, minWidth: 72 },
   { id: "exposurePeriod", width: 128, minWidth: 96 },

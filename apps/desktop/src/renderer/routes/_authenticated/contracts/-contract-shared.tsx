@@ -11,7 +11,7 @@ import type {
 import {
   CONTRACT_TRANSACTION_TYPE_LABELS,
   isContractRichTextHtml,
-  formatUnitName,
+  formatPlaceLabel,
 } from '@estate-erp/shared';
 import { StatusBadge } from '@/components/domain';
 import { Badge } from '@/components/ui/badge';
@@ -174,17 +174,17 @@ export function getContractProperty(deal: Deal | null | undefined) {
 }
 
 /** "래미안고덕 101동 1503호" (placeholder 동은 생략) */
+/** "고덕그라시움 105동 1003호" — 화면 표기 기준의 공용 함수(formatPlaceLabel)로 만든다 */
 export function getContractPropertyLabel(deal: Deal | null | undefined): string {
   const property = getContractProperty(deal);
   if (!property) return '';
   const dong = property.unit?.dong;
-  return [
-    property.site?.name,
-    dong && !dong.isPlaceholder ? dong.name : null,
-    formatUnitName(property.unit),
-  ]
-    .filter(Boolean)
-    .join(' ');
+  return formatPlaceLabel({
+    siteName: property.site?.name,
+    dongName: dong?.name,
+    dongIsPlaceholder: dong?.isPlaceholder,
+    unit: property.unit,
+  });
 }
 
 /** Deal의 거래유형을 계약서 거래유형으로 변환 (미지원 유형은 sale 폴백) */
@@ -511,3 +511,16 @@ export function ContractRichTextView({
 
   return <p className={cn('whitespace-pre-wrap', className)}>{value}</p>;
 }
+
+/**
+ * 이름을 모르는 번호로 저장된 연락처의 임시 이름("미확인 5678")인지.
+ * 연락처 화면이 이 모양으로 저장한다. 계약서 당사자 이름으로 그대로 찍히면 안 된다.
+ * TODO: 연락처 담당의 공용 판별 함수가 정해지면 그것을 쓴다.
+ */
+export const UNCONFIRMED_CONTACT_NAME_PATTERN = /^미확인 \d{4}$/;
+
+export function isUnconfirmedContactName(name: string | null | undefined) {
+  return Boolean(name && UNCONFIRMED_CONTACT_NAME_PATTERN.test(name.trim()));
+}
+
+export const UNCONFIRMED_CONTACT_MESSAGE = '이름이 확인되지 않은 연락처입니다. 이름을 먼저 넣어 주세요.';

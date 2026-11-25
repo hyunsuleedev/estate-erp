@@ -1,8 +1,8 @@
 /**
- * 호실 상세 패널 — 개요/소유자·세입자/상담 타임라인/등기 문서 탭 + 후속 작업 CTA.
+ * 호실 상세 패널 — 개요/소유자·세입자/상담 기록/등기 문서 탭 + 다음 업무, 아래 막대의 바로 하는 일.
  * 매물관리의 상세 패널과 같은 방식으로 페이지 오른쪽에 열린다 (화면을 덮는 창이 아니다).
  */
-import { formatUnitName } from '@estate-erp/shared';
+import { formatPlaceLabel, formatUnitName } from '@estate-erp/shared';
 import {
   useEffect,
   useMemo,
@@ -13,6 +13,9 @@ import {
 import { useInspectorFocus } from '@/hooks/use-inspector-focus';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
+import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
+import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { toast } from 'sonner';
 import {
   ChevronRight,
@@ -29,6 +32,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import type { Dong, SiteDetail, Unit } from '@estate-erp/api-client';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -46,7 +50,7 @@ import {
   type InspectorTabItem,
 } from '@/components/domain';
 import { cn } from '@/lib/utils';
-import { formatArea, formatDate, formatDateTime, formatDday, formatPhone } from '@/lib/format';
+import { formatArea, formatDate, formatDday, formatPhone, formatRelativeDayTime } from '@/lib/format';
 import {
   canEditSiteStructure,
   consultationTypeLabels,
@@ -64,8 +68,14 @@ import {
   TextAction,
 } from '../properties/-components/property-inspector-view';
 import { UnitConsultDialog, UnitEditDialog } from './-unit-dialogs';
+import {
+  PropertyContactAddDialog,
+  TenantAddDialog,
+} from '../properties/-property-detail-dialogs';
 import { UnitTasksSection } from './-unit-tasks-section';
+import { consultationDisplayText } from '../consultations/-consultation-list-model';
 import { getListingAvailability } from "@/lib/listing-status";
+import { useInspectorOutsideClose } from "@/hooks/use-inspector-outside-close";
 
 const DOC_STATUS_META: Record<string, { label: string; className: string }> = {
   pending: { label: '발급중', className: 'bg-warning-soft text-warning' },
@@ -107,6 +117,48 @@ export function UnitDetailPanel({
   const [showEdit, setShowEdit] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showConsult, setShowConsult] = useState(false);
+  const unitDong = dongs.find((dong) => dong.id === unit.dongId);
+  // 화면 글에 쓰는 집 이름 (STANDARDS: formatPlaceLabel). "101동 3401호" / 동 구분 없는 건물은 "201호"
+  const placeLabel = formatPlaceLabel({
+    dongName: unitDong?.name,
+    dongIsPlaceholder: unitDong?.isPlaceholder,
+    unit,
+  });
+  // 소유자·세입자는 관리 공간(Property)에 단다. 관리호수가 아니면 먼저 관리호수로 만든다
+  const [peopleDialog, setPeopleDialog] = useState<{
+    kind: 'owner' | 'tenant';
+    propertyId: string;
+  } | null>(null);
+  const queryClient = useQueryClient();
+  const ensurePropertyMutation = useMutation({
+    mutationFn: async (kind: 'owner' | 'tenant') => {
+      const existing = unit.properties?.[0]?.id;
+      if (existing) return { kind, propertyId: existing, created: false };
+      const ensured = await api.properties.ensure({ siteId: site.id, unitId: unit.id });
+      return { kind, propertyId: ensured.id, created: ensured.created };
+    },
+    onSuccess: ({ kind, propertyId, created }) => {
+      if (created) {
+        void queryClient.invalidateQueries({ queryKey: ['sites', site.id] });
+        void queryClient.invalidateQueries({ queryKey: ['office-sites'] });
+        void queryClient.invalidateQueries({ queryKey: ['properties'] });
+        // 이 호실의 빈 상세를 열어 둔 탭이 매물 상세로 바뀌게 한다
+        void queryClient.invalidateQueries({ queryKey: ['units'] });
+      }
+      setPeopleDialog({ kind, propertyId });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, '관리호수로 등록하지 못했습니다. 다시 시도해 주세요.'));
+    },
+  });
+  const openPeopleDialog = (kind: 'owner' | 'tenant') => {
+    if (!ensurePropertyMutation.isPending) ensurePropertyMutation.mutate(kind);
+  };
+  const closePeopleDialog = () => {
+    setPeopleDialog(null);
+    // 연결한 사람이 호수 표·배치표·만기 보기에 바로 나오게 단지 호수를 다시 받는다
+    void queryClient.invalidateQueries({ queryKey: ['sites', site.id] });
+  };
 
   const panelRef = useRef<HTMLElement>(null);
   // 키보드로 열었을 때(미끄러짐 없이 열림)만 포커스를 패널로 옮긴다
@@ -121,6 +173,9 @@ export function UnitDetailPanel({
     );
     return () => window.clearTimeout(timer);
   }, [closing, animate, onExited]);
+
+  // 패널 밖을 누르면 닫는다 (떠 있는 창 · 줄의 열기 단추는 밖이 아니다)
+  useInspectorOutsideClose(() => onClose());
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -163,6 +218,8 @@ export function UnitDetailPanel({
           onEdit={() => setShowEdit(true)}
           onDelete={() => setShowDelete(true)}
           onAddConsult={() => setShowConsult(true)}
+          onAddPerson={openPeopleDialog}
+          isAddingPerson={ensurePropertyMutation.isPending}
         />
       </aside>
 
@@ -179,12 +236,40 @@ export function UnitDetailPanel({
             onOpenChange={setShowConsult}
             unit={unit}
             site={site}
-            dongName={dongs.find((dong) => dong.id === unit.dongId)?.name ?? ''}
+            placeLabel={formatPlaceLabel({
+              siteName: site.name,
+              dongName: unitDong?.name,
+              dongIsPlaceholder: unitDong?.isPlaceholder,
+              unit,
+            })}
+            onAddOwner={() => {
+              setShowConsult(false);
+              openPeopleDialog('owner');
+            }}
           />
+          {peopleDialog && (
+            <>
+              <PropertyContactAddDialog
+                open={peopleDialog.kind === 'owner'}
+                onOpenChange={(open) => {
+                  if (!open) closePeopleDialog();
+                }}
+                propertyId={peopleDialog.propertyId}
+              />
+              <TenantAddDialog
+                open={peopleDialog.kind === 'tenant'}
+                onOpenChange={(open) => {
+                  if (!open) closePeopleDialog();
+                }}
+                propertyId={peopleDialog.propertyId}
+              />
+            </>
+          )}
           <UnitDeleteConfirm
             open={showDelete}
             onOpenChange={setShowDelete}
             unit={unit}
+            placeLabel={placeLabel}
             site={site}
             onDeleted={() => onClose(false)}
           />
@@ -199,12 +284,14 @@ function UnitDeleteConfirm({
   open,
   onOpenChange,
   unit,
+  placeLabel,
   site,
   onDeleted,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   unit: Unit;
+  placeLabel: string;
   site: SiteDetail;
   onDeleted: () => void;
 }) {
@@ -218,7 +305,7 @@ function UnitDeleteConfirm({
       onDeleted();
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '호실 삭제에 실패했습니다');
+      toast.error(apiErrorMessage(error, '호실을 삭제하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -231,8 +318,8 @@ function UnitDeleteConfirm({
       title="호실 삭제"
       description={
         propertyCount > 0
-          ? `'${formatUnitName(unit)}' 호실에 연결된 관리호수가 ${propertyCount}건 있습니다. 연결 데이터가 있으면 삭제가 거부될 수 있습니다.`
-          : `'${formatUnitName(unit)}' 호실을 삭제합니다. 이 작업은 되돌릴 수 없습니다.`
+          ? `이 호실(${placeLabel})에 연결된 관리호수가 ${propertyCount}건 있습니다. 연결 데이터가 있으면 삭제가 거부될 수 있습니다.`
+          : `이 호실(${placeLabel})을 삭제합니다. 이 작업은 되돌릴 수 없습니다.`
       }
       confirmLabel="삭제"
       destructive
@@ -252,6 +339,8 @@ function UnitDetailBody({
   onEdit,
   onDelete,
   onAddConsult,
+  onAddPerson,
+  isAddingPerson,
 }: {
   unit: Unit;
   site: SiteDetail;
@@ -260,14 +349,39 @@ function UnitDetailBody({
   onEdit: () => void;
   onDelete: () => void;
   onAddConsult: () => void;
+  onAddPerson: (kind: 'owner' | 'tenant') => void;
+  isAddingPerson: boolean;
 }) {
   const queryClient = useQueryClient();
   const dong = dongs.find((item) => item.id === unit.dongId);
+  // "101동 3401호" (STANDARDS: formatPlaceLabel). 등기 요청의 부제와 제목에 쓴다
+  const unitLabel = formatPlaceLabel({
+    dongName: dong?.name,
+    dongIsPlaceholder: dong?.isPlaceholder,
+    unit,
+  });
+  // 2026-11-22 전에 만든 등기 요청은 부제가 "101 3401" 모양이라 그것도 이 호실 것으로 찾는다
   const dongName = dong && !dong.isPlaceholder ? dong.name : '';
-  const unitLabel = `${dongName ? `${dongName} ` : ''}${formatUnitName(unit)}`;
+  const legacyUnitLabel = `${dongName ? `${dongName} ` : ''}${formatUnitName(unit)}`;
 
   const properties = unit.properties ?? [];
   const primaryProperty = properties[0];
+  const openOrRevealResource = useTabStore((state) => state.openOrRevealResource);
+  // 호실의 전체 화면은 매물 상세다. 관리호수가 없어도 열리고, 거기서 적기 시작하면 관리호수가 생긴다.
+  // 다른 패널과 같다: 새 탭으로 열고(이미 열려 있으면 그 탭으로 가고) 패널은 닫는다.
+  const openInNewTab = () => {
+    const route = primaryProperty ? `/properties/${primaryProperty.id}` : `/properties/unit/${unit.id}`;
+    const meta = getRouteMeta(route);
+    openOrRevealResource({
+      route,
+      kind: meta.kind,
+      title: [site.name, unitLabel].filter(Boolean).join(' ') || meta.title,
+      resourceKey: primaryProperty
+        ? tabResourceKeys.entity('property', primaryProperty.id)
+        : tabResourceKeys.module(route),
+    });
+    onClose(false);
+  };
   const propertyIds = useMemo(() => new Set(properties.map((property) => property.id)), [properties]);
 
   const listingsWithProperty = properties.flatMap((property) =>
@@ -297,9 +411,9 @@ function UnitDetailBody({
       (documentsQuery.data ?? []).filter(
         (doc) =>
           (doc.propertyId && propertyIds.has(doc.propertyId)) ||
-          (!doc.propertyId && doc.subtitle === unitLabel),
+          (!doc.propertyId && (doc.subtitle === unitLabel || doc.subtitle === legacyUnitLabel)),
       ),
-    [documentsQuery.data, propertyIds, unitLabel],
+    [documentsQuery.data, legacyUnitLabel, propertyIds, unitLabel],
   );
   const latestDocument = unitDocuments[0];
 
@@ -318,7 +432,7 @@ function UnitDetailBody({
       toast.success('등기 열람 요청을 만들었습니다. 발급 PDF는 자료실에서 연결할 수 있습니다.');
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '발급 요청에 실패했습니다');
+      toast.error(apiErrorMessage(error, '등기 열람 요청을 만들지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -329,10 +443,12 @@ function UnitDetailBody({
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       // 관리단지 사이드바의 단지별 관리호수 수(office-sites 집계)도 함께 갱신
       queryClient.invalidateQueries({ queryKey: ['office-sites'] });
+      // 이 호실의 빈 상세를 열어 둔 탭이 매물 상세로 바뀌게 한다
+      queryClient.invalidateQueries({ queryKey: ['units'] });
       toast.success('관리호수로 등록했습니다');
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '관리호수 등록에 실패했습니다');
+      toast.error(apiErrorMessage(error, '관리호수로 등록하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -360,10 +476,9 @@ function UnitDetailBody({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
-      {/* 호실은 전체 화면이 따로 없어서 "새 탭으로 확장"은 두지 않는다 */}
       <PropertyInspectorToolbar
         onClose={onClose}
-        showExpand={false}
+        onOpenNewTab={openInNewTab}
         headerActions={
           /* 공공 단지의 호실은 바꿀 수 없다 — 직접 등록한 단지에만 보인다 */
           canEditSiteStructure(site) && (
@@ -487,7 +602,7 @@ function UnitDetailBody({
                     className={textActionClassName}
                   >
                     <Plus />
-                    매물 의뢰 등록
+                    매물 등록
                   </Link>
                 }
               >
@@ -534,7 +649,20 @@ function UnitDetailBody({
         {tab === 'people' && (
           <div className="space-y-7">
             <section>
-              <SectionTitle count={ownerContacts.length || undefined}>소유자</SectionTitle>
+              <SectionTitle
+                count={ownerContacts.length || undefined}
+                action={
+                  <TextAction
+                    icon={<Plus />}
+                    label="소유자 연결"
+                    onClick={() => {
+                      if (!isAddingPerson) onAddPerson('owner');
+                    }}
+                  />
+                }
+              >
+                소유자
+              </SectionTitle>
               {ownerContacts.length > 0 ? (
                 <div className="divide-y divide-[#f1f0ec]">
                   {ownerContacts.map((pc) => (
@@ -568,12 +696,27 @@ function UnitDetailBody({
                   ))}
                 </div>
               ) : (
-                <EmptyText>연결된 소유자가 없습니다.</EmptyText>
+                <EmptyText>
+                  연결된 소유자가 없습니다. ‘소유자 연결’에서 연락처를 고르거나 새로 만들 수 있습니다.
+                </EmptyText>
               )}
             </section>
 
             <section>
-              <SectionTitle count={tenants.length || undefined}>세입자</SectionTitle>
+              <SectionTitle
+                count={tenants.length || undefined}
+                action={
+                  <TextAction
+                    icon={<Plus />}
+                    label="세입자 추가"
+                    onClick={() => {
+                      if (!isAddingPerson) onAddPerson('tenant');
+                    }}
+                  />
+                }
+              >
+                세입자
+              </SectionTitle>
               {tenants.length > 0 ? (
                 <div className="divide-y divide-[#f1f0ec]">
                   {tenants.map((tenant) => (
@@ -616,7 +759,9 @@ function UnitDetailBody({
                   ))}
                 </div>
               ) : (
-                <EmptyText>연결된 세입자가 없습니다.</EmptyText>
+                <EmptyText>
+                  연결된 세입자가 없습니다. 계약 만료일을 적어 두면 ‘만기’ 보기에 나옵니다.
+                </EmptyText>
               )}
             </section>
           </div>
@@ -627,7 +772,7 @@ function UnitDetailBody({
           <section>
             <SectionTitle
               count={consultationCount || undefined}
-              action={<TextAction icon={<Plus />} label="상담 기록" onClick={onAddConsult} />}
+              action={<TextAction icon={<Plus />} label="상담 적기" onClick={onAddConsult} />}
             >
               상담
             </SectionTitle>
@@ -651,20 +796,20 @@ function UnitDetailBody({
                       </span>
                       {consultation.contact && <span>{consultation.contact.name}</span>}
                       <span className="tabular-nums text-[#a9a7a1]">
-                        {formatDateTime(consultation.createdAt)}
+                        {formatRelativeDayTime(consultation.createdAt)}
                       </span>
                       {consultation.createdBy && (
                         <span className="ml-auto text-[#a9a7a1]">기록 {consultation.createdBy.name}</span>
                       )}
                     </div>
                     <p className="mt-1 whitespace-pre-wrap text-[13px] leading-[1.6] text-[#2f2e2a]">
-                      {consultation.content}
+                      {consultationDisplayText(consultation.content)}
                     </p>
                   </li>
                 ))}
               </ol>
             ) : (
-              <EmptyText>상담 기록이 없습니다. 이 호실 맥락으로 첫 상담을 기록해 보세요.</EmptyText>
+              <EmptyText>상담 기록이 없습니다. ‘상담 적기’로 이 호실의 첫 상담을 적어 보세요.</EmptyText>
             )}
           </section>
         )}
@@ -753,7 +898,7 @@ function UnitDetailBody({
       <div className="flex shrink-0 items-center gap-1 border-t border-[#ecebe8] px-6 py-3">
         <button type="button" className={barButtonClassName} onClick={onAddConsult}>
           <MessageSquarePlus className="size-3.5" />
-          상담 추가
+          상담 적기
         </button>
         <button
           type="button"
@@ -771,13 +916,13 @@ function UnitDetailBody({
             className={cn(barButtonClassName, 'ml-auto bg-[#2f2e2a] px-4 font-medium text-white hover:bg-[#1f1e1b] hover:text-white')}
           >
             <FileText className="size-3.5" />
-            매물 의뢰 등록
+            매물 등록
           </Link>
         ) : (
           <>
             <Link to="/properties/new" search={newListingSearch} className={cn(barButtonClassName, 'ml-auto')}>
               <FileText className="size-3.5" />
-              매물 의뢰 등록
+              매물 등록
             </Link>
             <button
               type="button"

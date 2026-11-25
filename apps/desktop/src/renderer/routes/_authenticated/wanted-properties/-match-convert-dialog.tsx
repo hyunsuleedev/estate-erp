@@ -1,16 +1,21 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import type { Match } from '@estate-erp/api-client';
 import { MatchStage } from '@estate-erp/shared';
 import {
+  describeSiblingDeal,
   formatMatchPrice,
   getActiveDealLink,
   getMatchTitle,
   getPrimaryOwnerContact,
+  getSiblingOccupyingDeal,
 } from './-match-view-utils';
+import { parseManwonText } from './-money-text';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
+import { formatMoney } from '@/lib/format';
 import { getStatusMeta } from '@/lib/status-config';
 import { StatusBadge } from '@/components/domain';
 import { Button } from '@/components/ui/button';
@@ -23,13 +28,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
+/** 빈 칸은 undefined(합의 금액 없이 거래를 만든다). 읽을 수 없는 글은 NaN — 저장을 막는다. */
 function parseManwon(value: string): number | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
+  const parsed = parseManwonText(value);
+  return parsed === null ? undefined : parsed;
+}
+
+function amountHint(value: string): { text: string; invalid: boolean } | null {
+  const parsed = parseManwonText(value);
+  if (parsed === null) return null;
+  if (Number.isNaN(parsed)) {
+    return { text: '금액을 읽을 수 없습니다. 예: 9억 5000 또는 95000', invalid: true };
   }
-  const parsed = Number(trimmed.replace(/,/g, ''));
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  return { text: formatMoney(parsed), invalid: false };
 }
 
 /**
@@ -55,7 +66,11 @@ export function MatchConvertDialog({
   const listing = match?.listing ?? null;
   const transactionType = listing?.transactionType ?? null;
   const isMonthly = transactionType === 'monthly';
+  // 거래 당사자 이름: 매매는 매수인 · 매도인, 전세 · 월세는 임차인 · 임대인 (화면 낱말 기준)
+  const isLease = transactionType === 'jeonse' || transactionType === 'monthly';
   const activeDeal = match ? getActiveDealLink(match) : null;
+  // 같은 집의 다른 거래 조건이 거래 중이면 서버가 거래를 만들지 않는다. 누르기 전에 알린다.
+  const siblingDeal = match && !activeDeal ? getSiblingOccupyingDeal(match) : null;
 
   useEffect(() => {
     if (!match) {
@@ -96,14 +111,21 @@ export function MatchConvertDialog({
     match?.agreedMoveInDate,
   ]);
 
+  // 단추를 빠르게 두 번 눌러도 거래를 한 번만 만든다 (isPending은 다음 그리기에서야 바뀐다)
+  const submittingRef = useRef(false);
   const convertMutation = useMutation({
+    onSettled: () => {
+      submittingRef.current = false;
+    },
     mutationFn: async () => {
       if (!match) {
-        return;
+        return null;
       }
 
+      // 토스트의 "거래 보기"가 방금 만든(또는 이미 있던) 그 거래를 열도록 id를 돌려준다
+      let dealId: string | null = activeDeal?.id ?? null;
       if (!activeDeal) {
-        await api.deals.create({
+        const created = await api.deals.create({
           listingId: match.listingId,
           propertyId: match.propertyId,
           matchId: match.id,
@@ -115,29 +137,40 @@ export function MatchConvertDialog({
           buyerContactId: match.buyerRequirement?.contactId,
           sellerContactId: getPrimaryOwnerContact(match.listing)?.id,
         });
+        dealId = created.id;
       }
 
       await api.matches.updateStage(match.id, { stage: MatchStage.DEAL_CREATED });
+      return dealId;
     },
-    onSuccess: () => {
+    onSuccess: (dealId) => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['deals'] });
       onOpenChange(false);
-      toast.success(activeDeal ? '거래 전환 단계로 변경했습니다' : '계약 준비 거래가 생성되었습니다', {
+      toast.success(activeDeal ? '거래 전환 단계로 바꿨습니다' : '거래로 전환했습니다 (계약 준비)', {
         action: {
           label: '거래 보기',
-          onClick: () => navigate({ to: '/deals' }),
+          onClick: () =>
+            dealId
+              ? navigate({ to: '/deals', search: { dealId } })
+              : navigate({ to: '/deals' }),
         },
       });
     },
     onError: (error: Error) => {
-      toast.error(`거래 전환에 실패했습니다: ${error.message}`);
+      toast.error(apiErrorMessage(error, '거래로 전환하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
   const typeLabel = transactionType
     ? getStatusMeta('transactionType', transactionType).label
     : '—';
+  // 보이는 입력칸만 견준다. 읽을 수 없는 금액이 있으면 거래를 만들지 않는다
+  // (예전에는 "9억"처럼 적으면 금액 없이 거래가 만들어졌다).
+  const visibleAmounts = isMonthly ? [depositInput, monthlyRentInput] : [priceInput];
+  const hasInvalidAmount =
+    !activeDeal && visibleAmounts.some((value) => Number.isNaN(parseManwonText(value) ?? 0));
+  const blocked = hasInvalidAmount || siblingDeal !== null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -177,6 +210,15 @@ export function MatchConvertDialog({
               )}
             </dl>
 
+            {siblingDeal && (
+              <p
+                role="alert"
+                className="mx-5 mb-2 break-keep rounded-md bg-warning-soft px-3 py-2 text-[13px] leading-5 text-warning-strong"
+              >
+                {describeSiblingDeal(siblingDeal)} 그 거래를 취소하거나 마친 뒤 진행해 주세요.
+              </p>
+            )}
+
             {!activeDeal && (
               <>
                 <div className="mx-5 border-t border-border" />
@@ -186,28 +228,28 @@ export function MatchConvertDialog({
                       <ConvertInputRow
                         label="합의 보증금"
                         suffix="만원"
-                        inputMode="numeric"
+                        inputMode="text"
                         value={depositInput}
                         onChange={setDepositInput}
-                        placeholder="10000"
+                        placeholder="예: 1억 또는 10000"
                       />
                       <ConvertInputRow
                         label="합의 월세"
                         suffix="만원"
-                        inputMode="numeric"
+                        inputMode="text"
                         value={monthlyRentInput}
                         onChange={setMonthlyRentInput}
-                        placeholder="120"
+                        placeholder="예: 120"
                       />
                     </>
                   ) : (
                     <ConvertInputRow
                       label={`합의 ${typeLabel}가`}
                       suffix="만원"
-                      inputMode="numeric"
+                      inputMode="text"
                       value={priceInput}
                       onChange={setPriceInput}
-                      placeholder="158000"
+                      placeholder="예: 9억 5000 또는 95000"
                     />
                   )}
                   <ConvertInputRow
@@ -219,7 +261,10 @@ export function MatchConvertDialog({
                   />
                 </div>
                 <p className="break-keep px-5 pb-4 pt-2 text-[12px] leading-[18px] text-muted-foreground">
-                  매수인은 매칭 고객, 매도인은 매물 소유자로 자동 연결됩니다. 합의 금액 기준으로
+                  {isLease
+                    ? '임차인은 이 고객, 임대인은 매물 소유자로 연결됩니다.'
+                    : '매수인은 이 고객, 매도인은 매물 소유자로 연결됩니다.'}{' '}
+                  합의 금액 기준으로
                   수수료 수금 항목이 자동 생성됩니다.
                 </p>
               </>
@@ -238,10 +283,18 @@ export function MatchConvertDialog({
               <Button
                 type="button"
                 size="sm"
-                onClick={() => convertMutation.mutate()}
-                disabled={convertMutation.isPending}
+                onClick={() => {
+                  if (submittingRef.current || convertMutation.isPending || blocked) return;
+                  submittingRef.current = true;
+                  convertMutation.mutate();
+                }}
+                disabled={convertMutation.isPending || blocked}
               >
-                {activeDeal ? '단계 변경' : '거래 생성하고 전환'}
+                {convertMutation.isPending
+                  ? '만드는 중…'
+                  : activeDeal
+                    ? '단계 변경'
+                    : '거래 전환'}
               </Button>
             </DialogFooter>
           </>
@@ -283,28 +336,43 @@ function ConvertInputRow({
   suffix?: string;
   hint?: string;
   type?: 'text' | 'date';
-  inputMode?: 'numeric';
+  inputMode?: 'numeric' | 'text';
   placeholder?: string;
 }) {
+  // 금액 칸은 읽은 값을 바로 아래에 되비춘다 ("9억 5,000만"). 못 읽으면 그렇게 알린다.
+  const readBack = suffix === '만원' ? amountHint(value) : null;
   return (
-    <label className="flex min-h-10 items-center gap-3">
-      <span className="w-[92px] shrink-0 text-[13px] text-muted-foreground">
-        {label}
-        {hint && <span className="ml-1 text-[12px] text-[#a3a09a]">{hint}</span>}
-      </span>
-      <span className="flex h-8 min-w-0 flex-1 items-center rounded-[6px] bg-[rgba(242,241,238,0.6)] px-2.5 shadow-[inset_0_0_0_1px_rgba(15,15,15,0.1)] transition-shadow focus-within:shadow-[inset_0_0_0_1px_#2383e2,0_0_0_2px_rgba(35,131,226,0.2)]">
-        <input
-          type={type}
-          inputMode={inputMode}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-          className="h-full min-w-0 flex-1 bg-transparent text-[14px] tabular-nums text-foreground outline-none placeholder:text-[#b4b1ab]"
-        />
-        {suffix && (
-          <span className="ml-2 shrink-0 text-[13px] text-muted-foreground">{suffix}</span>
-        )}
-      </span>
-    </label>
+    <div className="py-1">
+      <label className="flex min-h-8 items-center gap-3">
+        <span className="w-[92px] shrink-0 text-[13px] text-muted-foreground">
+          {label}
+          {hint && <span className="ml-1 text-[12px] text-[#a3a09a]">{hint}</span>}
+        </span>
+        <span className="flex h-8 min-w-0 flex-1 items-center rounded-[6px] bg-[rgba(242,241,238,0.6)] px-2.5 shadow-[inset_0_0_0_1px_rgba(15,15,15,0.1)] transition-shadow focus-within:shadow-[inset_0_0_0_1px_#2383e2,0_0_0_2px_rgba(35,131,226,0.2)]">
+          <input
+            type={type}
+            inputMode={inputMode}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={placeholder}
+            aria-invalid={readBack?.invalid || undefined}
+            className="h-full min-w-0 flex-1 bg-transparent text-[14px] tabular-nums text-foreground outline-none placeholder:text-[#b4b1ab]"
+          />
+          {suffix && (
+            <span className="ml-2 shrink-0 text-[13px] text-muted-foreground">{suffix}</span>
+          )}
+        </span>
+      </label>
+      {readBack && (
+        <p
+          role={readBack.invalid ? 'alert' : undefined}
+          className={`ml-[104px] mt-0.5 text-[12px] leading-4 tabular-nums ${
+            readBack.invalid ? 'text-destructive' : 'text-info'
+          }`}
+        >
+          {readBack.text}
+        </p>
+      )}
+    </div>
   );
 }

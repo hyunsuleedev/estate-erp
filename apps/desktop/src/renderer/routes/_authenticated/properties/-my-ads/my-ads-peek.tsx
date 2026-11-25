@@ -17,27 +17,40 @@ import type {
 } from "@estate-erp/api-client";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { formatDate, formatDateTime, formatMoney, formatRent } from "@/lib/format";
+import {
+  formatDateTime,
+  formatMoney,
+  formatRelativeDay,
+  formatRelativeDayTime,
+  formatRent,
+} from "@/lib/format";
 import { PropertyInspectorToolbar } from "../-components/property-inspector-view";
 import { PropertyTableTransactionBadge } from "./my-ads-cells";
-import { advertisementPriceLabel, cpChannelLabel } from "./my-ads-format";
-import { MY_ADS_INSPECTOR_ID } from "./my-ads-location";
 import {
   ADVERTISEMENT_LINK_DETAILS,
   ADVERTISEMENT_LINK_LABELS,
+  CHANGE_REQUEST_STATUS_LABELS,
   advertisementLinkLevel,
-  advertisementLocation,
   advertisementPlace,
   advertisementRawLocationLabel,
+  advertisementSite,
   advertisementTransactionType,
   changeRequestSummary,
   pendingChangeRequests,
 } from "./my-ads-link";
 import {
+  advertisementPriceLabel,
+  advertisementSyncState,
+  cpChannelLabel,
+  resolvedNaverUrl,
+} from "./my-ads-format";
+import { MY_ADS_INSPECTOR_ID, advertisementLocationLabel } from "./my-ads-location";
+import {
   PROPERTY_TABLE_PILL_TONES,
   PROPERTY_TABLE_STATUS_DOT_CLASS_NAME,
   PROPERTY_TABLE_STATUS_PILL_CLASS_NAME,
 } from "./my-ads-pill";
+import { useInspectorOutsideClose } from "@/hooks/use-inspector-outside-close";
 
 /** 다른 상세 패널의 Esc 규칙과 같다: 떠 있는 창 · 메뉴가 있으면 그쪽이 먼저 닫힌다 */
 const OVERLAY_SELECTOR =
@@ -88,26 +101,25 @@ function termsLabel(
     return formatRent(row.advertisedDeposit, row.advertisedMonthlyRent);
   }
   return formatMoney(
-    transactionType === "jeonse" ? row.advertisedDeposit : row.advertisedPrice,
+    transactionType === "jeonse"
+      ? (row.advertisedDeposit ?? row.advertisedPrice)
+      : row.advertisedPrice,
   );
 }
 
 /**
- * 광고 이력과 비교 기록을 한 줄기로 엮는다. 최근 것이 위에 온다.
- * 이력 한 줄은 "바뀐 뒤의 상태"라서, 직전 줄과 견줘 무엇이 바뀌었는지를 제목으로 뽑는다.
+ * 광고 이력 · 비교 기록 · 변경 요청을 한 줄기로 엮는다. 최근 것이 위에 온다.
  */
 export function buildAdvertisementTimeline(
   timeline: ListingAdvertisementTimeline,
   transactionType: string | null,
 ): TimelineEntry[] {
-  const entries: TimelineEntry[] = [];
+  const entries: Array<TimelineEntry & { createdAtMs: number }> = [];
   timeline.histories.forEach((row, index) => {
     const previous = index > 0 ? timeline.histories[index - 1] : null;
     const terms = termsLabel(transactionType, row);
     const changes: string[] = [];
     if (!previous) {
-      // 첫 줄의 시각은 이 광고를 처음 기록한(읽어 온 · 입력한) 때다. CP에 광고가 올라간 날이 아니다
-      // (그 날짜는 위 "게재" 줄의 시작일이다). "게재 시작"이라고 적으면 처음 수집한 날을 시작일로 읽게 된다.
       changes.push(row.status === "ended" ? "종료된 광고로 처음 기록" : "처음 기록");
     } else {
       if (previous.status !== row.status) {
@@ -126,6 +138,7 @@ export function buildAdvertisementTimeline(
     entries.push({
       id: `h-${row.id}`,
       at: row.observedAt,
+      createdAtMs: new Date(row.createdAt).getTime(),
       title: changes.join(" · "),
       detail:
         [
@@ -135,7 +148,7 @@ export function buildAdvertisementTimeline(
           row.naverArticleNo && changes.some((c) => c === "재광고" || c === "네이버 번호 확인")
             ? `네이버 ${row.naverArticleNo}`
             : null,
-          row.source === "manual" ? "직접 입력" : row.source === "cp_sync" ? "CP 수집" : null,
+          row.source === "manual" ? "직접 기록" : row.source === "cp_sync" ? "CP 수집" : null,
         ]
           .filter(Boolean)
           .join(" · ") || null,
@@ -152,6 +165,7 @@ export function buildAdvertisementTimeline(
     entries.push({
       id: `r-${record.id}`,
       at: record.observedAt,
+      createdAtMs: new Date(record.observedAt).getTime(),
       title: noted.length
         ? noted.map((change) => CHANGE_LABELS[change] ?? change).join(" · ")
         : `네이버 비교 ${rank}`,
@@ -172,9 +186,31 @@ export function buildAdvertisementTimeline(
         : "plain",
     });
   }
-  return entries.sort(
-    (left, right) => new Date(right.at).getTime() - new Date(left.at).getTime(),
-  );
+  for (const request of timeline.changeRequests ?? []) {
+    const statusLabel = CHANGE_REQUEST_STATUS_LABELS[request.status] ?? request.status;
+    entries.push({
+      id: `cr-${request.id}`,
+      at: request.verifiedAt ?? request.executedAt ?? request.createdAt,
+      createdAtMs: new Date(request.createdAt).getTime(),
+      title: `${changeRequestSummary(request as never)} · ${statusLabel}`,
+      detail:
+        [
+          request.failureReason ? `사유: ${request.failureReason}` : null,
+          request.assignedTo?.name ? `담당 ${request.assignedTo.name}` : null,
+          request.memo?.trim() || null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || null,
+      tone: request.status === "failed" ? "warn" : "plain",
+    });
+  }
+  return entries
+    .sort((left, right) => {
+      const diff = new Date(right.at).getTime() - new Date(left.at).getTime();
+      if (diff !== 0) return diff;
+      return right.createdAtMs - left.createdAtMs;
+    })
+    .map(({ createdAtMs: _c, ...entry }) => entry);
 }
 
 export function MyAdsPeek({
@@ -198,16 +234,13 @@ export function MyAdsPeek({
   /** 매물과 이어지지 않은 광고의 연결 창을 연다 */
   onOpenLink: (advertisement: ListingAdvertisementWithListing) => void;
 }) {
-  const location = advertisementLocation(advertisement);
   const place = advertisementPlace(advertisement);
   const level = advertisementLinkLevel(advertisement);
   const transactionType = advertisementTransactionType(advertisement);
   const rawLocation = advertisementRawLocationLabel(advertisement);
   const requests = pendingChangeRequests(advertisement);
   const comparison = advertisement.comparison ?? null;
-  const title = [location.site, location.dong, location.ho]
-    .filter(Boolean)
-    .join(" ");
+  const title = advertisementLocationLabel(advertisement);
 
   const timelineQuery = useQuery({
     // 광고가 고쳐지면(목록이 새로 오면) 흐름도 다시 받는다
@@ -238,6 +271,9 @@ export function MyAdsPeek({
     );
     return () => window.clearTimeout(timer);
   }, [closing, animate, onExited]);
+
+  // 패널 밖을 누르면 닫는다 (떠 있는 창 · 줄의 열기 단추는 밖이 아니다)
+  useInspectorOutsideClose(() => onClose());
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -283,7 +319,7 @@ export function MyAdsPeek({
         </h2>
 
         <dl className="mt-4">
-          <Property label="매물">
+          <Property label="연결">
             <span
               className={cn(
                 PROPERTY_TABLE_STATUS_PILL_CLASS_NAME,
@@ -343,7 +379,7 @@ export function MyAdsPeek({
                 종료
                 {advertisement.endedAt && (
                   <span className="tabular-nums text-muted-foreground">
-                    {formatDate(advertisement.endedAt)}
+                    {formatRelativeDay(advertisement.endedAt)}
                   </span>
                 )}
               </>
@@ -352,24 +388,47 @@ export function MyAdsPeek({
                 게재 중
                 {advertisement.startedAt && (
                   <span className="tabular-nums text-muted-foreground">
-                    {formatDate(advertisement.startedAt)}부터
+                    {formatRelativeDay(advertisement.startedAt)}부터
                   </span>
                 )}
               </>
             )}
           </Property>
-          <Property label="출처">
-            {advertisement.source === "manual" ? (
-              <>
-                직접 입력
-                <span className="text-[13px] text-muted-foreground">
-                  수정하면 요청 없이 바로 저장됩니다
-                </span>
-              </>
-            ) : (
-              "CP 수집"
-            )}
+          <Property label="동기화">
+            {(() => {
+              const syncState = advertisementSyncState(advertisement);
+              if (syncState === "manual") {
+                return (
+                  <>
+                    직접 기록
+                    <span className="text-[13px] text-muted-foreground">
+                      아직 CP 스냅샷과 연동되지 않았습니다
+                    </span>
+                  </>
+                );
+              }
+              if (syncState === "manual_override") {
+                return (
+                  <>
+                    직접 수정됨
+                    <span className="text-[13px] text-muted-foreground">
+                      최근 동기화 이후 직접 수정했습니다
+                    </span>
+                  </>
+                );
+              }
+              return "CP 연동";
+            })()}
           </Property>
+          {advertisement.cpAccount && (
+            <Property label="CP 계정">
+              <span>
+                {advertisement.cpAccount.accountName
+                  ? `${advertisement.cpAccount.accountName} (${advertisement.cpAccount.accountKey})`
+                  : advertisement.cpAccount.accountKey}
+              </span>
+            </Property>
+          )}
           <Property label="CP 광고번호">
             {advertisement.externalAdId ? (
               <span className="tabular-nums">{advertisement.externalAdId}</span>
@@ -378,10 +437,12 @@ export function MyAdsPeek({
             )}
           </Property>
           <Property label="네이버 번호">
-            {advertisement.naverArticleNo ? (
-              advertisement.naverUrl ? (
+            {(() => {
+              const naverUrl = resolvedNaverUrl(advertisement);
+              if (!advertisement.naverArticleNo) return empty;
+              return naverUrl ? (
                 <a
-                  href={advertisement.naverUrl}
+                  href={naverUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="tabular-nums underline-offset-2 hover:underline"
@@ -390,18 +451,16 @@ export function MyAdsPeek({
                 </a>
               ) : (
                 <span className="tabular-nums">{advertisement.naverArticleNo}</span>
-              )
-            ) : (
-              empty
-            )}
+              );
+            })()}
           </Property>
           <Property label="네이버 비교">
-            {comparison?.mainAdvertisement ? (
+            {comparison?.ownAdvertisement ? (
               <>
                 <span className="tabular-nums">
-                  {comparison.mainAdvertisement.isActive
-                    ? comparison.mainAdvertisement.ranking != null
-                      ? `${comparison.mainAdvertisement.ranking}위`
+                  {comparison.ownAdvertisement.isActive
+                    ? comparison.ownAdvertisement.ranking != null
+                      ? `${comparison.ownAdvertisement.ranking}위`
                       : "순위 미확인"
                     : "미노출"}
                   {" / "}
@@ -409,7 +468,7 @@ export function MyAdsPeek({
                 </span>
                 {comparison.observedAt && (
                   <span className="text-[13px] tabular-nums text-muted-foreground">
-                    {formatDateTime(comparison.observedAt)} 읽음
+                    {formatRelativeDayTime(comparison.observedAt)} 읽음
                   </span>
                 )}
               </>
@@ -425,6 +484,9 @@ export function MyAdsPeek({
                 {requests.map((request) => (
                   <li key={request.id} className="tabular-nums">
                     {changeRequestSummary(request)}
+                    <span className="ml-1.5 text-[12px] text-muted-foreground">
+                      {CHANGE_REQUEST_STATUS_LABELS[request.status] ?? request.status}
+                    </span>
                     {request.fulfilled === true && (
                       <span className="ml-1.5 text-[13px] text-success">반영됨</span>
                     )}
@@ -478,7 +540,7 @@ export function MyAdsPeek({
                     title={formatDateTime(entry.at)}
                     className="pt-px text-[13px] tabular-nums leading-[21px] text-muted-foreground"
                   >
-                    {formatDate(entry.at)}
+                    {formatRelativeDay(entry.at)}
                   </time>
                   <div className="min-w-0">
                     <p

@@ -176,7 +176,7 @@ describe('desktop property detail page structure', () => {
   it('keeps every listing action reachable from the page', () => {
     for (const action of [
       '거래 조건 추가',
-      '소유주·관련인 추가',
+      '소유자·관련인 추가',
       '세입자 추가',
       '거래 바로 만들기',
       '확인 결과 기록',
@@ -184,7 +184,7 @@ describe('desktop property detail page structure', () => {
       '고객 공개 설정',
       '거래 조건 삭제',
       '확인 완료',
-      '상담 기록',
+      '상담 적기',
       '의뢰 보류',
       '새 창으로 열기',
     ]) {
@@ -251,7 +251,7 @@ describe('property detail model', () => {
   it('reads area, rooms and direction from the unit type when the unit has no override', () => {
     const specs = Object.fromEntries(getHeaderSpecs(property, false).map((spec) => [spec.key, spec.text]));
     assert.equal(specs.type, '84A · 아파트');
-    assert.equal(specs.area, '공급 34.0평 · 전용 25.7평');
+    assert.equal(specs.area, '공급 34평 · 전용 25.7평');
     assert.equal(specs.floor, '34층');
     assert.equal(specs.rooms, '방 3 · 욕실 2');
     assert.equal(specs.direction, '남향');
@@ -298,7 +298,7 @@ describe('property detail model', () => {
   });
 
   it('summarises the confirmation state of the open intake', () => {
-    assert.equal(getConfirmSummary(makeIntake()).headline, '확인됨');
+    assert.equal(getConfirmSummary(makeIntake()).headline, '확인 완료');
     assert.equal(
       getConfirmSummary(makeIntake({ nextConfirmAt: iso(-2) })).headline,
       '재확인 필요',
@@ -319,7 +319,7 @@ describe('property detail model', () => {
     assert.equal(tenants[0].daysToEnd, 30);
   });
 
-  it('orders records newest first and strips the confirm-record prefix', () => {
+  it('orders records newest first and shows the confirm tag in screen words', () => {
     const records = buildRecords({
       listings: [
         makeListing({
@@ -329,11 +329,12 @@ describe('property detail model', () => {
         }),
       ],
       consultations: [
-        { id: 'c', type: 'phone', purpose: 'listing_confirm', content: '[매물확인] 가격 조정 동의', createdAt: iso(-1), contact: { id: 'o', name: '김정훈', phone: null } } as never,
+        { id: 'c', type: 'phone', purpose: 'listing_confirm', content: '[매물확인] 가격변경\n가격 조정 동의', createdAt: iso(-1), contact: { id: 'o', name: '김정훈', phone: null } } as never,
       ],
       intakes: [makeIntake()],
     });
     assert.deepEqual(records.map((record) => record.kind), ['confirm', 'price', 'intake']);
+    assert.equal(records[0].title, '매물 확인 · 가격 변경');
     assert.equal(records[0].body, '가격 조정 동의');
     assert.equal(records[1].summary, '16억 → 15억 8,000만');
     assert.equal(records[1].direction, 'down');
@@ -374,7 +375,7 @@ describe('property detail model', () => {
 
     const records = buildRecords({ listings: [], consultations: [], intakes: [], deals: mine });
     const titles = records.map((record) => `${record.id}:${record.title}`);
-    assert.ok(titles.includes('deal-stage-done:거래 잔금완료'), titles.join(', '));
+    assert.ok(titles.includes('deal-stage-done:거래 잔금 완료'), titles.join(', '));
     assert.ok(titles.includes('deal-done:거래 시작'));
     assert.ok(titles.includes('deal-cancel-cancelled:거래 취소'));
     assert.ok(!titles.some((title) => title.startsWith('deal-stage-cancelled')));
@@ -529,9 +530,14 @@ describe('property detail model', () => {
       { id: 'm1', listingId: 'listing-1', stage: 'viewingConfirmed', buyerRequirement: { contact: { id: 'b1', name: '정민호' } }, calendarEvents: [viewing('v-past', -1), viewing('v-late', 5)] },
       { id: 'm2', listingId: 'listing-1', stage: 'viewing', buyerRequirement: { contact: { id: 'b2', name: '오지은' } }, calendarEvents: [viewing('v-soon', 1), { id: 'call', type: 'call', start: iso(1) }] },
       { id: 'm3', listingId: 'listing-1', stage: 'closed', buyerRequirement: { contact: { id: 'b3', name: '닫힘' } }, calendarEvents: [viewing('v-closed', 2)] },
+      // 거래 전환 전에 잡아 둔 임장은 그 거래가 끝나면 끝난 일이다 (임장은 12일 전에 잡았고 거래는 10일 전에 만들어 정산 종료)
+      { id: 'm4', listingId: 'listing-1', stage: 'dealCreated', buyerRequirement: { contact: { id: 'b4', name: '거래됨' } }, deals: [{ id: 'd4', stage: 'closed', isCancelled: false, createdAt: iso(-10) }], calendarEvents: [{ ...viewing('v-deal', 4), createdAt: iso(-12) }] },
+      // 거래를 만든 뒤에 잡은 약속은 거래가 끝나도 다가오는 임장이다. 고객 검토 중의 재임장도 그렇다
+      { id: 'm5', listingId: 'listing-1', stage: 'dealCreated', buyerRequirement: { contact: { id: 'b5', name: '잔금 뒤' } }, deals: [{ id: 'd5', stage: 'closed', isCancelled: false, createdAt: iso(-10) }], calendarEvents: [{ ...viewing('v-precheck', 6), createdAt: iso(-1) }] },
+      { id: 'm6', listingId: 'listing-1', stage: 'buyerReviewing', buyerRequirement: { contact: { id: 'b6', name: '재임장' } }, calendarEvents: [{ ...viewing('v-again', 7), createdAt: iso(-1) }] },
     ] as never[];
     const items = buildUpcomingViewings(matches, new Map([['listing-1', 'sale']]));
-    assert.deepEqual(items.map((item) => item.id), ['v-soon', 'v-late']);
+    assert.deepEqual(items.map((item) => item.id), ['v-soon', 'v-late', 'v-precheck', 'v-again']);
     assert.equal(items[0].buyerName, '오지은');
     assert.equal(items[0].typeLabel, '매매');
   });

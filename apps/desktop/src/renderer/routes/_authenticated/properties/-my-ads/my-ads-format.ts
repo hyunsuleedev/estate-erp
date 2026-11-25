@@ -1,17 +1,64 @@
 import { advertisementLocation, advertisementTransactionType } from "./my-ads-link";
+import type { AdvertisementSyncState } from "@estate-erp/shared";
 import type {
   ListingAdvertisementWithListing,
   OfficeAdvertisement,
 } from "@estate-erp/api-client";
 import {
-  ApiError,
   analyzeOfficeAdvertisementComparison,
   analyzeOfficeAdvertisementRow,
+  type OfficeAdvertisementComparisonAnalysis,
 } from "@estate-erp/api-client";
-import { formatDate, formatMoney, formatRent } from "@/lib/format";
+import { formatMoney, formatRelativeDay, formatRent } from "@/lib/format";
+import { apiErrorMessage } from "@/lib/api-error";
 import { getAdChannelLabel } from "@/lib/advertisement-channels";
 import { PROPERTY_TABLE_PILL_TONES } from "./my-ads-pill";
 import type { AnalysisSignal } from "./my-ads-types";
+
+const comparisonCache = new WeakMap<
+  ListingAdvertisementWithListing,
+  OfficeAdvertisementComparisonAnalysis
+>();
+
+/** 광고 행 객체마다 비교 분석을 한 번만 계산해 정렬·필터·셀·패널이 함께 쓴다. */
+export function getCachedComparison(
+  advertisement: ListingAdvertisementWithListing,
+): OfficeAdvertisementComparisonAnalysis {
+  const cached = comparisonCache.get(advertisement);
+  if (cached) return cached;
+  const computed = analyzeOfficeAdvertisementComparison(advertisement);
+  comparisonCache.set(advertisement, computed);
+  return computed;
+}
+
+/** 표·필터·신호가 함께 쓰는 네이버 광고 원문 링크. */
+export function resolvedNaverUrl(
+  advertisement: Pick<ListingAdvertisementWithListing, "naverUrl" | "comparison">,
+): string | null {
+  return (
+    advertisement.naverUrl ??
+    advertisement.comparison?.ownAdvertisement?.sourceUrl ??
+    null
+  );
+}
+
+/** 동기화 상태. 서버가 계산해 주지 않은 테스트 객체는 타임스탬프로 판별한다. */
+export function advertisementSyncState(
+  advertisement: Pick<
+    ListingAdvertisementWithListing,
+    "syncState" | "lastSyncedAt" | "manualEditedAt"
+  >,
+): AdvertisementSyncState {
+  if (advertisement.syncState) return advertisement.syncState;
+  if (!advertisement.lastSyncedAt) return "manual";
+  if (
+    advertisement.manualEditedAt &&
+    advertisement.manualEditedAt > advertisement.lastSyncedAt
+  ) {
+    return "manual_override";
+  }
+  return "synced";
+}
 
 /** 표 · 패널 · 창이 함께 쓰는 위치 글. 매물과 이어지지 않은 광고는 CP가 적은 글을 쓴다 */
 export function getCanonicalLocation(advertisement: ListingAdvertisementWithListing) {
@@ -29,7 +76,7 @@ export function advertisementPriceLabel(
     );
   }
   if (transactionType === "jeonse") {
-    return formatMoney(advertisement.advertisedDeposit);
+    return formatMoney(advertisement.advertisedDeposit ?? advertisement.advertisedPrice);
   }
   return formatMoney(advertisement.advertisedPrice);
 }
@@ -39,9 +86,11 @@ export function advertisementPrimaryAmountLabel(
 ): string {
   const transactionType = advertisementTransactionType(advertisement);
   return formatMoney(
-    transactionType === "monthly" || transactionType === "jeonse"
+    transactionType === "monthly"
       ? advertisement.advertisedDeposit
-      : advertisement.advertisedPrice,
+      : transactionType === "jeonse"
+        ? (advertisement.advertisedDeposit ?? advertisement.advertisedPrice)
+        : advertisement.advertisedPrice,
   );
 }
 
@@ -61,7 +110,7 @@ export function observedAdvertisementPriceLabel(
     return formatRent(context.deposit, context.monthlyRent);
   }
   if (advertisementTransactionType(advertisement) === "jeonse") {
-    return formatMoney(context.deposit);
+    return formatMoney(context.deposit ?? context.price);
   }
   return formatMoney(context.price);
 }
@@ -82,10 +131,15 @@ export function lowestCompetitorAmount(
   return amounts.length > 0 ? Math.min(...amounts) : null;
 }
 
-export function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError && error.message) return error.message;
-  if (error instanceof Error && error.message) return error.message;
-  return "요청을 처리하지 못했습니다.";
+/**
+ * 내광고관리의 실패 문구. 서버의 한국어 문구를 쓰고, 없거나 서버에 닿지 못했으면
+ * 공용 규칙(apiErrorMessage)대로 연결 안내 또는 `fallback`(무엇이 안 됐는지)을 보인다.
+ */
+export function getErrorMessage(
+  error: unknown,
+  fallback = "요청을 처리하지 못했습니다. 다시 시도해 주세요.",
+): string {
+  return apiErrorMessage(error, fallback);
 }
 
 /**
@@ -96,14 +150,16 @@ export function cpChannelLabel(channel: string): string {
   return getAdChannelLabel(channel);
 }
 
+/** 네이버 확인일(YYYYMMDD)을 앱 공용 날짜 표기로("오늘", "11.15 (일)"). 읽을 수 없으면 null */
 export function formatYmd(value: string | null | undefined): string | null {
-  if (!value || value.length !== 8) return null;
-  return `${value.slice(2, 4)}.${value.slice(4, 6)}.${value.slice(6, 8)}`;
+  if (!value || !/^\d{8}$/.test(value)) return null;
+  const date = new Date(Number(value.slice(0, 4)), Number(value.slice(4, 6)) - 1, Number(value.slice(6, 8)));
+  return Number.isFinite(date.getTime()) ? formatRelativeDay(date) || null : null;
 }
 
+/** 표 칸의 짧은 날짜 — 앱 공용 표기("오늘", "11.8 (일)"). 값이 없으면 "—" */
 export function compactAdvertisementDate(value: string | null | undefined): string {
-  const formatted = formatDate(value);
-  return formatted === "—" ? formatted : formatted.slice(2);
+  return formatRelativeDay(value) || "—";
 }
 
 export function verificationMethodPresentation(code: string): {
@@ -145,11 +201,12 @@ export function primaryAmount(
   advertisement: ListingAdvertisementWithListing,
   amounts: { price: number | null; deposit: number | null },
 ): number | null {
-  if (
-    advertisementTransactionType(advertisement) === "monthly" ||
-    advertisementTransactionType(advertisement) === "jeonse"
-  ) {
+  const transactionType = advertisementTransactionType(advertisement);
+  if (transactionType === "monthly") {
     return amounts.deposit;
+  }
+  if (transactionType === "jeonse") {
+    return amounts.deposit ?? amounts.price;
   }
   return amounts.price;
 }
@@ -157,7 +214,7 @@ export function primaryAmount(
 export function getAnalysisSignal(
   advertisement: ListingAdvertisementWithListing,
 ): AnalysisSignal {
-  if (!advertisement.naverArticleNo || !advertisement.naverUrl) {
+  if (!advertisement.naverArticleNo || !resolvedNaverUrl(advertisement)) {
     return {
       kind: "naver_link_pending",
       tone: "warning",
@@ -167,7 +224,7 @@ export function getAnalysisSignal(
     };
   }
 
-  const comparison = analyzeOfficeAdvertisementComparison(advertisement);
+  const comparison = getCachedComparison(advertisement);
   if (comparison.primarySignal === "comparison_pending") {
     return {
       kind: "comparison_pending",

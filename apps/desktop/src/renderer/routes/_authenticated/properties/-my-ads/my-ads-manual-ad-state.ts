@@ -6,8 +6,9 @@ import type {
   ListingAdvertisementWithListing,
   UpdateListingAdvertisementDto,
 } from "@estate-erp/api-client";
-import { ListingAvailability, formatUnitName } from "@estate-erp/shared";
+import { ListingAvailability, formatPlaceLabel, formatUnitName } from "@estate-erp/shared";
 import { formatMoney, formatRent } from "@/lib/format";
+import { apiErrorMessage, isNetworkError } from "@/lib/api-error";
 import { getListingAvailability } from "@/lib/listing-status";
 import { naverCpChannels } from "@/lib/advertisement-channels";
 import {
@@ -16,7 +17,12 @@ import {
   type AdListing,
   type ManualAdDraft,
 } from "../-components/property-ad-actions-state";
-import { cpChannelLabel, getAnalysisSignal } from "./my-ads-format";
+import {
+  advertisementSyncState,
+  cpChannelLabel,
+  getAnalysisSignal,
+  resolvedNaverUrl,
+} from "./my-ads-format";
 import { PROPERTY_TABLE_PILL_TONES } from "./my-ads-pill";
 import type { AnalysisSignal } from "./my-ads-types";
 
@@ -27,34 +33,23 @@ import type { AnalysisSignal } from "./my-ads-types";
  * 매물 고르기, CP 광고번호·네이버 매물번호, 서버 오류 문구, 목록 표시.
  */
 
-/** 수동 등록 광고 — CP에 연결된 실체가 없어 업무 요청 대신 원장을 바로 고친다. */
-export function isManualAdvertisement(
-  advertisement: Pick<ListingAdvertisement, "source">,
-): boolean {
-  return advertisement.source === "manual";
-}
-
-/** 상태 줄의 출처별 건수. CP에서 읽어 온 광고와 직접 입력한 광고를 따로 센다. */
-export function countAdvertisementsBySource(
-  advertisements: Pick<ListingAdvertisement, "source">[],
-): { cp: number; manual: number } {
-  const manual = advertisements.filter(isManualAdvertisement).length;
-  return { cp: advertisements.length - manual, manual };
-}
-
-/**
- * 선택 막대의 안내(변경 초안이 없을 때). 수동 광고는 업무 없이 바로 고치되 한 번에 한 건만
- * 열 수 있다 — 상세 편집은 수동 광고만 두 건 이상 고르면 거절한다.
- */
-export function myAdsSelectionHint(
-  selected: Pick<ListingAdvertisement, "source">[],
-): string {
-  if (selected.length > 0 && selected.every(isManualAdvertisement)) {
-    return selected.length === 1
-      ? "수동 광고는 상세 편집에서 바로 수정합니다"
-      : "수동 광고는 한 건씩 선택해 상세 편집에서 수정합니다";
+/** 상태 줄의 동기화 상태별 건수. */
+export function countAdvertisementsBySyncState(
+  advertisements: Pick<
+    ListingAdvertisement,
+    "syncState" | "lastSyncedAt" | "manualEditedAt"
+  >[],
+): { synced: number; manual: number; manualOverride: number } {
+  let synced = 0;
+  let manual = 0;
+  let manualOverride = 0;
+  for (const ad of advertisements) {
+    const state = advertisementSyncState(ad);
+    if (state === "manual") manual += 1;
+    else if (state === "manual_override") manualOverride += 1;
+    else synced += 1;
   }
-  return "가격·월세를 직접 수정하세요";
+  return { synced, manual, manualOverride };
 }
 
 // ── 매물(거래 옵션) 고르기 ──────────────────────────────────────
@@ -122,17 +117,12 @@ export function manualAdListingLocationParts(
 ): { site: string | null; unit: string | null } {
   const property = listing?.property;
   const dong = property?.unit?.dong;
-  const unit = formatUnitName(property?.unit);
-  const dongName = dong?.name?.trim();
-  const unitLabel = [
-    dongName && dongName !== "-" && !dong?.isPlaceholder
-      ? `${dongName.replace(/동$/, "")}동`
-      : null,
-    // 호 없이 층이 단위인 공간은 층이 이름이다
-    property?.unit?.name ? `${unit.replace(/호$/, "")}호` : unit || null,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  // "101동 1503호" / 동 구분 없는 건물은 "201호" / 호 없는 공간은 "2층" (STANDARDS: formatPlaceLabel)
+  const unitLabel = formatPlaceLabel({
+    dongName: dong?.name,
+    dongIsPlaceholder: dong?.isPlaceholder,
+    unit: property?.unit,
+  });
   return { site: property?.site?.name?.trim() || null, unit: unitLabel || null };
 }
 
@@ -140,8 +130,15 @@ export function manualAdListingLocationParts(
 export function manualAdListingLocation(
   listing: Pick<Listing, "property"> | undefined,
 ): string {
-  const { site, unit } = manualAdListingLocationParts(listing);
-  return [site, unit].filter(Boolean).join(" ") || "매물";
+  const property = listing?.property;
+  return (
+    formatPlaceLabel({
+      siteName: property?.site?.name,
+      dongName: property?.unit?.dong?.name,
+      dongIsPlaceholder: property?.unit?.dong?.isPlaceholder,
+      unit: property?.unit,
+    }) || "매물"
+  );
 }
 
 export function manualAdListingPriceLabel(
@@ -150,18 +147,20 @@ export function manualAdListingPriceLabel(
   if (listing.transactionType === "monthly") {
     return formatRent(listing.deposit, listing.monthlyRent);
   }
-  if (listing.transactionType === "jeonse") return formatMoney(listing.deposit);
+  if (listing.transactionType === "jeonse") {
+    return formatMoney(listing.price ?? listing.deposit);
+  }
   return formatMoney(listing.price);
 }
 
 /**
  * 고를 수는 있지만 알려야 하는 거래 옵션 상태. 수동입력은 CP에 실제로 떠 있는 광고를
- * 기록하는 일이라 막지 않고, 보류·중단·거래중 매물에 적는다는 사실만 보이게 한다.
+ * 기록하는 일이라 막지 않고, 보류·중단·거래 중 매물에 적는다는 사실만 보이게 한다.
  * (종결된 의뢰는 서버 기본 검색에서 빠진다.)
  */
 export function manualAdListingStatusLabel(listing: Listing): string | null {
   const availability = getListingAvailability(listing);
-  if (availability === ListingAvailability.IN_CONTRACT) return "거래중";
+  if (availability === ListingAvailability.IN_CONTRACT) return "거래 중";
   if (availability === ListingAvailability.CLOSED) return "거래 완료";
   if (availability === ListingAvailability.PAUSED) {
     return listing.isPaused ? "옵션 중단" : "의뢰 보류";
@@ -181,13 +180,11 @@ export type ManualAdChannelOption = {
 
 /**
  * 이실장·부동산뱅크를 먼저, 나머지 네이버 제휴 CP는 원래 순서대로.
- * 게재 중인 채널은 "광고 중"으로 쓰고 고를 수 없다. 다만 종료된 광고 기록은 채널당 게재 중 하나라는
- * 제약과 무관하므로(서버와 buildManualAdPayload 모두 status가 active일 때만 막는다) 상태가 종료면 고를 수 있다.
+ * 게재 중인 채널은 "광고 중"으로 쓰고 고를 수 없다. 종료된 광고 기록이어도 같다 — 같은 매물·같은 채널은
+ * 한 줄(재광고·종료도 그 줄의 변화)이라, 종료로 넣으면 게재 중인 광고가 종료되고 가격·등록일이 바뀐다.
+ * 그 광고가 끝났다면 기존 광고를 열어 종료로 바꾼다.
  */
-export function manualAdChannelOptions(
-  listing: AdListing,
-  status: MyAdsManualAdDraft["status"] = "active",
-): ManualAdChannelOption[] {
+export function manualAdChannelOptions(listing: AdListing): ManualAdChannelOption[] {
   const active = new Set(activeAdChannelValues(listing));
   const primary = ["esiljang", "budongsanbank"];
   const rank = (value: string) =>
@@ -200,7 +197,7 @@ export function manualAdChannelOptions(
     label: active.has(option.value)
       ? `${cpChannelLabel(option.value)} · 광고 중`
       : cpChannelLabel(option.value),
-    disabled: status === "active" && active.has(option.value),
+    disabled: active.has(option.value),
   }));
 }
 
@@ -381,38 +378,21 @@ export function manualAdSuccessMessage(
     : "광고 정보를 수정했습니다.";
 }
 
-// 서버 검증 문구 중 영어로 오는 것을 화면 문구로 바꾼다. 409 문구는 이미 한국어다.
-const SERVER_ERROR_MESSAGES: Record<string, string> = {
-  "Listing not found": "선택한 매물을 찾을 수 없습니다. 매물이 삭제되었는지 확인해 주세요.",
-  "ListingAdvertisement not found":
-    "광고를 찾을 수 없습니다. 이미 삭제되었을 수 있습니다.",
-  "listingId is required": "매물을 선택해 주세요.",
-  "channel is required": "광고 채널을 선택해 주세요.",
-  "channel cannot be empty": "광고 채널을 선택해 주세요.",
-  "channel must be lowercase slug (a-z, 0-9, _, -)": "광고 채널을 선택해 주세요.",
-  "active advertisement cannot have endedAt":
-    "광고 중인 광고에는 종료일을 넣을 수 없습니다.",
-  "ended advertisement requires endedAt": "광고 종료일을 입력해 주세요.",
-};
-
+/**
+ * 저장 실패 문구. 서버는 광고 검증 문구를 한국어로 답한다(2026-11-22에 영어 문구를 바꾸고 변환표를 뺐다).
+ * 서버 문구가 없거나 5xx면 저장 실패 안내, 서버에 닿지 못했으면 연결 안내(apiErrorMessage).
+ * 저장 전에 화면이 던진 확인 문구(한국어 Error)는 그대로 보여 준다.
+ */
 export function manualAdErrorMessage(error: unknown): string {
-  if (error instanceof ApiError) {
-    if (error.statusCode >= 500) {
-      return "서버에서 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.";
-    }
-    if (SERVER_ERROR_MESSAGES[error.message]) {
-      return SERVER_ERROR_MESSAGES[error.message];
-    }
-    if (/^Invalid (status|source)/.test(error.message)) {
-      return "광고 상태를 확인해 주세요.";
-    }
-    return error.message || "저장하지 못했습니다. 다시 시도해 주세요.";
+  if (
+    !(error instanceof ApiError) &&
+    !isNetworkError(error) &&
+    error instanceof Error &&
+    /[가-힣]/.test(error.message)
+  ) {
+    return error.message;
   }
-  if (error instanceof TypeError) {
-    return "서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.";
-  }
-  if (error instanceof Error && error.message) return error.message;
-  return "저장하지 못했습니다. 다시 시도해 주세요.";
+  return apiErrorMessage(error, "광고를 저장하지 못했습니다. 다시 시도해 주세요.");
 }
 
 // ── 목록 표시 ─────────────────────────────────────────────────
@@ -425,14 +405,16 @@ export function manualAdErrorMessage(error: unknown): string {
 export function myAdsAnalysisSignal(
   advertisement: ListingAdvertisementWithListing,
 ): AnalysisSignal {
-  if (!isManualAdvertisement(advertisement)) return getAnalysisSignal(advertisement);
+  if (advertisementSyncState(advertisement) !== "manual") {
+    return getAnalysisSignal(advertisement);
+  }
   if (!advertisement.naverArticleNo) {
     return {
       kind: "naver_link_pending",
       tone: "warning",
       label: "네이버 번호 없음",
       detail:
-        "수동 등록 광고에 네이버 매물번호가 없습니다. 번호를 넣으면 네이버 비교 대상이 됩니다.",
+        "직접 기록한 광고에 네이버 매물번호가 없습니다. 번호를 넣으면 네이버 비교 대상이 됩니다.",
       className: PROPERTY_TABLE_PILL_TONES.warning,
     };
   }
@@ -442,22 +424,23 @@ export function myAdsAnalysisSignal(
       kind: "comparison_pending",
       tone: "warning",
       label: "네이버 비교 대기",
-      detail: `수동 등록 광고입니다. 네이버 매물번호 ${advertisement.naverArticleNo}의 비교 결과가 아직 없습니다.`,
+      detail: `네이버 매물번호 ${advertisement.naverArticleNo}의 비교 결과가 아직 없습니다.`,
       className: PROPERTY_TABLE_PILL_TONES.warning,
     };
   }
-  // 수동 입력에는 네이버 URL 칸이 없다. 비교 결과의 원문 주소로 링크 확인을 대신한다.
+  // 직접 기록한 광고도 비교 결과의 원문 주소로 링크 확인을 대신한다.
   return getAnalysisSignal({
     ...advertisement,
-    naverUrl: advertisement.naverUrl ?? group.mainAdvertisement?.sourceUrl ?? null,
+    naverUrl: resolvedNaverUrl(advertisement),
   });
 }
 
-/** 랭킹 칸의 빈 값. 네이버 번호가 없는 수동 광고는 기다릴 비교가 없다. */
+/** 랭킹 칸의 빈 값. 네이버 번호가 없는 직접 기록 광고는 기다릴 비교가 없다. */
 export function myAdsRankingPendingLabel(
   advertisement: ListingAdvertisementWithListing,
 ): string {
-  return isManualAdvertisement(advertisement) && !advertisement.naverArticleNo
+  return advertisementSyncState(advertisement) === "manual" &&
+    !advertisement.naverArticleNo
     ? "비교 없음"
     : "분석 대기";
 }

@@ -21,11 +21,12 @@ import { Check, Loader2, Search, X } from 'lucide-react';
 import { ApiError, type BuyerRequirement } from '@estate-erp/api-client';
 import { pyeongToSqm, TRANSACTION_TYPE_LABELS } from '@estate-erp/shared';
 import { api } from '@/lib/api';
+import { parseManwon } from '@/lib/manwon';
 import { cn } from '@/lib/utils';
+import { getStatusMeta } from '@/lib/status-config';
 import { formatMoney } from '@/lib/format';
 import { parseCellNumber } from '@/components/data-table/cell-edit-state';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { StatusBadge } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
@@ -67,6 +68,45 @@ import {
   type RangeDraft,
   type RequirementChange,
 } from './-requirement-edit';
+
+/**
+ * 희망 조건의 상태 · 긴급도 알약. 매물관리 표의 매물상태 칸(StatusIndicator)과 같은 모양과 색이다:
+ * 둥근 알약 + 왼쪽 점, 옅은 바탕에 같은 계열의 진한 글씨. 낱말은 공용 상태 이름(lib/status-config)을 읽는다.
+ * 표의 칸과 그 칸에서 여는 고르는 목록이 함께 쓴다 (목록에서 고른 모양이 칸에 그대로 남게).
+ * 색은 값의 뜻(tone)으로 고른다: 활성 = 초록, 보류 = 노랑, 급함 = 빨강, 여유 = 파랑, 완료 · 보통 = 회색.
+ */
+const BUYER_PILL_PALETTE: Record<string, { dotClassName: string; pillClassName: string }> = {
+  success: { dotClassName: 'bg-[#6c9b7a]', pillClassName: 'bg-[#eef3ed] text-[#44745a]' },
+  warning: { dotClassName: 'bg-[#dfab01]', pillClassName: 'bg-[#fbf3db] text-[#9f6b00]' },
+  destructive: { dotClassName: 'bg-[#e16259]', pillClassName: 'bg-[#fdebec] text-[#b0423a]' },
+  info: { dotClassName: 'bg-[#529cca]', pillClassName: 'bg-[#e7f3f8] text-[#337ea9]' },
+  gray: { dotClassName: 'bg-[#b4b4b1]', pillClassName: 'bg-[#f1f1ef] text-[#787774]' },
+};
+
+function BuyerPill({ kind, status }: { kind: 'buyerStatus' | 'buyerUrgency'; status: string }) {
+  const meta = getStatusMeta(kind, status);
+  const palette = BUYER_PILL_PALETTE[meta.tone] ?? BUYER_PILL_PALETTE.gray;
+  return (
+    <span
+      data-buyer-pill={kind}
+      className={cn(
+        'inline-flex h-5 max-w-full items-center gap-[5px] rounded-full pl-[7px] pr-[9px] text-[14px] font-[450] leading-5',
+        palette.pillClassName,
+      )}
+    >
+      <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', palette.dotClassName)} />
+      <span className="truncate">{meta.label}</span>
+    </span>
+  );
+}
+
+export function BuyerStatusPill({ status }: { status: string }) {
+  return <BuyerPill kind="buyerStatus" status={status} />;
+}
+
+export function BuyerUrgencyPill({ status }: { status: string }) {
+  return <BuyerPill kind="buyerUrgency" status={status} />;
+}
 
 /** 고친 값을 저장한다. 실패하면 던진다 (편집기가 받아서 알린다). */
 export type RequirementEditHandler = (
@@ -446,13 +486,17 @@ function EditorFooter({
   saving,
   canSave = true,
   onCancel,
+  leading,
 }: {
   saving: boolean;
   canSave?: boolean;
   onCancel: () => void;
+  /** 왼쪽 끝에 둘 것 (입주 희망일의 "날짜 지우기" 등) */
+  leading?: ReactNode;
 }) {
   return (
     <div className="flex items-center justify-end gap-1.5 border-t border-border px-2 py-1.5">
+      {leading && <div className="mr-auto flex items-center">{leading}</div>}
       <Button
         type="button"
         variant="ghost"
@@ -483,6 +527,7 @@ function ChipSelectEditor({
   options,
   value,
   editor,
+  confirm,
 }: {
   kind: 'buyerStatus' | 'buyerUrgency';
   label: string;
@@ -490,8 +535,40 @@ function ChipSelectEditor({
   /** 지금 저장된 값 */
   value: string;
   editor: EditorApi<string>;
+  /** 이 값을 고르면 바로 저장하지 않고 한 번 묻는다 (완료하면 연결한 매물의 진행도 끝나는 경우) */
+  confirm?: { value: string; message: string; confirmLabel: string };
 }) {
   const hasCurrent = options.includes(value);
+  const [asking, setAsking] = useState(false);
+  if (asking && confirm) {
+    return (
+      <div role="alertdialog" aria-label={`${label} 확인`} className="space-y-2 p-2.5">
+        <p className="break-keep text-[12.5px] leading-[18px] text-foreground">{confirm.message}</p>
+        <div className="flex justify-end gap-1.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2.5 text-[12px]"
+            disabled={editor.saving}
+            onClick={() => setAsking(false)}
+          >
+            취소
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            autoFocus
+            className="h-7 px-2.5 text-[12px]"
+            disabled={editor.saving}
+            onClick={() => editor.save(confirm.value)}
+          >
+            {confirm.confirmLabel}
+          </Button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       role="listbox"
@@ -510,11 +587,19 @@ function ChipSelectEditor({
             aria-selected={selected}
             disabled={editor.saving}
             autoFocus={selected || (!hasCurrent && index === 0)}
-            onClick={() => editor.save(option)}
+            onClick={() =>
+              confirm && option === confirm.value && option !== value
+                ? setAsking(true)
+                : editor.save(option)
+            }
             className={cn(LIST_ITEM_CLASS, 'justify-between')}
           >
             {/* 표의 칸과 같은 꼬리표라 고르기 전에 결과가 그대로 보인다 */}
-            <StatusBadge kind={kind} status={option} size="sm" />
+            {kind === 'buyerStatus' ? (
+              <BuyerStatusPill status={option} />
+            ) : (
+              <BuyerUrgencyPill status={option} />
+            )}
             {selected && (
               <Check aria-label="현재 값" className="ml-2 size-3.5 text-muted-foreground" />
             )}
@@ -591,8 +676,15 @@ function SiteTypesEditor({
 
 // ── 범위 입력: 희망 평형 · 예산 ──────────────────────────────────
 
-/** 입력한 수를 읽기 쉬운 말로 되비춘다 (9억, 109.09㎡). 읽을 수 없는 입력에는 비운다. */
-function readHint(raw: string, format: (value: number) => string): string {
+/**
+ * 입력한 수를 읽기 쉬운 말로 되비춘다 (9억, 109.09㎡). 읽을 수 없는 입력에는 비운다.
+ * 금액은 "8억"처럼 적은 글도 읽는다(앱 공용 규칙 lib/manwon.ts), 평형은 숫자만.
+ */
+function readHint(raw: string, format: (value: number) => string, money = false): string {
+  if (money) {
+    const parsed = parseManwon(raw);
+    return parsed.valid && parsed.value ? format(parsed.value) : '';
+  }
   const parsed = parseCellNumber(raw, 0);
   return parsed.valid && parsed.value ? format(parsed.value) : '';
 }
@@ -618,7 +710,7 @@ function AmountField({
   disabled: boolean;
   autoFocus?: boolean;
 }) {
-  const hint = readHint(value, formatHint);
+  const hint = readHint(value, formatHint, unit === '만원');
   return (
     <div className="min-w-0">
       <div className="relative">
@@ -848,7 +940,14 @@ function fromDateInput(value: string): Date | undefined {
   return Number.isFinite(date.getTime()) ? date : undefined;
 }
 
-function MoveInDateEditor({ editor }: { editor: EditorApi<string> }) {
+function MoveInDateEditor({
+  editor,
+  hasSavedDate,
+}: {
+  editor: EditorApi<string>;
+  /** 저장된 입주 희망일이 있는지. 있으면 "날짜 지우기"를 보인다. */
+  hasSavedDate: boolean;
+}) {
   const { draft, setDraft, saving } = editor;
   const selected = fromDateInput(draft);
   // 달력이 보여 주는 달. 날짜가 밖에서 바뀌면(열어 둔 사이 목록이 새로 옴) 그 날짜의 달로 따라간다.
@@ -890,7 +989,28 @@ function MoveInDateEditor({ editor }: { editor: EditorApi<string> }) {
           editor.save(next);
         }}
       />
-      <EditorFooter saving={saving} canSave={draft !== ''} onCancel={editor.cancel} />
+      <EditorFooter
+        saving={saving}
+        onCancel={editor.cancel}
+        leading={
+          // 손님이 "날짜는 아직 몰라요"로 바꾸면 비운다. 빈 칸으로 저장해도 같다.
+          hasSavedDate ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[12px] text-muted-foreground"
+              disabled={saving}
+              onClick={() => {
+                setDraft('');
+                editor.save('');
+              }}
+            >
+              날짜 지우기
+            </Button>
+          ) : undefined
+        }
+      />
     </form>
   );
 }
@@ -1232,6 +1352,7 @@ export function EditableRequirementCell({
   onEditingChange,
   blockedReason,
   triggerClassName,
+  openMatchCount = 0,
   children,
 }: {
   field: RequirementField;
@@ -1244,6 +1365,8 @@ export function EditableRequirementCell({
   onEditingChange?: (editing: boolean) => void;
   blockedReason?: string;
   triggerClassName?: string;
+  /** 이 조건에서 진행 중인 매칭 수. 완료로 바꾸면 함께 닫히므로 상태 칸이 먼저 묻는다. */
+  openMatchCount?: number;
   children: ReactNode;
 }) {
   const shared = {
@@ -1275,6 +1398,15 @@ export function EditableRequirementCell({
               options={REQUIREMENT_STATUSES}
               value={value}
               editor={editor}
+              confirm={
+                openMatchCount > 0
+                  ? {
+                      value: 'completed',
+                      message: `완료로 바꾸면 연결한 매물 ${openMatchCount}건의 진행도 함께 끝납니다. 다시 활성으로 바꿔도 끝난 진행은 저절로 다시 열리지 않습니다.`,
+                      confirmLabel: '완료로 바꾸기',
+                    }
+                  : undefined
+              }
             />
           )}
         >
@@ -1365,7 +1497,9 @@ export function EditableRequirementCell({
           createDraft={(source) => toDateInputValue(source.moveInDate)}
           rebaseDraft={rebaseMoveInDate}
           toChange={buildMoveInDateChange}
-          renderEditor={(editor) => <MoveInDateEditor editor={editor} />}
+          renderEditor={(editor) => (
+            <MoveInDateEditor editor={editor} hasSavedDate={Boolean(requirement.moveInDate)} />
+          )}
         >
           {children}
         </RequirementCellEditor>

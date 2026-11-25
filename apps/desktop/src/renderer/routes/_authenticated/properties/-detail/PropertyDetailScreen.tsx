@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -6,6 +7,7 @@ import {
   Globe,
   Handshake,
   MessageSquarePlus,
+  ListTodo,
   MoreHorizontal,
   Pause,
   Pencil,
@@ -21,9 +23,18 @@ import {
   type Consultation,
   type Listing,
   type ListingIntake,
+  type Property,
+  type Match,
   type PropertyPhoto,
 } from '@estate-erp/api-client';
-import { IntakeConfirmationState, IntakeLifecycleStatus, ListingAvailability } from '@estate-erp/shared';
+import {
+  IntakeCheckResult,
+  IntakeConfirmationState,
+  IntakeLifecycleStatus,
+  ListingAvailability,
+  MatchStage,
+  normalizeMatchStage,
+} from '@estate-erp/shared';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -47,6 +58,7 @@ import {
 } from '../-property-detail-dialogs';
 import { IntakeConfirmDialog } from '../-property-intake-actions';
 import { PropertyInspectorProgressTab } from '../-components/property-inspector-progress-tab';
+import { PropertyAdActions } from '../-components/property-ad-actions';
 import { RetryNote } from '../-components/property-inspector-view';
 import { PublicListingDialog } from './PublicListingDialog';
 import {
@@ -63,6 +75,7 @@ import {
   formatListingPrice,
   formatShortDate,
   getConfirmSummary,
+  getIntakeStatusLabel,
   getTransactionTypeMeta,
   getUnitIdentity,
   getUnitTitle,
@@ -95,6 +108,24 @@ import { AdsSection, ConfirmSection, ContactsSection, InfoSection, TodosCallout,
 import { ComposerDock, type ComposerSubmit, type ComposerWho } from './composer';
 import { RecordsSection } from './records';
 import { H2, nb } from './ui';
+import { propertyErrorMessage } from '../-error-message';
+import { canDeleteListing } from '../-property-permissions';
+import { useAuth } from '@/providers/auth-provider';
+import { useTabTitle } from '@/hooks/use-tab-title';
+import { TaskCreateDialog } from '../../tasks/-task-create-dialog';
+import { IntakeProjectSection } from './intake-project';
+import { getMatchStageBlockReason } from '../../wanted-properties/-match-view-utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { getStatusMeta } from '@/lib/status-config';
+import { formatPyeong } from '@/lib/format';
 
 /*
  * 매물 상세 페이지 (/properties/$id) — 중개사 업무 순서로 짠 2판.
@@ -103,6 +134,10 @@ import { H2, nb } from './ui';
  *   오른쪽: 지금 챙길 것 → 연락처 → 매물 확인 → 광고 → 호실 · 의뢰 정보
  * "손님에게 보여주기"는 창 전체를 덮고 연락처 · 내부 메모 · 다른 손님 · 기록 · 호수와 층을 가린다.
  */
+
+/** 상세의 광고 단추는 고른 광고 없이 연다(새 광고 기록·등록 요청) */
+const NO_SELECTED_ADS: ReadonlySet<string> = new Set();
+const noop = () => {};
 
 type DialogState =
   | { kind: 'listing'; listing: Listing | null }
@@ -113,9 +148,20 @@ type DialogState =
   | { kind: 'confirm' }
   | { kind: 'public'; listingId: string }
   | { kind: 'delete'; row: OfferRow }
+  | { kind: 'task' }
   | null;
 
-const INVALIDATE_KEYS = [['properties'], ['listings'], ['listing-intakes'], ['deals'], ['dashboard']];
+// 매칭은 의뢰의 확인·상태로 거래 전환을 막거나 풀므로(희망매물 쪽 포함) 함께 다시 읽는다.
+// 예전에는 '확인 완료'를 눌러도 새로 고치기 전까지 거래 전환이 꺼진 채였다.
+const INVALIDATE_KEYS = [
+  ['properties'],
+  ['listings'],
+  ['listing-intakes'],
+  ['deals'],
+  ['dashboard'],
+  ['matches'],
+  ['buyer-requirements'],
+];
 const WIDE_LAYOUT = 1080;
 const OWNER_SIDE_ROLES = new Set(['owner', 'co_owner', 'representative']);
 
@@ -124,7 +170,7 @@ function showMutationError(error: unknown, fallback = '저장하지 못했습니
     toast.error('다른 사용자가 먼저 수정했습니다. 최신 내용으로 다시 불러옵니다.');
     return;
   }
-  toast.error(error instanceof Error && error.message ? error.message : fallback);
+  toast.error(propertyErrorMessage(error, fallback));
 }
 
 /** 상담 목록의 모든 페이지를 받는다. 중간에 실패하면 받은 것까지 돌려주고 complete=false. */
@@ -165,28 +211,94 @@ function isTypingTarget(target: EventTarget | null) {
   return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'));
 }
 
-export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
+/**
+ * 관리호수(Property)가 아직 없는 호실로 연 화면.
+ * 호실에서 읽은 값으로 빈 상세를 보여 주고, 처음 입력을 시작할 때 `ensure`로 관리호수를 만든다.
+ */
+/** 주소(?dialog=)로 열어 달라고 할 수 있는 입력 창. 빈 상세에서 누른 창을 매물 상세에서 이어 여는 데 쓴다. */
+export const REQUESTABLE_DIALOGS = ['listing', 'contact', 'tenant', 'consultation', 'task'] as const;
+export type RequestableDialog = (typeof REQUESTABLE_DIALOGS)[number];
+
+function isRequestableDialog(value: unknown): value is RequestableDialog {
+  return (REQUESTABLE_DIALOGS as readonly unknown[]).includes(value);
+}
+
+function dialogStateFor(kind: RequestableDialog): DialogState {
+  return kind === 'listing' ? { kind, listing: null } : { kind };
+}
+
+export interface PropertyDetailDraft {
+  property: Property;
+  /**
+   * 관리호수를 만들고 이 탭을 그 매물 상세로 바꾼 뒤 입력 창을 연다.
+   * 열 창은 주소에 실려 가므로 탭이 바뀌거나 이미 열린 탭으로 넘어가도 사라지지 않는다.
+   */
+  start: (dialog: RequestableDialog) => void;
+}
+
+const EMPTY_INTAKES = { items: [] as ListingIntake[] };
+
+export function PropertyDetailScreen({
+  propertyId,
+  draft,
+}: {
+  /** null이면 아직 관리호수가 없는 호실이다(`draft`가 있어야 한다) */
+  propertyId: string | null;
+  draft?: PropertyDetailDraft;
+}) {
   const queryClient = useQueryClient();
+  // 거래 조건 지우기는 대표·매니저만(서버와 같은 기준)
+  const mayDeleteListing = canDeleteListing(useAuth().user?.role);
   const createTab = useTabStore((state) => state.createTab);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [isOpeningWindow, setIsOpeningWindow] = useState(false);
   const [guest, setGuest] = useState(false);
   const [composerSignal, setComposerSignal] = useState(0);
+  const [bookingDialog, setBookingDialog] = useState<
+    null | { step: 'pick' } | { step: 'blocked'; match: Match; reason: string }
+  >(null);
   const [photoPendingId, setPhotoPendingId] = useState<string | null>(null);
   const [rootRef, rootWidth, rootNode] = useElementWidth<HTMLDivElement>();
   const mainRef = useRef<HTMLDivElement | null>(null);
   const closeDialog = () => setDialog(null);
+  // 입력을 시작하는 창은 관리호수가 있어야 저장할 곳이 있다. 없으면 먼저 만들고 연다.
+  const openDialog = (next: DialogState) => {
+    if (propertyId || !draft) {
+      setDialog(next);
+      return;
+    }
+    if (next && isRequestableDialog(next.kind)) draft.start(next.kind);
+  };
+
+  // 주소로 온 "이 창을 열어 달라"는 요청(?dialog=). 열고 나면 주소에서 지워 다시 열리지 않게 한다.
+  const navigate = useNavigate();
+  const requestedDialog = useLocation({
+    select: (location) => (location.search as { dialog?: unknown }).dialog,
+  });
+  useEffect(() => {
+    if (propertyId === null || !isRequestableDialog(requestedDialog)) return;
+    setDialog(dialogStateFor(requestedDialog));
+    void navigate({ to: '/properties/$id', params: { id: propertyId }, search: {}, replace: true });
+  }, [navigate, propertyId, requestedDialog]);
 
   // ── 데이터 ──
   const propertyQuery = useQuery({
     queryKey: ['properties', propertyId],
-    queryFn: () => api.properties.findOne(propertyId),
+    queryFn: () => api.properties.findOne(propertyId as string),
+    enabled: propertyId !== null,
   });
+  // 방금 만든 관리호수를 받는 동안에도 호실에서 읽은 값으로 화면을 그대로 둔다
+  const property = propertyQuery.data ?? draft?.property;
+  // 탭 제목을 "매물 상세" 대신 "고덕그라시움 101동 3501호"로
+  useTabTitle(property ? getUnitTitle(property) : null);
   // 이 호실의 의뢰 전체(진행 중 + 지난 의뢰). 메모·접수일·수정 시각은 여기서만 온다.
   const intakesQuery = useQuery({
     queryKey: ['listing-intakes', 'property-detail', propertyId],
     queryFn: () =>
-      api.listingIntakes.findAll({
+      // 관리호수가 없으면 의뢰·매칭·사진도 없다 (받으러 가지 않고 빈 값으로 둔다)
+      propertyId === null
+        ? EMPTY_INTAKES
+        : api.listingIntakes.findAll({
         propertyId,
         includeClosed: true,
         sortBy: 'receivedAt',
@@ -196,14 +308,13 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
   });
   const matchesQuery = useQuery({
     queryKey: ['matches', { propertyId }],
-    queryFn: () => api.matches.findAll({ propertyId }),
+    queryFn: () => (propertyId === null ? [] : api.matches.findAll({ propertyId })),
   });
   const photosQuery = useQuery({
     queryKey: ['property-photos', 'property', propertyId],
-    queryFn: () => api.propertyPhotos.listByProperty(propertyId),
+    queryFn: () => (propertyId === null ? [] : api.propertyPhotos.listByProperty(propertyId)),
   });
 
-  const property = propertyQuery.data;
   const listings = useMemo(
     () => (property?.listings ?? []) as DetailListing[],
     [property?.listings],
@@ -219,17 +330,17 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
     queryKey: ['deals'],
     queryFn: () => api.deals.findAll(),
   });
-  const propertyDeals = selectPropertyDeals(dealsQuery.data ?? [], propertyId, allListingIds);
+  const propertyDeals = propertyId === null ? [] : selectPropertyDeals(dealsQuery.data ?? [], propertyId, allListingIds);
 
   // 상담은 매물·의뢰·거래 조건 중 어디에 연결했는지에 따라 따로 받아 합친다.
   // (서버는 의뢰나 거래 조건만 지정한 상담에 propertyId를 채우지 않는다.)
   const consultationsQuery = useQuery({
     queryKey: ['consultations', 'property-detail', propertyId, intakeIds, allListingIds],
-    enabled: Boolean(property) && !intakesQuery.isPending,
+    enabled: propertyId !== null && Boolean(property) && !intakesQuery.isPending,
     staleTime: 30_000,
     queryFn: async () => {
       const results = await Promise.all([
-        fetchAllConsultations({ propertyId }),
+        fetchAllConsultations({ propertyId: propertyId as string }),
         ...intakeIds.map((listingIntakeId) => fetchAllConsultations({ listingIntakeId })),
         ...allListingIds.map((listingId) => fetchAllConsultations({ listingId })),
       ]);
@@ -249,6 +360,8 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
   const closeAndRefresh = () => {
     closeDialog();
     void invalidateAll();
+    // 관리단지의 호수 표·호실 패널도 거래 조건과 사람을 보여 준다
+    if (property?.siteId) void queryClient.invalidateQueries({ queryKey: ['sites', property.siteId] });
   };
   const refreshConsultations = () =>
     queryClient.invalidateQueries({ queryKey: ['consultations', 'property-detail', propertyId] });
@@ -258,7 +371,8 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
     mutationFn: (intake: ListingIntake) =>
       api.listingIntakes.confirm(intake.id, {
         result: 'alive',
-        channel: 'note',
+        // 빠른 확인(확인 완료)은 전화로 확인한 것으로 남긴다. 다른 방법은 '다른 결과…'에서 고른다
+        channel: 'phone',
         expectedUpdatedAt: intake.updatedAt,
       }),
     onSuccess: () => {
@@ -302,8 +416,12 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
   });
   const deleteMutation = useMutation({
     mutationFn: (listingId: string) => api.listings.remove(listingId),
-    onSuccess: () => {
-      toast.success('거래 조건을 삭제했습니다.');
+    onSuccess: (result) => {
+      toast.success(
+        result?.intakeRemoved
+          ? '매물을 삭제했습니다. 매물관리 목록에서 빠졌고, 연락처와 상담 기록은 이 화면에 남습니다.'
+          : '거래 조건을 삭제했습니다.',
+      );
       closeDialog();
       void invalidateAll();
     },
@@ -329,7 +447,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
   const setPhotoCover = (photo: PropertyPhoto) =>
     void runPhotoChange(
       photo,
-      () => api.propertyPhotos.reorder(propertyId, coverFirstOrder(photos, photo.id)),
+      () => api.propertyPhotos.reorder(propertyId as string, coverFirstOrder(photos, photo.id)),
       '대표 사진으로 정했습니다.',
       '대표 사진을 바꾸지 못했습니다.',
     ).catch(() => undefined);
@@ -367,8 +485,10 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
     await invalidateAll();
   };
 
-  // 상담 입력칸: 소유주 쪽 상담을 확인으로도 남기면 확인 기록이 상담을 함께 만든다(서버).
+  // 상담 입력칸: 소유자 쪽 상담을 확인으로도 남기면 확인 기록이 상담을 함께 만든다(서버).
   const submitComposer = async ({ who, type, text, alsoConfirm }: ComposerSubmit) => {
+    // 관리호수가 없으면 고를 연락처도 없어 여기로 오지 않는다 (상담은 입력 창으로 적는다)
+    if (propertyId === null) return;
     try {
       if (alsoConfirm && openIntake) {
         await api.listingIntakes.confirm(openIntake.id, {
@@ -385,7 +505,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
           contactId: who.contactId,
           type,
           content: text,
-          propertyId,
+          propertyId: propertyId ?? undefined,
           listingIntakeId: who.side === 'buyer' ? undefined : openIntake?.id,
           matchId: who.matchId,
           listingId: who.listingId,
@@ -400,6 +520,12 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
     void queryClient.invalidateQueries({ queryKey: ['consultations'] });
   };
 
+  const openModule = useTabStore((s) => s.openModule);
+  // 위 얇은 줄의 "매물관리": 열린 매물관리 탭을 보던 거르기·스크롤 그대로 앞으로 꺼낸다(없으면 연다)
+  const openPropertyList = useCallback(() => {
+    const meta = getRouteMeta('/properties');
+    openModule({ route: '/properties', kind: meta.kind, title: meta.title });
+  }, [openModule]);
   const openRoute = useCallback(
     (route: string) => {
       const meta = getRouteMeta(route);
@@ -437,7 +563,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
   }, [guest]);
 
   // ── 화면 상태 ──
-  if (propertyQuery.isLoading) return <PropertyDetailSkeleton />;
+  if (!property && propertyQuery.isLoading) return <PropertyDetailSkeleton />;
   if (propertyQuery.isError || !property) {
     return (
       <div className="flex min-h-[360px] flex-col items-center justify-center gap-3 text-center">
@@ -459,6 +585,16 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
   const identity = getUnitIdentity(property);
   const title = getUnitTitle(property);
   const headerTitle = getHeaderTitle(property, guest);
+  // 내광고관리를 이 호실의 광고만 거른 채 연다(예전에는 전체 목록이 열려 호실을 다시 찾아야 했다)
+  const openMyAdsForUnit = () => {
+    const params = new URLSearchParams();
+    if (property.siteId) params.set('siteId', property.siteId);
+    const dongName = unit?.dong && !unit.dong.isPlaceholder ? unit.dong.name : null;
+    if (dongName) params.set('dong', dongName);
+    if (unit?.name) params.set('ho', unit.name);
+    const query = params.toString();
+    openRoute(`/properties/naver-my-ads${query ? `?${query}` : ''}`);
+  };
   const specs = getHeaderSpecs(property, guest);
   const offerRows = buildOfferRows(listings);
   const people = buildPeople(property);
@@ -467,7 +603,11 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
   const supplyPyeong = getSupplyPyeong(property);
   const cards = buildBriefCards({ offerRows, tenants: tenantsRaw, deals: propertyDeals, supplyPyeong, guest });
   const consultations = consultationsQuery.data?.items ?? property.consultations ?? [];
-  const records = buildRecords({ listings, consultations, intakes, deals: propertyDeals });
+  // 끝난 의뢰의 조건도 기록에 넣는다(의뢰를 끝내면 가격 변경·광고 기록이 사라지던 문제)
+  const pastListings = (property.pastListings ?? []) as unknown as DetailListing[];
+  const records = buildRecords({ listings: [...listings, ...pastListings], consultations, intakes, deals: propertyDeals });
+  // 끝난 의뢰인데 아직 게재 중인 광고 (진행 중 의뢰가 없을 때 광고 구역에 대신 보인다)
+  const leftoverAdRows = buildOfferRows(pastListings).filter((row) => row.activeAds.length > 0);
   const pastIntakes = buildPastIntakes(intakes);
   const matches = (matchesQuery.data ?? []).filter((match) => allListingIds.includes(match.listingId));
   const listingTypeById = new Map(
@@ -479,7 +619,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
   const viewings = buildUpcomingViewings(matches, listingTypeById);
   const todos = intakesQuery.isPending
     ? []
-    : buildTodos({ intake: openIntake, offerRows, deals: propertyDeals, viewings, people, tenants });
+    : buildTodos({ intake: openIntake, offerRows, deals: propertyDeals, viewings, people, tenants, leftoverAdRows });
   const activeMatchCount = matches.filter((match) => match.stage !== 'closed').length;
 
   const activeContacts = (property.propertyContacts ?? []).filter(
@@ -499,33 +639,121 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
   const wide = rootWidth === 0 || rootWidth >= WIDE_LAYOUT;
 
   const openInNewWindow = async () => {
-    if (!tabsBridge || isOpeningWindow) return;
+    if (!tabsBridge || isOpeningWindow || propertyId === null) return;
     setIsOpeningWindow(true);
     try {
       const result = await tabsBridge.openPropertyWindow({ propertyId, title });
       if (!result.ok) toast.error(result.error ?? '새 창을 열지 못했습니다.');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '새 창을 열지 못했습니다.');
+      toast.error(propertyErrorMessage(error, '새 창을 열지 못했습니다.'));
     } finally {
       setIsOpeningWindow(false);
     }
   };
   const editListing = (listingId: string) => {
     const listing = listings.find((item) => item.id === listingId);
-    if (listing) setDialog({ kind: 'listing', listing: listing as unknown as Listing });
+    if (listing) openDialog({ kind: 'listing', listing: listing as unknown as Listing });
   };
   const scrollToBuyers = () =>
     document.getElementById('buyers')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // ── "임장 잡기" ──
+  // 일정은 매칭마다 잡는다. 공용 진행 트랙의 "임장" 단계 창(일시 고르기·일정 잡기)을 그대로 연다.
+  // 매칭이 여럿이면 누구와의 임장인지 먼저 고르고, 매물 확인이 먼저 필요하면 그 자리에서 알린다.
+  const bookableMatches = matches.filter((match) => {
+    const stage = normalizeMatchStage(match.stage);
+    return stage !== MatchStage.CLOSED && stage !== MatchStage.DEAL_CREATED;
+  });
+  const openViewingScheduler = (match: Match) => {
+    document
+      .querySelector(`[data-match-card="${match.id}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => {
+      const trigger = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          `[data-match-card="${match.id}"] [data-inspector-match-track] button`,
+        ),
+      ).find((button) => button.textContent?.trim() === '임장');
+      trigger?.click();
+    }, 350);
+  };
+  const startViewingBooking = (match: Match) => {
+    const reason = getMatchStageBlockReason(match, MatchStage.VIEWING);
+    if (reason) {
+      setBookingDialog({ step: 'blocked', match, reason });
+      return;
+    }
+    setBookingDialog(null);
+    openViewingScheduler(match);
+  };
+  const goToViewingBooking = () => {
+    if (bookableMatches.length === 0) {
+      scrollToBuyers();
+      return;
+    }
+    if (bookableMatches.length === 1) {
+      startViewingBooking(bookableMatches[0]);
+      return;
+    }
+    setBookingDialog({ step: 'pick' });
+  };
+  const confirmThenBook = async (match: Match) => {
+    if (!openIntake) return;
+    try {
+      await confirmMutation.mutateAsync(openIntake);
+      // 확인 상태가 바뀐 매칭을 다시 받아 그것으로 일정 창을 연다(옛 값이면 창이 계속 막힌다)
+      const refreshed = await matchesQuery.refetch();
+      const fresh = (refreshed.data ?? []).find((candidate) => candidate.id === match.id) ?? match;
+      startViewingBooking(fresh);
+    } catch {
+      // confirmMutation의 onError가 안내한다
+    }
+  };
 
   // ── 머리 ──
+  // 계약한 거래가 있으면 내놓은 가격 옆에 계약한 가격을 함께 보인다(끝난 매물이 내놓은 가격으로만 보이던 문제)
+  const contractedPriceText = (listingId: string) => {
+    const deal = propertyDeals.find(
+      (candidate) =>
+        candidate.listingId === listingId &&
+        !candidate.isCancelled &&
+        ['contracted', 'settling', 'completed', 'closed'].includes(candidate.stage),
+    );
+    if (!deal || (deal.agreedPrice == null && deal.agreedDeposit == null && deal.agreedMonthlyRent == null)) return null;
+    return formatListingPrice({
+      transactionType: deal.transactionType,
+      price: deal.agreedPrice ?? null,
+      deposit: deal.agreedDeposit ?? null,
+      monthlyRent: deal.agreedMonthlyRent ?? null,
+    });
+  };
+  // 진행 중인 조건이 없고 끝낸 거래가 있으면 머리에 거래가·완료일을 보인다
+  const completedDeal = propertyDeals
+    .filter((deal) => !deal.isCancelled && (deal.stage === 'completed' || deal.stage === 'closed'))
+    .sort((left, right) => new Date(right.stageChangedAt).getTime() - new Date(left.stageChangedAt).getTime())[0];
+  const completedDealPrice = completedDeal
+    ? formatListingPrice({
+        transactionType: completedDeal.transactionType,
+        price: completedDeal.agreedPrice ?? null,
+        deposit: completedDeal.agreedDeposit ?? null,
+        monthlyRent: completedDeal.agreedMonthlyRent ?? null,
+      })
+    : null;
+  const closedSummary =
+    completedDeal && completedDealPrice && completedDealPrice !== '-' && !guest
+      ? `${getTransactionTypeMeta(completedDeal.transactionType).label} ${completedDealPrice}에 거래 완료 · ${formatFullDate(completedDeal.stageChangedAt)}`
+      : // 거래 없이 끝난 의뢰(철회·타 중개 계약 등)는 "거래 조건 없음" 대신 끝난 사유와 날을 보인다
+        !openIntake && intakes[0]?.lifecycleStatus === IntakeLifecycleStatus.CLOSED && !guest
+        ? `의뢰 ${getIntakeStatusLabel(intakes[0])} · ${formatFullDate(intakes[0].lifecycleChangedAt)}`
+        : null;
   const prices: PriceChip[] = offerRows.map((row) => {
     const busy = row.availability === ListingAvailability.IN_CONTRACT;
     const showStatus = guest ? busy : row.availability !== ListingAvailability.AVAILABLE;
+    const dealPrice = guest ? null : contractedPriceText(row.listing.id);
     return {
       id: row.listing.id,
       typeLabel: row.typeLabel,
       typeClassName: row.typeClassName,
-      priceText: row.priceText,
+      priceText: dealPrice && dealPrice !== row.priceText ? `${row.priceText} → 계약 ${dealPrice}` : row.priceText,
       status: showStatus
         ? {
             label: guest
@@ -560,25 +788,29 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
         <MoreHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuItem onSelect={() => setDialog({ kind: 'listing', listing: null })}>
+        <DropdownMenuItem onSelect={() => openDialog({ kind: 'listing', listing: null })}>
           <Plus className="size-3.5" />
           거래 조건 추가
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setDialog({ kind: 'contact' })}>
+        <DropdownMenuItem onSelect={() => openDialog({ kind: 'contact' })}>
           <UserPlus className="size-3.5" />
-          소유주·관련인 추가
+          소유자·관련인 추가
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setDialog({ kind: 'tenant' })}>
+        <DropdownMenuItem onSelect={() => openDialog({ kind: 'tenant' })}>
           <UserPlus className="size-3.5" />
           세입자 추가
         </DropdownMenuItem>
-        <DropdownMenuItem disabled={listings.length === 0} onSelect={() => setDialog({ kind: 'deal' })}>
+        <DropdownMenuItem disabled={listings.length === 0} onSelect={() => openDialog({ kind: 'deal' })}>
           <Handshake className="size-3.5" />
           거래 바로 만들기
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setDialog({ kind: 'consultation' })}>
+        <DropdownMenuItem onSelect={() => openDialog({ kind: 'consultation' })}>
           <MessageSquarePlus className="size-3.5" />
-          상담 자세히 기록…
+          상담 적기…
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => openDialog({ kind: 'task' })}>
+          <ListTodo className="size-3.5" />
+          업무 추가
         </DropdownMenuItem>
         {openIntake && (
           <>
@@ -586,7 +818,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
             <DropdownMenuLabel className="text-[11px] font-normal text-[#8a8983]">
               의뢰 · 접수 {formatShortDate(openIntake.receivedAt)}
             </DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => setDialog({ kind: 'confirm' })}>
+            <DropdownMenuItem onSelect={() => openDialog({ kind: 'confirm' })}>
               <PhoneCall className="size-3.5" />
               확인 결과 기록…
             </DropdownMenuItem>
@@ -607,7 +839,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
         {tabsBridge && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={isOpeningWindow} onSelect={() => void openInNewWindow()}>
+            <DropdownMenuItem disabled={isOpeningWindow || propertyId === null} onSelect={() => void openInNewWindow()}>
               <ExternalLink className="size-3.5" />
               새 창으로 열기
             </DropdownMenuItem>
@@ -626,7 +858,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onSelect={() => setDialog({ kind: 'listing', listing: row.listing as unknown as Listing })}>
+          <DropdownMenuItem onSelect={() => openDialog({ kind: 'listing', listing: row.listing as unknown as Listing })}>
             <Pencil className="size-3.5" />
             가격·조건 수정
           </DropdownMenuItem>
@@ -634,15 +866,19 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
             {row.listing.isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
             {row.listing.isPaused ? `${row.typeLabel} 다시 진행` : `${row.typeLabel}만 중단`}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setDialog({ kind: 'public', listingId: row.listing.id })}>
+          <DropdownMenuItem onSelect={() => openDialog({ kind: 'public', listingId: row.listing.id })}>
             <Globe className="size-3.5" />
             고객 공개 설정…
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => setDialog({ kind: 'delete', row })}>
-            <Trash2 className="size-3.5" />
-            거래 조건 삭제…
-          </DropdownMenuItem>
+          {mayDeleteListing && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => openDialog({ kind: 'delete', row })}>
+                <Trash2 className="size-3.5" />
+                거래 조건 삭제…
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     );
@@ -679,7 +915,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
           detail: tenantRow?.name ?? null,
         }
       : activeContacts.some((item) => item.isResident)
-        ? { label: '소유주 거주 중', tone: 'brown', detail: null }
+        ? { label: '소유자 거주 중', tone: 'brown', detail: null }
         : { label: '거주 정보 없음', tone: 'gray', detail: null };
   const tenantContact = tenantRow?.phone ? { name: tenantRow.name, phone: tenantRow.phone } : null;
 
@@ -694,6 +930,9 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
       case 'edit-listing':
         editListing(action.listingId);
         return;
+      case 'open-my-ads':
+        openMyAdsForUnit();
+        return;
       case 'open-url':
         window.open(action.url, '_blank', 'noreferrer');
         return;
@@ -704,7 +943,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
         openRoute(`/wanted-properties?matchId=${encodeURIComponent(action.matchId)}`);
         return;
       case 'add-contact':
-        setDialog({ kind: 'contact' });
+        openDialog({ kind: 'contact' });
         return;
       case 'call':
         window.location.href = `tel:${action.phone}`;
@@ -757,8 +996,8 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
               <Plus className="size-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onSelect={() => setDialog({ kind: 'contact' })}>소유주·관련인</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setDialog({ kind: 'tenant' })}>세입자</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => openDialog({ kind: 'contact' })}>소유자·관련인</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => openDialog({ kind: 'tenant' })}>세입자</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         }
@@ -782,7 +1021,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
           ]}
           pending={confirmMutation.isPending}
           onConfirm={() => confirmMutation.mutate(openIntake)}
-          onOther={() => setDialog({ kind: 'confirm' })}
+          onOther={() => openDialog({ kind: 'confirm' })}
         />
       ) : (
         <div className="border-t border-[#e9e9e7] py-2.5 text-[13px] text-[#37352f]/45">
@@ -790,7 +1029,32 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
           진행 중인 의뢰가 없어 확인할 것이 없습니다.
         </div>
       )}
-      <AdsSection rows={offerRows} onOpenMyAds={() => openRoute('/properties/my-ads')} />
+      <IntakeProjectSection intakeId={openIntake?.id ?? intakes[0]?.id} />
+      <AdsSection
+        rows={offerRows.length > 0 ? offerRows : leftoverAdRows}
+        onOpenMyAds={openMyAdsForUnit}
+        actions={
+          openIntake && listings.length > 0 && propertyId !== null ? (
+            <PropertyAdActions
+              group={{
+                propertyId,
+                intakeId: openIntake.id,
+                listings: listings.map((listing) => ({
+                  id: listing.id,
+                  transactionType: listing.transactionType,
+                  price: listing.price ?? null,
+                  deposit: listing.deposit ?? null,
+                  monthlyRent: listing.monthlyRent ?? null,
+                  activeAdvertisements: (listing.advertisements ?? []).filter((ad) => ad.status === 'active'),
+                })),
+              }}
+              location={title}
+              selectedIds={NO_SELECTED_ADS}
+              onClearSelection={noop}
+            />
+          ) : null
+        }
+      />
       <InfoSection
         props={infoProps}
         intakeMemo={
@@ -859,15 +1123,17 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
         specs={specs}
         guest={guest}
         prices={prices}
+        closedSummary={closedSummary}
         confirm={confirmChip}
         ownerCall={owner?.contact?.phone ? { phone: owner.contact.phone, name: owner.contact.name } : null}
         confirmPending={confirmMutation.isPending}
         onEditListing={editListing}
-        onConfirmMenu={() => setDialog({ kind: 'confirm' })}
+        onConfirmMenu={() => openDialog({ kind: 'confirm' })}
         onConfirm={openIntake ? () => confirmMutation.mutate(openIntake) : null}
-        onFocusComposer={composerOptions.length > 0 ? openComposer : () => setDialog({ kind: 'consultation' })}
+        onFocusComposer={composerOptions.length > 0 ? openComposer : () => openDialog({ kind: 'consultation' })}
         onToggleGuest={() => setGuest((value) => !value)}
         menu={headerMenu}
+        onOpenList={openPropertyList}
       />
       {guest && <GuestBar onExit={() => setGuest(false)} />}
 
@@ -883,7 +1149,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
               copyButton={<BriefCopyPopover build={buildBrief} />}
               emptyText={openIntake ? '등록된 거래 조건이 없습니다.' : '진행 중인 의뢰가 없습니다. 새로 내놓으면 거래 조건을 추가하세요.'}
               emptyAction={
-                <button type="button" className={nb.line} onClick={() => setDialog({ kind: 'listing', listing: null })}>
+                <button type="button" className={nb.line} onClick={() => openDialog({ kind: 'listing', listing: null })}>
                   <Plus />
                   거래 조건 추가
                 </button>
@@ -913,8 +1179,8 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
               tenantContact={tenantContact}
               viewings={viewings}
               onOpenMatch={(matchId) => openRoute(`/wanted-properties?matchId=${encodeURIComponent(matchId)}`)}
-              onBook={activeMatchCount > 0 ? scrollToBuyers : null}
-              onAddTenant={() => setDialog({ kind: 'tenant' })}
+              onBook={activeMatchCount > 0 ? goToViewingBooking : null}
+              onAddTenant={() => openDialog({ kind: 'tenant' })}
             />
 
             {!guest && (allListingIds.length > 0 || propertyDeals.length > 0) && (
@@ -924,7 +1190,9 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
                   listingIds={allListingIds}
                   // 새 매칭은 진행 중 의뢰의 거래 조건에만 건다. 종료된 의뢰의 조건은 이력으로만 보인다.
                   creatableListingIds={listings.map((listing) => listing.id)}
-                  propertyId={propertyId}
+                  connectTarget={{ property, listings }}
+                  // 거래 조건이나 거래가 있으면 관리호수도 있다
+                  propertyId={propertyId ?? ''}
                   matches={matches}
                   matchesStatus={matchesQuery.isError ? 'error' : matchesQuery.data ? 'ready' : 'loading'}
                   onRetryMatches={() => void matchesQuery.refetch()}
@@ -949,10 +1217,10 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
                   <button
                     type="button"
                     className={nb.ghost}
-                    onClick={composerOptions.length > 0 ? openComposer : () => setDialog({ kind: 'consultation' })}
+                    onClick={composerOptions.length > 0 ? openComposer : () => openDialog({ kind: 'consultation' })}
                   >
                     <Plus />
-                    상담 기록
+                    상담 적기
                   </button>
                 }
               />
@@ -966,7 +1234,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
               nextConfirmText={`다음 확인 ${formatShortDate(nextConfirmDate)}`}
               openSignal={composerSignal}
               onSubmit={submitComposer}
-              onFallback={() => setDialog({ kind: 'consultation' })}
+              onFallback={() => openDialog({ kind: 'consultation' })}
             />
           )}
         </div>
@@ -982,13 +1250,16 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
         )}
       </div>
 
-      {/* ── 대화상자 ── */}
+      {/* ── 대화상자 ── (관리호수가 생긴 뒤에만 열린다: openDialog) */}
+      {propertyId !== null && (
+        <>
       <ListingFormDialog
         open={dialog?.kind === 'listing'}
         onOpenChange={(open) => !open && closeAndRefresh()}
         propertyId={propertyId}
         siteType={property.site?.type}
         listing={dialog?.kind === 'listing' ? dialog.listing : null}
+        existingTypes={listings.map((listing) => listing.transactionType)}
       />
       <PropertyContactAddDialog
         open={dialog?.kind === 'contact'}
@@ -1018,6 +1289,8 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
         propertyId={propertyId}
         listings={listings as unknown as Listing[]}
       />
+        </>
+      )}
       {openIntake && (
         <IntakeConfirmDialog
           intake={openIntake}
@@ -1028,8 +1301,68 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
             void invalidateAll();
             void queryClient.invalidateQueries({ queryKey: ['consultations'] });
           }}
+          onSaved={(result) => {
+            // "가격 변경됨"으로 적었으면 바로 가격을 고치게 한다(예전에는 창이 닫히고 끝나 가격 수정을 따로 찾아야 했다)
+            if (result !== IntakeCheckResult.PRICE_CHANGED) return;
+            const target = offerRows[0]?.listing;
+            if (target) openDialog({ kind: 'listing', listing: target as unknown as Listing });
+          }}
         />
       )}
+      <Dialog open={bookingDialog !== null} onOpenChange={(open) => !open && setBookingDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{bookingDialog?.step === 'blocked' ? '먼저 매물 확인을 완료하세요' : '누구와의 임장인가요?'}</DialogTitle>
+            <DialogDescription>
+              {bookingDialog?.step === 'blocked'
+                ? bookingDialog.reason
+                : '임장 일정은 매칭된 고객마다 잡습니다. 고객을 고르면 일정 잡는 창이 열립니다.'}
+            </DialogDescription>
+          </DialogHeader>
+          {bookingDialog?.step === 'pick' && (
+            <ul className="divide-y divide-border rounded-md border">
+              {bookableMatches.map((match) => (
+                <li key={match.id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-muted/60"
+                    onClick={() => startViewingBooking(match)}
+                  >
+                    <span className="min-w-0 truncate font-medium">
+                      {match.buyerRequirement?.contact?.name ?? '고객'}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {getStatusMeta('matchStage', normalizeMatchStage(match.stage)).label}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {bookingDialog?.step === 'blocked' && (
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setBookingDialog(null)}>
+                닫기
+              </Button>
+              {openIntake && /확인/.test(bookingDialog.reason) && (
+                <Button
+                  type="button"
+                  disabled={confirmMutation.isPending}
+                  onClick={() => void confirmThenBook(bookingDialog.match)}
+                >
+                  확인 완료
+                </Button>
+              )}
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
+      <TaskCreateDialog
+        open={dialog?.kind === 'task' && propertyId !== null}
+        onOpenChange={(open) => !open && closeDialog()}
+        propertyId={propertyId ?? undefined}
+        listingId={listings.length === 1 ? listings[0].id : undefined}
+      />
       <PublicListingDialog
         listingId={dialog?.kind === 'public' ? dialog.listingId : null}
         open={dialog?.kind === 'public'}
@@ -1041,7 +1374,7 @@ export function PropertyDetailScreen({ propertyId }: { propertyId: string }) {
         title="거래 조건을 삭제할까요?"
         description={
           dialog?.kind === 'delete'
-            ? `${dialog.row.typeLabel} ${formatListingPrice(dialog.row.listing)} 조건을 삭제합니다. 가격 이력과 광고 기록도 함께 지워지며 되돌릴 수 없습니다.`
+            ? `${dialog.row.typeLabel} ${formatListingPrice(dialog.row.listing)} 조건을 삭제합니다. 가격 이력도 함께 지워지며 되돌릴 수 없습니다.${offerRows.length <= 1 ? ' 마지막 조건이라 매물관리 목록에서도 사라지고, 접수일과 확인 이력도 함께 사라집니다. 거래가 끝난 것이면 지우지 말고 의뢰 종료를 쓰세요.' : ''}`
             : undefined
         }
         confirmLabel="삭제"
@@ -1060,9 +1393,9 @@ function areaProps(unit: DetailUnit | null | undefined): InfoProp[] {
   const supply = Number(unit?.supplyAreaM2 ?? type?.supplyAreaM2 ?? 0);
   const exclusive = Number(unit?.exclusiveAreaM2 ?? type?.exclusiveAreaM2 ?? 0);
   const props: InfoProp[] = [];
-  if (supply > 0) props.push({ key: 'supply', label: '공급', value: `${supply.toFixed(2)}㎡`, hint: `${(supply * 0.3025).toFixed(1)}평` });
+  if (supply > 0) props.push({ key: 'supply', label: '공급', value: `${supply.toFixed(2)}㎡`, hint: formatPyeong(supply) });
   if (exclusive > 0) {
-    props.push({ key: 'exclusive', label: '전용', value: `${exclusive.toFixed(2)}㎡`, hint: `${(exclusive * 0.3025).toFixed(1)}평` });
+    props.push({ key: 'exclusive', label: '전용', value: `${exclusive.toFixed(2)}㎡`, hint: formatPyeong(exclusive) });
   }
   return props;
 }

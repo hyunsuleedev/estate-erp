@@ -1,4 +1,4 @@
-import { ApiError } from '@estate-erp/api-client';
+import { apiErrorMessage } from '@/lib/api-error';
 import type { VendorAdTier, VendorBusinessType } from '@estate-erp/api-client';
 
 /** 광고 티어 뱃지 메타 (목록/상세 공용). */
@@ -20,8 +20,9 @@ export const BUSINESS_TYPE_LABEL: Record<VendorBusinessType, string> = {
   corporate: '법인',
 };
 
-export function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError && error.message) return error.message;
-  if (error instanceof Error && error.message) return error.message;
-  return '요청을 처리하지 못했습니다';
+export function getErrorMessage(
+  error: unknown,
+  fallback = '요청을 처리하지 못했습니다. 다시 시도해 주세요.',
+): string {
+  return apiErrorMessage(error, fallback);
 }

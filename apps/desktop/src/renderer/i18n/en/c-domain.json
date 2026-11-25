@@ -1,0 +1,11 @@
+{
+  "strings": {
+    "{0} 연락처 열기": "Open contact {0}",
+    "뒤로가기": "Back"
+  },
+  "files": {
+    "components/domain/confirm-dialog.tsx": {
+      "확인": "OK"
+    }
+  }
+}

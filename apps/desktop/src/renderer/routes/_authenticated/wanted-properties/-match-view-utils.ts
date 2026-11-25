@@ -8,13 +8,15 @@ import {
   DealStage,
   IntakeConfirmationState,
   IntakeLifecycleStatus,
+  MATCH_CLOSED_REASON_LABELS,
+  MatchClosedReason,
   MatchStage,
   normalizeDealStage,
   normalizeMatchStage,
-  formatFloorRange,
+  formatPlaceLabel,
 } from '@estate-erp/shared';
 import { getStatusMeta, type Tone } from '@/lib/status-config';
-import { formatDateTime, formatMoney, formatPhone } from '@/lib/format';
+import { formatMoney, formatPhone, formatRelativeDayTime } from '@/lib/format';
 import { getIntakeConfirmationState } from '@/lib/listing-status';
 import { formatAreaRange } from '../buyer-requirements/-buyer-utils';
 import {
@@ -85,6 +87,8 @@ export type MatchProgressStage = (typeof buyerProgressStages)[number];
 export type MatchProgressNodeState = 'completed' | 'current' | 'pending' | 'failed';
 
 export interface MatchStageActionCopy {
+  /** 이 단계에서 지금 할 일의 이름. 매물관리 매칭 펼침의 "다음 할 일"과 같은 낱말이다 (property-match-panel.tsx의 STAGE_GUIDE). */
+  nextTask: string;
   progressLabel: string;
   /** 지금 단계를 끝내는 버튼의 이름. 단계는 들어왔다고 끝난 것이 아니라 확정해야 끝난다. */
   confirmLabel: string;
@@ -93,41 +97,63 @@ export interface MatchStageActionCopy {
 
 const MATCH_STAGE_ACTION_COPY: Partial<Record<MatchProgressStage, MatchStageActionCopy>> = {
   [MatchStage.SUGGESTED]: {
+    nextTask: '매물 제안하기',
     progressLabel: '고객에게 제안',
     confirmLabel: '내부 후보 확정',
     closeLabel: '후보에서 제외 · 종료',
   },
   [MatchStage.BUYER_INTERESTED]: {
+    nextTask: '고객 답변 확인',
     progressLabel: '관심 있음 · 임장 조율로',
     confirmLabel: '고객 관심 확정',
     closeLabel: '관심 없음 · 종료',
   },
   [MatchStage.VIEWING_CONFIRMED]: {
+    nextTask: '집주인 확인',
     progressLabel: '조율 완료 · 임장으로',
-    confirmLabel: '방문 일정 확정',
+    confirmLabel: '임장 일정 확정',
     closeLabel: '임장 불가 · 종료',
   },
   // 임장은 다녀오면 끝난다. 고객의 반응은 다음 단계(고객 검토)에서 받는다.
   [MatchStage.VIEWING]: {
-    progressLabel: '방문 완료 · 고객 검토로',
-    confirmLabel: '방문 완료',
-    closeLabel: '방문 취소 · 종료',
+    nextTask: '임장 진행',
+    progressLabel: '임장 완료 · 고객 검토로',
+    confirmLabel: '임장 완료',
+    closeLabel: '임장 취소 · 종료',
   },
   // 고객은 여러 집을 보고 고민한다. 이 단계의 끝은 그 고민의 결론이다.
   [MatchStage.BUYER_REVIEWING]: {
+    nextTask: '고객 반응 확인',
     progressLabel: '검토 후 관심 있음 · 협상으로',
     confirmLabel: '검토 후 관심 있음 · 협상으로',
     closeLabel: '검토 후 관심 없음 · 종료',
   },
   [MatchStage.NEGOTIATING]: {
+    nextTask: '가격·입주일 협의',
     progressLabel: '조건 합의 · 거래로 전환',
-    confirmLabel: '조건 합의 · 거래전환',
+    confirmLabel: '조건 합의 · 거래 전환',
     closeLabel: '협상 결렬 · 종료',
   },
 };
 
 export function getMatchStageActionCopy(stage: string): MatchStageActionCopy | null {
   return MATCH_STAGE_ACTION_COPY[normalizeMatchStage(stage) as MatchProgressStage] ?? null;
+}
+
+/**
+ * 종료한 매칭이 왜 끝났는지. 사람이 닫았으면 그 단계의 종료 단추 이름("관심 없음"),
+ * 시스템이 닫았으면 그 이유("다른 손님과 본계약")를 쓴다. 종료가 아니면 null.
+ */
+export function getMatchClosedReasonText(
+  match: Pick<MatchViewListItem, 'stage' | 'closedFromStage' | 'closedReason'>,
+): string | null {
+  if (normalizeMatchStage(match.stage) !== MatchStage.CLOSED) return null;
+  const reason = match.closedReason as MatchClosedReason | null;
+  if (reason && reason !== MatchClosedReason.MANUAL && MATCH_CLOSED_REASON_LABELS[reason]) {
+    return MATCH_CLOSED_REASON_LABELS[reason];
+  }
+  const copy = match.closedFromStage ? getMatchStageActionCopy(match.closedFromStage) : null;
+  return copy ? copy.closeLabel.replace(/\s*·\s*종료$/, '') : '직접 종료';
 }
 
 export function getMatchStageLabel(stage: string): string {
@@ -194,17 +220,21 @@ export function buildViewingCalendarEventPayload(
   }
 
   const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
-  const buyerName = match.buyerRequirement?.contact?.name ?? '구매고객';
-  const listingName = match.listing?.property?.site?.name ?? '매물';
+  const buyerName = match.buyerRequirement?.contact?.name ?? '고객';
+  // 같은 단지에서 여러 집을 보는 날이 많아 동 · 호까지 적는다 (캘린더에서 어느 집인지 바로 보이게)
+  const listingTitle = getMatchTitle(match);
+  const listingName = listingTitle === '매물 정보 없음' ? '매물' : listingTitle;
   const contactId = match.buyerRequirement?.contactId;
 
   return {
-    title: `${buyerName} ${listingName} 방문`,
-    description: '매칭 단계에서 등록한 방문 일정',
+    title: `${buyerName} ${listingName} 임장`,
+    description: '매칭 단계에서 잡은 임장 일정',
     type: 'viewing',
     start: start.toISOString(),
     end: end.toISOString(),
-    color: '#3b82f6',
+    // 색은 보내지 않는다: 캘린더가 종류(임장)의 색을 쓴다. 예전에는 파란색을 박아 넣어
+    // 캘린더에서 직접 만든 임장(초록)과 같은 종류의 약속이 다르게 보였다.
+    color: undefined,
     propertyId: match.propertyId,
     listingId: match.listingId,
     matchId: match.id,
@@ -240,8 +270,9 @@ export function toDateTimeLocalInputValue(date: Date) {
   return localDate.toISOString().slice(0, 16);
 }
 
+/** 임장 일시: 앱 공용 표기("오늘 14:00" · "11.28 (토) 14:00") */
 export function formatViewingEventTime(event: CalendarEvent) {
-  return formatDateTime(event.start);
+  return formatRelativeDayTime(event.start);
 }
 
 // ── 단계 전이 ────────────────────────────────────────────────────────────────
@@ -257,8 +288,15 @@ export function getNextMatchStage(stage: string) {
   return matchStageOrder[currentIndex + 1];
 }
 
+/**
+ * 방문 일정을 잡으면 임장 단계로 옮긴다. 임장 조율에서만이 아니라 그 앞(내부 후보 · 고객 관심)에서 바로 잡아도 같다
+ * — 단계 건너뛰기는 허용된 결정이고, 예전에는 일정은 잡혔는데 단계가 '내부 후보'에 남아 둘이 어긋났다.
+ */
 export function shouldMoveToViewingOnSchedule(stage: string) {
-  return normalizeMatchStage(stage) === MatchStage.VIEWING_CONFIRMED;
+  const index = matchStageOrder.indexOf(
+    normalizeMatchStage(stage) as (typeof matchStageOrder)[number],
+  );
+  return index >= 0 && index < matchStageOrder.indexOf(MatchStage.VIEWING);
 }
 
 /** 단계 이동 전에 사용자에게 설명해야 하는 업무상 선행 조건 */
@@ -369,6 +407,48 @@ export function getActiveDealLink(match: MatchViewListItem) {
   return (match.deals ?? []).find((deal) => !deal.isCancelled) ?? null;
 }
 
+/**
+ * 같은 집(같은 매물 의뢰)의 다른 거래 조건에 진행 중인 거래. 한 의뢰에는 거래가 하나뿐이라,
+ * 있으면 이 매칭은 거래로 넘길 수 없다 (예: 매매로 붙였는데 같은 집 전세가 가계약 중).
+ * 이 매칭이 만든 거래는 빼고 본다.
+ */
+export function getSiblingOccupyingDeal(
+  match: Pick<MatchViewListItem, 'listing' | 'listingId' | 'deals'>,
+): { transactionType: string; stage: string; sameListing: boolean } | null {
+  const ownDealIds = new Set((match.deals ?? []).map((deal) => deal.id));
+  // 이 매물 자체에 다른 손님(또는 매칭 없이 만든) 거래가 있는 경우도 같다
+  const ownListingDeal = (match.listing?.deals ?? []).find((deal) => !ownDealIds.has(deal.id));
+  if (ownListingDeal && match.listing) {
+    return {
+      transactionType: match.listing.transactionType,
+      stage: ownListingDeal.stage,
+      sameListing: true,
+    };
+  }
+  for (const sibling of match.listing?.intake?.listings ?? []) {
+    const deal = (sibling.deals ?? []).find((item) => !ownDealIds.has(item.id));
+    if (deal) {
+      return {
+        transactionType: sibling.transactionType,
+        stage: deal.stage,
+        sameListing: sibling.id === match.listingId,
+      };
+    }
+  }
+  return null;
+}
+
+export function describeSiblingDeal(sibling: {
+  transactionType: string;
+  stage: string;
+  sameListing: boolean;
+}) {
+  const stage = getDealStageLabel(sibling.stage);
+  return sibling.sameListing
+    ? `이 매물은 이미 다른 거래가 진행 중입니다 (${stage}). 이 매칭으로는 거래를 만들 수 없습니다.`
+    : `같은 집의 ${getStatusMeta('transactionType', sibling.transactionType).label} 조건이 거래 중입니다 (${stage}). 이 매물로는 거래를 만들 수 없습니다.`;
+}
+
 // ── 거래 전환 후 거래관리 파이프라인 미러 ────────────────────────────────────
 // 매칭 레인은 연결 Deal의 단계를 읽기 전용으로 이어서 보여주고,
 // 실제 단계 변경은 거래관리(/deals)가 소유한다.
@@ -440,28 +520,16 @@ export function getMatchTitle(match: MatchViewListItem) {
 }
 
 export function getListingTitle(listing: MatchViewListItem['listing'] | null | undefined) {
-  return [listing?.property?.site?.name, getUnitDisplayName(listing?.property?.unit)]
-    .filter(Boolean)
-    .join(' ') || '매물 정보 없음';
-}
-
-function getUnitDisplayName(
-  unit: NonNullable<NonNullable<MatchViewListItem['listing']>['property']>['unit'] | null | undefined,
-) {
-  if (!unit) {
-    return null;
-  }
-
-  const dongName = unit.dong && !unit.dong.isPlaceholder ? unit.dong.name : null;
-  // "102 3401"이 아니라 "102동 3401호"로 읽히게 한다 (매물 상세·거래관리와 같은 표기)
-  return [withSuffix(dongName, '동'), unit.name ? withSuffix(unit.name, '호') : formatFloorRange(unit)].filter(Boolean).join(' ');
-}
-
-/** 이름이 이미 그 글자로 끝나면 그대로 둔다 ("101동" → "101동") */
-function withSuffix(value: string | null | undefined, suffix: string) {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  return trimmed.endsWith(suffix) ? trimmed : `${trimmed}${suffix}`;
+  // "고덕그라시움 102동 2203호" — 앱 공용 표기(formatPlaceLabel). 동 구분 없는 건물은 동을 빼고, 호 없는 공간은 층으로 쓴다
+  const unit = listing?.property?.unit;
+  return (
+    formatPlaceLabel({
+      siteName: listing?.property?.site?.name,
+      dongName: unit?.dong?.name,
+      dongIsPlaceholder: unit?.dong?.isPlaceholder,
+      unit,
+    }) || '매물 정보 없음'
+  );
 }
 
 export function getListingAddress(listing: MatchViewListItem['listing'] | null | undefined) {
@@ -549,10 +617,11 @@ export function formatRequirementSummary(match: MatchViewListItem) {
 export function formatRequirementSummaryFromBuyerRequirement(
   requirement: NonNullable<MatchViewListItem['buyerRequirement']>,
 ) {
-  const { regionText, siteTypeText, budgetText } =
+  // 지역과 단지를 함께 쓴다 (표의 '희망 지역·단지' 칸과 같다). 단지만 고른 손님이 "지역 협의"로 보이지 않게.
+  const { placeText, siteTypeText, budgetText } =
     getBuyerRequirementSummaryParts(requirement);
 
-  return `${regionText} · ${siteTypeText} · ${budgetText}`;
+  return `${placeText} · ${siteTypeText} · ${budgetText}`;
 }
 
 export function getBuyerRequirementSummaryParts(
@@ -604,6 +673,8 @@ function getRequirementSearchText(
   return [
     requirement.contact?.name,
     requirement.contact?.phone,
+    // 번호는 숫자만 저장된다. 화면에 보이는 "010-7600-6601"로 찾아도 걸리게 함께 넣는다
+    requirement.contact?.phone ? formatPhone(requirement.contact.phone) : null,
     getBuyerRequirementSummaryParts(requirement).placeText,
     requirement.memo,
   ]

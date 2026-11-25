@@ -86,7 +86,7 @@ function listingAdvertisement(
       id: "group-1",
       officeId: "office-1",
       listingAdvertisementId: "listing-ad-1",
-      mainAdvertisementId: own.id,
+      ownAdvertisementId: own.id,
       memo: null,
       ownPrice: own.price,
       ownDeposit: own.deposit,
@@ -99,7 +99,7 @@ function listingAdvertisement(
       lastSyncedAt: observedAt,
       createdAt: observedAt,
       updatedAt: observedAt,
-      mainAdvertisement: own,
+      ownAdvertisement: own,
       advertisements: [own, ...competitors],
     },
   };

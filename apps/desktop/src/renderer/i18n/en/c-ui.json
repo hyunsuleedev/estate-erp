@@ -1,0 +1,23 @@
+{
+  "strings": {
+    "{0} 선택 해제": "Remove {0}",
+    "{0}개 선택됨": "{0} selected",
+    "검색...": "Search...",
+    "결과 없음": "No results",
+    "메뉴": "Menu",
+    "사이드바 숨기기": "Hide sidebar",
+    "사이드바 숨기기 (⌘/Ctrl + \\)": "Hide sidebar (⌘/Ctrl + \\)",
+    "사이드바 접기/펼치기": "Toggle sidebar",
+    "사이드바 펼치기": "Show sidebar",
+    "사이드바 펼치기 (⌘/Ctrl + \\)": "Show sidebar (⌘/Ctrl + \\)",
+    "선택 모두 해제": "Clear all",
+    "선택...": "Select...",
+    "안내 메시지": "Notifications",
+    "화면 메뉴입니다.": "App menu."
+  },
+  "files": {
+    "components/ui/breadcrumb.tsx": {
+      "더 보기": "More"
+    }
+  }
+}

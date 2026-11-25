@@ -4,10 +4,12 @@
  * - 1시간 미만 → "N분 전"
  * - 24시간 미만 → "N시간 전"
  * - 7일 미만 → "N일 전"
- * - 그 이상 → "YYYY-MM-DD"
+ * - 그 이상 → 앱 공통 날짜 표기 "11.14 (토)" · 다른 해는 "2025.11.14" (lib/format formatRelativeDay)
  *
  * 제안 카드에서 "3시간 전 생성" 같은 표기에 사용.
  */
+import { formatRelativeDay } from './format';
+
 export function timeAgo(value: string | Date, now: Date = new Date()): string {
   const then = typeof value === 'string' ? new Date(value) : value;
   const diffMs = now.getTime() - then.getTime();
@@ -25,8 +27,8 @@ export function timeAgo(value: string | Date, now: Date = new Date()): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}일 전`;
 
-  // 일주일 이상이면 ISO 날짜만
-  return then.toISOString().slice(0, 10);
+  // 일주일 이상이면 공용 날짜 표기(이 컴퓨터 시간대로). 예전 ISO 표기는 UTC라 밤 시간이 하루 밀렸다.
+  return formatRelativeDay(then, now);
 }
 
 /**

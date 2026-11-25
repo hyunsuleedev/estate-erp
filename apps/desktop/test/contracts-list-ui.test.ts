@@ -106,7 +106,7 @@ describe('desktop documents list page (Notion database layout)', () => {
     // 사본 · 삭제는 명시 버튼으로만 (행 · 패널)
     for (const source of [tableSource, peekSource]) {
       assert.ok(source.includes('사본 만들기'));
-      assert.ok(source.includes('계약 삭제'));
+      assert.ok(source.includes('계약서 삭제'));
     }
   });
 

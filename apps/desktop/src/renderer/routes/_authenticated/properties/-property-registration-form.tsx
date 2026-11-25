@@ -10,10 +10,10 @@ import type {
   PropertyListing,
 } from '@estate-erp/api-client';
 import { ApiError } from '@estate-erp/api-client';
-import { registrationSpace, type SpaceDraft, type SpaceScope } from './-registration-space';
+import { normalizeHoDraft, registrationSpace, type SpaceDraft, type SpaceScope } from './-registration-space';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { formatMoney } from '@/lib/format';
+import { formatDate, formatMoney, formatPhone, formatRent } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -29,9 +29,9 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { useTabScopedState } from '@/features/tabs/hooks/useTabScopedState';
+import { useTabTitle } from '@/hooks/use-tab-title';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
 import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
 import {
@@ -41,14 +41,25 @@ import {
 import {
   FieldRow,
   ListingCostFields,
+  ManwonInput,
+  manwonHint,
   PrivateMemoField,
   Section,
+  choiceChipClassName,
 } from './-new-form-ui';
+import { parseManwonText, requireManwon } from './-manwon-input';
+import { MOVE_IN_TYPES, type MoveInType } from './-move-in-options';
+import { propertyErrorMessage } from './-error-message';
+import { formatPhoneWhileTyping, phoneInputProblem, useExistingContactByPhone } from '@/lib/phone';
 
 export interface PropertyRegistrationSearch {
   siteId?: string;
   dongId?: string;
   unitId?: string;
+  /** 소유자 칸을 이 연락처로 채워 연다(프로젝트의 "새 매물 의뢰 등록") */
+  ownerContactId?: string;
+  /** 프로젝트에서 열었으면 저장·취소 뒤 이 프로젝트로 돌아간다 */
+  projectId?: string;
 }
 
 export interface PropertyRegistrationResult {
@@ -89,16 +100,8 @@ const SITE_TYPE_LABELS: Record<string, string> = {
 
 const TX_LABELS = TRANSACTION_TYPE_LABELS as Record<string, string>;
 
-const MOVE_IN_TYPES = [
-  { value: 'immediate', label: '즉시 입주' },
-  { value: 'date', label: '특정 날짜' },
-  { value: 'range', label: '기간 협의' },
-  { value: 'negotiable', label: '날짜 협의' },
-  { value: 'unknown', label: '미정' },
-] as const;
 
 type TransactionType = NewPropertyTransactionType;
-type MoveInType = (typeof MOVE_IN_TYPES)[number]['value'];
 
 interface FormState extends SpaceDraft {
   // Step 1: Site
@@ -133,9 +136,12 @@ interface FormState extends SpaceDraft {
   privateMemo: string;
 
   // Step 5: People (optional)
-  addOwner: boolean;
+  /** 예전 초안 호환용. 소유자 칸은 이제 늘 보인다 — 이름이 있으면 저장한다. */
+  addOwner?: boolean;
   ownerName: string;
   ownerPhone: string;
+  /** 연락처에서 고른 기존 소유자. 있으면 이름·전화 칸 대신 이 사람을 연결한다. */
+  ownerContact?: { id: string; name: string; phone: string | null } | null;
   hasTenant: boolean;
   tenantName: string;
   tenantPhone: string;
@@ -167,9 +173,9 @@ const initialForm: FormState = {
   premium: '',
   memo: '',
   privateMemo: '',
-  addOwner: false,
   ownerName: '',
   ownerPhone: '',
+  ownerContact: null,
   hasTenant: false,
   tenantName: '',
   tenantPhone: '',
@@ -234,6 +240,23 @@ export function PropertyRegistrationForm({
       store.clearTabFormDraft(ownerId);
     }
   };
+  // 탭 제목은 "매물 등록"(프로젝트에서 열어도 프로젝트 이름이 붙지 않게)
+  useTabTitle(isDrawer ? null : '매물 등록');
+  const returnProjectId = isDrawer ? undefined : searchParams.projectId;
+  /** 프로젝트에서 온 등록이면 이 탭을 그 프로젝트로 되돌린다. 되돌렸으면 true */
+  const returnToProject = () => {
+    if (!returnProjectId || !ownerTabIdRef.current) return false;
+    const route = `/projects/${returnProjectId}`;
+    const meta = getRouteMeta(route);
+    replaceTabResource(ownerTabIdRef.current, {
+      route,
+      kind: meta.kind,
+      title: meta.title,
+      resourceKey: tabResourceKeys.entity('project', returnProjectId),
+    });
+    return true;
+  };
+
   useEffect(() => {
     if (!error) return;
     errorRef.current?.scrollIntoView({ block: 'nearest' });
@@ -249,6 +272,28 @@ export function PropertyRegistrationForm({
     queryFn: () => api.sites.findOne(searchParams.siteId as string),
     enabled: Boolean(searchParams.siteId) && !prefillApplied,
   });
+
+  // 소유자 미리 채우기 — 한 번만(사용자가 "바꾸기"로 지운 뒤 다시 채우지 않게)
+  const [ownerPrefillApplied, setOwnerPrefillApplied] = useTabScopedState(
+    isDrawer ? 'property-registration-drawer:owner-prefill:v1' : 'property-new:owner-prefill:v1',
+    false,
+  );
+  const { data: prefillOwner } = useQuery({
+    queryKey: ['contacts', searchParams.ownerContactId],
+    queryFn: () => api.contacts.findOne(searchParams.ownerContactId as string),
+    enabled: Boolean(searchParams.ownerContactId) && !ownerPrefillApplied,
+  });
+  useEffect(() => {
+    if (!prefillOwner || ownerPrefillApplied) return;
+    setForm((prev) => ({
+      ...prev,
+      ownerContact: { id: prefillOwner.id, name: prefillOwner.name, phone: prefillOwner.phone ?? null },
+      ownerName: '',
+      ownerPhone: '',
+    }));
+    setOwnerPrefillApplied(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillOwner, ownerPrefillApplied]);
 
   useEffect(() => {
     if (!prefillSite || prefillApplied) return;
@@ -313,13 +358,18 @@ export function PropertyRegistrationForm({
   );
 
   const wholeDong = scope === 'whole' && visibleDongs.length > 1;
-  const newPart = flexible && scope === 'unit' && form.unitId === '__new_space__';
+  // 목록에 없는 호실·구획을 그 자리에서 적는다. 상가·단독뿐 아니라 아파트·오피스텔도
+  // (대장에 빠진 호가 있을 때 단지 관리 화면으로 돌아가지 않게)
+  const newPart = allowsUnit && scope === 'unit' && form.unitId === '__new_space__';
   const draftSpace = scope === 'floors' || newPart || wholeDong;
   let space: ReturnType<typeof registrationSpace> = null;
   let spaceError = '';
   if (draftSpace) {
     try {
-      space = registrationSpace({ ...form, scope }, wholeDong);
+      space = registrationSpace(
+        newPart && !flexible ? normalizeHoDraft({ ...form, scope }) : { ...form, scope },
+        wholeDong,
+      );
     } catch (cause) {
       spaceError = cause instanceof Error ? cause.message : '공간 정보를 확인하세요.';
     }
@@ -367,22 +417,48 @@ export function PropertyRegistrationForm({
       // Validate
       if (!form.siteId) throw new Error('단지를 선택하세요.');
       if (flexible && !dongs) throw new Error('건물 목록을 확인한 뒤 등록하세요.');
-      if ((draftSpace || needsUnit) && !effectiveDongId) throw new Error('대상 동을 선택하세요.');
+      if ((draftSpace || needsUnit) && !effectiveDongId) {
+        throw new Error(dongs && dongs.length === 0
+          ? flexible
+            ? '이 단지에는 건물(동) 정보가 없습니다. 거래 공간을 "건물 전체"로 고르거나 단지 관리에서 건물을 먼저 등록하세요.'
+            : '이 단지에는 동·호 정보가 없습니다. 단지 관리에서 동과 호를 먼저 등록하세요.'
+          : '동을 선택하세요.');
+      }
       if (spaceError) throw new Error(spaceError);
       if (newPart && matchingUnit && form.partArea?.trim() &&
         Number(matchingUnit.exclusiveAreaM2) !== Number(form.partArea)) {
         throw new Error('같은 이름과 층에 면적이 다른 공간이 있습니다. 기존 공간을 확인하세요.');
       }
       if (needsUnit && !draftSpace && !selectedUnit)
-        throw new Error('호실을 선택하세요. (없으면 단지 상세에서 먼저 등록)');
-      if (form.transactionTypes.includes('sale') && !form.salePrice) {
+        throw new Error('호실을 선택하세요. 목록에 없으면 "목록에 없는 호실 입력"을 고르세요.');
+      if (form.transactionTypes.includes('sale') && requireManwon(form.salePrice, '매매가를') === undefined) {
         throw new Error('매매가를 입력하세요.');
       }
-      if (form.transactionTypes.includes('jeonse') && !form.jeonsePrice) {
+      if (form.transactionTypes.includes('jeonse') && requireManwon(form.jeonsePrice, '전세가를') === undefined) {
         throw new Error('전세가를 입력하세요.');
       }
-      if (form.transactionTypes.includes('monthly') && !form.monthlyRent) {
-        throw new Error('월세를 입력하세요.');
+      if (form.transactionTypes.includes('monthly')) {
+        requireManwon(form.monthlyDeposit, '보증금을');
+        if (requireManwon(form.monthlyRent, '월세를') === undefined) throw new Error('월세를 입력하세요.');
+      }
+      requireManwon(form.maintenanceFee, '관리비를');
+      requireManwon(form.loanAmount, '융자금을');
+      if (isCommercial) requireManwon(form.premium, '권리금을');
+      if (form.hasTenant) {
+        requireManwon(form.tenantDeposit, '임차인 보증금을');
+        requireManwon(form.tenantMonthlyRent, '임차인 월세를');
+      }
+      if (!form.ownerContact && form.ownerPhone.trim() && phoneInputProblem(form.ownerPhone)) {
+        throw new Error(`소유자 ${phoneInputProblem(form.ownerPhone)}`);
+      }
+      if (form.hasTenant && form.tenantPhone.trim() && phoneInputProblem(form.tenantPhone)) {
+        throw new Error(`임차인 ${phoneInputProblem(form.tenantPhone)}`);
+      }
+      if (!form.ownerContact && !form.ownerName.trim() && form.ownerPhone.trim()) {
+        throw new Error('소유자 이름을 입력하세요. 이름 없이 전화번호만 저장할 수는 없습니다.');
+      }
+      if (form.hasTenant && !form.tenantName.trim()) {
+        throw new Error('임차인 이름을 입력하세요. 임차인이 없으면 "현재 임차인"을 끄세요.');
       }
       if (txConflicts.length > 0) {
         throw new Error(
@@ -444,45 +520,70 @@ export function PropertyRegistrationForm({
         intakeId = intake.id;
       }
 
+      // 매물은 이미 저장됐다. 여기서 실패하면 등록 전체를 실패로 보이지 않고(다시 누르면
+      // "이미 접수된 거래유형"으로 막힌다) 무엇이 빠졌는지만 알린다.
+      const missed: string[] = [];
       // 3) Optional: owner
-      if (form.addOwner && form.ownerName.trim()) {
-        await api.propertyContacts.createWithNewContact({
-          propertyId: property.id,
-          role: 'owner',
-          name: form.ownerName.trim(),
-          phone: form.ownerPhone.trim() || undefined,
-          isPrimary: true,
-        });
+      try {
+        if (form.ownerContact) {
+          await api.propertyContacts.create({
+            propertyId: property.id,
+            contactId: form.ownerContact.id,
+            role: 'owner',
+            isPrimary: true,
+          });
+        } else if (form.ownerName.trim()) {
+          await api.propertyContacts.createWithNewContact({
+            propertyId: property.id,
+            role: 'owner',
+            name: form.ownerName.trim(),
+            phone: form.ownerPhone.trim() || undefined,
+            isPrimary: true,
+          });
+        }
+      } catch {
+        missed.push('소유자');
       }
 
       // 4) Optional: tenant
       if (form.hasTenant && form.tenantName.trim()) {
-        await api.tenants.createWithNewContact({
-          propertyId: property.id,
-          name: form.tenantName.trim(),
-          phone: form.tenantPhone.trim() || undefined,
-          deposit: form.tenantDeposit ? Number(form.tenantDeposit) : undefined,
-          monthlyRent: form.tenantMonthlyRent
-            ? Number(form.tenantMonthlyRent)
-            : undefined,
-          contractStart: form.tenantContractStart || undefined,
-          contractEnd: form.tenantContractEnd || undefined,
-        });
+        try {
+          await api.tenants.createWithNewContact({
+            propertyId: property.id,
+            name: form.tenantName.trim(),
+            phone: form.tenantPhone.trim() || undefined,
+            deposit: requireManwon(form.tenantDeposit, '임차인 보증금을'),
+            monthlyRent: requireManwon(form.tenantMonthlyRent, '임차인 월세를'),
+            contractStart: form.tenantContractStart || undefined,
+            contractEnd: form.tenantContractEnd || undefined,
+          });
+        } catch {
+          missed.push('임차인');
+        }
       }
 
-      return { property, intakeId: intakeId! };
+      return { property, intakeId: intakeId!, missed };
     },
-    onSuccess: ({ property, intakeId }) => {
+    onSuccess: ({ property, intakeId, missed }) => {
       queryClient.invalidateQueries({ queryKey: ['properties'] });
       queryClient.invalidateQueries({ queryKey: ['listings'] });
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
       // 새 관리호수가 생겼으니 관리단지 사이드바의 단지별 관리호수 수도 갱신
       queryClient.invalidateQueries({ queryKey: ['office-sites'] });
-      toast.success('매물이 등록되었습니다.');
+      if (missed.length > 0) {
+        toast.warning(`매물은 등록했지만 ${missed.join('·')} 정보를 저장하지 못했습니다. 매물 상세의 연락처에서 다시 추가하세요.`);
+      } else {
+        toast.success('매물이 등록되었습니다.');
+      }
       if (onCreated) {
         resetDraft();
         onCreated({ property, intakeId });
         return;
+      }
+      if (returnProjectId) {
+        // 프로젝트의 담을 후보 맨 위에 방금 등록한 의뢰가 보이도록 프로젝트 쪽 목록도 다시 읽는다
+        queryClient.invalidateQueries({ queryKey: ['projects'] });
+        if (returnToProject()) return;
       }
       const detailRoute = `/properties/${property.id}`;
       const meta = getRouteMeta(detailRoute);
@@ -504,8 +605,9 @@ export function PropertyRegistrationForm({
       }
     },
     onError: (e: Error) => {
-      setError(e.message || '매물 등록에 실패했습니다.');
-      toast.error(e.message || '매물 등록에 실패했습니다.');
+      const message = propertyErrorMessage(e, '매물을 등록하지 못했습니다. 다시 시도해 주세요.');
+      setError(message);
+      toast.error(message);
     },
   });
 
@@ -514,6 +616,16 @@ export function PropertyRegistrationForm({
   }, [mutation.isPending, onPendingChange]);
 
   const submitLabel = existingProperty ? '기존 매물에 거래 추가' : '매물 등록';
+  // 적다 만 등록: 탭을 닫거나 버리기 전에 셸이 묻게 표시한다(업무 폼과 같은 표식)
+  const hasTypedInput =
+    [
+      form.salePrice, form.jeonsePrice, form.monthlyDeposit, form.monthlyRent, form.moveInAvailableFrom,
+      form.maintenanceFee, form.loanAmount, form.premium, form.memo, form.privateMemo,
+      form.ownerName, form.ownerPhone, form.tenantName, form.tenantPhone, form.tenantDeposit,
+      form.tenantMonthlyRent, form.partName ?? '',
+    ].some((value) => value.trim() !== '') ||
+    Boolean(form.siteId && form.siteId !== searchParams.siteId);
+  const isDirty = hasTypedInput && !mutation.isPending && !mutation.isSuccess;
   const expandingRef = useRef(false);
   const openInNewTab = () => {
     if (mutation.isPending || expandingRef.current) return;
@@ -534,6 +646,7 @@ export function PropertyRegistrationForm({
       onClose();
       return;
     }
+    if (returnToProject()) return;
     if (ownerTabIdRef.current) {
       closeTab(ownerTabIdRef.current);
       return;
@@ -545,12 +658,13 @@ export function PropertyRegistrationForm({
   return (
     <div className={cn('flex min-h-0 flex-1 flex-col bg-background', !isDrawer && '-m-4')}>
       {renderToolbar?.(mutation.isPending ? undefined : openInNewTab)}
-      <header className={isDrawer ? 'shrink-0 px-6 pb-6 pt-3' : 'border-b px-6 py-4'}>
-        <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h1 className={isDrawer ? "text-2xl font-semibold tracking-tight" : "text-lg font-semibold"}>{isDrawer ? "새 매물 등록" : "매물 등록"}</h1>
-          <span className="text-xs text-muted-foreground">가격 단위: 만원</span>
-        </div>
-      </header>
+      {isDirty && <span hidden data-native-tab-discard-blocker="true" data-native-tab-dirty="true" />}
+      {isDrawer ? (
+        <header className="shrink-0 px-6 pb-6 pt-3">
+          <h1 className="text-2xl font-semibold tracking-tight">새 매물 등록</h1>
+          <p className="mt-1.5 text-[13px] text-muted-foreground">금액은 만원 단위로 적습니다.</p>
+        </header>
+      ) : null}
 
       <form
         onSubmit={(e) => {
@@ -561,21 +675,31 @@ export function PropertyRegistrationForm({
         }}
         className={isDrawer
           ? 'flex min-h-0 flex-1 flex-col'
-          : 'grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-5 overflow-auto px-6 py-5'}
+          : 'min-h-0 flex-1 overflow-auto'}
       >
+        {/* 탭으로 연 등록 문서: 가운데 한 단 + 오른쪽 요약 열 (설정·상세 화면과 같은 짜임) */}
+        <div className={isDrawer
+          ? 'contents'
+          : 'mx-auto grid w-full max-w-[1080px] grid-cols-1 gap-x-12 gap-y-8 px-6 py-10 lg:grid-cols-[minmax(0,1fr)_288px] lg:px-8'}>
+          {!isDrawer ? (
+            <header className="border-b border-border/70 pb-6 lg:col-span-2">
+              <h1 className="text-[24px] font-semibold leading-8 tracking-[-0.02em]">매물 등록</h1>
+              <p className="mt-1.5 text-[13px] leading-5 text-muted-foreground">
+                단지와 호실을 고르고 거래 조건을 적습니다. 금액은 만원 단위입니다.
+              </p>
+            </header>
+          ) : null}
         <fieldset disabled={mutation.isPending} className={isDrawer
-          ? 'min-h-0 min-w-0 flex-1 space-y-6 overflow-y-auto px-6 pb-6'
-          : 'min-w-0 space-y-5'}>
+          ? 'min-h-0 min-w-0 flex-1 space-y-7 overflow-y-auto px-6 pb-6'
+          : 'min-w-0 space-y-7'}>
           {error && (
             <div ref={errorRef} role="alert" tabIndex={-1} className="rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-sm text-destructive-strong outline-none">
               {error}
             </div>
           )}
 
-          <div className={cn("grid items-start gap-5", !isDrawer && "xl:grid-cols-2")}>
             <Section
-              step={1}
-              title="단지 / 거래 공간"
+              title="단지 · 거래 공간"
               subtitle="관리 중인 단지 또는 전체 단지에서 선택합니다."
             >
               <FieldRow label="단지" required>
@@ -650,7 +774,7 @@ export function PropertyRegistrationForm({
                       <SelectValue placeholder="호실 선택" />
                     </SelectTrigger>
                     <SelectContent>
-                      {flexible && <SelectItem value="__new_space__">새 호실·구획 입력</SelectItem>}
+                      <SelectItem value="__new_space__">{flexible ? '새 호실·구획 입력' : '목록에 없는 호실 입력'}</SelectItem>
                       {(units ?? []).map((u) => (
                         <SelectItem key={u.id} value={u.id}>
                           {formatUnitLabel(u)}
@@ -675,27 +799,24 @@ export function PropertyRegistrationForm({
                       )}
                     </p>
                   )}
-                  {!flexible && units && units.length === 0 && (
+                  {!flexible && units && units.length === 0 && !newPart && (
                     <p className="mt-1.5 text-xs text-warning-strong">
-                      등록된 호실이 없습니다.{' '}
-                      <Link to="/sites" className="underline">
-                        단지 관리에서 호실을 먼저 추가하세요.
-                      </Link>
+                      등록된 호실이 없습니다. 목록에서 "목록에 없는 호실 입력"을 골라 바로 적으세요.
                     </p>
                   )}
                 </FieldRow>
               )}
 
               {newPart && (
-                <FieldRow label="호실·구획 이름" required>
-                  <Input aria-label="호실·구획 이름" placeholder="예: 201호, 도로변 점포" value={form.partName ?? ''}
+                <FieldRow label={flexible ? '호실·구획 이름' : '호'} required>
+                  <Input aria-label="호실·구획 이름" placeholder={flexible ? '예: 201호, 도로변 점포' : '예: 1203'} value={form.partName ?? ''}
                     onChange={e => set('partName', e.target.value)} />
                 </FieldRow>
               )}
               {(scope === 'floors' || newPart) && (
                 <FieldRow label={newPart ? '층' : '층 범위'} required={!newPart}>
                   <div className="flex gap-2">
-                    <Input aria-label="시작층" placeholder="시작층 (예: B1, 2)" value={form.startFloor ?? ''}
+                    <Input aria-label="시작층" placeholder={newPart && !flexible ? '비우면 호 번호에서 읽습니다' : newPart ? '예: B1, 2' : '시작층 (예: B1, 2)'} value={form.startFloor ?? ''}
                       onChange={e => set('startFloor', e.target.value)} />
                     {!newPart && <Input aria-label="끝층" placeholder="끝층 (한 층이면 생략)" value={form.endFloor ?? ''}
                       onChange={e => set('endFloor', e.target.value)} />}
@@ -708,7 +829,7 @@ export function PropertyRegistrationForm({
                     onChange={e => set('partArea', e.target.value)} />
                 </FieldRow>
               )}
-              {flexible && dongs?.length === 0 && needsUnit && (
+              {dongs?.length === 0 && needsUnit && (
                 <p className="text-xs text-muted-foreground"><Link to="/sites" className="underline">단지 관리</Link>에서 건물을 먼저 등록하세요.</p>
               )}
 
@@ -720,9 +841,9 @@ export function PropertyRegistrationForm({
               )}
             </Section>
 
-            <Section step={2} title="거래 정보" subtitle="가격은 만원 단위입니다.">
+            <Section title="거래 조건" subtitle="거래유형은 여러 개를 함께 고를 수 있습니다.">
               <FieldRow label="거래유형" required>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-1.5">
                   {(['sale', 'jeonse', 'monthly'] as TransactionType[]).map((t) => {
                     const hasExisting = (existingProperty?.listings ?? []).some(
                       (l) => l.transactionType === t,
@@ -733,11 +854,8 @@ export function PropertyRegistrationForm({
                         key={t}
                         type="button"
                         onClick={() => set('transactionTypes', toggleTransactionType(form.transactionTypes, t))}
-                        className={`relative flex-1 rounded-md border px-3 py-2 text-sm font-medium transition ${
-                          selected
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-input bg-background hover:bg-muted'
-                        }`}
+                        aria-pressed={selected}
+                        className={choiceChipClassName(selected)}
                       >
                         {TX_LABELS[t]}
                         {hasExisting && (
@@ -758,66 +876,43 @@ export function PropertyRegistrationForm({
               )}
 
               {form.transactionTypes.includes('sale') && (
-                <FieldRow
-                  label="매매가 (만원)"
-                  required
-                  hint={form.salePrice ? formatMoney(Number(form.salePrice)) : '예: 158000 = 15억 8천만'}
-                >
-                  <Input
-                    type="number"
-                    inputMode="numeric"
+                <FieldRow label="매매가" required {...manwonHint(form.salePrice, '15억 · 15억 8천 · 158000')}>
+                  <ManwonInput
                     aria-label="매매가 만원"
                     value={form.salePrice}
-                    onChange={(e) => set('salePrice', e.target.value)}
-                    placeholder="158000"
+                    onChange={(value) => set('salePrice', value)}
+                    placeholder="예: 15억 8천"
                   />
                 </FieldRow>
               )}
 
               {form.transactionTypes.includes('jeonse') && (
-                <FieldRow
-                  label="전세가 (만원)"
-                  required
-                  hint={form.jeonsePrice ? formatMoney(Number(form.jeonsePrice)) : '예: 75000 = 7억 5천만'}
-                >
-                  <Input
-                    type="number"
-                    inputMode="numeric"
+                <FieldRow label="전세가" required {...manwonHint(form.jeonsePrice, '9억 · 7억 5천 · 75000')}>
+                  <ManwonInput
                     aria-label="전세가 만원"
                     value={form.jeonsePrice}
-                    onChange={(e) => set('jeonsePrice', e.target.value)}
-                    placeholder="75000"
+                    onChange={(value) => set('jeonsePrice', value)}
+                    placeholder="예: 7억 5천"
                   />
                 </FieldRow>
               )}
 
               {form.transactionTypes.includes('monthly') && (
                 <div className="grid grid-cols-2 gap-3">
-                  <FieldRow
-                    label="보증금 (만원)"
-                    hint={form.monthlyDeposit ? formatMoney(Number(form.monthlyDeposit)) : undefined}
-                  >
-                    <Input
-                      type="number"
-                      inputMode="numeric"
+                  <FieldRow label="보증금" {...manwonHint(form.monthlyDeposit)}>
+                    <ManwonInput
                       aria-label="월세 보증금 만원"
                       value={form.monthlyDeposit}
-                      onChange={(e) => set('monthlyDeposit', e.target.value)}
-                      placeholder="3000"
+                      onChange={(value) => set('monthlyDeposit', value)}
+                      placeholder="예: 3천"
                     />
                   </FieldRow>
-                  <FieldRow
-                    label="월세 (만원)"
-                    required
-                    hint={form.monthlyRent ? `${Number(form.monthlyRent).toLocaleString()}만/월` : undefined}
-                  >
-                    <Input
-                      type="number"
-                      inputMode="numeric"
+                  <FieldRow label="월세 (만원)" required {...manwonHint(form.monthlyRent)}>
+                    <ManwonInput
                       aria-label="월세 만원"
                       value={form.monthlyRent}
-                      onChange={(e) => set('monthlyRent', e.target.value)}
-                      placeholder="80"
+                      onChange={(value) => set('monthlyRent', value)}
+                      placeholder="예: 80"
                     />
                   </FieldRow>
                 </div>
@@ -873,10 +968,9 @@ export function PropertyRegistrationForm({
                 </div>
               )}
 
-              <Separator className="my-1" />
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-3 border-t border-border/70 pt-4">
                 <div>
-                  <div className="text-sm font-medium">공동중개 필수</div>
+                  <div className="text-[13px] font-medium">공동중개 필수</div>
                   <p className="text-xs text-muted-foreground">특정 파트너와 진행해야 할 때 켜세요.</p>
                 </div>
                 <Switch
@@ -906,82 +1000,25 @@ export function PropertyRegistrationForm({
                 </FieldRow>
               )}
             </Section>
-          </div>
 
-          <Section
-            step={3}
-            title="비용 정보"
-            subtitle="관리비·융자금은 만원 단위. 권리금은 상가 매물에서만 입력합니다."
-          >
-            <ListingCostFields
-              value={{
-                maintenanceFee: form.maintenanceFee,
-                maintenanceFeeIncludes: form.maintenanceFeeIncludes,
-                loanAmount: form.loanAmount,
-                premium: form.premium,
-              }}
-              onChange={(key, fieldValue) =>
-                setForm((prev) => ({ ...prev, [key]: fieldValue }))
-              }
-              showPremium={isCommercial}
-              isJeonse={form.transactionTypes.includes('jeonse')}
+          <Section title="소유자 · 임차인" subtitle="모르면 비워 두고 나중에 추가해도 됩니다.">
+            <OwnerContactField
+              name={form.ownerName}
+              phone={form.ownerPhone}
+              contact={form.ownerContact ?? null}
+              onNameChange={(value) => set('ownerName', value)}
+              onPhoneChange={(value) => set('ownerPhone', value)}
+              onContactChange={(contact) => setForm((prev) => ({
+                ...prev,
+                ownerContact: contact,
+                ...(contact ? { ownerName: '', ownerPhone: '' } : {}),
+              }))}
             />
-          </Section>
 
-          <Section step={4} title="메모" subtitle="매물·집주인 특이사항을 자유롭게.">
-            <Textarea
-              value={form.memo}
-              onChange={(e) => set('memo', e.target.value)}
-              rows={3}
-              placeholder="예) 남향, 풀옵션, 6월 이사 가능, 집주인 연락 잦음"
-            />
-            <PrivateMemoField
-              value={form.privateMemo}
-              onChange={(value) => set('privateMemo', value)}
-            />
-          </Section>
-
-          <Section step={5} title="관련인" subtitle="등록 안 해도 나중에 추가할 수 있어요.">
-          <div className="rounded-md border bg-card">
-            <div className="flex items-center justify-between p-3">
+          <div className="border-t border-border/70">
+            <div className="flex items-center justify-between gap-3 pt-4">
               <div>
-                <div className="text-sm font-medium">집주인 / 소유자</div>
-                <p className="text-xs text-muted-foreground">
-                  이름·전화번호만 입력하면 Contact가 자동 생성됩니다.
-                </p>
-              </div>
-              <Switch
-                aria-label="집주인 또는 소유자 추가"
-                checked={form.addOwner}
-                onCheckedChange={(v) => set('addOwner', v)}
-              />
-            </div>
-            {form.addOwner && (
-              <div className="grid grid-cols-2 gap-3 border-t p-3">
-                <FieldRow label="이름" required>
-                  <Input
-                    aria-label="소유자 이름"
-                    value={form.ownerName}
-                    onChange={(e) => set('ownerName', e.target.value)}
-                    placeholder="홍길동"
-                  />
-                </FieldRow>
-                <FieldRow label="전화번호">
-                  <Input
-                    aria-label="소유자 전화번호"
-                    value={form.ownerPhone}
-                    onChange={(e) => set('ownerPhone', e.target.value)}
-                    placeholder="010-1234-5678"
-                  />
-                </FieldRow>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-md border bg-card">
-            <div className="flex items-center justify-between p-3">
-              <div>
-                <div className="text-sm font-medium">현재 임차인</div>
+                <div className="text-[13px] font-medium">현재 임차인</div>
                 <p className="text-xs text-muted-foreground">
                   현재 임차 중이라면 켜고, 계약 만료일까지 함께 기록하세요.
                 </p>
@@ -993,7 +1030,7 @@ export function PropertyRegistrationForm({
               />
             </div>
             {form.hasTenant && (
-              <div className="grid grid-cols-2 gap-3 border-t p-3">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-4 pt-4">
                 <FieldRow label="이름" required>
                   <Input
                     aria-label="임차인 이름"
@@ -1002,30 +1039,33 @@ export function PropertyRegistrationForm({
                     placeholder="김임차"
                   />
                 </FieldRow>
-                <FieldRow label="전화번호">
+                <FieldRow
+                  label="전화번호"
+                  hint={phoneInputProblem(form.tenantPhone) ?? undefined}
+                  hintInvalid={Boolean(phoneInputProblem(form.tenantPhone))}
+                >
                   <Input
                     aria-label="임차인 전화번호"
+                    inputMode="tel"
                     value={form.tenantPhone}
-                    onChange={(e) => set('tenantPhone', e.target.value)}
+                    onChange={(e) => set('tenantPhone', formatPhoneWhileTyping(e.target.value))}
                     placeholder="010-2222-3333"
                   />
                 </FieldRow>
-                <FieldRow label="보증금 (만원)">
-                  <Input
-                    type="number"
-                    inputMode="numeric"
+                <FieldRow label="보증금" {...manwonHint(form.tenantDeposit)}>
+                  <ManwonInput
                     aria-label="임차인 보증금 만원"
                     value={form.tenantDeposit}
-                    onChange={(e) => set('tenantDeposit', e.target.value)}
+                    onChange={(value) => set('tenantDeposit', value)}
+                    placeholder="예: 5억"
                   />
                 </FieldRow>
-                <FieldRow label="월세 (만원)">
-                  <Input
-                    type="number"
-                    inputMode="numeric"
+                <FieldRow label="월세 (만원)" {...manwonHint(form.tenantMonthlyRent)}>
+                  <ManwonInput
                     aria-label="임차인 월세 만원"
                     value={form.tenantMonthlyRent}
-                    onChange={(e) => set('tenantMonthlyRent', e.target.value)}
+                    onChange={(value) => set('tenantMonthlyRent', value)}
+                    placeholder="없으면 비워 두세요"
                   />
                 </FieldRow>
                 <FieldRow label="계약 시작">
@@ -1048,6 +1088,39 @@ export function PropertyRegistrationForm({
             )}
           </div>
           </Section>
+
+          <Section
+            title="비용"
+            subtitle="관리비·융자금은 만원 단위. 권리금은 상가 매물에서만 입력합니다."
+          >
+            <ListingCostFields
+              value={{
+                maintenanceFee: form.maintenanceFee,
+                maintenanceFeeIncludes: form.maintenanceFeeIncludes,
+                loanAmount: form.loanAmount,
+                premium: form.premium,
+              }}
+              onChange={(key, fieldValue) =>
+                setForm((prev) => ({ ...prev, [key]: fieldValue }))
+              }
+              showPremium={isCommercial}
+              isJeonse={form.transactionTypes.includes('jeonse')}
+            />
+          </Section>
+
+          <Section title="메모" subtitle="매물·집주인 특이사항을 자유롭게.">
+            <Textarea
+              value={form.memo}
+              onChange={(e) => set('memo', e.target.value)}
+              rows={3}
+              placeholder="예) 남향, 풀옵션, 6월 이사 가능, 집주인 연락 잦음"
+            />
+            <PrivateMemoField
+              value={form.privateMemo}
+              onChange={(value) => set('privateMemo', value)}
+            />
+          </Section>
+
         </fieldset>
 
         {isDrawer ? (
@@ -1068,7 +1141,9 @@ export function PropertyRegistrationForm({
           isSubmitting={mutation.isPending}
           submitLabel={submitLabel}
           onCancel={handleCancel}
+          returnsToProject={Boolean(returnProjectId)}
         />}
+        </div>
       </form>
     </div>
   );
@@ -1085,7 +1160,9 @@ function RegistrationSummaryPanel({
   isSubmitting,
   submitLabel,
   onCancel,
+  returnsToProject = false,
 }: {
+  returnsToProject?: boolean;
   form: FormState;
   needsUnit: boolean;
   selectedDongName?: string;
@@ -1106,18 +1183,11 @@ function RegistrationSummaryPanel({
     MOVE_IN_TYPES.find((option) => option.value === form.moveInAvailableType)?.label ?? '미정';
 
   return (
-    <aside className="min-w-0">
-      <div className="sticky top-0 space-y-3 rounded-lg border bg-card p-4">
-        <div>
-          <h2 className="text-sm font-semibold">등록 요약</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            저장하면 매물 상세 탭이 열리고 이 등록 탭은 닫힙니다.
-          </p>
-        </div>
+    <aside className="min-w-0 lg:border-l lg:border-border/70 lg:pl-8">
+      <div className="sticky top-6 space-y-5">
+        <h2 className="text-[13px] font-medium text-muted-foreground">등록 요약</h2>
 
-        <Separator />
-
-        <dl className="space-y-3 text-sm">
+        <dl className="space-y-2.5 text-[13px]">
           <SummaryRow label="위치" value={siteLabel} muted={!form.siteId} />
           <SummaryRow label="거래 공간" value={unitLabel} muted={needsUnit && !selectedUnitName} />
           <SummaryRow label="거래" value={form.transactionTypes.map((type) => TX_LABELS[type]).join(', ')} />
@@ -1125,28 +1195,35 @@ function RegistrationSummaryPanel({
           <SummaryRow label="입주" value={moveInLabel} />
         </dl>
 
-        <div className="space-y-2 rounded-md bg-muted p-3 text-xs text-muted-foreground">
+        <div className="space-y-1.5 border-t border-border/70 pt-4 text-xs leading-5 text-muted-foreground">
           {existingProperty ? (
-            <p>기존 Property에 새 거래를 추가합니다.</p>
+            <p>이미 있는 매물에 새 거래 조건을 추가합니다.</p>
           ) : (
-            <p>저장 시 새 Property와 거래 의뢰가 함께 생성됩니다.</p>
+            <p>저장하면 새 매물과 거래 조건이 함께 등록됩니다.</p>
           )}
-          {activeIntakeExists && <p>진행 중인 의뢰 묶음에 거래가 추가됩니다.</p>}
-          {form.addOwner && <p>소유자 연락처가 함께 생성됩니다.</p>}
+          {activeIntakeExists && <p>진행 중인 의뢰에 거래 조건이 추가됩니다.</p>}
+          {form.ownerContact
+            ? <p>{form.ownerContact.name}님을 소유자로 연결합니다.</p>
+            : form.ownerName.trim() && <p>소유자 연락처가 함께 저장됩니다.</p>}
           {form.hasTenant && <p>현재 임차인 정보가 함께 생성됩니다.</p>}
+          <p>
+            {returnsToProject
+              ? '저장하거나 취소하면 프로젝트로 돌아갑니다. 방금 등록한 의뢰를 그곳에서 담으세요.'
+              : '저장하면 매물 상세 탭이 열리고 이 등록 탭은 닫힙니다.'}
+          </p>
         </div>
 
         {txConflicts.length > 0 && (
-          <div className="rounded-md border border-warning/40 bg-warning-soft p-3 text-xs text-warning-strong">
+          <p role="alert" className="text-xs leading-5 text-warning-strong">
             같은 거래유형이 이미 있어 저장할 수 없습니다.
-          </div>
+          </p>
         )}
 
-        <div className="flex flex-col gap-2 pt-1">
+        <div className="flex flex-col gap-2">
           <Button type="submit" disabled={isSubmitting || txConflicts.length > 0}>
             {isSubmitting ? '등록 중...' : submitLabel}
           </Button>
-          <Button type="button" variant="outline" onClick={onCancel}>
+          <Button type="button" variant="ghost" onClick={onCancel}>
             취소
           </Button>
         </div>
@@ -1166,7 +1243,7 @@ function SummaryRow({
 }) {
   return (
     <div className="grid grid-cols-[64px_minmax(0,1fr)] gap-3">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dt className="text-muted-foreground">{label}</dt>
       <dd className={muted ? 'truncate text-muted-foreground-strong' : 'truncate text-foreground'}>
         {value || '-'}
       </dd>
@@ -1176,19 +1253,25 @@ function SummaryRow({
 
 function getListingAmountLabel(form: FormState) {
   const parts: string[] = [];
+  const amount = (raw: string) => {
+    const parsed = parseManwonText(raw);
+    return parsed.valid && parsed.value ? parsed.value : null;
+  };
+  const sale = amount(form.salePrice);
+  const jeonse = amount(form.jeonsePrice);
+  const deposit = amount(form.monthlyDeposit);
+  const rent = amount(form.monthlyRent);
 
-  if (form.transactionTypes.includes('sale') && form.salePrice) {
-    parts.push(`매매 ${formatMoney(Number(form.salePrice))}`);
+  if (form.transactionTypes.includes('sale') && sale) {
+    parts.push(`매매 ${formatMoney(sale)}`);
   }
 
-  if (form.transactionTypes.includes('jeonse') && form.jeonsePrice) {
-    parts.push(`전세 ${formatMoney(Number(form.jeonsePrice))}`);
+  if (form.transactionTypes.includes('jeonse') && jeonse) {
+    parts.push(`전세 ${formatMoney(jeonse)}`);
   }
 
-  if (form.transactionTypes.includes('monthly') && (form.monthlyDeposit || form.monthlyRent)) {
-    parts.push(`월세 보증금 ${form.monthlyDeposit ? formatMoney(Number(form.monthlyDeposit)) : '-'} / 월 ${
-      form.monthlyRent ? `${Number(form.monthlyRent).toLocaleString()}만` : '-'
-    }`);
+  if (form.transactionTypes.includes('monthly') && (deposit || rent)) {
+    parts.push(`월세 ${formatRent(deposit, rent)}`);
   }
 
   return parts.join(' · ');
@@ -1209,11 +1292,11 @@ function buildListingPayloads(form: FormState, isCommercial: boolean): IntakeLis
     moveInAvailableType: form.moveInAvailableType,
     moveInAvailableFrom: form.moveInAvailableFrom || undefined,
     moveInAvailableTo: form.moveInAvailableTo || undefined,
-    maintenanceFee: form.maintenanceFee ? Number(form.maintenanceFee) : undefined,
+    maintenanceFee: requireManwon(form.maintenanceFee, '관리비를'),
     maintenanceFeeIncludes:
       form.maintenanceFeeIncludes.length > 0 ? form.maintenanceFeeIncludes : undefined,
-    loanAmount: form.loanAmount ? Number(form.loanAmount) : undefined,
-    premium: isCommercial && form.premium ? Number(form.premium) : undefined,
+    loanAmount: requireManwon(form.loanAmount, '융자금을'),
+    premium: isCommercial ? requireManwon(form.premium, '권리금을') : undefined,
     privateMemo: form.privateMemo.trim() || undefined,
   };
 
@@ -1222,7 +1305,7 @@ function buildListingPayloads(form: FormState, isCommercial: boolean): IntakeLis
       return {
         ...common,
         transactionType,
-        price: Number(form.salePrice),
+        price: requireManwon(form.salePrice, '매매가를'),
       };
     }
 
@@ -1230,15 +1313,15 @@ function buildListingPayloads(form: FormState, isCommercial: boolean): IntakeLis
       return {
         ...common,
         transactionType,
-        price: Number(form.jeonsePrice),
+        price: requireManwon(form.jeonsePrice, '전세가를'),
       };
     }
 
     return {
       ...common,
       transactionType,
-      deposit: form.monthlyDeposit ? Number(form.monthlyDeposit) : undefined,
-      monthlyRent: Number(form.monthlyRent),
+      deposit: requireManwon(form.monthlyDeposit, '보증금을'),
+      monthlyRent: requireManwon(form.monthlyRent, '월세를'),
     };
   });
 }
@@ -1255,14 +1338,42 @@ function ExistingPropertyNotice({
   needsUnit: boolean;
 }) {
   const listings = property.listings ?? [];
+  const subject = needsUnit ? '이 호실' : '이 부동산';
+  // 같은 호실에 다시 들어온 의뢰: 지난 의뢰가 어떻게 끝났는지와 이미 연결된 소유자를 알려 준다
+  const { data: detail } = useQuery({
+    queryKey: ['properties', property.id],
+    queryFn: () => api.properties.findOne(property.id),
+    staleTime: 30_000,
+  });
+  const { data: lastIntakes } = useQuery({
+    queryKey: ['listing-intakes', 'registration-last', property.id],
+    queryFn: () =>
+      api.listingIntakes.findAll({
+        propertyId: property.id,
+        includeClosed: true,
+        sortBy: 'receivedAt',
+        sortOrder: 'desc',
+        limit: 1,
+      }),
+    enabled: listings.length === 0,
+    staleTime: 30_000,
+  });
+  const lastIntake = lastIntakes?.items?.[0];
+  const owners = (detail?.propertyContacts ?? []).filter(
+    (item) => (item.role === 'owner' || item.role === 'co_owner') && item.status !== 'archived' && item.status !== 'transferred',
+  );
+  const ownerNames = owners.map((item) => item.contact?.name).filter(Boolean).join(', ');
   return (
     <div className="rounded-md border border-info/40 bg-info-soft px-3 py-2.5 text-xs text-info-strong">
-      <div className="font-medium">
-        {needsUnit ? '이 호실' : '이 부동산'}은 이미 등록되어 있어요.
+      <div className="flex items-center gap-2 font-medium">
+        <span>{subject}은 이미 매물로 관리하고 있습니다.</span>
+        <Link to="/properties/$id" params={{ id: property.id }} className="ml-auto font-normal underline">
+          매물 상세
+        </Link>
       </div>
       {listings.length > 0 ? (
         <div className="mt-1">
-          현재 등록된 거래:
+          진행 중인 거래:
           <ul className="mt-1 space-y-0.5">
             {listings.map((l) => (
               <li key={l.id} className="flex items-center gap-1.5">
@@ -1272,32 +1383,45 @@ function ExistingPropertyNotice({
                 </span>
                 <span>
                   {l.transactionType === 'monthly'
-                    ? `보증금 ${l.deposit ? formatMoney(l.deposit) : '-'} / 월 ${l.monthlyRent?.toLocaleString() ?? '-'}만`
+                    ? formatRent(l.deposit, l.monthlyRent)
                     : l.price
                       ? formatMoney(l.price)
                       : '가격 미입력'}
                 </span>
-                <Link
-                  to="/properties/$id"
-                  params={{ id: property.id }}
-                  className="ml-auto underline"
-                >
-                  상세
-                </Link>
               </li>
             ))}
           </ul>
-          <div className="mt-1.5 text-info-strong">
-            아래 거래유형을 골라 새 거래를 추가하거나, 상세에서 기존 거래를 수정할 수 있어요.
+          <div className="mt-1.5">
+            다른 거래유형을 고르면 지금 의뢰에 거래 조건이 더해집니다. 있는 조건의 가격은 매물 상세에서 고치세요.
           </div>
         </div>
-      ) : (
+      ) : lastIntake ? (
         <div className="mt-1">
-          등록된 거래는 아직 없어요. 새 거래를 이 부동산에 추가합니다.
+          지난 의뢰는 {getIntakeEndLabel(lastIntake)}
+          {lastIntake.lifecycleChangedAt ? `(${formatDate(lastIntake.lifecycleChangedAt)})` : ''}. 이번 의뢰를 새로 접수합니다.
         </div>
+      ) : (
+        <div className="mt-1">진행 중인 거래가 없습니다. 이번 의뢰를 새로 접수합니다.</div>
+      )}
+      {ownerNames && (
+        <div className="mt-1">소유자 {ownerNames}님이 이미 연결되어 있어 소유자 칸은 비워 두어도 됩니다.</div>
       )}
     </div>
   );
+}
+
+const INTAKE_END_LABELS: Record<string, string> = {
+  deal_completed: '거래 완료로 끝났습니다',
+  external_deal_completed: '다른 중개사·직거래 계약으로 끝났습니다',
+  withdrawn: '의뢰 철회로 끝났습니다',
+  unavailable: '거래 불가로 끝났습니다',
+  superseded: '새 의뢰로 대체되었습니다',
+  other: '기타 사유로 끝났습니다',
+};
+
+function getIntakeEndLabel(intake: { lifecycleStatus: string; closedReason?: string | null }) {
+  if (intake.lifecycleStatus !== 'closed') return '아직 진행 중입니다';
+  return INTAKE_END_LABELS[intake.closedReason ?? ''] ?? '끝났습니다';
 }
 
 // Section / FieldRow는 ./-new-form-ui 에서 import.
@@ -1456,5 +1580,128 @@ function SitePicker({
         </Command>
       </PopoverContent>
     </Popover>
+  );
+}
+
+// ============================================================
+// OwnerContactField — 전화한 집주인을 새로 적거나, 이미 있는 연락처에서 고른다
+// ============================================================
+
+function OwnerContactField({
+  name,
+  phone,
+  contact,
+  onNameChange,
+  onPhoneChange,
+  onContactChange,
+}: {
+  name: string;
+  phone: string;
+  contact: { id: string; name: string; phone: string | null } | null;
+  onNameChange: (value: string) => void;
+  onPhoneChange: (value: string) => void;
+  onContactChange: (contact: { id: string; name: string; phone: string | null } | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const { data: found, isFetching } = useQuery({
+    queryKey: ['contacts', 'owner-picker', query.trim()],
+    queryFn: () => api.contacts.findAll({ search: query.trim() || undefined, limit: 8 }),
+    enabled: open,
+    staleTime: 10_000,
+  });
+  // 서버는 같은 전화번호의 연락처가 있으면 새로 만들지 않고 그 사람을 연결한다 — 미리 알려 준다.
+  // (공용 규칙: 7자리부터 정확히 같은 번호만 본다)
+  const { contact: phoneMatch } = useExistingContactByPhone(phone, { enabled: !contact });
+  const phoneProblem = phoneInputProblem(phone);
+
+  if (contact) {
+    return (
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[13px] text-muted-foreground">소유자</div>
+          <div className="mt-1 truncate text-sm font-medium">
+            {contact.name}
+            {contact.phone && (
+              <span className="ml-2 font-normal text-muted-foreground">{formatPhone(contact.phone)}</span>
+            )}
+          </div>
+        </div>
+        <Button type="button" variant="ghost" size="sm" onClick={() => onContactChange(null)}>
+          바꾸기
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[13px] font-medium">소유자</span>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs">
+              <Search className="size-3.5" />
+              연락처에서 찾기
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-80 p-0">
+            <Command shouldFilter={false}>
+              <CommandInput value={query} onValueChange={setQuery} placeholder="이름·전화번호로 찾기" />
+              <CommandList>
+                <CommandEmpty>
+                  {isFetching ? '찾는 중…' : '맞는 연락처가 없습니다. 이름과 전화번호를 새로 적으세요.'}
+                </CommandEmpty>
+                {(found?.items ?? []).map((item) => (
+                  <CommandItem
+                    key={item.id}
+                    value={item.id}
+                    onSelect={() => {
+                      onContactChange({ id: item.id, name: item.name, phone: item.phone ?? null });
+                      setOpen(false);
+                    }}
+                  >
+                    <span className="truncate">{item.name}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">{formatPhone(item.phone)}</span>
+                  </CommandItem>
+                ))}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <FieldRow label="이름">
+          <Input
+            aria-label="소유자 이름"
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder="홍길동"
+          />
+        </FieldRow>
+        <FieldRow label="전화번호" hint={phoneProblem ?? undefined} hintInvalid={Boolean(phoneProblem)}>
+          <Input
+            aria-label="소유자 전화번호"
+            inputMode="tel"
+            value={phone}
+            aria-invalid={phoneProblem ? true : undefined}
+            onChange={(e) => onPhoneChange(formatPhoneWhileTyping(e.target.value))}
+            placeholder="010-1234-5678"
+          />
+        </FieldRow>
+      </div>
+      {phoneMatch && (
+        <p className="text-xs text-info-strong">
+          같은 번호로 저장된 <b>{phoneMatch.name}</b>님이 있어 저장하면 이분을 소유자로 연결합니다.{' '}
+          <button
+            type="button"
+            className="underline underline-offset-2"
+            onClick={() => onContactChange({ id: phoneMatch.id, name: phoneMatch.name, phone: phoneMatch.phone ?? null })}
+          >
+            이분으로 고르기
+          </button>
+        </p>
+      )}
+    </div>
   );
 }

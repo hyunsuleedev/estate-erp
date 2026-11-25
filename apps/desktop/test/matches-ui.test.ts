@@ -119,8 +119,12 @@ describe('desktop matches workbench', () => {
     assert.doesNotMatch(matchesPageSource, /viewMode|MatchViewMode|StageMatchView|getMatchStageGroups/);
     assert.doesNotMatch(matchGroupsSource, /StageMatchView|StageMatchGroupSection|StageMatchTableRow/);
     assert.doesNotMatch(matchViewUtilsSource, /getMatchStageGroups|matchStageGroups|MatchStageGroup/);
-    // 완료된 조건은 이 화면에서 불러오지 않는다
-    assert.doesNotMatch(matchesPageSource, /fetchBuyerRequirements\('completed'\)/);
+    // 완료된 조건은 평소에는 불러오지 않고, 상태 필터에서 '완료'를 골랐을 때만 불러온다
+    // (2026-11-22 검수: 완료하면 목록에서 사라져 다시 열 길이 없었다)
+    assert.match(
+      matchesPageSource,
+      /queryFn: \(\) => fetchBuyerRequirements\('completed'\),\s*enabled: includeCompleted,/,
+    );
     assert.doesNotMatch(matchesPageSource, />\s*매물별\s*<\/Button>/);
     assert.doesNotMatch(matchesPageSource, />\s*전체\s*<\/Button>/);
     assert.doesNotMatch(matchesPageSource, /MatchListTable/);
@@ -285,21 +289,29 @@ describe('desktop matches workbench', () => {
       /data-buyer-summary-row[\s\S]{0,120}className=\{cn\(BUYER_TABLE_COLUMNS, 'min-h-10', 'group', peekOpen && 'bg-muted\/50'\)\}/,
     );
     for (const label of [
-      '고객', '연락처', '매물 유형', '희망 평형', '예산', '희망 지역·단지', '입주 희망일', '상태', '긴급도', '매칭',
+      '긴급도', '고객', '연락처', '상태', '매물 유형', '희망 평형', '예산', '희망 지역·단지', '입주 희망일',
     ]) {
       assert.match(matchGroupsSource, new RegExp(`\\{ label: '${label}', icon:`));
     }
-    // 입주 희망일 · 상태 · 긴급도: 필터 줄에만 있던 값을 표에서도 보인다. 순서는 조건(언제) → 상태 → 긴급도 → 매칭
+    // 입주 희망일 · 상태 · 긴급도: 필터 줄에만 있던 값을 표에서도 보인다. 긴급도는 고객 이름 왼쪽, 상태는 연락처 바로 오른쪽, 그 뒤로 조건 → 입주 희망일. 매칭 칸은 뺐다 (건수는 아래 매칭 카드에서 보인다)
     assert.match(
       matchGroupsSource,
-      /\{ label: '희망 지역·단지', icon: <MapPin \/> \},\s*\{ label: '입주 희망일', icon: <CalendarDays \/> \},\s*\{ label: '상태', icon: <CircleDashed \/> \},\s*\{ label: '긴급도', icon: <Siren \/> \},\s*\{ label: '매칭', icon: <GitBranch \/> \}/,
+      /\{ label: '긴급도', icon: <Siren \/> \},\s*\{ label: '고객', icon: <User \/> \},\s*\{ label: '연락처', icon: <Phone \/> \},\s*\{ label: '상태', icon: <CircleDashed \/> \},\s*\{ label: '매물 유형', icon: <Tag \/> \}[\s\S]*\{ label: '희망 지역·단지', icon: <MapPin \/> \},\s*\{ label: '입주 희망일', icon: <CalendarDays \/> \},\s*\];/,
     );
     assert.match(
       matchGroupsSource,
-      /label="입주 희망일"\s+value=\{formatDate\(buyerRequirement\.moveInDate\)\}\s+className="tabular-nums"\s+muted=\{!buyerRequirement\.moveInDate\}/,
+      /label="입주 희망일"\s+value=\{formatDate\(buyerRequirement\.moveInDate\)\}\s+className="tabular-nums border-r-0"\s+muted=\{!buyerRequirement\.moveInDate\}/,
     );
-    assert.match(matchGroupsSource, /<StatusBadge kind="buyerStatus" status=\{buyerRequirement\.status\} size="sm" \/>/);
-    assert.match(matchGroupsSource, /<StatusBadge kind="buyerUrgency" status=\{buyerRequirement\.urgency\} size="sm" \/>/);
+    // 상태 칸은 매물관리 표의 매물상태 칸과 같은 알약(점 + 둥근 알약)이고, 고르는 목록도 같은 알약을 쓴다
+    assert.match(matchGroupsSource, /<BuyerStatusPill status=\{buyerRequirement\.status\} \/>/);
+    assert.match(requirementCellsSource, /export function BuyerStatusPill/);
+    assert.match(requirementCellsSource, /kind === 'buyerStatus' \? \(\s*<BuyerStatusPill status=\{option\} \/>/);
+    // 긴급도도 상태와 같은 알약이고, 고르는 목록도 같은 알약을 쓴다
+    assert.match(matchGroupsSource, /<BuyerUrgencyPill status=\{buyerRequirement\.urgency\} \/>/);
+    assert.match(requirementCellsSource, /export function BuyerUrgencyPill/);
+    assert.match(requirementCellsSource, /<BuyerUrgencyPill status=\{option\} \/>/);
+    // 칸 글자는 매물관리 표와 같다: 14px · 굵기 450 · 줄 높이 21px
+    assert.match(matchGroupsSource, /'min-w-0 text-\[14px\] font-\[450\] leading-\[21px\]',/);
     // 필터 줄의 같은 필터와 아이콘이 같다
     for (const [label, icon] of [['입주 희망일', 'CalendarDays'], ['상태', 'CircleDashed'], ['긴급도', 'Siren']]) {
       assert.match(wantedFilterBarSource, new RegExp(`label="${label}"\\s+shape="soft"\\s+icon=\\{<${icon} />\\}`));
@@ -307,17 +319,17 @@ describe('desktop matches workbench', () => {
     // 이름 옆의 "보류" 꼬리표는 상태 칸으로 옮겼다 (같은 값을 두 번 보이지 않는다)
     assert.doesNotMatch(matchGroupsSource, /buyerRequirement\.status === 'hold' &&/);
     // 왼쪽 메뉴를 편 1440px 창(본문 1184px)에 가로로 굴리지 않고 들어가는 너비
-    assert.match(matchGroupsSource, /BUYER_TABLE_MIN_WIDTH_CLASS = 'min-w-\[1204px\]'/);
+    assert.match(matchGroupsSource, /BUYER_TABLE_MIN_WIDTH_CLASS = 'min-w-\[1128px\]'/);
     const gridColumns = matchGroupsSource.match(/'grid grid-cols-\[([^\]]+)\]'/)?.[1] ?? '';
     assert.equal(
       gridColumns,
-      '40px_28px_148px_122px_100px_104px_minmax(156px,200px)_minmax(140px,1fr)_106px_68px_80px_112px',
+      '40px_28px_80px_148px_130px_80px_100px_104px_minmax(168px,212px)_minmax(140px,1fr)_110px',
     );
     // 최소 폭 값은 칸 너비(유동 칸은 최소값)의 합과 같아야 한다
     const minimumWidth = gridColumns
       .split('_')
       .reduce((sum, track) => sum + Number(track.match(/^(?:minmax\()?(\d+)px/)?.[1] ?? NaN), 0);
-    assert.equal(minimumWidth, 1204);
+    assert.equal(minimumWidth, 1128);
     // 고객 칸에 매물관리 표와 같은 "열기" 버튼이 있고, 누르면 옆 상세 패널이 열린다
     assert.match(matchGroupsSource, /<RowOpenButton\s+label=\{buyerName\}\s+current=\{peekOpen\}/);
     const peekSource = readFileSync(
@@ -435,11 +447,16 @@ describe('desktop matches workbench', () => {
       requirementCellsSource,
       /setError\(\s*cause instanceof ApiError && cause\.statusCode === 404 \? DELETED_ERROR : SAVE_ERROR,\s*\);\s*refocusRef\.current = focused;/,
     );
-    // 고르면 끝나는 값은 고르는 즉시 저장한다
-    assert.match(requirementCellsSource, /onClick=\{\(\) => editor\.save\(option\)\}/);
+    // 고르면 끝나는 값은 고르는 즉시 저장한다. 단, 진행 중인 매칭이 있는 손님을 '완료'로 바꿀 때는
+    // 매칭도 함께 닫히므로 한 번 묻는다 (2026-11-22 검수 2차)
+    assert.match(
+      requirementCellsSource,
+      /confirm && option === confirm\.value && option !== value\s*\? setAsking\(true\)\s*: editor\.save\(option\)/,
+    );
+    assert.match(requirementCellsSource, /완료로 바꾸면 연결한 매물 \$\{openMatchCount\}건의 진행도 함께 끝납니다/);
     assert.match(requirementCellsSource, /setDraft\(next\);\s*editor\.save\(next\);/);
     // 고르는 꼬리표는 표의 칸과 같은 부품이다
-    assert.match(requirementCellsSource, /<StatusBadge kind=\{kind\} status=\{option\} size="sm" \/>/);
+    assert.match(requirementCellsSource, /kind === 'buyerStatus' \? \(\s*<BuyerStatusPill status=\{option\} \/>\s*\) : \(\s*<BuyerUrgencyPill status=\{option\} \/>\s*\)/);
 
     // 저장: 상태는 전용 경로, 나머지는 고친 값만 PATCH. 응답을 목록에 덮고 관련 목록을 다시 받는다
     assert.match(
@@ -512,7 +529,7 @@ describe('desktop matches workbench', () => {
     );
     assert.match(
       matchesPageSource,
-      /editingRequirement && editingDetached\s*\? \[\.\.\.requirements, editingRequirement\]\s*: requirements;/,
+      /editingRequirement && editingDetached \? \[\.\.\.mine, editingRequirement\] : mine;/,
     );
     // 목록에서 빠진 조건은 지금 값을 알 수 없으므로 남겨 둔 줄에서는 저장하지 않는다 (입력은 편집기에 남긴다)
     assert.match(
@@ -605,9 +622,12 @@ describe('desktop matches workbench', () => {
       /const latest = await api\.buyerRequirements\.findOne\(id\);\s*if \(currentStatus\(latest\) !== 'completed'\) \{\s*toast\.info\('그 사이 상태가 바뀌어 되돌리지 않았습니다'\);/,
     );
 
-    // 서버가 입주 희망일 비우기를 받지 않는 동안에는 비우기 버튼을 두지 않고, 빈 칸은 고치지 않은 것으로 읽는다
-    assert.doesNotMatch(requirementCellsSource, /날짜 지우기|비우기/);
-    assert.match(requirementEditSource, /if \(!date\) return null;/);
+    // 서버가 입주 희망일 비우기(null)를 받으므로 저장된 날짜가 있으면 "날짜 지우기"를 두고, 빈 칸은 비우기로 읽는다
+    assert.match(requirementCellsSource, /날짜 지우기/);
+    assert.match(
+      requirementEditSource,
+      /if \(!date\) return requirement\.moveInDate \? toUpdate\(\{ moveInDate: null \}\) : null;/,
+    );
   });
 
   it('lists every open buyer requirement, including ones without a match', async () => {
@@ -616,9 +636,11 @@ describe('desktop matches workbench', () => {
     assert.match(matchesPageSource, /page >= result\.pagination\.totalPages/);
     assert.match(
       matchesPageSource,
-      /const isError = isMatchesError \|\| isRequirementsError;/,
+      /const isError =\s*isMatchesError \|\| isRequirementsError \|\| \(includeCompleted && completedQuery\.isError\);/,
     );
-    // 매칭 없는 행에서 그 조건으로 고정해 매칭을 만든다
+    // 매칭 없는 고객은 줄 아래에서 그 조건으로 고정해 매칭을 만든다 (매칭 칸은 뺐다)
+    assert.match(matchGroupsSource, /data-buyer-no-match/);
+    assert.doesNotMatch(matchGroupsSource, /label: '매칭'/);
     assert.match(matchGroupsSource, />매칭 없음<\/span>/);
     assert.match(matchGroupsSource, /aria-label=\{`\$\{buyerName\} 매칭 생성`\}/);
     assert.match(matchesPageSource, /\{ kind: 'demand', requirementId: createRequirementId \}/);
@@ -757,6 +779,7 @@ describe('desktop matches workbench', () => {
       scopeRequirementFilters: (
         filters: unknown,
         items: unknown[],
+        options?: { keepCompleted?: boolean },
       ) => { statuses: string[]; locations: string[]; assignees: string[]; siteTypes: string[] };
     };
 
@@ -899,7 +922,12 @@ describe('desktop matches workbench', () => {
     assert.deepEqual(stageScoped.statuses, ['completed', 'hold']);
     assert.deepEqual(stageScoped.locations, ['site:site-1', 'site:completed-only']);
     assert.deepEqual(stageScoped.assignees, ['u1', 'completed-agent']);
-    assert.match(matchesPageSource, /scopeRequirementFilters\(requirementFilters, requirements\)/);
+    assert.match(matchesPageSource, /scopeRequirementFilters\(requirementFilters, requirements, \{/);
+    // 완료 조건을 따로 받아 온 뒤에는 완료가 없어도 '완료' 선택을 그대로 둔다
+    assert.deepEqual(
+      scopeRequirementFilters(stageOnlySelection, [base], { keepCompleted: true }).statuses,
+      ['completed', 'hold'],
+    );
     assert.match(matchesPageSource, /filters=\{activeRequirementFilters\}/);
     assert.match(matchesPageSource, /requirementFilters: activeRequirementFilters/);
 
@@ -1016,7 +1044,7 @@ describe('desktop matches workbench', () => {
       '월세 보증금 협의 / 월 협의',
     );
     // 예산 칸은 넓은 창에서 200px까지만 넓어지고, 좁을 때에도 두 값 범위("9억 ~ 10억 5,000만")가 보이는 폭을 지킨다
-    assert.match(matchGroupsSource, /minmax\(156px,200px\)/);
+    assert.match(matchGroupsSource, /minmax\(168px,212px\)/);
   });
 
   it('shows the desired supply area in the top buyer summary', async () => {

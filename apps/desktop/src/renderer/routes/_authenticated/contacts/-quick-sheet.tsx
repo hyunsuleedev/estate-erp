@@ -12,7 +12,6 @@ import type {
   BuyerRequirement,
   Consultation,
   ContactDetail,
-  ContactRelation,
   PropertyContact,
 } from '@estate-erp/api-client';
 import {
@@ -28,34 +27,37 @@ import { api } from '@/lib/api';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
 import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
-import { formatPhone } from '@/lib/format';
+import { formatDate, formatPhone } from '@/lib/format';
+import { formatConsultationWhen } from '../consultations/-consultation-list-model';
 import { ContactTagChip } from '@/components/contacts/contact-tag-chip';
 import { useContactTagColors } from './-contact-tag-picker';
+import { ContactNameFill, isPlaceholderContactName } from './-contact-name';
+import { TaskCreateDialog } from '../tasks/-task-create-dialog';
+import { ConsultationContent } from '../consultations/-consultation-badges';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  formatDateShort,
-  formatDateTime,
   getDaysSince,
   getDaysUntil,
   type QuickSheetNotice,
 } from '@/components/quick-sheet';
 import {
+  collectPartyDisplayItems,
+  placeLabelOf,
   buyerStatusLabels,
   consultationTypeLabels,
+  contactKindLabels,
   formatAreaSummary,
   formatBudgetSummary,
   formatRegionSummary,
-  getContactRelationLabel,
   propertyRoleLabels,
   urgencyLabels,
+  type PartyDisplayItem,
 } from './-detail-cards';
 import {
-  BuyerReqAddDialog,
   ConsultationAddDialog,
   PropertyLinkDialog,
-  TaskAddDialog,
 } from './-detail-action-dialogs';
 import {
   EmptyText,
@@ -63,6 +65,7 @@ import {
   SectionTitle,
   TextAction,
 } from '../properties/-components/property-inspector-view';
+import { useInspectorOutsideClose } from '@/hooks/use-inspector-outside-close';
 
 /**
  * 연락처 상세 패널 — 연락처 목록에서 행의 "열기"를 누르면 오른쪽에 열린다.
@@ -91,7 +94,7 @@ const transactionTypeTones: Record<string, { label: string; className: string }>
   monthly: { label: '월세', className: 'bg-[#fbf3db] text-[#8f6b1f]' },
 };
 
-type ContactQuickAction = 'consultation' | 'task' | 'buyerReq' | 'propertyLink' | null;
+type ContactQuickAction = 'consultation' | 'task' | 'propertyLink' | null;
 
 export const CONTACT_INSPECTOR_WIDTH = 584;
 
@@ -146,6 +149,9 @@ export function ContactInspector({
     );
     return () => window.clearTimeout(timer);
   }, [closing, animate, onExited]);
+
+  // 패널 밖을 누르면 닫는다 (떠 있는 창 · 줄의 열기 단추는 밖이 아니다)
+  useInspectorOutsideClose(() => onClose());
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -220,24 +226,79 @@ const barButtonClassName =
   'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground disabled:pointer-events-none disabled:opacity-50';
 
 function ContactSheetContent({ contact }: { contact: ContactDetail }) {
+  const createTab = useTabStore((state) => state.createTab);
   const [quickAction, setQuickAction] = useState<ContactQuickAction>(null);
+  const [consultScope, setConsultScope] = useState<'self' | 'party'>('self');
   const phones = useMemo(() => collectContactPhones(contact), [contact]);
   const primaryPhone = phones[0]?.phone ?? null;
   const visibleTags = contact.tags ?? [];
   const tagColors = useContactTagColors();
   const propertyContacts = contact.propertyContacts ?? [];
   const buyerRequirements = contact.buyerRequirements ?? [];
-  const consultations = contact.consultations ?? [];
-  const relationships = useMemo(() => mergeContactRelationships(contact), [contact]);
+  const parties = useMemo(() => {
+    const fromParties = contact.parties?.items ?? [];
+    if (fromParties.length > 0) return fromParties;
+    return contact.organizationParty ? [contact.organizationParty] : [];
+  }, [contact]);
+  const hasParties = parties.length > 0;
+  const partyMemberLabels = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const party of parties) {
+      if (
+        party.organizationContactId &&
+        party.organizationContactId !== contact.id &&
+        !map.has(party.organizationContactId)
+      ) {
+        map.set(party.organizationContactId, '법인');
+      }
+      for (const member of party.members) {
+        if (member.contactId === contact.id) continue;
+        if (!map.has(member.contactId)) {
+          map.set(
+            member.contactId,
+            member.roleLabel || (party.kind === 'household' ? '세대원' : '법인'),
+          );
+        }
+      }
+    }
+    return map;
+  }, [parties, contact.id]);
+
+  const partyConsultationsQuery = useQuery({
+    queryKey: ['contacts', contact.id, 'consultations', 'party'],
+    queryFn: () => api.contacts.getConsultations(contact.id, 'party'),
+    enabled: hasParties && consultScope === 'party',
+  });
+
+  const consultations =
+    consultScope === 'party' && hasParties
+      ? (partyConsultationsQuery.data ?? contact.consultations ?? [])
+      : (contact.consultations ?? []);
+  const consultationsLoading =
+    consultScope === 'party' && hasParties && partyConsultationsQuery.isLoading;
+  const partyItems = useMemo(() => collectPartyDisplayItems(contact).allItems, [contact]);
   const notices = useMemo(() => getContactSheetNotices(contact), [contact]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-white">
       {/* 머리 영역: 이름 → 연락 수단 → 그룹·태그 */}
       <div className="shrink-0 border-b border-[#ecebe8] px-6 pb-4">
-        <h2 className="text-[23px] font-bold leading-[1.25] tracking-[-0.025em] text-[#2f2e2a]">
-          {contact.name}
-        </h2>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h2
+            className={cn(
+              'text-[23px] font-bold leading-[1.25] tracking-[-0.025em]',
+              isPlaceholderContactName(contact.name) ? 'text-[#2f2e2a]/40' : 'text-[#2f2e2a]',
+            )}
+          >
+            {contact.name}
+          </h2>
+          {contact.kind === 'organization' && (
+            <span className="rounded bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] font-medium text-[#5f5e5b]">
+              {contactKindLabels.organization}
+            </span>
+          )}
+          {isPlaceholderContactName(contact.name) && <ContactNameFill contactId={contact.id} />}
+        </div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-foreground">
           {phones.length > 0 ? (
             <span className="inline-flex items-center gap-1.5 tabular-nums">
@@ -261,7 +322,7 @@ function ContactSheetContent({ contact }: { contact: ContactDetail }) {
           )}
           <span className="inline-flex items-center gap-1.5 text-muted-foreground">
             <Clock3 className="size-3.5 text-[#a9a7a1]" />
-            등록 {formatDateShort(contact.createdAt)}
+            등록 {formatDate(contact.createdAt)}
           </span>
         </div>
 
@@ -326,7 +387,7 @@ function ContactSheetContent({ contact }: { contact: ContactDetail }) {
             action={
               <TextAction
                 icon={<Plus />}
-                label="매물 연결"
+                label="소유 매물 연결"
                 onClick={() => setQuickAction('propertyLink')}
               />
             }
@@ -350,12 +411,18 @@ function ContactSheetContent({ contact }: { contact: ContactDetail }) {
             action={
               <TextAction
                 icon={<Plus />}
-                label="희망조건 추가"
-                onClick={() => setQuickAction('buyerReq')}
+                label="희망매물 만들기"
+                onClick={() => {
+                  // 목록은 그대로 두고 등록 화면을 새 탭으로 연다. 취소하면 연락처 목록으로 돌아온다
+                  // (예전에는 이 탭이 등록 화면으로 바뀌었다가, 취소하면 탭째 닫혀 목록을 잃었다).
+                  const route = `/buyer-requirements/new?contactId=${contact.id}&from=contacts`;
+                  const meta = getRouteMeta(route);
+                  createTab({ route, kind: meta.kind, title: meta.title });
+                }}
               />
             }
           >
-            매수요건
+            희망 조건
           </SectionTitle>
           {buyerRequirements.length > 0 ? (
             <>
@@ -364,56 +431,105 @@ function ContactSheetContent({ contact }: { contact: ContactDetail }) {
                   <ContactSheetBuyerReqCard key={requirement.id} requirement={requirement} />
                 ))}
               </div>
-              <Link to="/customers-table" className={moreLinkClassName}>
-                고객 원장에서 보기
-                <ExternalLink className="size-3" />
-              </Link>
             </>
           ) : (
-            <EmptyText>등록된 매수요건이 없습니다.</EmptyText>
+            <EmptyText>등록된 희망 조건이 없습니다.</EmptyText>
           )}
         </section>
 
         <section>
           <SectionTitle
-            count={consultations.length || undefined}
+            count={
+              (consultScope === 'party'
+                ? consultations.length
+                : (contact.consultationCount ?? consultations.length)) || undefined
+            }
             action={
               <TextAction
                 icon={<Plus />}
-                label="상담 기록"
+                label="상담 적기"
                 onClick={() => setQuickAction('consultation')}
               />
             }
           >
             최근 상담
           </SectionTitle>
-          {consultations.length > 0 ? (
+          {hasParties && (
+            <div
+              role="group"
+              aria-label="상담 보기 범위"
+              className="mb-2 inline-flex items-center rounded border border-[#e9e9e7] bg-[#f7f6f3] p-0.5 text-[11.5px]"
+            >
+              {[
+                { value: 'self' as const, label: '본인만' },
+                { value: 'party' as const, label: '세대·법인 전체' },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setConsultScope(option.value)}
+                  className={cn(
+                    'rounded-[3px] px-2 py-0.5 font-medium transition-colors',
+                    consultScope === option.value
+                      ? 'bg-white text-[#37352f] shadow-xs'
+                      : 'text-[#37352f]/60 hover:text-[#37352f]',
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {consultationsLoading ? (
+            <div className="space-y-2 py-2">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
+          ) : consultations.length > 0 ? (
             <>
               <div className="divide-y divide-[#f1f0ec]">
-                {consultations.slice(0, 3).map((consultation) => (
-                  <ContactSheetConsultationRow key={consultation.id} consultation={consultation} />
-                ))}
+                {consultations.slice(0, 3).map((consultation) => {
+                  const isOther = consultation.contactId !== contact.id;
+                  const role = partyMemberLabels.get(consultation.contactId);
+                  const authorName = consultation.contact?.name ?? '구성원';
+                  const authorLabel = isOther
+                    ? role
+                      ? `${role} ${authorName}`
+                      : authorName
+                    : null;
+                  return (
+                    <ContactSheetConsultationRow
+                      key={consultation.id}
+                      consultation={consultation}
+                      authorLabel={authorLabel}
+                    />
+                  );
+                })}
               </div>
-              <Link to="/consultations" className={moreLinkClassName}>
+              <Link to="/consultations" search={{ contactId: contact.id }} className={moreLinkClassName}>
                 상담분석에서 전체 보기
                 <ExternalLink className="size-3" />
               </Link>
             </>
           ) : (
-            <EmptyText>상담 기록이 없습니다.</EmptyText>
+            <EmptyText>
+              {consultScope === 'party'
+                ? '이 세대·법인에 남긴 상담이 없습니다.'
+                : '상담 기록이 없습니다.'}
+            </EmptyText>
           )}
         </section>
 
         <section>
-          <SectionTitle count={relationships.length || undefined}>관계</SectionTitle>
-          {relationships.length > 0 ? (
+          <SectionTitle count={partyItems.length || undefined}>세대 · 법인 소속</SectionTitle>
+          {partyItems.length > 0 ? (
             <div className="divide-y divide-[#f1f0ec]">
-              {relationships.map((item) => (
-                <ContactSheetRelationRow key={item.id} item={item} />
+              {partyItems.map((item) => (
+                <ContactSheetPartyRow key={item.id} item={item} />
               ))}
             </div>
           ) : (
-            <EmptyText>등록된 관계가 없습니다.</EmptyText>
+            <EmptyText>연결된 세대 구성원이나 법인 소속이 없습니다.</EmptyText>
           )}
         </section>
 
@@ -450,7 +566,7 @@ function ContactSheetContent({ contact }: { contact: ContactDetail }) {
         )}
         <button type="button" className={barButtonClassName} onClick={() => setQuickAction('task')}>
           <ListTodo className="size-3.5" />
-          후속 업무
+          업무 추가
         </button>
         <button
           type="button"
@@ -461,7 +577,7 @@ function ContactSheetContent({ contact }: { contact: ContactDetail }) {
           onClick={() => setQuickAction('consultation')}
         >
           <MessageSquarePlus className="size-3.5" />
-          상담 기록
+          상담 적기
         </button>
       </div>
 
@@ -471,17 +587,10 @@ function ContactSheetContent({ contact }: { contact: ContactDetail }) {
         open={quickAction === 'consultation'}
         onOpenChange={(open) => setQuickAction(open ? 'consultation' : null)}
       />
-      <TaskAddDialog
-        contactId={contact.id}
-        contactName={contact.name}
+      <TaskCreateDialog
         open={quickAction === 'task'}
         onOpenChange={(open) => setQuickAction(open ? 'task' : null)}
-      />
-      <BuyerReqAddDialog
         contactId={contact.id}
-        contactName={contact.name}
-        open={quickAction === 'buyerReq'}
-        onOpenChange={(open) => setQuickAction(open ? 'buyerReq' : null)}
       />
       <PropertyLinkDialog
         contactId={contact.id}
@@ -571,9 +680,7 @@ function ContactSheetPropertyRow({
 }: {
   propertyContact: PropertyContact;
 }) {
-  const title = propertyContact.property?.site?.name ?? '연결 매물';
-  const unitName = formatUnitName(propertyContact.property?.unit);
-  const titleLine = unitName ? `${title} · ${unitName}` : title;
+  const titleLine = placeLabelOf(propertyContact.property) || '연결 매물';
   const address =
     propertyContact.property?.site?.roadAddress ??
     propertyContact.property?.site?.jibunAddress ??
@@ -664,10 +771,10 @@ function ContactSheetBuyerReqCard({ requirement }: { requirement: BuyerRequireme
           )}
         </div>
         <div className="shrink-0 text-right text-[11px] text-muted-foreground">
-          등록 {formatDateShort(requirement.createdAt)}
+          등록 {formatDate(requirement.createdAt)}
           {requirement.nextContactDate && (
             <div className="text-[11px] text-muted-foreground">
-              다음 연락 {formatDateShort(requirement.nextContactDate)}
+              다음 연락 {formatDate(requirement.nextContactDate)}
             </div>
           )}
         </div>
@@ -688,7 +795,13 @@ function ContactSheetBuyerReqCard({ requirement }: { requirement: BuyerRequireme
   );
 }
 
-function ContactSheetConsultationRow({ consultation }: { consultation: Consultation }) {
+function ContactSheetConsultationRow({
+  consultation,
+  authorLabel,
+}: {
+  consultation: Consultation;
+  authorLabel?: string | null;
+}) {
   const siteName = consultation.property?.site?.name;
   return (
     <div className="py-2.5">
@@ -696,7 +809,14 @@ function ContactSheetConsultationRow({ consultation }: { consultation: Consultat
         <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
           {consultationTypeLabels[consultation.type] ?? consultation.type}
         </span>
-        <span className="text-[11px] text-muted-foreground">{formatDateTime(consultation.createdAt)}</span>
+        {authorLabel && (
+          <span className="rounded-[4px] bg-[#e8f1fa] px-1.5 py-0.5 text-[11px] font-medium text-[#1b64b1]">
+            {authorLabel}
+          </span>
+        )}
+        <span className="text-[11px] tabular-nums text-muted-foreground">
+          {formatConsultationWhen(consultation.createdAt)}
+        </span>
         {siteName && (
           <span className="text-[11px] text-muted-foreground">· {siteName}</span>
         )}
@@ -704,75 +824,53 @@ function ContactSheetConsultationRow({ consultation }: { consultation: Consultat
           <span className="text-[11px] text-muted-foreground">· {consultation.createdBy.name}</span>
         )}
       </div>
-      <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-[#2f2e2a]">
-        {consultation.content}
-      </p>
+      <div className="mt-2">
+        <ConsultationContent content={consultation.content} className="line-clamp-3 text-sm leading-6 text-[#2f2e2a]" />
+      </div>
     </div>
   );
 }
 
-interface SheetRelationItem {
-  id: string;
-  relation: ContactRelation;
-  counterpartId: string | null;
-  counterpartName: string;
-  counterpartPhone: string | null;
-}
-
-function mergeContactRelationships(contact: ContactDetail): SheetRelationItem[] {
-  return [
-    ...contact.relationsAsMain.map<SheetRelationItem>((relation) => ({
-      id: `main-${relation.id}`,
-      relation,
-      counterpartId: relation.relatedContact?.id ?? relation.relatedContactId ?? null,
-      counterpartName: relation.relatedContact?.name ?? '이름 없음',
-      counterpartPhone: relation.relatedContact?.phone ?? null,
-    })),
-    ...contact.relationsAsRelated.map<SheetRelationItem>((relation) => ({
-      id: `related-${relation.id}`,
-      relation,
-      counterpartId: relation.contact?.id ?? relation.contactId ?? null,
-      counterpartName: relation.contact?.name ?? '이름 없음',
-      counterpartPhone: relation.contact?.phone ?? null,
-    })),
-  ];
-}
-
-function ContactSheetRelationRow({ item }: { item: SheetRelationItem }) {
-  const relationLabel = getContactRelationLabel(item.relation);
+function ContactSheetPartyRow({ item }: { item: PartyDisplayItem }) {
+  const badgeText = item.roleLabel || (item.partyKind === 'household' ? '세대원' : '소속');
 
   return (
     <div className="flex items-center justify-between gap-3 py-2.5">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          {item.counterpartId ? (
+          {item.contactId ? (
             <Link
               to="/contacts/$id"
-              params={{ id: item.counterpartId }}
+              params={{ id: item.contactId }}
               className="truncate text-sm font-medium text-[#2f2e2a] hover:underline"
             >
-              {item.counterpartName}
+              {item.contactName}
             </Link>
           ) : (
             <span className="truncate text-sm font-medium text-[#2f2e2a]">
-              {item.counterpartName}
+              {item.contactName}
             </span>
           )}
           <span className="rounded-[4px] bg-[#f1f1ef] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
-            {relationLabel}
+            {badgeText}
           </span>
+          {item.isPrimary && (
+            <span className="rounded-[4px] bg-[#e9e5dc] px-1.5 py-0.5 text-[11px] text-[#5f5e5b]">
+              대표
+            </span>
+          )}
         </div>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          {item.counterpartPhone ? formatPhone(item.counterpartPhone) : '연락처 없음'}
-          {item.relation.memo ? ` · ${item.relation.memo}` : ''}
+          {item.contactPhone ? formatPhone(item.contactPhone) : '연락처 없음'}
+          {item.memo ? ` · ${item.memo}` : ''}
         </p>
       </div>
-      {item.counterpartId && (
+      {item.contactId && (
         <Button variant="ghost" size="icon-sm" asChild>
           <Link
             to="/contacts/$id"
-            params={{ id: item.counterpartId }}
-            aria-label={`${item.counterpartName} 상세 보기`}
+            params={{ id: item.contactId }}
+            aria-label={`${item.contactName} 상세 보기`}
           >
             <ExternalLink className="size-3.5" />
           </Link>
@@ -789,13 +887,11 @@ function ContactSheetRelationRow({ item }: { item: SheetRelationItem }) {
  *  - nextContactDate가 7일 이내면 warning
  *  - 활성 BuyerRequirement가 있는데 최근 30일 내 상담이 0이면 warning
  *  - 모든 상담이 60일 이상 지났으면 neutral
- *  - 활성 매수요건이 있는데 PropertyContact가 0이면 neutral
  */
 function getContactSheetNotices(contact: ContactDetail): QuickSheetNotice[] {
   const notices: QuickSheetNotice[] = [];
   const buyerRequirements = contact.buyerRequirements ?? [];
   const consultations = contact.consultations ?? [];
-  const propertyContacts = contact.propertyContacts ?? [];
   const activeBuyerReqs = buyerRequirements.filter((req) => req.status === 'active');
 
   // 1) 연락 지연
@@ -812,7 +908,7 @@ function getContactSheetNotices(contact: ContactDetail): QuickSheetNotice[] {
     const daysAgo = Math.abs(getDaysUntil(oldest.nextContactDate));
     notices.push({
       title: '다음 연락 예정일 지남',
-      detail: `매수요건 ${overdueReqs.length}건 중 ${daysAgo}일 지난 건이 있습니다.`,
+      detail: `희망 조건 ${overdueReqs.length}건 중 ${daysAgo}일 지난 건이 있습니다.`,
       tone: 'danger',
     });
   }
@@ -826,7 +922,7 @@ function getContactSheetNotices(contact: ContactDetail): QuickSheetNotice[] {
   if (upcomingReqs.length > 0 && overdueReqs.length === 0) {
     notices.push({
       title: '다음 연락 임박',
-      detail: `매수요건 ${upcomingReqs.length}건이 7일 이내 연락 예정입니다.`,
+      detail: `희망 조건 ${upcomingReqs.length}건이 7일 이내 연락 예정입니다.`,
       tone: 'warning',
     });
   }
@@ -842,21 +938,14 @@ function getContactSheetNotices(contact: ContactDetail): QuickSheetNotice[] {
         title: '최근 상담 없음',
         detail:
           recentConsultation === undefined
-            ? `활성 매수요건 ${activeBuyerReqs.length}건이 있지만 상담 기록이 없습니다.`
+            ? `진행 중인 희망 조건 ${activeBuyerReqs.length}건이 있지만 상담 기록이 없습니다.`
             : `마지막 상담이 ${daysSinceLastConsult}일 전입니다.`,
         tone: 'warning',
       });
     }
   }
 
-  // 4) 활성 매수요건 있는데 연결 매물 없음
-  if (activeBuyerReqs.length > 0 && propertyContacts.length === 0) {
-    notices.push({
-      title: '연결된 매물 없음',
-      detail: `활성 매수요건 ${activeBuyerReqs.length}건이 있는데 연결된 매물이 없어 추적이 어렵습니다.`,
-      tone: 'neutral',
-    });
-  }
+  // "연결 매물"은 이 사람이 소유자·대리인인 집이다. 사려는 손님에게 없는 것이 당연하므로 알림으로 띄우지 않는다.
 
   // 5) 상담이 모두 60일+ 경과 (활성 매수요건 없는 경우만, 중복 회피)
   if (activeBuyerReqs.length === 0 && consultations.length > 0) {

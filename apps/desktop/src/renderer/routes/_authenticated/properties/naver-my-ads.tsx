@@ -34,8 +34,10 @@ import { DataTable } from "@/components/data-table";
 import { Button } from "@/components/ui/button";
 import { type MultiSelectOption } from "@/components/ui/multi-select";
 import {
+  buildChannelFilterOptions,
   initialMyAdsFilters,
   viewTabs,
+  type MyAdsFilterOption,
   type MyAdsFilterState,
   type MyAdsView,
 } from "./-my-ads/my-ads-types";
@@ -54,7 +56,6 @@ import {
   currentAmount,
   currentFloorExposure,
   draftToRequests,
-  withoutSentKinds,
   editBlockReason,
   fieldLabel,
   flagBlockReason,
@@ -98,7 +99,7 @@ import {
   changeRequestSummary,
 } from "./-my-ads/my-ads-link";
 import {
-  countAdvertisementsBySource,
+  countAdvertisementsBySyncState,
 } from "./-my-ads/my-ads-manual-ad-state";
 import {
   MyAdsTableStateContext,
@@ -116,8 +117,23 @@ import {
   type ManualAdDialogTarget,
 } from "./-my-ads/my-ads-manual-ad-dialog";
 
+function searchText(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/** 매물 상세의 "내광고관리"가 그 호실의 광고만 거른 채 연다 (?siteId=&dong=&ho=) */
+type NaverMyAdsSearch = { siteId?: string; dong?: string; ho?: string };
+
 export const Route = createFileRoute("/_authenticated/properties/naver-my-ads")(
   {
+    validateSearch: (search: Record<string, unknown>): NaverMyAdsSearch => ({
+      siteId:
+        typeof search.siteId === "string" && search.siteId ? search.siteId : undefined,
+      // 주소의 "103"·"1502"는 라우터가 숫자로 읽는다 — 글자로 되돌린다
+      dong: searchText(search.dong),
+      ho: searchText(search.ho),
+    }),
     component: NaverMyAdsPage,
   },
 );
@@ -173,15 +189,36 @@ function NaverMyAdsPage() {
   );
   const [view, setView] = useState<MyAdsView>("all");
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState<MyAdsFilterState>(initialMyAdsFilters);
+  const placeSearch = Route.useSearch();
+  const [filters, setFilters] = useState<MyAdsFilterState>(() => ({
+    ...initialMyAdsFilters,
+    siteIds: placeSearch.siteId ? [placeSearch.siteId] : [],
+    dongSearch: placeSearch.dong ?? "",
+    unitSearch: placeSearch.ho ?? "",
+  }));
+  // 이미 열린 탭으로 다른 호실을 열어도 그 호실로 다시 거른다
+  const placeSearchKey = [placeSearch.siteId, placeSearch.dong, placeSearch.ho].join("|");
+  const appliedPlaceSearchKey = useRef(placeSearchKey);
+  useEffect(() => {
+    if (appliedPlaceSearchKey.current === placeSearchKey) return;
+    appliedPlaceSearchKey.current = placeSearchKey;
+    if (!placeSearch.siteId && !placeSearch.dong && !placeSearch.ho) return;
+    setFilters({
+      ...initialMyAdsFilters,
+      siteIds: placeSearch.siteId ? [placeSearch.siteId] : [],
+      dongSearch: placeSearch.dong ?? "",
+      unitSearch: placeSearch.ho ?? "",
+    });
+  }, [placeSearch.dong, placeSearch.ho, placeSearch.siteId, placeSearchKey]);
   const sorting = useMemo(
     () => myAdsSortToSorting(preferences.sort),
     [preferences.sort],
   );
+  // "광고 정보" 묶음(CP사·링크·검증방식·노출기간)은 접힌 채로 연다. 필요할 때 머리글의 단추로 편다.
   const [
     areAdvertisementSourceColumnsCollapsed,
     setAreAdvertisementSourceColumnsCollapsed,
-  ] = useState(false);
+  ] = useState(true);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(
     new Set(),
   );
@@ -261,13 +298,13 @@ function NaverMyAdsPage() {
 
   const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS);
   const { data, isLoading, isFetching, isError, refetch } = useQuery({
-    queryKey: ["listing-advertisements", "my-ads", debouncedSearch],
+    queryKey: ["listing-advertisements", "my-ads", filters.status, debouncedSearch],
     // 서버는 한 번에 100건까지만 준다. 전체 건수까지 모든 쪽을 이어 받는다.
     queryFn: () =>
       loadAllAdvertisementPages((page) =>
         api.listingAdvertisements.findAll({
           search: debouncedSearch || undefined,
-          status: "active",
+          status: filters.status === "all" ? undefined : filters.status,
           page,
           limit: MY_ADS_PAGE_LIMIT,
           sortBy: "updatedAt",
@@ -277,7 +314,36 @@ function NaverMyAdsPage() {
     // 검색어가 바뀌어 새로 받는 동안 이전 결과를 그대로 보여 준다(스켈레톤 깜빡임 방지).
     placeholderData: keepPreviousData,
   });
+  const cpAccountsQuery = useQuery({
+    queryKey: ["cp-accounts"],
+    queryFn: () => api.listingAdvertisements.findCpAccounts(),
+    staleTime: 60_000,
+  });
+  const cpAccounts = useMemo(() => cpAccountsQuery.data ?? [], [cpAccountsQuery.data]);
+  const hasMultipleCpAccounts = useMemo(
+    () => cpAccounts.filter((account) => account.isActive !== false).length > 1,
+    [cpAccounts],
+  );
+  const cpAccountOptions = useMemo<MyAdsFilterOption[]>(
+    () =>
+      cpAccounts.length > 1
+        ? [
+            { value: "all", label: "계정 전체" },
+            ...cpAccounts.map((account) => ({
+              value: account.id,
+              label: account.accountName
+                ? `${account.accountName} (${account.accountKey})`
+                : account.accountKey,
+            })),
+          ]
+        : [],
+    [cpAccounts],
+  );
   const advertisements = useMemo(() => data?.items ?? [], [data]);
+  const channelOptions = useMemo(
+    () => buildChannelFilterOptions(advertisements),
+    [advertisements],
+  );
   const totalAdvertisementCount = data?.total ?? 0;
   const isPartiallyLoaded = data
     ? data.truncated || data.items.length < data.total
@@ -347,11 +413,11 @@ function NaverMyAdsPage() {
   );
   /** 화면에 보이는 광고 전체 — 페이지를 나누지 않고 한 목록으로 스크롤한다. */
   const sortedAdvertisements = useMemo(
-    () => sortAdvertisements(filteredAdvertisements, sorting),
-    [filteredAdvertisements, sorting],
+    () => sortAdvertisements(filteredAdvertisements, sorting, drafts),
+    [drafts, filteredAdvertisements, sorting],
   );
-  const sourceCounts = useMemo(
-    () => countAdvertisementsBySource(filterScopedAdvertisements),
+  const syncCounts = useMemo(
+    () => countAdvertisementsBySyncState(filterScopedAdvertisements),
     [filterScopedAdvertisements],
   );
   const counts = useMemo(
@@ -489,7 +555,7 @@ function NaverMyAdsPage() {
         );
       } catch (error) {
         // 입력칸을 닫지 않는다. 쓴 값이 남아 있어 그대로 다시 저장할 수 있다.
-        return getErrorMessage(error);
+        return getErrorMessage(error, "저장하지 못했습니다. 다시 시도해 주세요.");
       }
       await refreshAdvertisements();
       setEditingCell(null);
@@ -516,7 +582,9 @@ function NaverMyAdsPage() {
                       .then(() => {
                         toast.success("되돌렸습니다.");
                       })
-                      .catch((error: unknown) => toast.error(getErrorMessage(error)))
+                      .catch((error: unknown) =>
+                        toast.error(getErrorMessage(error, "되돌리지 못했습니다. 다시 시도해 주세요.")),
+                      )
                       .finally(() => void refreshAdvertisements());
                   },
                 },
@@ -571,8 +639,22 @@ function NaverMyAdsPage() {
       }
       setDrafts((all) => {
         const next: MyAdsRequestDraft = { ...all[advertisement.id] };
-        if (next[flag]) delete next[flag];
-        else next[flag] = true;
+        if (flag === "takedown") {
+          if (next.takedown) delete next.takedown;
+          else {
+            delete next.readvertise;
+            delete next.primary;
+            delete next.monthlyRent;
+            delete next.floorExposure;
+            next.takedown = true;
+          }
+        } else {
+          if (next.readvertise) delete next.readvertise;
+          else {
+            delete next.takedown;
+            next.readvertise = true;
+          }
+        }
         const rest = { ...all };
         if (Object.keys(next).length > 0) rest[advertisement.id] = next;
         else delete rest[advertisement.id];
@@ -597,11 +679,28 @@ function NaverMyAdsPage() {
     [setDrafts],
   );
 
-  // 초안이 있는 광고는 마지막으로 본 모습을 따로 들고 있는다. 검색은 서버에서 걸러 오므로,
-  // 검색어를 바꾸면 그 광고가 받은 목록에서 빠질 수 있다 — 그렇다고 작성한 요청을 버리지 않는다.
+  // 초안이 있는 광고는 마지막으로 본 모습을 따로 들고 있는다. useMemo 안이 아니라 effect에서 동기화한다.
+  const [draftedCacheVersion, setDraftedCacheVersion] = useState(0);
   const draftedAdvertisementCache = useRef(
     new Map<string, ListingAdvertisementWithListing>(),
   );
+  useEffect(() => {
+    const cache = draftedAdvertisementCache.current;
+    let changed = false;
+    for (const advertisement of advertisements) {
+      if (drafts[advertisement.id] && cache.get(advertisement.id) !== advertisement) {
+        cache.set(advertisement.id, advertisement);
+        changed = true;
+      }
+    }
+    for (const id of [...cache.keys()]) {
+      if (!drafts[id]) {
+        cache.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) setDraftedCacheVersion((v) => v + 1);
+  }, [advertisements, drafts]);
   // 목록이 새로 오면 받은 광고의 초안만 다시 맞춘다: 그 사이 같은 종류의 요청이 걸렸거나 요청할 수 없게 된
   // 칸의 초안은 뺀다(남겨 두면 보낼 수 없는 줄이 "작성 중"으로 남는다).
   // 목록에 없는 광고의 초안은 건드리지 않는다. 검색 · 탭 · 필터로 안 보이는 것일 뿐이다.
@@ -642,26 +741,18 @@ function NaverMyAdsPage() {
     });
   }, [advertisements, data, setDrafts]);
 
-  // 초안이 있는 광고 전부(지금 목록에 없는 것도). 요청 보내기 창과 건수가 이것을 쓴다.
   const draftedAdvertisements = useMemo(() => {
-    const cache = draftedAdvertisementCache.current;
-    for (const advertisement of advertisements) {
-      if (drafts[advertisement.id]) cache.set(advertisement.id, advertisement);
-    }
-    for (const id of [...cache.keys()]) {
-      if (!drafts[id]) cache.delete(id);
-    }
+    void draftedCacheVersion;
+    const byId = new Map(advertisements.map((ad) => [ad.id, ad]));
     return Object.keys(drafts)
-      .map((id) => cache.get(id))
+      .map((id) => byId.get(id) ?? draftedAdvertisementCache.current.get(id))
       .filter((advertisement): advertisement is ListingAdvertisementWithListing =>
         Boolean(advertisement),
       );
-  }, [advertisements, drafts]);
+  }, [advertisements, draftedCacheVersion, drafts]);
 
   /**
-   * 요청 보내기. 광고마다 요청(과 업무)을 만든다. 한 건이 실패해도 나머지는 보내고,
-   * 실패한 광고의 초안은 남긴다. 보낸 초안은 누른 순간의 것을 함께 넘긴다 — 요청이 늦게 시작돼도
-   * (연결 끊김) 그 사이 고친 초안을 "보낸 것"으로 잘못 지우지 않게.
+   * 요청 보내기. 초안 전체를 하나의 묶음 업무(Task 1건 + AdvertisementChangeRequest N건)로 보낸다.
    */
   const sendMutation = useMutation({
     mutationFn: async ({
@@ -673,35 +764,27 @@ function NaverMyAdsPage() {
       sent: MyAdsRequestDrafts;
       targets: ListingAdvertisementWithListing[];
     }) => {
-      const doneIds: string[] = [];
-      const failures: string[] = [];
-      // 일부 종류만 만들어지고 끊긴 광고: 만들어진 종류
-      const partial: Record<string, CreateAdvertisementChangeRequestDto["kind"][]> = {};
+      const items: CreateAdvertisementChangeRequestDto[] = [];
+      const targetAdIds: string[] = [];
       for (const advertisement of targets) {
-        const requests = draftToRequests(advertisement, sent[advertisement.id], options);
-        if (requests.length === 0) {
-          failures.push(
-            `${advertisementLocationLabel(advertisement)}: 보낼 수 있는 요청이 없습니다.`,
-          );
-          continue;
+        const requests = draftToRequests(advertisement, sent[advertisement.id]);
+        for (const req of requests) {
+          items.push(req);
         }
-        const created: CreateAdvertisementChangeRequestDto["kind"][] = [];
-        try {
-          for (const request of requests) {
-            await api.listingAdvertisements.createChangeRequest(advertisement.id, request);
-            created.push(request.kind);
-          }
-          doneIds.push(advertisement.id);
-        } catch (error) {
-          if (created.length > 0) partial[advertisement.id] = created;
-          failures.push(
-            `${advertisementLocationLabel(advertisement)}: ${getErrorMessage(error)}`,
-          );
-        }
+        if (requests.length > 0) targetAdIds.push(advertisement.id);
       }
-      return { doneIds, failures, partial };
+      if (items.length === 0) {
+        throw new Error("보낼 수 있는 요청이 없습니다.");
+      }
+      await api.listingAdvertisements.createChangeRequestsBatch({
+        items,
+        assignedToId: options.assignedToId,
+        dueDate: options.dueDate,
+        memo: options.memo,
+      });
+      return { doneIds: targetAdIds };
     },
-    onSuccess: ({ doneIds, failures, partial }, { sent, options }) => {
+    onSuccess: ({ doneIds }, { sent, options }) => {
       void queryClient.invalidateQueries({ queryKey: ["tasks"] });
       void refreshAdvertisements();
       // 보낸 뒤 손대지 않은 초안만 지운다
@@ -714,33 +797,18 @@ function NaverMyAdsPage() {
             changed = true;
           }
         }
-        // 일부만 만들어진 광고는 만들어진 종류만 초안에서 뺀다. 목록을 다시 받아 맞추는 것에 기대지 않는다 —
-        // 검색에 가려진 광고는 다시 받은 목록에 없어, 남겨 두면 다시 보낼 때 이미 걸린 종류에서 계속 막힌다.
-        for (const [id, kinds] of Object.entries(partial)) {
-          if (!rest[id] || rest[id] !== sent[id]) continue;
-          const left = withoutSentKinds(rest[id], kinds);
-          if (left) rest[id] = left;
-          else delete rest[id];
-          changed = true;
-        }
         return changed ? rest : all;
       });
-      if (failures.length === 0) {
-        setIsSendOpen(false);
-        setIsConfirmingDiscard(false);
-        setEditingCell(null);
-        setModeState(null);
-        toast.success(
-          `${doneIds.length}건을 요청했습니다. ${options.assignedToId ? "맡긴 직원의 할 일에 등록됐습니다." : "광고 업무에 등록됐습니다."}`,
-        );
-        return;
-      }
       setIsSendOpen(false);
-      toast.error(
-        `${failures.length}건을 요청하지 못했습니다${doneIds.length > 0 ? ` (${doneIds.length}건은 요청됨)` : ""}. ${failures[0]}`,
+      setIsConfirmingDiscard(false);
+      setEditingCell(null);
+      setModeState(null);
+      toast.success(
+        `${doneIds.length}건을 요청했습니다. ${options.assignedToId ? "맡긴 직원의 업무로 등록했습니다." : "광고 업무로 등록했습니다."}`,
       );
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) =>
+      toast.error(getErrorMessage(error, "요청을 보내지 못했습니다. 다시 시도해 주세요.")),
   });
   const openSend = useCallback(async () => {
     if (!(await flushEditor())) return;
@@ -766,7 +834,9 @@ function NaverMyAdsPage() {
         .then(() => {
           toast.success(`요청을 거뒀습니다 (${changeRequestSummary(request)}).`);
         })
-        .catch((error: unknown) => toast.error(getErrorMessage(error)))
+        .catch((error: unknown) =>
+          toast.error(getErrorMessage(error, "요청을 거두지 못했습니다. 다시 시도해 주세요.")),
+        )
         .finally(async () => {
           // 실패해도 목록을 다시 받는다(이미 끝난 요청이었을 수 있다). 받은 뒤에 버튼을 푼다.
           void queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -847,8 +917,12 @@ function NaverMyAdsPage() {
   // tableRowState 컨텍스트로 칸에 건넨다 — 열 정의가 바뀌면 모든 칸이 새로 마운트되어
   // 입력 중인 가격 칸이 닫힌다.
   const columns = useMemo(
-    () => buildColumns({ areAdvertisementSourceColumnsCollapsed }),
-    [areAdvertisementSourceColumnsCollapsed],
+    () =>
+      buildColumns({
+        areAdvertisementSourceColumnsCollapsed,
+        hasMultipleCpAccounts,
+      }),
+    [areAdvertisementSourceColumnsCollapsed, hasMultipleCpAccounts],
   );
   const tableRowState = useMemo<MyAdsTableRowState>(
     () => ({
@@ -996,6 +1070,8 @@ function NaverMyAdsPage() {
         search={search}
         onSearchChange={handleSearch}
         siteFilterOptions={siteFilterOptions}
+        channelOptions={channelOptions}
+        cpAccountOptions={cpAccountOptions}
         isSiteFilterOpen={isSiteFilterOpen}
         onSiteFilterOpenChange={setIsSiteFilterOpen}
         filters={filters}
@@ -1011,8 +1087,9 @@ function NaverMyAdsPage() {
               variant="outline"
               size="sm"
               data-my-ads-mode-button="edit"
+              aria-label="기록 수정·추가"
               aria-pressed={mode === "edit"}
-              title="표에서 값을 바로 고칩니다. CP에 올라간 광고는 바뀌지 않습니다."
+              title="표에서 값을 바로 고치거나 아래 '+ 광고 기록 추가'로 기록을 넣습니다. CP에 올라간 광고는 바뀌지 않습니다."
               className={cn(
                 "h-[30px] shrink-0 gap-1.5 rounded-[8px] px-3 font-normal",
                 mode === "edit" &&
@@ -1021,14 +1098,15 @@ function NaverMyAdsPage() {
               onClick={() => void changeMode("edit")}
             >
               <Pencil className="size-3.5" />
-              <span className="@max-[50rem]:hidden">기록 수정</span>
+              <span className="@max-[50rem]:hidden">기록 수정·추가</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
               data-my-ads-mode-button="request"
+              aria-label="광고 요청"
               aria-pressed={mode === "request"}
-              title="바꿀 값을 적어 에이전트나 직원에게 요청합니다. 광고 값은 처리된 뒤 바뀝니다."
+              title="바꿀 값을 적어 에이전트나 직원에게 요청합니다. 광고 값은 처리된 뒤 반영됩니다."
               className={cn(
                 "h-[30px] shrink-0 gap-1.5 rounded-[8px] px-3 font-normal",
                 mode === "request" &&
@@ -1037,22 +1115,8 @@ function NaverMyAdsPage() {
               onClick={() => void changeMode("request")}
             >
               <Send className="size-3.5" />
-              <span className="@max-[50rem]:hidden">변경 요청</span>
+              <span className="@max-[50rem]:hidden">광고 요청</span>
             </Button>
-          {/* 매물관리 1행 오른쪽 등록 버튼과 같은 모양. 늘 보이며, 줄이 모자라면 검색칸이 먼저 줄고
-              그래도 1행 폭이 800px보다 좁으면 아이콘만 남는다(이름은 aria-label·title로). */}
-          <Button
-            ref={registerAdButtonRef}
-            size="sm"
-            aria-label="광고 등록"
-            title="광고 등록"
-            aria-haspopup="dialog"
-            className="h-[30px] shrink-0 rounded-[8px] px-3"
-            onClick={() => openManualAdDialog({ mode: "create" })}
-          >
-            <Plus className="size-3.5" />
-            <span className="@max-[50rem]:hidden">광고 등록</span>
-          </Button>
           </>
         }
       />
@@ -1069,9 +1133,9 @@ function NaverMyAdsPage() {
         >
           {mode === "edit" ? (
             <>
-              <b className="font-semibold">기록 수정 중</b>
+              <b className="font-semibold">기록 수정·추가 중</b>
               <span>
-                칸을 눌러 고치면 바로 저장됩니다. CP에 올라간 광고는 바뀌지 않습니다.
+                칸을 눌러 고치거나 아래 '+ 광고 기록 추가'로 기록을 넣습니다. CP에 올라간 광고는 바뀌지 않습니다.
               </span>
               <span className="flex-1" />
               <Button
@@ -1102,7 +1166,7 @@ function NaverMyAdsPage() {
             </>
           ) : (
             <>
-              <b className="font-semibold">변경 요청 작성 중</b>
+              <b className="font-semibold">광고 요청 작성 중</b>
               <span className="rounded-full bg-white/70 px-2 font-semibold tabular-nums leading-5">
                 {draftCount}건
               </span>
@@ -1203,9 +1267,29 @@ function NaverMyAdsPage() {
               )}
               isLoading={isLoading}
               emptyMessage={
-                hasNarrowingConditions
-                  ? "조건에 맞는 광고가 없습니다."
-                  : "저장된 내 광고가 없습니다. 로컬 CP 읽기 작업 후 목록을 새로고침하거나, 오른쪽 위 '광고 등록'으로 직접 입력해 주세요."
+                hasNarrowingConditions ? (
+                  "조건에 맞는 광고가 없습니다."
+                ) : (
+                  // 광고가 하나도 없는 사무소: 무엇이 어떻게 들어오는지와 바로 하는 단추(연락처 목록과 같은 모양)
+                  <span className="flex flex-col items-center gap-2 py-2 text-center">
+                    <span className="text-[14px] text-foreground">아직 저장된 광고가 없습니다.</span>
+                    <span className="text-[13px]">
+                      이실장·부동산뱅크 같은 광고 사이트에 올린 광고는 사무소 PC의 자동화 도구가 읽어 와 여기에
+                      쌓입니다. 도구 없이 쓰려면 광고를 직접 적어 두세요.
+                    </span>
+                    <Button
+                      size="sm"
+                      className="mt-1 h-[30px] rounded-[8px] px-3"
+                      onClick={() => {
+                        setModeState("edit");
+                        openManualAdDialog({ mode: "create" });
+                      }}
+                    >
+                      <Plus className="size-3.5" />
+                      광고 기록 추가
+                    </Button>
+                  </span>
+                )
               }
               renderStatusBar={() => (
                 <>
@@ -1236,14 +1320,19 @@ function NaverMyAdsPage() {
                   )}
                   {data && (
                     <>
-                      {/* 조건에 맞는 광고를 출처로 나눈다. 수동 광고는 CP 광고에 넣어 세지 않는다. */}
                       <span className="ml-2 hidden items-center gap-1 lg:inline-flex">
                         <span className="size-1.5 rounded-full bg-success" />
-                        CP 광고 {sourceCounts.cp}
+                        CP 연동 {(syncCounts.synced + syncCounts.manualOverride).toLocaleString()}
                       </span>
+                      {syncCounts.manualOverride > 0 && (
+                        <span className="hidden items-center gap-1 lg:inline-flex">
+                          <span className="size-1.5 rounded-full bg-warning" />
+                          직접 수정됨 {syncCounts.manualOverride}
+                        </span>
+                      )}
                       <span className="hidden items-center gap-1 lg:inline-flex">
                         <span className="size-1.5 rounded-full bg-muted-foreground/50" />
-                        수동 광고 {sourceCounts.manual}
+                        직접 기록 {syncCounts.manual}
                       </span>
                       <span className="hidden items-center gap-1 lg:inline-flex">
                         <span className="size-1.5 rounded-full bg-warning" />
@@ -1260,6 +1349,39 @@ function NaverMyAdsPage() {
                 </>
               )}
             />
+            {!isLoading && (
+              <div className="shrink-0 border-t border-border bg-white px-3 py-1">
+                <button
+                  ref={registerAdButtonRef}
+                  type="button"
+                  data-my-ads-bottom-add
+                  aria-disabled={mode !== "edit"}
+                  onClick={() => {
+                    if (mode === "edit") {
+                      openManualAdDialog({ mode: "create" });
+                    } else {
+                      toast.info(
+                        "수동으로 광고 기록을 추가·수정하려면 '기록 수정·추가' 모드를 켜 주세요. 에이전트에게 실제 광고 작업을 맡기려면 '광고 요청'을 이용해 주세요.",
+                      );
+                    }
+                  }}
+                  title={
+                    mode === "edit"
+                      ? "새 광고 기록을 직접 추가합니다"
+                      : "수동 추가·수정은 '기록 수정·추가' 모드를 켜 주세요. 에이전트 실행은 '광고 요청'을 이용해 주세요."
+                  }
+                  className={cn(
+                    "flex h-8 w-full items-center gap-1.5 rounded px-2 text-left text-[13px] transition-colors",
+                    mode === "edit"
+                      ? "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      : "text-muted-foreground/60 hover:bg-muted/50 hover:text-muted-foreground",
+                  )}
+                >
+                  <Plus className="size-3.5" />
+                  광고 기록 추가
+                </button>
+              </div>
+            )}
           </MyAdsTableStateContext.Provider>
         )}
       </section>

@@ -8,8 +8,16 @@ import type {
 } from "@estate-erp/api-client";
 import {
   collectProjectPhones,
+  canRemoveProject,
   decideTextCommit,
+  isProjectEmpty,
+  projectRemovalFor,
+  PROJECT_ARCHIVE_NOTE,
+  PROJECT_STATUS_LABELS,
+  PROJECT_STATUS_OPTIONS,
+  describeClosedMatches,
   describePaymentState,
+  describeProjectRemoval,
   describePlace,
   getProjectProgress,
   getProjectRowLabel,
@@ -67,15 +75,16 @@ describe("project screen model", () => {
   it("names an untitled project after its customer, then its first step", () => {
     assert.equal(getProjectTitle(item({ title: "  갈아타기  " })), "갈아타기");
     assert.equal(getProjectTitle(item({ customerName: "김민준" })), "김민준님 프로젝트");
-    assert.equal(getProjectTitle(item({ firstStepTitle: "A 매도" })), "A 매도");
-    assert.equal(getProjectTitle(item({})), "이름 없는 프로젝트");
+    // 이름도 손님도 없으면 단계가 있어도 "제목 없음"(빈 작업 공간으로 연 프로젝트, 사용자 결정 2026-11-22)
+    assert.equal(getProjectTitle(item({ firstStepTitle: "A 매도" })), "제목 없음");
+    assert.equal(getProjectTitle(item({})), "제목 없음");
   });
 
   it("labels a table row by its customer first, then the project name", () => {
     assert.equal(getProjectRowLabel(item({ customerName: "김민준", title: " 갈아타기 " })), "김민준 · 갈아타기");
     assert.equal(getProjectRowLabel(item({ customerName: "김민준" })), "김민준");
     assert.equal(getProjectRowLabel(item({ title: "상가 재계약" })), "상가 재계약");
-    assert.equal(getProjectRowLabel(item({})), "이름 없는 프로젝트");
+    assert.equal(getProjectRowLabel(item({})), "제목 없음");
   });
 
   it("collects each primary contact phone once for copying", () => {
@@ -96,7 +105,7 @@ describe("project screen model", () => {
     assert.equal(getProjectStatus(item({})), "preparing");
     assert.equal(getProjectStatus(item({ stepCount: 3, doneStepCount: 1 })), "active");
     assert.equal(getProjectStatus(item({ stepCount: 3, doneStepCount: 3 })), "wrapping");
-    // 끝낸 것은 단계가 남아 있어도 끝남이다(끝냈는지는 사용자가 정한다).
+    // 끝낸 것은 단계가 남아 있어도 종료다(끝냈는지는 사용자가 정한다).
     assert.equal(
       getProjectStatus(item({ archivedAt: "2026-11-20T00:00:00.000Z", stepCount: 3, doneStepCount: 1 })),
       "archived",
@@ -202,27 +211,57 @@ describe("project screen model", () => {
     ]);
     assert.deepEqual(active.map((match) => match.id), ["c", "d", "a"]);
     assert.equal(closedCount, 1);
-    assert.deepEqual(splitMatches([]), { active: [], closedCount: 0 });
+    assert.deepEqual(splitMatches([]), { active: [], closedCount: 0, closedReasons: [] });
+  });
+
+  it("says why closed matches closed, e.g. the customer finished their conditions", () => {
+    const closed = (id: string, closedReason: string | null) => ({
+      id,
+      stage: "closed",
+      updatedAt: "2026-11-20T00:00:00.000Z",
+      closedReason,
+    });
+    const { closedCount, closedReasons } = splitMatches([
+      closed("a", "buyer_closed"),
+      closed("b", "buyer_closed"),
+      closed("c", "manual"),
+    ]);
+    assert.deepEqual(closedReasons, [
+      { label: "손님 조건 종료", count: 2 },
+      { label: "직접 종료", count: 1 },
+    ]);
+    assert.equal(
+      describeClosedMatches(closedCount, closedReasons),
+      "종료된 매칭 3건 (손님 조건 종료 2 · 직접 종료 1)",
+    );
+    const single = splitMatches([closed("a", "buyer_closed")]);
+    assert.equal(
+      describeClosedMatches(single.closedCount, single.closedReasons),
+      "종료된 매칭 1건 (손님 조건 종료)",
+    );
+    const unknown = splitMatches([closed("a", null)]);
+    assert.equal(describeClosedMatches(unknown.closedCount, unknown.closedReasons), "종료된 매칭 1건");
+    assert.equal(describeClosedMatches(0, []), "");
   });
 
   it("names a home by site, building and unit, leaving out a placeholder building", () => {
-    const unit = (space: { name: string | null }) => space.name ?? "3층";
+    // 화면 표기 기준: "고덕그라시움 102동 2203호" (공용 formatPlaceLabel)
     assert.equal(
-      describePlace(
-        { site: { name: "고덕그라시움" }, unit: { name: "3501", floor: 35, dong: { name: "101" } } },
-        unit,
-      ),
-      "고덕그라시움 101동 3501",
+      describePlace({
+        site: { name: "고덕그라시움" },
+        unit: { name: "3501", floor: 35, dong: { name: "101" } },
+      }),
+      "고덕그라시움 101동 3501호",
     );
     assert.equal(
-      describePlace(
-        { site: { name: "고덕빌라" }, unit: { name: null, floor: 3, dong: { name: "본동", isPlaceholder: true } } },
-        unit,
-      ),
+      describePlace({
+        site: { name: "고덕빌라" },
+        unit: { name: null, floor: 3, dong: { name: "본동", isPlaceholder: true } },
+      }),
       "고덕빌라 3층",
     );
-    assert.equal(describePlace({ site: { name: "단독주택" }, unit: null }, unit), "단독주택");
-    assert.equal(describePlace(null, unit), "매물");
+    assert.equal(describePlace({ site: { name: "단독주택" }, unit: null }), "단독주택");
+    assert.equal(describePlace(null), "매물");
   });
 
   it("orders the payment schedule by date and leaves out cancelled rows", () => {
@@ -320,5 +359,74 @@ describe("project screen model", () => {
     assert.equal(withContact.memo, "방금 고친 메모");
 
     assert.equal(mergeProjectUpdate(undefined, response, { title: "새 이름" }), response);
+  });
+});
+
+describe("project removal notice", () => {
+  it("says honestly what is deleted for good and what stays", () => {
+    const text = describeProjectRemoval(3);
+    // 지워지는 것: 이름 · 메모 · 진행 계획(직접 적은 단계) · 코멘트, 되돌릴 수 없음
+    assert.match(text, /메모/);
+    assert.match(text, /직접 적은 단계/);
+    assert.match(text, /코멘트 3개/);
+    assert.match(text, /되돌릴 수 없습니다/);
+    // 남는 것: 의뢰 · 거래 · 상담. 기록을 남기려면 끝내기
+    assert.match(text, /의뢰와 거래, 손님과의 상담은 그대로 남습니다/);
+    assert.match(text, /끝내기/);
+    assert.doesNotMatch(describeProjectRemoval(0), /코멘트 0개/);
+  });
+});
+
+describe("who may remove a project", () => {
+  it("is owner and manager only, like the server", () => {
+    assert.equal(canRemoveProject("owner"), true);
+    assert.equal(canRemoveProject("manager"), true);
+    assert.equal(canRemoveProject("agent"), false);
+    assert.equal(canRemoveProject(undefined), false);
+  });
+});
+
+describe("project list tabs and status words", () => {
+  it("uses 활성 / 종료 tabs and calls an ended project 종료 (사용자 결정 2026-11-22)", () => {
+    assert.deepEqual(
+      PROJECT_STATUS_OPTIONS.map((option) => option.label),
+      ["활성", "종료"],
+    );
+    assert.equal(PROJECT_STATUS_LABELS.archived, "종료");
+    assert.equal(PROJECT_STATUS_LABELS.active, "진행 중");
+    // 끝내기 안내는 새 탭 이름을 가리킨다.
+    assert.match(PROJECT_ARCHIVE_NOTE, /종료 탭에서/);
+  });
+});
+
+describe("empty projects (workspace opened with nothing in it)", () => {
+  const plan = (overrides: Record<string, unknown> = {}) => ({
+    title: null,
+    memo: null,
+    primaryContact: null,
+    steps: [],
+    commentCount: 0,
+    assignedTo: { id: "agent-1" },
+    ...overrides,
+  });
+
+  it("is empty only when name, customer, memo, steps and comments are all missing", () => {
+    assert.equal(isProjectEmpty(plan()), true);
+    assert.equal(isProjectEmpty(plan({ title: "  " })), true);
+    assert.equal(isProjectEmpty(plan({ title: "갈아타기" })), false);
+    assert.equal(isProjectEmpty(plan({ memo: "메모" })), false);
+    assert.equal(isProjectEmpty(plan({ primaryContact: { id: "c1" } })), false);
+    assert.equal(isProjectEmpty(plan({ steps: [{}] })), false);
+    assert.equal(isProjectEmpty(plan({ commentCount: 1 })), false);
+  });
+
+  it("lets the assignee delete their own empty project, and keeps 풀기 for owner and manager", () => {
+    const agent = { id: "agent-1", role: "agent" };
+    assert.equal(projectRemovalFor(plan(), agent), "delete-empty");
+    assert.equal(projectRemovalFor(plan({ assignedTo: { id: "someone" } }), agent), null);
+    assert.equal(projectRemovalFor(plan({ title: "갈아타기" }), agent), null);
+    assert.equal(projectRemovalFor(plan({ title: "갈아타기" }), { id: "m", role: "manager" }), "remove");
+    assert.equal(projectRemovalFor(plan(), { id: "o", role: "owner" }), "delete-empty");
+    assert.equal(projectRemovalFor(plan(), null), null);
   });
 });

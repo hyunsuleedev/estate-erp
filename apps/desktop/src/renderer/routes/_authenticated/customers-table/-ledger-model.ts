@@ -6,7 +6,7 @@ import type {
   CustomerLedgerListingIntent,
 } from "@estate-erp/api-client";
 import { TRANSACTION_TYPE_LABELS } from "@estate-erp/shared";
-import { formatMoney, formatPyeong } from "@/lib/format";
+import { formatMoney, formatMoneyRange, formatPyeong, formatRent } from "@/lib/format";
 
 /**
  * 고객 원장 표가 한 줄(CustomerLedgerRow)에서 읽어 내는 값들.
@@ -33,9 +33,14 @@ export const LEDGER_ROW_STATUS_HINTS: Record<LedgerRowStatus, string> = {
 };
 
 export function getLedgerRowStatus(row: CustomerLedgerRow): LedgerRowStatus {
+  // 소개(매칭)가 없어도 거래가 있으면 진행 중이다: 매칭 없이 바로 만든 거래(공동중개 등)가 "파악 중"으로 보이면 안 된다.
   const moving =
-    row.demandIntents.some((intent) => intent.matchCount > 0) ||
-    row.listingIntents.some((intent) => intent.matchCount > 0);
+    row.demandIntents.some(
+      (intent) => intent.matchCount > 0 || (intent.activeDealCount ?? 0) > 0,
+    ) ||
+    row.listingIntents.some(
+      (intent) => intent.matchCount > 0 || (intent.activeDealCount ?? 0) > 0,
+    );
   return moving ? "active" : "exploring";
 }
 
@@ -83,14 +88,10 @@ export function getLedgerAssignees(row: CustomerLedgerRow): string[] {
   return names;
 }
 
+/** 금액 범위: "15억 ~ 16억" · "15억 이상" (공용 formatMoneyRange). 둘 다 없으면 null. */
 function moneyRange(min: number | null, max: number | null): string | null {
-  if (min == null && max == null) return null;
-  if (min != null && max != null) {
-    return min === max
-      ? formatMoney(min)
-      : `${formatMoney(min)}~${formatMoney(max)}`;
-  }
-  return min != null ? `${formatMoney(min)} 이상` : `${formatMoney(max)} 이하`;
+  if (!min && !max) return null;
+  return formatMoneyRange(min, max);
 }
 
 function areaRange(min: number | null, max: number | null): string | null {
@@ -98,7 +99,7 @@ function areaRange(min: number | null, max: number | null): string | null {
   if (min != null && max != null) {
     return min === max
       ? formatPyeong(min)
-      : `${formatPyeong(min)}~${formatPyeong(max)}`;
+      : `${formatPyeong(min)} ~ ${formatPyeong(max)}`;
   }
   return min != null ? `${formatPyeong(min)} 이상` : `${formatPyeong(max)} 이하`;
 }
@@ -108,7 +109,7 @@ export function transactionLabel(type: string | null): string {
   return (TRANSACTION_TYPE_LABELS as Record<string, string>)[type] ?? type;
 }
 
-/** 구함 조건 한 줄: "고덕동 · 34평 · 15억~16억" */
+/** 구함 조건 한 줄: "고덕동 · 34평 · 15억 ~ 16억" */
 export function describeDemandIntent(intent: CustomerLedgerDemandIntent): string {
   const price =
     intent.transactionType === "sale"
@@ -125,19 +126,19 @@ export function describeDemandIntent(intent: CustomerLedgerDemandIntent): string
   return [
     intent.contextLabel,
     areaRange(intent.areaMin, intent.areaMax),
-    price && rent ? `${price} / 월 ${rent}` : (price ?? (rent ? `월 ${rent}` : null)),
+    // 월세는 "보증금 / 월세"(화면 표기 기준: "1억 / 250만")
+    price && rent ? `${price} / ${rent}` : (price ?? (rent ? `월세 ${rent}` : null)),
   ]
     .filter(Boolean)
     .join(" · ");
 }
 
-/** 내놓은 조건의 금액: 매매 "16억 5,000", 월세 "3,000 / 월 180" */
+/** 내놓은 조건의 금액: 매매 "16억 5,000만", 월세 "3,000만 / 180만"(보증금 / 월세, 공용 formatRent) */
 export function describeListingPrice(intent: CustomerLedgerListingIntent): string {
   if (intent.transactionType === "monthly") {
-    const deposit = intent.deposit != null ? formatMoney(intent.deposit) : "—";
-    return intent.monthlyRent != null
-      ? `${deposit} / 월 ${formatMoney(intent.monthlyRent)}`
-      : deposit;
+    return intent.monthlyRent != null || intent.deposit != null
+      ? formatRent(intent.deposit, intent.monthlyRent)
+      : "금액 미정";
   }
   const amount =
     intent.transactionType === "jeonse"

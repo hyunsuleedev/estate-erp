@@ -26,7 +26,7 @@ import type { FilterDefinition, ActiveFilter, SortDefinition } from './types';
 // ── Filter operator labels ──────────────────────────────────────
 
 const operatorLabels: Record<string, string> = {
-  is: '=',
+  is: ':',
   is_not: '≠',
   contains: '포함',
   gte: '≥',
@@ -262,17 +262,18 @@ export function ViewBar({
                 className="gap-1 rounded-md py-0.5 pr-1 text-xs font-normal"
               >
                 <span className="text-muted-foreground">{def?.label ?? filter.field}</span>
-                <span className="text-muted-foreground/60">
-                  {filter.operator === 'in'
-                    ? '⊃'
-                    : filter.operator === 'between'
-                    ? '∈'
+                <span className="text-muted-foreground">
+                  {/* 여러 값 중 하나(in)·범위(between)는 수학 기호 대신 "유형: 아파트, 오피스텔"처럼 읽히게 */}
+                  {filter.operator === 'in' || filter.operator === 'between'
+                    ? ':'
                     : operatorLabels[filter.operator]}
                 </span>
                 <span className="font-medium">{displayText}</span>
                 <button
+                  type="button"
+                  aria-label={`${def?.label ?? filter.field} 조건 지우기`}
                   onClick={() => onFilterRemove?.(filter.id)}
-                  className="ml-0.5 rounded-sm hover:bg-muted-foreground/20"
+                  className="ml-0.5 rounded-sm outline-none hover:bg-muted-foreground/20 focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                   <X className="size-3" />
                 </button>

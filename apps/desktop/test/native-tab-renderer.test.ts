@@ -13,7 +13,10 @@ import {
   RENDERER_TAB_ID_ARGUMENT,
 } from '../src/common/rendererSurface';
 import { resolveRendererSurface } from '../src/renderer/features/tabs/native/rendererSurface';
-import { createNativeTabRetentionUpdate } from '../src/renderer/features/tabs/native/NativeTabRetentionReporter';
+import {
+  blankTabRetentionUpdate,
+  createNativeTabRetentionUpdate,
+} from '../src/renderer/features/tabs/native/NativeTabRetentionReporter';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 
@@ -172,6 +175,49 @@ describe('native tab retention', () => {
     assert.match(reporter, /scheduledFrame = window\.requestAnimationFrame\(read\);/);
     assert.match(reporter, /scheduledTimer = window\.setTimeout\(read, 250\);/);
     assert.match(reporter, /'data-native-tab-transfer',/);
+  });
+
+  it('reports a freshly taken blank tab as clean at once, but not a tab that has state to restore', () => {
+    // 화면이 처음 알려 오기 전에는 main이 그 탭을 저장 전 작업이 있는 탭으로 본다. 그동안
+    // 사이드바 메뉴를 누르면 탭이 옮겨 가지 않고 새 탭이 하나 더 열린다(실제 창에서 재현).
+    assert.deepEqual(blankTabRetentionUpdate({}), {
+      schemaVersion: 1,
+      protected: false,
+      viewState: { scrollY: 0 },
+      reasons: { mutating: false, transientEditor: false, explicitDirty: false },
+    });
+    assert.notEqual(blankTabRetentionUpdate({ uiState: { scrollY: 0 } }), null);
+    assert.notEqual(blankTabRetentionUpdate({ uiState: { formDraft: {} } }), null);
+    // 되살릴 것이 있으면 다 되살린 뒤에 알린다. 먼저 알리면 스크롤 0이 저장된 위치를 덮는다.
+    assert.equal(blankTabRetentionUpdate({ uiState: { scrollY: 320 } }), null);
+    assert.equal(blankTabRetentionUpdate({ uiState: { formDraft: { memo: '초안' } } }), null);
+  });
+
+  it('takes over a prewarmed tab without a gap in which sidebar clicks go nowhere', () => {
+    const shell = readFileSync(
+      new URL('../src/renderer/routes/_authenticated.tsx', import.meta.url),
+      'utf8',
+    );
+    const takeover = shell.slice(
+      shell.indexOf('void ownTab.then(async (snapshot) => {'),
+      shell.indexOf('return () => {\n      cancelled = true;'),
+    );
+    const at = (text: string) => {
+      const index = takeover.indexOf(text);
+      assert.notEqual(index, -1, `missing: ${text}`);
+      return index;
+    };
+    // 예비 화면은 탭을 맡는 순간 사이드바가 보이고 눌린다. 그 전에 기다리는 것이 하나라도
+    // 있으면 그 사이의 클릭은 main에 가지 않는다.
+    const firstAwait = at('await ');
+    assert.ok(at('bridge.setRetention?.(cleanReport)') < firstAwait);
+    assert.ok(at('uninstall = installNativeTabStoreBridge(snapshot, sendAction)') < firstAwait);
+    assert.ok(at('uninstall ??= installNativeTabStoreBridge(tab, sendAction)') > firstAwait);
+    // 링크·마우스 옆 단추 처리는 탭을 맡기 전부터 걸려 있다.
+    const frame = shell.slice(shell.indexOf('function NativeTabShell('));
+    assert.ok(
+      frame.indexOf('<NativeTabNavigationBridge />') < frame.indexOf('{assigned ? ('),
+    );
   });
 
   it('keeps mutation, transient editor, and dirty reasons independent', () => {

@@ -128,7 +128,7 @@ describe('route metadata without icons', () => {
       iconKey: 'square-terminal',
     });
     assert.deepEqual(getRouteMetaCore('/buyer-requirements/b1/edit'), {
-      title: '구매고객 수정',
+      title: '희망 조건 수정',
       kind: 'contact',
       iconKey: 'user-search',
     });
@@ -160,6 +160,59 @@ describe('route metadata without icons', () => {
     }
     assert.equal(isDetachableRouteCore('/login'), false);
     assert.equal(isDetachableRouteCore('/properties/p1'), true);
+  });
+});
+
+describe('closing a tab goes back to the tab that opened it (6차)', () => {
+  const property = { route: '/properties/p1', kind: 'property' as const, title: '매물 상세' };
+  const contact = { route: '/contacts/c1', kind: 'contact' as const, title: '연락처' };
+
+  it('returns to the opener even when a later tab sits to the right', () => {
+    const env = counterEnv();
+    let state = workspaceOf(makeTab('list', { route: '/properties', resourceKey: 'module:/properties' }), makeTab('tasks'));
+    // 매물관리에서 매물 상세를 연다 → 매물 상세에서 연락처를 연다
+    const detail = workspace.adoptTabLocation(state, 'list', property.route, property.kind, property.title, undefined, env);
+    state = workspace.applyTabStep(state, detail);
+    const person = workspace.adoptTabLocation(state, detail.result, contact.route, contact.kind, contact.title, undefined, env);
+    state = workspace.applyTabStep(state, person);
+    // 매물 상세로 돌아와 닫는다
+    state = workspace.applyTabStep(state, workspace.activateTab(state, detail.result));
+    state = workspace.applyTabStep(state, workspace.closeTab(state, detail.result, env));
+    assert.equal(state.activeTabId, 'list');
+    // 매물 상세가 닫혔으니 연락처의 '연 탭'은 없어졌다 → 닫으면 지금 규칙(오른쪽, 없으면 왼쪽)
+    assert.equal(state.openerTabIds?.[person.result], undefined);
+    state = workspace.applyTabStep(state, workspace.activateTab(state, person.result));
+    state = workspace.applyTabStep(state, workspace.closeTab(state, person.result, env));
+    assert.equal(state.activeTabId, 'tasks');
+  });
+
+  it('remembers the opener for tabs created from the active tab, not for background tabs', () => {
+    const env = counterEnv();
+    let state = workspaceOf(makeTab('a'), makeTab('b'));
+    const opened = workspace.createTab(state, { ...contact, activate: true }, env);
+    state = workspace.applyTabStep(state, opened);
+    assert.equal(state.openerTabIds?.[opened.result], 'a');
+    const background = workspace.createTab(state, { ...property, activate: false }, env);
+    state = workspace.applyTabStep(state, background);
+    assert.equal(state.openerTabIds?.[background.result], undefined);
+    // 연 탭이 a인 탭을 닫으면 오른쪽(배경 탭)이 아니라 a로
+    state = workspace.applyTabStep(state, workspace.closeTab(state, opened.result, env));
+    assert.equal(state.activeTabId, 'a');
+  });
+
+  it('falls back to the right neighbour when the opener is gone, and forgets closed tabs', () => {
+    const env = counterEnv();
+    let state = workspaceOf(makeTab('a'), makeTab('b'));
+    const opened = workspace.createTab(state, contact, env);
+    state = workspace.applyTabStep(state, opened);
+    state = workspace.applyTabStep(state, workspace.closeOtherTabs(state, opened.result, env));
+    assert.deepEqual(state.openerTabIds, {});
+    const first = workspace.createTab(state, property, env);
+    state = workspace.applyTabStep(state, first);
+    state = workspace.applyTabStep(state, workspace.closeTab(state, opened.result, env));
+    // 닫힌 탭이 연 탭인 줄은 버린다
+    assert.deepEqual(state.openerTabIds, {});
+    assert.equal(state.activeTabId, first.result);
   });
 });
 

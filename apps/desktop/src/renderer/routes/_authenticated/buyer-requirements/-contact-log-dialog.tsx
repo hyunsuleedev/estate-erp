@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -52,21 +53,22 @@ export function ContactLogDialog({
         nextContactDate: nextDateDraft || undefined,
       }),
     onSuccess: async () => {
-      toast.success('연락 기록이 저장되었습니다.');
+      toast.success('연락일을 저장했습니다.');
       onOpenChange(false);
       await queryClient.invalidateQueries({ queryKey: ['buyer-requirements'] });
     },
-    onError: () => toast.error('연락 기록 저장에 실패했습니다.'),
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, '연락일을 저장하지 못했습니다. 다시 시도해 주세요.')),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>연락함 기록</DialogTitle>
+          <DialogTitle>연락일 정하기</DialogTitle>
           <DialogDescription>
-            {contactName ? `${contactName} 고객의 ` : ''}최근 연락일을 오늘로 갱신하고, 다음
-            연락일을 설정합니다.
+            {contactName ? `${contactName} 고객의 ` : ''}최근 연락일을 오늘로 바꾸고, 다음
+            연락일을 정합니다. 통화 내용은 '상담 적기'로 남기세요.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">

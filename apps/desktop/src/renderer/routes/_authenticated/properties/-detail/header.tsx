@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
-import { Check, Eye, EyeOff, Loader2, NotebookPen, Phone } from 'lucide-react';
+import { Building2, Check, Eye, EyeOff, Loader2, NotebookPen, Phone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { HeaderSpec } from './brief-model';
 import { Kbd, nb, Tag, type TagTone } from './ui';
@@ -37,7 +37,13 @@ export function TopHeader({
   onFocusComposer,
   onToggleGuest,
   menu,
+  closedSummary,
+  onOpenList,
 }: {
+  /** 위 얇은 줄의 "매물관리" — 열려 있는 매물관리 탭을 보던 그대로 앞으로 꺼낸다 */
+  onOpenList?: () => void;
+  /** 진행 중인 거래 조건이 없을 때 대신 보일 한 줄(끝난 매물: "매매 17억 2,000만에 거래 완료 · 2027.03.02") */
+  closedSummary?: string | null;
   siteName: string;
   unit: string | null;
   specs: HeaderSpec[];
@@ -56,25 +62,28 @@ export function TopHeader({
   return (
     <header
       data-property-detail-header
-      className="shrink-0 border-b border-[#e9e9e7] bg-white px-7 pb-3 pt-3.5"
+      className="shrink-0 border-b border-[#e9e9e7] bg-white px-7 pb-3"
     >
-      <div className="flex items-start gap-4">
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[24px] font-bold leading-[1.3] tracking-[-0.022em] text-[#37352f]">
-            {siteName}
-            {unit && <span className="ml-2 tabular-nums">{unit}</span>}
-          </h1>
-          {specs.length > 0 && (
-            <div data-property-facts className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[13px] text-[#37352f]/65">
-              {specs.map((spec, index) => (
-                <Fragment key={spec.key}>
-                  {index > 0 && <span className="text-[#37352f]/25">·</span>}
-                  <span className="tabular-nums">{spec.text}</span>
-                </Fragment>
-              ))}
-            </div>
+      {/* 위 얇은 줄: 왼쪽은 어디인지(매물관리 / 이 매물), 오른쪽은 보기 전환과 작업 메뉴 — 연락처·프로젝트 상세와 같은 짜임 */}
+      <div
+        data-property-detail-topbar
+        className="-mx-7 flex h-[46px] items-center gap-2 border-b border-[#e9e9e7] pl-4 pr-5"
+      >
+        <nav aria-label="위치" className="flex min-w-0 flex-1 items-center gap-0.5 text-[14px]">
+          {!guest && (
+            <>
+              <button type="button" className={nb.ghost} onClick={onOpenList}>
+                <Building2 />
+                매물관리
+              </button>
+              <span className="text-[#37352f]/25">/</span>
+              <span className="min-w-0 truncate px-2 text-[#37352f]">
+                {siteName}
+                {unit ? ` ${unit}` : ''}
+              </span>
+            </>
           )}
-        </div>
+        </nav>
         <div className="flex shrink-0 items-center gap-1">
           {guest ? (
             <button type="button" className={nb.line} onClick={onToggleGuest}>
@@ -94,6 +103,24 @@ export function TopHeader({
               </button>
               {menu}
             </>
+          )}
+        </div>
+      </div>
+      <div className="flex items-start gap-4 pt-3.5">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-[24px] font-bold leading-[1.3] tracking-[-0.022em] text-[#37352f]">
+            {siteName}
+            {unit && <span className="ml-2 tabular-nums">{unit}</span>}
+          </h1>
+          {specs.length > 0 && (
+            <div data-property-facts className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[13px] text-[#37352f]/65">
+              {specs.map((spec, index) => (
+                <Fragment key={spec.key}>
+                  {index > 0 && <span className="text-[#37352f]/25">·</span>}
+                  <span className="tabular-nums">{spec.text}</span>
+                </Fragment>
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -122,7 +149,12 @@ export function TopHeader({
               </button>
             </Fragment>
           ))}
-          {prices.length === 0 && <span className="text-[13px] text-[#37352f]/45">거래 조건 없음</span>}
+          {prices.length === 0 &&
+            (closedSummary ? (
+              <b className="text-[15px] font-semibold tabular-nums text-[#37352f]">{closedSummary}</b>
+            ) : (
+              <span className="text-[13px] text-[#37352f]/45">거래 조건 없음</span>
+            ))}
           {!guest && confirm && (
             <>
               <span className="h-[18px] w-px bg-[#e9e9e7]" />
@@ -146,7 +178,7 @@ export function TopHeader({
             {ownerCall && (
               <a href={`tel:${ownerCall.phone}`} className={nb.ghost} title={`${ownerCall.name}에게 전화`}>
                 <Phone />
-                소유주 전화
+                소유자 전화
               </a>
             )}
             {onConfirm && (
@@ -155,7 +187,7 @@ export function TopHeader({
                 className={nb.line}
                 disabled={confirmPending}
                 onClick={onConfirm}
-                title="소유주에게 가격과 거래 가능 여부를 확인했으면 누르세요"
+                title="소유자에게 가격과 거래 가능 여부를 확인했으면 누르세요"
               >
                 {confirmPending ? <Loader2 className="animate-spin" /> : <Check />}
                 확인 완료
@@ -163,7 +195,7 @@ export function TopHeader({
             )}
             <button type="button" className={nb.solid} onClick={onFocusComposer}>
               <NotebookPen />
-              상담 기록
+              상담 적기
               <Kbd>R</Kbd>
             </button>
           </div>

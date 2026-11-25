@@ -19,17 +19,13 @@ import {
   ChevronRight,
   CircleDollarSign,
   FileText,
-  Globe2,
+  Handshake,
   KeyRound,
-  Languages,
   LockKeyhole,
   RotateCw,
-  Save,
   Search,
-  ShieldCheck,
   UserRound,
   Users,
-  WalletCards,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -42,6 +38,7 @@ import {
   type SupportedLocale,
 } from '@/i18n';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/providers/auth-provider';
@@ -60,6 +57,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TeamSettings } from './-team-settings';
 import { ContractTemplatesCard } from './-templates-card';
 import { McpApiKeyCard } from './-mcp-card';
+import { PartnerBrokersSettingsCard } from './-partner-brokers-card';
 
 type CommissionConfigForm = {
   distributionType: string;
@@ -86,6 +84,7 @@ type SettingsSectionId =
   | 'office'
   | 'team'
   | 'commission'
+  | 'partners'
   | 'templates'
   | 'connections';
 
@@ -112,7 +111,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
     group: '사무소 운영',
     label: '사무소 정보',
     description: '대표 정보와 팀 관리',
-    keywords: '사무소 상호 대표 등록번호 전화 주소 플랜 구독 고정비',
+    keywords: '사무소 상호 대표 등록번호 전화 주소 플랜 구독',
     icon: Building2,
   },
   {
@@ -132,6 +131,14 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
     icon: CircleDollarSign,
   },
   {
+    id: 'partners',
+    group: '사무소 운영',
+    label: '공동중개 파트너',
+    description: '파트너 사무소 주소록',
+    keywords: '파트너 공동중개 중개사무소 상대 사무소 주소록 협력 부동산 수수료 나누기',
+    icon: Handshake,
+  },
+  {
     id: 'templates',
     group: '사무소 운영',
     label: '계약서 서식',
@@ -143,8 +150,8 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
     id: 'connections',
     group: '연결',
     label: '외부 연결',
-    description: '네이버와 MCP 접근 키',
-    keywords: '네이버 광고 실명 인증 아이디 MCP API 키 Claude Desktop Codex AI 외부 연결 CP',
+    description: '네이버와 외부 AI 연결',
+    keywords: '네이버 광고 실명 인증 아이디 MCP API 키 Claude ChatGPT 커넥터 Codex AI 외부 연결 CP 자동화',
     icon: KeyRound,
   },
 ];
@@ -204,7 +211,7 @@ export const Route = createFileRoute('/_authenticated/settings/')({
 });
 
 function SettingsPage() {
-  const { user } = useAuth();
+  const { user, refresh: refreshAuthUser } = useAuth();
   const queryClient = useQueryClient();
   const { t } = useTranslation('settings');
   const canEditOffice = user?.role === 'owner' || user?.role === 'manager';
@@ -212,6 +219,7 @@ function SettingsPage() {
   const contentScrollRef = useRef<HTMLElement | null>(null);
 
   const { section: requestedSection } = Route.useSearch();
+  const navigateSettings = Route.useNavigate();
   // 직원 계정은 대표와 매니저만 관리한다. 중개사에게는 항목 자체를 보이지 않는다.
   const canManageTeam = user?.role === 'owner' || user?.role === 'manager';
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => {
@@ -338,13 +346,15 @@ function SettingsPage() {
     onSuccess: (updatedOffice) => {
       queryClient.setQueryData(['office-profile'], updatedOffice);
       queryClient.invalidateQueries({ queryKey: ['employees'] });
+      // 대시보드 인사말·사이드바처럼 로그인 정보의 사무소명을 쓰는 곳도 새 이름으로 바꾼다
+      if (updatedOffice.name !== user?.office?.name) {
+        void refreshAuthUser().catch(() => undefined);
+      }
       toast.success('사무소 설정을 저장했습니다.');
     },
     onError: (error) =>
       toast.error(
-        error instanceof Error
-          ? error.message
-          : '사무소 설정을 저장하지 못했습니다. 다시 시도해 주세요.',
+        apiErrorMessage(error, '사무소 설정을 저장하지 못했습니다. 다시 시도해 주세요.'),
       ),
   });
 
@@ -379,9 +389,7 @@ function SettingsPage() {
     },
     onError: (error) =>
       toast.error(
-        error instanceof Error
-          ? error.message
-          : '수수료 배분 기준을 저장하지 못했습니다. 다시 시도해 주세요.',
+        apiErrorMessage(error, '수수료 배분 기준을 저장하지 못했습니다. 다시 시도해 주세요.'),
       ),
   });
 
@@ -394,6 +402,9 @@ function SettingsPage() {
     setActiveSection(sectionId);
     localStorage.setItem(LAST_SECTION_KEY, sectionId);
     contentScrollRef.current?.scrollTo({ top: 0 });
+    // 주소도 지금 항목으로 맞춘다. 그대로 두면 주소에 처음 들어온 항목(?section=commission)이 남아,
+    // 다른 화면의 같은 링크로 다시 들어와도 값이 바뀌지 않아 그 항목으로 옮겨 가지 않았다(탭을 다시 열 때도 엉뚱한 항목).
+    if (requestedSection !== sectionId) void navigateSettings({ search: { section: sectionId }, replace: true });
   };
 
   const handleCommissionSave = () => {
@@ -472,7 +483,7 @@ function SettingsPage() {
 
       <main
         ref={contentScrollRef}
-        className="min-w-0 flex-1 overflow-y-auto bg-muted/20"
+        className="min-w-0 flex-1 overflow-y-auto bg-background"
       >
         <div className="sticky top-0 z-20 border-b border-border/70 bg-background/95 px-5 py-3 backdrop-blur lg:hidden">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -510,7 +521,7 @@ function SettingsPage() {
           ) : null}
         </div>
 
-        <div className="mx-auto w-full max-w-[980px] px-5 py-7 lg:px-10 lg:py-9">
+        <div className="mx-auto w-full max-w-[720px] px-5 py-8 lg:px-8 lg:py-12">
           {isError ? (
             <div
               role="alert"
@@ -538,12 +549,18 @@ function SettingsPage() {
             <>
               <SettingsPaneHeader
                 section={activeSectionMeta}
-                readOnly={!canEditOffice && activeSection !== 'account'}
+                readOnly={
+                  !canEditOffice &&
+                  activeSection !== 'account' &&
+                  activeSection !== 'partners'
+                }
               />
 
               {activeSection === 'account' ? (
                 <AccountSettings
                   isLoading={isLoading}
+                  canManageTeam={canManageTeam}
+                  onOpenTeam={() => handleSectionChange('team')}
                   locale={locale}
                   myProfile={myProfile}
                   user={user}
@@ -582,6 +599,8 @@ function SettingsPage() {
                   onSave={handleCommissionSave}
                 />
               ) : null}
+
+              {activeSection === 'partners' ? <PartnerBrokersSettingsCard /> : null}
 
               {activeSection === 'templates' ? (
                 <ContractTemplatesCard canEdit={canEditOffice} />
@@ -628,14 +647,9 @@ function SettingsNavigation({
   onSectionChange: (sectionId: SettingsSectionId) => void;
 }) {
   return (
-    <aside className="hidden w-[252px] shrink-0 flex-col border-r border-border/80 bg-sidebar lg:flex">
-      <div className="px-5 pb-4 pt-6">
-        <div className="mb-4">
-          <h1 className="text-[21px] font-semibold tracking-[-0.025em]">설정</h1>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            업무 환경을 관리합니다.
-          </p>
-        </div>
+    <aside className="hidden w-[232px] shrink-0 flex-col border-r border-border/70 bg-sidebar lg:flex">
+      <div className="px-3 pb-3 pt-5">
+        <h1 className="mb-3 px-2 text-[15px] font-semibold tracking-[-0.01em]">설정</h1>
         <SettingsSearch
           value={searchQuery}
           resultCount={filteredSections.length}
@@ -656,11 +670,9 @@ function SettingsNavigation({
             if (items.length === 0) return null;
 
             return (
-              <div key={group} className="mb-5 last:mb-0">
-                <p className="mb-1.5 px-2 text-[10px] font-semibold tracking-[0.08em] text-muted-foreground/80 uppercase">
-                  {group}
-                </p>
-                <div className="space-y-0.5">
+              <div key={group} className="mb-4 last:mb-0">
+                <p className="px-2 pb-1 pt-2 text-xs text-muted-foreground">{group}</p>
+                <div className="space-y-px">
                   {items.map((section) => {
                     const Icon = section.icon;
                     const active = activeSection === section.id;
@@ -672,28 +684,17 @@ function SettingsNavigation({
                         type="button"
                         data-settings-nav-item
                         aria-current={active ? 'page' : undefined}
+                        title={section.description}
                         onClick={() => onSectionChange(section.id)}
                         className={cn(
-                          'relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/40',
+                          'flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/40',
                           active
-                            ? 'bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-info'
-                            : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+                            ? 'bg-sidebar-accent font-medium text-foreground'
+                            : 'text-foreground/80 hover:bg-sidebar-accent/60 hover:text-foreground',
                         )}
                       >
-                        <Icon
-                          className={cn(
-                            'size-4 shrink-0',
-                            active ? 'text-info-strong' : 'text-muted-foreground',
-                          )}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px] font-medium">
-                            {section.label}
-                          </span>
-                          <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
-                            {section.description}
-                          </span>
-                        </span>
+                        <Icon className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">{section.label}</span>
                         {dirty ? (
                           <span
                             className="size-1.5 shrink-0 rounded-full bg-info"
@@ -710,21 +711,12 @@ function SettingsNavigation({
         )}
       </nav>
 
-      <div className="border-t border-border/80 p-4">
-        <div className="rounded-lg bg-background/70 px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-neutral-soft text-neutral-strong">
-              <Building2 className="size-3.5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium">{officeName}</p>
-              <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                {plan ? `${plan} 플랜` : '사무소 범위'}
-                {seatLabel ? ` · ${seatLabel}` : ''}
-              </p>
-            </div>
-          </div>
-        </div>
+      <div className="border-t border-border/70 px-5 py-3">
+        <p className="truncate text-xs font-medium">{officeName}</p>
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          {plan ? `${plan} 플랜` : '사무소 범위'}
+          {seatLabel ? ` · ${seatLabel}` : ''}
+        </p>
       </div>
     </aside>
   );
@@ -774,27 +766,18 @@ function SettingsPaneHeader({
   section: SettingsSection;
   readOnly: boolean;
 }) {
-  const Icon = section.icon;
   return (
-    <header className="mb-7 flex items-start justify-between gap-4">
-      <div className="flex min-w-0 items-start gap-3">
-        <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background text-info-strong shadow-xs">
-          <Icon className="size-[17px]" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
-            설정 · {section.group}
-          </p>
-          <h2 className="mt-1 text-[22px] font-semibold tracking-[-0.025em]">
-            {section.label}
-          </h2>
-          <p className="mt-1 max-w-2xl text-[13px] leading-5 text-muted-foreground">
-            {paneDescription(section.id)}
-          </p>
-        </div>
+    <header className="mb-9 flex items-start justify-between gap-4 border-b border-border/70 pb-6">
+      <div className="min-w-0">
+        <h2 className="text-[24px] font-semibold leading-8 tracking-[-0.02em]">
+          {section.label}
+        </h2>
+        <p className="mt-1.5 text-[13px] leading-5 text-muted-foreground">
+          {paneDescription(section.id)}
+        </p>
       </div>
       {readOnly ? (
-        <Badge variant="secondary" className="mt-1 shrink-0 gap-1 font-normal">
+        <Badge variant="secondary" className="mt-1.5 shrink-0 gap-1 font-normal">
           <LockKeyhole className="size-3" />
           읽기 전용
         </Badge>
@@ -805,6 +788,8 @@ function SettingsPaneHeader({
 
 function AccountSettings({
   isLoading,
+  canManageTeam,
+  onOpenTeam,
   locale,
   myProfile,
   user,
@@ -812,6 +797,8 @@ function AccountSettings({
   onLocaleChange,
 }: {
   isLoading: boolean;
+  canManageTeam: boolean;
+  onOpenTeam: () => void;
   locale: SupportedLocale;
   myProfile: {
     phone: string | null;
@@ -832,16 +819,16 @@ function AccountSettings({
     : '미지정';
 
   return (
-    <div className="space-y-7">
+    <div>
       <SettingsSectionHeading
         title="프로필"
         description="현재 로그인한 계정의 식별 정보입니다."
       />
       <SettingsSurface>
-        <div className="flex flex-wrap items-center gap-4 px-5 py-5">
+        <div className="flex flex-wrap items-center gap-3.5 py-4">
           {isLoading ? (
             <>
-              <Skeleton className="size-12 rounded-lg" />
+              <Skeleton className="size-10 rounded-full" />
               <div className="space-y-2">
                 <Skeleton className="h-4 w-28" />
                 <Skeleton className="h-3 w-40" />
@@ -849,12 +836,12 @@ function AccountSettings({
             </>
           ) : (
             <>
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-info-soft text-lg font-semibold text-info-strong">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-neutral-soft text-[15px] font-semibold text-neutral-strong">
                 {user?.name?.charAt(0) ?? 'U'}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[15px] font-semibold">{user?.name ?? '-'}</p>
+                  <p className="text-[14px] font-semibold">{user?.name ?? '-'}</p>
                   <Badge variant="outline" className="font-normal">
                     {user ? (ROLE_LABELS[user.role] ?? user.role) : '-'}
                   </Badge>
@@ -866,7 +853,7 @@ function AccountSettings({
             </>
           )}
         </div>
-        <dl className="grid border-t border-border/70 sm:grid-cols-2">
+        <dl className="divide-y divide-border/70">
           <InfoItem label="로그인 ID" value={user?.loginId ?? '-'} />
           <InfoItem label="이메일" value={user?.email ?? '등록되지 않음'} />
           <InfoItem
@@ -876,11 +863,42 @@ function AccountSettings({
           <InfoItem label="자격 구분" value={licenseLabel} />
         </dl>
         {myProfile?.licenseType === 'assistant' ? (
-          <div className="border-t border-border/70 bg-warning-soft/45 px-5 py-3 text-xs leading-5 text-warning-strong">
+          <div className="border-t border-border/70 py-3 text-xs leading-5 text-warning-strong">
             중개보조원 계정은 계약서에 서명할 수 없습니다. 계약 체결은 개업·소속
             공인중개사가 진행해야 합니다.
           </div>
         ) : null}
+      </SettingsSurface>
+
+      <SettingsSectionHeading
+        title="이름과 비밀번호 바꾸기"
+        description="계정 정보는 이 화면에서 바로 고치지 않습니다. 아래에서 바꾸는 곳을 확인하세요."
+      />
+      <SettingsSurface>
+        <SettingsRow
+          title="이름 · 전화번호 · 자격"
+          description={
+            canManageTeam
+              ? '설정 › 직원 및 권한에서 내 계정을 열어 고칩니다.'
+              : '대표나 매니저에게 고쳐 달라고 요청하세요. 설정 › 직원 및 권한에서 고칩니다.'
+          }
+          control={
+            canManageTeam ? (
+              <Button size="sm" variant="outline" onClick={onOpenTeam}>
+                직원 및 권한 열기
+              </Button>
+            ) : null
+          }
+        />
+        <SettingsRow
+          title="비밀번호"
+          description={
+            user?.email
+              ? `로그아웃한 뒤 로그인 화면의 '비밀번호를 잊으셨나요?'에서 ${user.email}로 재설정 메일을 받아 바꿉니다.`
+              : '직원 계정의 비밀번호는 대표나 매니저가 설정 › 직원 및 권한에서 새로 정해 줍니다.'
+          }
+          control={null}
+        />
       </SettingsSurface>
 
       <SettingsSectionHeading
@@ -889,9 +907,8 @@ function AccountSettings({
       />
       <SettingsSurface>
         <SettingsRow
-          icon={Languages}
           title="표시 언어"
-          description="메뉴와 지원되는 화면의 언어를 바로 변경합니다."
+          description="화면의 언어를 바꿉니다. 열려 있는 화면을 모두 다시 불러오며, 작성 중인 화면은 저장하거나 닫은 뒤에 바뀝니다."
           control={
             <Select
               value={locale}
@@ -939,29 +956,22 @@ function OfficeSettings({
   onRetryGeocoding: () => void;
 }) {
   return (
-    <div className="space-y-7">
+    <div>
       <SettingsSectionHeading
         title="운영 상태"
         description="현재 플랜과 팀 사용 현황을 한눈에 확인합니다."
       />
       <SettingsSurface>
-        <div className="grid sm:grid-cols-[minmax(220px,1.4fr)_repeat(3,minmax(100px,0.6fr))]">
-          <div className="flex items-center gap-3 px-5 py-4">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-soft">
-              <Building2 className="size-4" />
-            </div>
-            <div className="min-w-0">
-              {isLoading ? (
-                <Skeleton className="h-4 w-32" />
-              ) : (
-                <p className="truncate text-sm font-semibold">{office?.name ?? '-'}</p>
-              )}
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {office?.isActive === false ? '이용 정지' : '정상 운영 중'}
-              </p>
-            </div>
-          </div>
-          <CompactMetric
+        <dl className="divide-y divide-border/70">
+          <InfoItem
+            label="사무소"
+            value={
+              isLoading
+                ? '불러오는 중…'
+                : `${office?.name ?? '-'} · ${office?.isActive === false ? '이용 정지' : '정상 운영 중'}`
+            }
+          />
+          <InfoItem
             label="플랜"
             value={
               office
@@ -969,23 +979,19 @@ function OfficeSettings({
                 : '-'
             }
           />
-          <CompactMetric
+          <InfoItem
             label="활성 계정"
             value={office ? `${office.counts.activeUsers}/${office.maxUsers}명` : '-'}
           />
-          <CompactMetric
-            label="매니저"
-            value={office ? `${office.counts.managers}명` : '-'}
-            last
-          />
-        </div>
+          <InfoItem label="매니저" value={office ? `${office.counts.managers}명` : '-'} />
+        </dl>
       </SettingsSurface>
 
       <SettingsSectionHeading
         title="기본 정보"
         description="계약서와 사무소 안내에 사용하는 공식 정보입니다."
       />
-      <SettingsSurface className="p-5">
+      <SettingsSurface className="border-b-0 pt-5">
         {isLoading ? (
           <div className="grid gap-5 sm:grid-cols-2">
             {Array.from({ length: 5 }, (_, index) => (
@@ -1094,7 +1100,6 @@ function OfficeSettings({
           <SettingsSurface>
             <SettingsLinkRow
               to="/employees"
-              icon={Users}
               title="직원 업무 현황"
               description={
                 office
@@ -1102,13 +1107,6 @@ function OfficeSettings({
                   : '직원별 담당 업무와 활동 기록을 봅니다.'
               }
               actionLabel="직원 관리 열기"
-            />
-            <SettingsLinkRow
-              to="/cashflow/expenses"
-              icon={WalletCards}
-              title="사무소 고정비"
-              description="임대료·관리비 등 반복 비용은 캐시플로우에서 관리합니다."
-              actionLabel="고정비 관리 열기"
             />
           </SettingsSurface>
         </>
@@ -1144,14 +1142,13 @@ function CommissionSettings({
   }
 
   return (
-    <div className="space-y-7">
+    <div>
       <SettingsSectionHeading
         title="배분 방식"
         description="거래를 만들 때 직원 배분의 기본값으로 적용됩니다."
       />
       <SettingsSurface>
         <SettingsRow
-          icon={ShieldCheck}
           title="기본 계산 방식"
           description="개별 거래나 직원에게 별도 비율이 있으면 그 값을 우선합니다."
           control={
@@ -1271,18 +1268,14 @@ function ConnectionSettings({
   onSave: () => void;
 }) {
   return (
-    <div className="space-y-7">
+    <div>
       <SettingsSectionHeading
         title="광고 등록"
         description="사무소 공통으로 사용하는 외부 플랫폼 식별 정보입니다."
       />
       <SettingsSurface>
-        <div className="grid gap-4 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-neutral-soft">
-              <Globe2 className="size-4" />
-            </div>
-            <div>
+        <div className="grid gap-4 py-4 sm:grid-cols-[minmax(0,1fr)_280px] sm:items-center">
+            <div className="min-w-0">
               <Label htmlFor="naver-verification-id" className="text-[13px] font-medium">
                 네이버 매물등록 인증 아이디
               </Label>
@@ -1293,7 +1286,6 @@ function ConnectionSettings({
                 네이버 부동산 광고 등록 시 실명 인증에 사용하는 사무소 공통 아이디입니다.
               </p>
             </div>
-          </div>
           {isLoading ? (
             <Skeleton className="h-9 w-full" />
           ) : (
@@ -1321,12 +1313,12 @@ function ConnectionSettings({
 
       <SettingsSectionHeading
         title="AI 도구"
-        description="외부 AI가 현재 계정 권한으로 Estate ERP에 연결되도록 설정합니다."
+        description="내 Claude·ChatGPT 같은 외부 AI가 내 계정 권한으로 에스테잇플로우의 자료를 읽고 쓰게 연결합니다."
       />
       <McpApiKeyCard />
 
-      <div className="flex items-start gap-3 rounded-lg border border-border/70 bg-background px-4 py-3 text-xs leading-5 text-muted-foreground">
-        <LockKeyhole className="mt-0.5 size-3.5 shrink-0" />
+      <div className="mt-6 flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+        <LockKeyhole className="mt-[3px] size-3.5 shrink-0" />
         <p>
           광고 플랫폼 로그인 정보는 이 앱에 저장하지 않습니다. 이실장 등 CP 계정은
           로컬 자동화 도구의 전용 설정에서 관리됩니다.
@@ -1344,13 +1336,17 @@ function SettingsSectionHeading({
   description: string;
 }) {
   return (
-    <div className="mb-3">
-      <h3 className="text-[13px] font-semibold">{title}</h3>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+    <div className="mb-3 mt-10 first:mt-0">
+      <h3 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h3>
+      <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{description}</p>
     </div>
   );
 }
 
+/**
+ * 한 구역의 줄 묶음. 상자·그림자 없이 위아래 선과 줄 사이 선만 쓴다
+ * (앱 톤: 상자와 띠보다 선과 여백). 모양은 settingsSurfaceClassName과 같다.
+ */
 function SettingsSurface({
   children,
   className,
@@ -1359,53 +1355,39 @@ function SettingsSurface({
   className?: string;
 }) {
   return (
-    <section
-      className={cn(
-        'overflow-hidden rounded-lg border border-border/80 bg-card shadow-[0_1px_2px_rgba(55,53,47,0.035)]',
-        className,
-      )}
-    >
+    <section className={cn('divide-y divide-border/70 border-y border-border/70', className)}>
       {children}
     </section>
   );
 }
 
 function SettingsRow({
-  icon: Icon,
   title,
   description,
   control,
 }: {
-  icon: ComponentType<{ className?: string }>;
   title: string;
   description: string;
   control: ReactNode;
 }) {
   return (
-    <div className="grid gap-4 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-neutral-soft">
-          <Icon className="size-4" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-[13px] font-medium">{title}</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
-        </div>
+    <div className="grid gap-x-6 gap-y-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div className="min-w-0">
+        <p className="text-[13px] font-medium">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
       </div>
-      <div className="justify-self-start sm:justify-self-end">{control}</div>
+      {control ? <div className="justify-self-start sm:justify-self-end">{control}</div> : null}
     </div>
   );
 }
 
 function SettingsLinkRow({
   to,
-  icon: Icon,
   title,
   description,
   actionLabel,
 }: {
-  to: '/employees' | '/cashflow/expenses';
-  icon: ComponentType<{ className?: string }>;
+  to: '/employees';
   title: string;
   description: string;
   actionLabel: string;
@@ -1414,16 +1396,13 @@ function SettingsLinkRow({
     <Link
       to={to}
       aria-label={actionLabel}
-      className="group flex items-center gap-3 border-b border-border/70 px-5 py-4 outline-none last:border-b-0 hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/35"
+      className="group -mx-2 flex items-center gap-3 rounded-md px-2 py-4 outline-none hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/35"
     >
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-neutral-soft group-hover:bg-background">
-        <Icon className="size-4" />
-      </div>
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium">{title}</p>
         <p className="mt-1 truncate text-xs text-muted-foreground">{description}</p>
       </div>
-      <span className="hidden text-[11px] text-muted-foreground sm:block">{actionLabel}</span>
+      <span className="hidden text-xs text-muted-foreground sm:block">{actionLabel}</span>
       <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
     </Link>
   );
@@ -1496,7 +1475,7 @@ function NumberSettingRow({
   const errorId = `${id}-error`;
 
   return (
-    <div className="grid gap-3 border-b border-border/70 px-5 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_160px] sm:items-start">
+    <div className="grid gap-x-6 gap-y-3 py-4 sm:grid-cols-[minmax(0,1fr)_140px] sm:items-start">
       <div>
         <Label htmlFor={id} className="text-[13px] font-medium">
           {label}
@@ -1546,7 +1525,7 @@ function SaveStrip({
 }) {
   if (!canEdit) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-background px-4 py-3 text-xs text-muted-foreground">
+      <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
         <LockKeyhole className="size-3.5" />
         대표 또는 매니저만 이 설정을 변경할 수 있습니다.
       </div>
@@ -1554,20 +1533,13 @@ function SaveStrip({
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/90 bg-background px-4 py-3 shadow-[0_8px_24px_rgba(55,53,47,0.07)]">
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-2 text-xs" aria-live="polite">
-        <span
-          className={cn(
-            'flex size-5 items-center justify-center rounded-full',
-            isDirty ? 'bg-info-soft text-info-strong' : 'bg-success-soft text-success',
-          )}
-        >
-          {isDirty ? (
-            <span className="size-1.5 rounded-full bg-current" />
-          ) : (
-            <Check className="size-3" />
-          )}
-        </span>
+        {isDirty ? (
+          <span className="size-1.5 rounded-full bg-info" />
+        ) : (
+          <Check className="size-3.5 text-muted-foreground" />
+        )}
         <span className={isDirty ? 'text-foreground' : 'text-muted-foreground'}>
           {isSaving
             ? '변경사항을 저장하는 중입니다…'
@@ -1581,40 +1553,18 @@ function SaveStrip({
         onClick={onSave}
         disabled={!isDirty || isSaving || disabled}
       >
-        <Save className="size-3.5" />
         {isSaving ? '저장 중…' : label}
       </Button>
     </div>
   );
 }
 
+/** 속성 한 줄: 왼쪽에 이름, 오른쪽에 값 (연락처·프로젝트 상세의 속성 줄과 같은 짜임) */
 function InfoItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border-b border-border/70 px-5 py-3.5 last:border-b-0 sm:border-r sm:[&:nth-child(2n)]:border-r-0 sm:[&:nth-last-child(-n+2)]:border-b-0">
-      <dt className="text-[10px] font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 truncate text-[13px] font-medium">{value}</dd>
-    </div>
-  );
-}
-
-function CompactMetric({
-  label,
-  value,
-  last,
-}: {
-  label: string;
-  value: string;
-  last?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        'border-t border-border/70 px-5 py-4 sm:border-l sm:border-t-0',
-        !last && 'border-r-0',
-      )}
-    >
-      <p className="text-[10px] font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1 text-sm font-semibold tabular-nums">{value}</p>
+    <div className="flex items-baseline gap-4 py-2.5">
+      <dt className="w-28 shrink-0 text-[13px] text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 flex-1 truncate text-[13px]">{value}</dd>
     </div>
   );
 }
@@ -1628,9 +1578,7 @@ function SearchEmptyState({
 }) {
   return (
     <div className="mx-auto flex min-h-[420px] max-w-md flex-col items-center justify-center text-center">
-      <div className="flex size-11 items-center justify-center rounded-full bg-neutral-soft text-muted-foreground">
-        <Search className="size-5" />
-      </div>
+      <Search className="size-5 text-muted-foreground" />
       <h2 className="mt-4 text-base font-semibold">
         ‘{query}’과 일치하는 설정이 없습니다
       </h2>
@@ -1726,6 +1674,8 @@ function paneDescription(sectionId: SettingsSectionId): string {
       return '직원 계정을 만들고 역할, 자격, 급여와 배분율, 비밀번호를 관리합니다. 급여와 배분율은 대표만 정합니다.';
     case 'commission':
       return '거래 생성 시 적용할 직원 수수료 배분의 기본값을 정합니다.';
+    case 'partners':
+      return '공동중개하는 다른 중개사무소를 올려 둡니다. 거래를 만들 때 상대 사무소로 고르고, 수수료를 나눌 때 받을 곳으로 씁니다.';
     case 'templates':
       return '계약서 작성과 출력에 반복해서 사용하는 문구와 서식을 관리합니다.';
     case 'connections':

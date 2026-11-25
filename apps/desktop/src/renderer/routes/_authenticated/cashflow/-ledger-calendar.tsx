@@ -1,12 +1,16 @@
 /**
  * 수금 캘린더. 평면 격자에 예정, 입금, 잔여 약정, 연체를 아이콘과 금액으로 표시한다.
+ * 입금은 우리 통장에 들어온 돈 한 건마다 받은 날에 놓는다(부가세 뺀 금액, 서버 loadOurCollections).
+ * 캐시플로우의 월 수금도 같은 목록을 달로 모으므로, 두 달에 나눠 받은 청구도 두 화면의 달 합계가 같다.
  */
 import { useMemo } from 'react';
 import {
   CalendarClock,
   CircleCheck,
   Clock,
+  Handshake,
   TriangleAlert,
+  Undo2,
   type LucideIcon,
 } from 'lucide-react';
 import type { LedgerDealGroup, LedgerPayment } from '@estate-erp/api-client';
@@ -20,26 +24,34 @@ import {
 import {
   clientSideLabel,
   dealLocation,
+  dealLocationShort,
   effectiveDueDate,
   isOpenPayment,
+  isOurReceivable,
   isPaymentOverdue,
   monthKeyOf,
   paymentRemaining,
-  receivedAmount,
   toDayKey,
+  WON_PER_MANWON,
 } from './-cashflow-utils';
 
-type EventType = 'due' | 'paid' | 'agreed' | 'overdue';
+type EventType = 'due' | 'paid' | 'share' | 'refund' | 'agreed' | 'overdue';
 
 interface CalendarEvent {
   key: string;
   type: EventType;
   dealId: string;
   payment: LedgerPayment;
+  /** 칸에 쓰는 짧은 표기 "102동 2203호" */
   siteName: string;
   location: string;
-  amount: number;
+  transactionType: string;
+  /** 원. 입금·돌려줌은 부가세 뺀 금액(돌려줌은 음수), 예정은 남은 금액(만원 × 10,000). */
+  won: number;
 }
+
+/** 화면에 쓰는 만원 금액 */
+const manwonOf = (won: number) => Math.round(won / WON_PER_MANWON);
 
 const EVENT_META: Record<
   EventType,
@@ -47,6 +59,8 @@ const EVENT_META: Record<
 > = {
   due: { label: '수금 예정', icon: Clock, className: 'text-warning-strong' },
   paid: { label: '입금', icon: CircleCheck, className: 'text-success' },
+  share: { label: '공동중개 받은 몫', icon: Handshake, className: 'text-success' },
+  refund: { label: '돌려줌', icon: Undo2, className: 'text-destructive-strong' },
   agreed: { label: '잔여 약정', icon: CalendarClock, className: 'text-orange' },
   overdue: {
     label: '연체',
@@ -77,23 +91,25 @@ function buildEvents(groups: LedgerDealGroup[], year: number, month: number) {
   const prefix = monthKeyOf(year, month);
   const byDay = new Map<string, CalendarEvent[]>();
   const add = (
+    key: string,
     date: string | null | undefined,
     type: EventType,
     group: LedgerDealGroup,
     payment: LedgerPayment,
-    amount: number,
+    won: number,
   ) => {
     const day = toDayKey(date);
     if (!day?.startsWith(prefix)) return;
     const list = byDay.get(day) ?? [];
     list.push({
-      key: `${payment.id}:${type}`,
+      key,
       type,
       dealId: group.deal.id,
       payment,
-      siteName: group.deal.siteName ?? dealLocation(group.deal),
+      siteName: dealLocationShort(group.deal),
       location: dealLocation(group.deal),
-      amount,
+      transactionType: group.deal.transactionType,
+      won,
     });
     byDay.set(day, list);
   };
@@ -101,15 +117,20 @@ function buildEvents(groups: LedgerDealGroup[], year: number, month: number) {
   for (const group of groups) {
     const balance = group.deal.balanceDueDate;
     for (const p of group.payments) {
-      const received = receivedAmount(p);
-      if (p.paidAt && received > 0) add(p.paidAt, 'paid', group, p, received);
-      if (isOpenPayment(p)) {
+      // 우리 통장에 들어온 돈만 놓는다 (서버 loadOurCollections — 캐시플로우 수금과 같은 기준).
+      // 상대가 수금한 청구의 입금은 상대 통장의 돈이라 빼고, 받음 기록한 우리 몫을 그 날짜에 놓는다.
+      for (const c of p.collections ?? []) {
+        const type: EventType = c.kind === 'refund' ? 'refund' : c.kind === 'partner_share' ? 'share' : 'paid';
+        add(c.id, c.at, type, group, p, c.won);
+      }
+      // 상대가 수금하는 청구의 예정·연체는 우리 받을 돈이 아니다 (공동중개 화면의 받을 몫으로 본다)
+      if (isOpenPayment(p) && isOurReceivable(p)) {
         const type: EventType = isPaymentOverdue(p, balance)
           ? 'overdue'
           : p.status === 'partial' && p.agreedRemainingDate
             ? 'agreed'
             : 'due';
-        add(effectiveDueDate(p, balance), type, group, p, paymentRemaining(p));
+        add(`${p.id}:${type}`, effectiveDueDate(p, balance), type, group, p, paymentRemaining(p) * WON_PER_MANWON);
       }
     }
   }
@@ -122,15 +143,16 @@ export function calendarTotals(
   year: number,
   month: number,
 ) {
-  let due = 0;
-  let paid = 0;
+  // 원으로 모은 뒤 마지막에 만원으로 바꾼다 (캐시플로우의 월 수금과 같은 셈)
+  let dueWon = 0;
+  let paidWon = 0;
   for (const list of buildEvents(groups, year, month).values()) {
     for (const event of list) {
-      if (event.type === 'paid') paid += event.amount;
-      else due += event.amount;
+      if (event.type === 'paid' || event.type === 'share' || event.type === 'refund') paidWon += event.won;
+      else dueWon += event.won;
     }
   }
-  return { due, paid };
+  return { due: manwonOf(dueWon), paid: manwonOf(paidWon) };
 }
 
 export function LedgerCalendar({
@@ -169,7 +191,7 @@ export function LedgerCalendar({
         const key = toDayKey(date) ?? '';
         const outside = date.getMonth() !== month - 1;
         const events = outside ? [] : (byDay.get(key) ?? []);
-        const sum = events.reduce((acc, e) => acc + e.amount, 0);
+        const sum = manwonOf(events.reduce((acc, e) => acc + e.won, 0));
         return (
           <div
             key={key}
@@ -188,7 +210,7 @@ export function LedgerCalendar({
               >
                 {date.getDate()}
               </span>
-              {sum > 0 && (
+              {sum !== 0 && (
                 <span className="text-[11.5px] text-muted-foreground tabular-nums">
                   {formatMoney(sum)}
                 </span>
@@ -233,8 +255,9 @@ function EventButton({
   onOpenDeal: (dealId: string, paymentId?: string) => void;
 }) {
   const { label, icon: Icon, className } = EVENT_META[event.type];
-  const side = clientSideLabel(event.payment.clientSide);
-  const title = `${label} · ${event.location} ${side} ${formatMoney(event.amount)}`;
+  const side = clientSideLabel(event.payment.clientSide, event.transactionType);
+  const amount = manwonOf(event.won);
+  const title = `${label} · ${event.location} ${side} ${formatMoney(amount)}`;
   return (
     <button
       type="button"
@@ -246,7 +269,7 @@ function EventButton({
       <Icon className={cn('size-3 shrink-0', className)} />
       <span className="min-w-0 flex-1 truncate">{event.siteName}</span>
       <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
-        {side.slice(0, 2)} {formatMoney(event.amount).replace(/만$/, '')}
+        {side.slice(0, 2)} {formatMoney(amount).replace(/만$/, '')}
       </span>
     </button>
   );

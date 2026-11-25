@@ -20,17 +20,26 @@ import {
   CircleCheck,
   EllipsisVertical,
   ListOrdered,
+  MessageSquareText,
   Pencil,
   RotateCcw,
   Send,
   Trash2,
   Unlink,
   UserCheck,
+  UserPlus,
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { formatDate, formatPhone } from "@/lib/format";
+import { apiErrorMessage } from "@/lib/api-error";
+import {
+  formatPhoneWhileTyping,
+  phoneDigits,
+  phoneInputProblem,
+  useExistingContactByPhone,
+} from "@/lib/phone";
+import { formatDate, formatPhone, formatRelativeDay, formatRelativeDayTime } from "@/lib/format";
 import { announceProjectChange } from "@/lib/project-sync";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/domain";
@@ -38,6 +47,7 @@ import { Button } from "@/components/ui/button";
 import {
   Command,
   CommandEmpty,
+  CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
@@ -57,20 +67,18 @@ import { tabResourceKeys } from "@/features/tabs/lib/tabResource";
 import { useTabStore } from "@/features/tabs/store/useTabStore";
 import { useAuth } from "@/providers/auth-provider";
 import { openProjectPlan } from "../customers/-project-plan-store";
-import {
-  formatLedgerDate,
-  ProjectStepState,
-} from "../customers-table/-customer-inspector";
-import { LedgerSideTag } from "../customers-table/-ledger-chips";
+import { ProjectStepState } from "../customers-table/-customer-inspector";
 import {
   commentsQueryKey,
   errorMessage,
+  isProjectRemoved,
   planQueryKey,
   useProjectRemove,
   useProjectUpdate,
 } from "./-project-hooks";
 import { RefreshFailedNote } from "./-project-notes";
-import { ProjectStatusChip } from "./-project-status-chip";
+import { ProjectIntakeTag, ProjectStatusChip } from "./-project-status-chip";
+import { useProjectTasks } from "./-project-tasks";
 import {
   Avatar as DetailAvatar,
   H2 as DetailH2,
@@ -84,17 +92,35 @@ import {
   TextAction,
 } from "../properties/-components/property-inspector-view";
 import {
+  canRemoveProject,
   COMMENT_SAVE_MUTATION_KEY,
+  EMPTY_PROJECT_REMOVAL_NOTE,
+  projectRemovalFor,
   decideTextCommit,
+  describeProjectRemoval,
   getProjectStatus,
   getProjectTitle,
   mergeCommentPages,
+  PROJECT_ARCHIVE_NOTE,
   PROJECT_PERSON_ROLE_LABELS,
+  PROJECT_STATUS_HINTS,
   type CommentDraftStore,
   type CommentSaveRequest,
 } from "./-project-model";
+import { useInspectorOutsideClose } from "@/hooks/use-inspector-outside-close";
 
 export const PROJECT_INSPECTOR_ID = "project-inspector";
+/**
+ * 상세 오른쪽 열 상담 · 코멘트 흐름의 한 장(카드). 시안처럼 상담은 파랑 왼쪽 띠, 코멘트는 호박색 왼쪽 띠와
+ * 아주 옅은 같은 색 바탕(사용자 요청 2026-11-23). 색은 앱 토큰(info · warning).
+ */
+// Notion 카드(흰 바탕 + 머리카락 테 + 옅은 그림자). 사용자 지적(2026-11-23)으로 왼쪽 색 띠와 옅은 색 바탕은 뺐다 —
+// 종류는 아이콘과 종류 글자의 색(상담 파랑 · 코멘트 호박색)으로만 가른다. 테는 box-shadow로 긋는다
+// (app.css가 border-color를 레이어 밖에서 정해 border-* 색 유틸리티가 먹지 않는다).
+const PROJECT_FLOW_CARD_BASE =
+  "group/comment rounded-lg bg-white px-3 py-2.5 shadow-[0_0_0_1px_rgba(55,53,47,0.09),0_2px_4px_rgba(15,15,15,0.03)]";
+export const PROJECT_FLOW_CONSULT_CLASS = PROJECT_FLOW_CARD_BASE;
+export const PROJECT_FLOW_COMMENT_CLASS = PROJECT_FLOW_CARD_BASE;
 /** 고객 원장 · 연락처 패널과 같은 너비 */
 const PROJECT_INSPECTOR_WIDTH = 584;
 const MAX_COMMENT_LENGTH = 5000;
@@ -114,9 +140,8 @@ const propertyValueButtonClassName =
 
 /** "11.21 14:05" (올해가 아니면 연도까지) */
 function formatCommentTime(value: string) {
-  const date = new Date(value);
-  const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-  return `${formatLedgerDate(value)} ${time}`;
+  // "오늘 14:05" · "11.19 (목) 14:05" (화면 표기 기준)
+  return formatRelativeDayTime(value);
 }
 
 /** "14:05" — 날짜 줄 아래에서는 시각만 적는다 */
@@ -125,7 +150,7 @@ function formatClock(value: string) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
-function useIsSavingComment(projectId: string) {
+export function useIsSavingComment(projectId: string) {
   return (
     useIsMutating({
       mutationKey: COMMENT_SAVE_MUTATION_KEY,
@@ -171,6 +196,9 @@ export function ProjectInspector({
     return () => window.clearTimeout(timer);
   }, [closing, animate, onExited]);
 
+  // 패널 밖을 누르면 닫는다 (떠 있는 창 · 줄의 열기 단추는 밖이 아니다)
+  useInspectorOutsideClose(() => onClose());
+
   // Esc는 안쪽부터 닫는다: 떠 있는 창·메뉴 → 적고 있는 칸(그 칸이 직접 되돌린다) → 패널
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -193,6 +221,8 @@ export function ProjectInspector({
   const planQuery = useQuery({
     queryKey: planQueryKey(project.id),
     queryFn: () => api.projects.findOne(project.id),
+    // 이 탭에서 푼 프로젝트는 닫히는 동안 다시 읽지 않는다.
+    enabled: !isProjectRemoved(project.id),
   });
   const plan = planQuery.data;
 
@@ -202,6 +232,16 @@ export function ProjectInspector({
     setIsRemoveOpen(false);
     onClose(false);
   });
+  const { user } = useAuth();
+  // 풀기는 대표 · 매니저만(남이 적은 코멘트까지 지워진다). 아무것도 적지 않은 빈 프로젝트는 담당(만든 사람)도 지운다.
+  // 자세한 것을 받기 전에는 빈 프로젝트인지 모르므로 대표 · 매니저의 풀기만 보인다.
+  // 업무가 하나라도 있으면 빈 프로젝트가 아니다(서버와 같은 기준). 업무를 아직 모르면 지우기를 내놓지 않는다.
+  const tasksQuery = useProjectTasks(project.id);
+  const removal = plan
+    ? projectRemovalFor(plan, user, tasksQuery.data ? tasksQuery.data.length : null)
+    : canRemoveProject(user?.role)
+      ? ("remove" as const)
+      : null;
 
   // 연락처·매물관리 패널과 같다: 전체 화면을 새 탭으로 열고(이미 열려 있으면 그 탭으로 가고) 패널은 닫는다.
   const openOrRevealResource = useTabStore((state) => state.openOrRevealResource);
@@ -263,19 +303,27 @@ export function ProjectInspector({
                   다시 열기
                 </DropdownMenuItem>
               ) : (
-                <DropdownMenuItem onSelect={() => update.mutate({ archived: true })}>
+                <DropdownMenuItem
+                  title={PROJECT_ARCHIVE_NOTE}
+                  onSelect={() => update.mutate({ archived: true })}
+                >
                   <CircleCheck className="size-3.5" />
                   끝내기
                 </DropdownMenuItem>
               )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => setIsRemoveOpen(true)}
-              >
-                <Unlink className="size-3.5" />
-                프로젝트 풀기
-              </DropdownMenuItem>
+              {removal && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onSelect={() => setIsRemoveOpen(true)}>
+                    {removal === "delete-empty" ? (
+                      <Trash2 className="size-3.5" />
+                    ) : (
+                      <Unlink className="size-3.5" />
+                    )}
+                    {removal === "delete-empty" ? "지우기" : "프로젝트 풀기"}
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         }
@@ -290,18 +338,23 @@ export function ProjectInspector({
         assigneeOptions={assigneeOptions}
         drafts={drafts}
         onUpdate={update.mutate}
+        onUpdateText={update.mutateAsync}
         onSaveComment={onSaveComment}
       />
 
       <ConfirmDialog
         open={isRemoveOpen}
         onOpenChange={setIsRemoveOpen}
-        title="프로젝트를 풀까요?"
-        description="프로젝트와 진행 계획, 여기에 적은 코멘트가 지워집니다. 담겨 있던 의뢰와 거래는 그대로 남습니다."
-        confirmLabel="풀기"
+        title={removal === "delete-empty" ? "빈 프로젝트를 지울까요?" : "프로젝트를 풀까요?"}
+        description={
+          removal === "delete-empty"
+            ? EMPTY_PROJECT_REMOVAL_NOTE
+            : describeProjectRemoval(plan?.commentCount ?? project.commentCount)
+        }
+        confirmLabel={removal === "delete-empty" ? "지우기" : "풀기"}
         destructive
         loading={remove.isPending}
-        onConfirm={() => remove.mutate()}
+        onConfirm={() => remove.mutate({ empty: removal === "delete-empty" })}
       />
     </aside>
   );
@@ -316,6 +369,7 @@ function ProjectInspectorContent({
   assigneeOptions,
   drafts,
   onUpdate,
+  onUpdateText,
   onSaveComment,
 }: {
   project: ProjectListItem;
@@ -326,6 +380,8 @@ function ProjectInspectorContent({
   assigneeOptions: ReadonlyArray<{ value: string; label: string }>;
   drafts: CommentDraftStore;
   onUpdate: (dto: UpdateProjectDto) => void;
+  /** 글 칸(이름 · 메모)의 저장. 끝나기를 기다려 실패하면 칸이 적은 글을 붙들어 둔다. */
+  onUpdateText: (dto: UpdateProjectDto) => Promise<unknown>;
   onSaveComment: (request: CommentSaveRequest) => void;
 }) {
   // 자세한 것이 오기 전에는 목록의 줄로 그린다.
@@ -356,6 +412,11 @@ function ProjectInspectorContent({
 
   const openPlan = () =>
     openProjectPlan({ kind: "case", projectId: project.id, customerName });
+  const status = getProjectStatus({
+    archivedAt,
+    stepCount: plan ? plan.steps.length : project.stepCount,
+    doneStepCount: plan ? plan.steps.filter((step) => step.done).length : project.doneStepCount,
+  });
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const revealLatestComment = () => {
@@ -373,7 +434,7 @@ function ProjectInspectorContent({
           placeholder={fallbackTitle}
           maxLength={100}
           className="-mx-1.5 w-[calc(100%+12px)] rounded-[6px] px-1.5 text-[23px] font-bold leading-[1.25] tracking-[-0.025em] text-[#2f2e2a] placeholder:text-[#b4b2ad]"
-          onSave={(next) => onUpdate({ title: next })}
+          onSave={(next) => onUpdateText({ title: next })}
         />
         <dl className="mt-2.5 grid grid-cols-[84px_minmax(0,1fr)] items-center gap-x-2 gap-y-0.5 text-[13px]">
           <PropertyLabel icon={<UserRound />}>대표 고객</PropertyLabel>
@@ -401,24 +462,20 @@ function ProjectInspectorContent({
           </dd>
           <PropertyLabel icon={<CalendarDays />}>시작</PropertyLabel>
           <dd className="px-1.5 tabular-nums text-foreground">
-            {formatLedgerDate(project.createdAt)}
+            {formatRelativeDay(project.createdAt)}
             {archivedAt && (
-              <span className="text-muted-foreground"> → {formatLedgerDate(archivedAt)} 끝냄</span>
+              <span className="text-muted-foreground"> → {formatRelativeDay(archivedAt)} 끝냄</span>
             )}
           </dd>
         </dl>
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <ProjectStatusChip
-            status={getProjectStatus({
-              archivedAt,
-              stepCount: plan ? plan.steps.length : project.stepCount,
-              doneStepCount: plan
-                ? plan.steps.filter((step) => step.done).length
-                : project.doneStepCount,
-            })}
-          />
-          {buyerCount > 0 && <LedgerSideTag side="buy" />}
-          {listingCount > 0 && <LedgerSideTag side="sell" />}
+          <ProjectStatusChip status={status} />
+          {listingCount > 0 && <ProjectIntakeTag kind="listing" count={listingCount} />}
+          {buyerCount > 0 && <ProjectIntakeTag kind="buyer" count={buyerCount} />}
+          {/* 상태 낱말의 뜻: 무엇 때문에 그 상태인지 */}
+          <span data-project-status-hint className="ml-0.5 min-w-0 text-[12px] text-muted-foreground">
+            {PROJECT_STATUS_HINTS[status]}
+          </span>
         </div>
       </div>
 
@@ -436,7 +493,7 @@ function ProjectInspectorContent({
             placeholder="이 프로젝트가 어떤 일인지 한두 줄로 적어 두세요."
             maxLength={2000}
             className="-mx-1.5 w-[calc(100%+12px)] rounded-[6px] px-1.5 py-1 text-[13.5px] leading-[1.6] text-foreground placeholder:text-[#a9a7a1]"
-            onSave={(next) => onUpdate({ memo: next })}
+            onSave={(next) => onUpdateText({ memo: next })}
           />
         </section>
 
@@ -505,7 +562,7 @@ function ProjectInspectorContent({
                 </ol>
               ) : (
                 <EmptyText>
-                  아직 담은 의뢰나 정한 단계가 없습니다. 이 손님의 구함·내놓음 의뢰를 담고 순서를
+                  아직 담은 의뢰나 정한 단계가 없습니다. 이 손님의 매물 의뢰·구매 의뢰를 담고 순서를
                   정해 두세요.
                 </EmptyText>
               )}
@@ -545,6 +602,8 @@ export function PropertyLabel({ icon, children }: { icon: ReactNode; children: R
  * - 저장할지는 칸에 들어갈 때의 값 · 적은 글 · 지금 값을 견줘 정한다(decideTextCommit).
  *   손대지 않고 나왔는데 그 사이에 다른 곳에서 바뀌었으면 바뀐 값을 받아들이고 저장하지 않는다
  *   (예전 글로 새 값을 덮어쓰지 않는다). 양쪽에서 바뀌었으면 덮지 않고 어느 쪽을 남길지 묻는다.
+ * - 저장하지 못하면 적은 글을 칸에 남기고 그 자리에서 알린다(다시 저장 · 되돌리기). 서버 값으로
+ *   돌아간 지금 값이 적은 글을 덮지 않는다.
  */
 export function SavedText({
   label,
@@ -561,19 +620,26 @@ export function SavedText({
   maxLength: number;
   multiline?: boolean;
   className?: string;
-  onSave: (next: string | null) => void;
+  /** 저장 요청. 끝나기를 기다릴 수 있으면(Promise) 실패했을 때 적은 글을 칸에 붙들어 둔다. */
+  onSave: (next: string | null) => Promise<unknown> | void;
 }) {
   const current = value ?? "";
   const [draft, setDraft] = useState(current);
   const [editing, setEditing] = useState(false);
+  const editingRef = useRef(false);
+  editingRef.current = editing;
   // 이 칸에서도 바꾸고 다른 곳에서도 바뀌었다. 사용자가 고를 때까지 적은 글을 그대로 둔다.
   const [conflict, setConflict] = useState(false);
+  // 보낸 글을 저장하지 못했다. 사용자가 다시 저장하거나 되돌릴 때까지 적은 글을 그대로 둔다.
+  const [failed, setFailed] = useState(false);
   // 이 칸이 딛고 선 값: 칸에 들어갈 때의 값이고, 내가 보낸 저장이 반영되면 그 값으로 옮긴다.
   const base = useRef(current);
   // 내가 마지막으로 보낸 글. 지금 값이 이것으로 바뀌면 다른 곳의 변경이 아니라 내 저장의 결과다.
   const lastSent = useRef<string | null>(null);
   // Esc로 되돌린 뒤 따라오는 blur가 저장하지 않게 한다.
   const cancelled = useRef(false);
+  // 보낸 저장이 아직 끝나지 않았다. 실패하면 적은 글을 이 칸이 다시 붙들어야 하므로, 그동안 칸이 사라지면 안 된다.
+  const [pendingSaves, setPendingSaves] = useState(0);
   useEffect(() => {
     // 저장한 글은 응답을 기다리지 않고 바로 지금 값이 된다. 그 순간 칸에 다시 들어와 있을 수 있으므로
     // 딛고 선 값을 옮겨 둔다(옮기지 않으면 이어서 고친 글이 "양쪽에서 바뀜"으로 오인된다).
@@ -583,12 +649,29 @@ export function SavedText({
     }
   }, [current]);
   useEffect(() => {
-    if (!editing && !conflict) setDraft(current);
-  }, [conflict, current, editing]);
+    if (!editing && !conflict && !failed) setDraft(current);
+  }, [conflict, current, editing, failed]);
 
   const save = (text: string) => {
     lastSent.current = text;
-    onSave(text || null);
+    setFailed(false);
+    // 저장 전에 딛고 선 값. 저장하지 못하면 이 값으로 돌아가 다음 저장을 견준다.
+    const sentBase = base.current;
+    const result = onSave(text || null);
+    if (result instanceof Promise) {
+      setPendingSaves((count) => count + 1);
+      void result.then(
+        () => setPendingSaves((count) => Math.max(0, count - 1)),
+        () => setPendingSaves((count) => Math.max(0, count - 1)),
+      );
+      result.catch(() => {
+        lastSent.current = null;
+        base.current = sentBase;
+        setFailed(true);
+        // 고치는 중이 아니면 보낸 글을 칸에 다시 놓는다(서버 값으로 돌아간 지금 값이 덮었을 수 있다).
+        if (!editingRef.current) setDraft(text);
+      });
+    }
   };
 
   const commit = () => {
@@ -596,15 +679,18 @@ export function SavedText({
     if (cancelled.current) {
       cancelled.current = false;
       setConflict(false);
+      setFailed(false);
       setDraft(current);
       return;
     }
     const decision = decideTextCommit({ draft, base: base.current, current });
     if (decision.kind === "conflict") {
+      setFailed(false);
       setConflict(true);
       return;
     }
     setConflict(false);
+    if (decision.kind !== "save") setFailed(false);
     if (decision.kind === "adopt") setDraft(current);
     if (decision.kind === "save") save(decision.value);
   };
@@ -658,9 +744,59 @@ export function SavedText({
     />
   );
 
+  // 저장하지 못한 글을 다시 보낸다. 그 사이에 다른 곳에서 바뀌었으면 덮지 않고 묻는다.
+  const retry = () => {
+    const decision = decideTextCommit({ draft, base: base.current, current });
+    if (decision.kind === "save") {
+      save(decision.value);
+      return;
+    }
+    setFailed(false);
+    if (decision.kind === "conflict") setConflict(true);
+    if (decision.kind === "adopt") setDraft(current);
+  };
+
+  // 이 칸만 붙들고 있는 글이 있는 동안(저장하지 못함 · 다른 곳과 겹침 · 저장이 아직 끝나지 않음)은 "저장 전"으로 표시한다.
+  // 패널 밖을 눌러 닫는 것과 탭을 닫는 것이 이 표시를 보고 멈춘다 — 칸이 사라지면 그 글은 어디에도 남지 않는다.
+  const holdsUnsavedText = failed || conflict || pendingSaves > 0;
+
   return (
     <>
       {field}
+      {holdsUnsavedText && (
+        <span
+          hidden
+          data-saved-text-unsaved
+          data-native-tab-discard-blocker="true"
+          data-native-tab-dirty="true"
+        />
+      )}
+      {failed && !conflict && !editing && (
+        <p
+          role="alert"
+          data-saved-text-failed
+          className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] font-normal leading-[18px] tracking-normal text-[rgb(212,76,71)]"
+        >
+          저장하지 못했습니다. 적은 글은 남아 있습니다.
+          <button
+            type="button"
+            className="rounded-sm underline underline-offset-2 hover:text-foreground"
+            onClick={retry}
+          >
+            다시 저장
+          </button>
+          <button
+            type="button"
+            className="rounded-sm underline underline-offset-2 hover:text-foreground"
+            onClick={() => {
+              setFailed(false);
+              setDraft(current);
+            }}
+          >
+            되돌리기
+          </button>
+        </p>
+      )}
       {conflict && !editing && (
         <p
           role="alert"
@@ -694,29 +830,97 @@ export function SavedText({
   );
 }
 
-/** 대표 고객: 연락처를 찾아 고르거나 비운다. 누구의 일인지는 사용자가 정한다. */
+/** 새로 등록할 고객(이름 · 전화). 대표 고객 칸에서 그 자리에서 연락처로 만든다. */
+interface NewCustomerDraft {
+  name: string;
+  phone: string;
+}
+
+/**
+ * 대표 고객: 속성 칸에서 펼쳐지는 고르기(대화창이 아니다). 이름 · 전화번호로 찾아 고르고, 없으면 그 자리에서
+ * "새 고객으로 등록"(이름 · 전화, 공용 전화 도구 — 이미 있는 번호면 그 사람을 권한다). 비울 수도 있다.
+ * 누구의 일인지는 사용자가 정한다.
+ */
 export function PrimaryContactField({
   value,
   onChange,
+  trigger,
+  triggerClassName,
 }: {
   value: { id: string; name: string } | null;
   onChange: (contactId: string | null) => void;
+  /** 단추 안에 보일 것(표의 칸처럼 다른 모양으로 보일 때). 없으면 이름 또는 "비어 있음" */
+  trigger?: ReactNode;
+  triggerClassName?: string;
 }) {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [newCustomer, setNewCustomer] = useState<NewCustomerDraft | null>(null);
+  const [phoneLeft, setPhoneLeft] = useState(false);
   const { data, isLoading } = useQuery({
     queryKey: ["contacts", { search, limit: 8 }],
     queryFn: () => api.contacts.findAll({ search: search || undefined, limit: 8 }),
-    enabled: open,
+    enabled: open && newCustomer === null,
   });
   const contacts = data?.items ?? [];
+  const trimmed = search.trim();
+  const existing = useExistingContactByPhone(newCustomer?.phone, { enabled: newCustomer !== null });
+  const phoneProblem = newCustomer ? phoneInputProblem(newCustomer.phone) : null;
+  // 두 번 눌러도 연락처를 한 번만 만든다(isPending은 다음 그리기에야 바뀐다).
+  const registering = useRef(false);
+  const register = useMutation({
+    mutationFn: (customer: NewCustomerDraft) =>
+      api.contacts.create({
+        name: customer.name.trim(),
+        phone: customer.phone.trim() || undefined,
+      }),
+    onSuccess: (contact) => {
+      void queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      onChange(contact.id);
+      close();
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "고객을 등록하지 못했습니다. 다시 시도해 주세요."));
+    },
+    onSettled: () => {
+      registering.current = false;
+    },
+  });
+  const canRegister =
+    !register.isPending &&
+    newCustomer !== null &&
+    newCustomer.name.trim() !== "" &&
+    !existing.contact &&
+    !phoneProblem;
+
+  const close = () => {
+    setOpen(false);
+    setSearch("");
+    setNewCustomer(null);
+    setPhoneLeft(false);
+  };
+  const choose = (contact: { id: string }) => {
+    if (contact.id !== value?.id) onChange(contact.id);
+    close();
+  };
+  const startNew = () => {
+    const looksLikePhone = /^[\d\s()+-]+$/.test(trimmed) && phoneDigits(trimmed).length >= 7;
+    setNewCustomer(
+      looksLikePhone ? { name: "", phone: formatPhoneWhileTyping(trimmed) } : { name: trimmed, phone: "" },
+    );
+    setPhoneLeft(false);
+  };
+
+  const fieldClassName =
+    "h-8 w-full rounded px-2 text-[13.5px] shadow-[inset_0_0_0_1px_rgba(55,53,47,0.16)] outline-none focus:shadow-[inset_0_0_0_1px_#2383e2]";
 
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setSearch("");
+        if (next) setOpen(true);
+        else if (!register.isPending) close();
       }}
     >
       <PopoverTrigger asChild>
@@ -725,51 +929,137 @@ export function PrimaryContactField({
           role="combobox"
           aria-expanded={open}
           aria-label={value ? `대표 고객 ${value.name}, 바꾸기` : "대표 고객 정하기"}
-          className={propertyValueButtonClassName}
+          className={triggerClassName ?? propertyValueButtonClassName}
         >
-          {value ? (
-            <span className="truncate font-medium">{value.name}</span>
-          ) : (
-            <span className="text-[#a9a7a1]">정하지 않음</span>
+          {trigger ?? (
+            <>
+              {value ? (
+                <span className="truncate font-medium">{value.name}</span>
+              ) : (
+                <span className="text-[#a9a7a1]">비어 있음</span>
+              )}
+              <ChevronsUpDown className="size-3 shrink-0 text-[#a9a7a1]" />
+            </>
           )}
-          <ChevronsUpDown className="size-3 shrink-0 text-[#a9a7a1]" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[280px] p-0" align="start">
-        <Command shouldFilter={false}>
-          <CommandInput value={search} onValueChange={setSearch} placeholder="이름·전화번호 검색" />
-          <CommandList>
-            <CommandEmpty>{isLoading ? "검색 중..." : "검색 결과가 없습니다."}</CommandEmpty>
-            {contacts.map((contact) => (
-              <CommandItem
-                key={contact.id}
-                value={contact.id}
-                onSelect={() => {
-                  if (contact.id !== value?.id) onChange(contact.id);
-                  setOpen(false);
-                }}
+      <PopoverContent className="w-[300px] p-0" align="start" data-project-contact-chooser>
+        {newCustomer ? (
+          <form
+            data-project-new-customer
+            className="space-y-2 p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!canRegister || registering.current) return;
+              registering.current = true;
+              register.mutate(newCustomer);
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[13px] font-medium">새 고객으로 등록</span>
+              <button
+                type="button"
+                className="text-[12px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                disabled={register.isPending}
+                onClick={() => setNewCustomer(null)}
               >
-                <span className="truncate">{contact.name}</span>
-                <span className="ml-auto text-xs text-muted-foreground">
-                  {formatPhone(contact.phone)}
-                </span>
-              </CommandItem>
-            ))}
-          </CommandList>
-        </Command>
-        {value && (
-          <div className="border-t p-1">
-            <button
-              type="button"
-              className="flex h-8 w-full items-center rounded-sm px-2 text-left text-[13px] text-muted-foreground hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
-              onClick={() => {
-                onChange(null);
-                setOpen(false);
+                있는 고객에서 고르기
+              </button>
+            </div>
+            <input
+              aria-label="새 고객 이름"
+              autoFocus
+              value={newCustomer.name}
+              maxLength={100}
+              disabled={register.isPending}
+              placeholder="이름 (예: 김민준)"
+              onChange={(event) =>
+                setNewCustomer((current) => current && { ...current, name: event.target.value })
+              }
+              className={fieldClassName}
+            />
+            <input
+              aria-label="새 고객 전화번호"
+              inputMode="tel"
+              value={newCustomer.phone}
+              maxLength={20}
+              disabled={register.isPending}
+              placeholder="전화번호 (선택) 예: 010-1234-5678"
+              aria-invalid={phoneProblem && phoneLeft ? true : undefined}
+              // 치는 동안에는 "끝까지 적혔는지"를 다그치지 않는다. 칸을 벗어난 뒤에 알린다.
+              onFocus={() => setPhoneLeft(false)}
+              onBlur={() => setPhoneLeft(true)}
+              onChange={(event) => {
+                const phone = formatPhoneWhileTyping(event.target.value);
+                setNewCustomer((current) => current && { ...current, phone });
               }}
-            >
-              대표 고객 비우기
-            </button>
-          </div>
+              className={cn(fieldClassName, "tabular-nums")}
+            />
+            {existing.contact ? (
+              <p role="alert" className="text-[12px] text-[#8f6b1f]">
+                {existing.message}{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2 hover:text-foreground"
+                  onClick={() => existing.contact && choose(existing.contact)}
+                >
+                  {existing.contact.name}님으로 정하기
+                </button>
+              </p>
+            ) : phoneProblem && phoneLeft ? (
+              <p role="alert" className="text-[12px] text-destructive">
+                {phoneProblem}
+              </p>
+            ) : (
+              <p className="text-[12px] text-muted-foreground">
+                연락처에도 함께 등록됩니다. 자세한 정보는 나중에 연락처에서 적습니다.
+              </p>
+            )}
+            <div className="flex justify-end">
+              <Button type="submit" size="xs" disabled={!canRegister}>
+                {register.isPending ? "등록하는 중" : "등록하고 정하기"}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <Command shouldFilter={false}>
+              <CommandInput value={search} onValueChange={setSearch} placeholder="이름·전화번호로 찾기" />
+              <CommandList>
+                <CommandEmpty>{isLoading ? "찾는 중..." : "찾는 고객이 없습니다."}</CommandEmpty>
+                {contacts.map((contact) => (
+                  <CommandItem key={contact.id} value={contact.id} onSelect={() => choose(contact)}>
+                    <span className="truncate">{contact.name}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {formatPhone(contact.phone)}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandList>
+              <CommandGroup className="border-t">
+                <CommandItem value="__new-customer__" onSelect={startNew}>
+                  <UserPlus className="size-3.5 text-muted-foreground" />
+                  <span className="truncate">
+                    {trimmed ? `"${trimmed}" 새 고객으로 등록` : "새 고객으로 등록"}
+                  </span>
+                </CommandItem>
+              </CommandGroup>
+            </Command>
+            {value && (
+              <div className="border-t p-1">
+                <button
+                  type="button"
+                  className="flex h-8 w-full items-center rounded-sm px-2 text-left text-[13px] text-muted-foreground hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
+                  onClick={() => {
+                    onChange(null);
+                    close();
+                  }}
+                >
+                  대표 고객 비우기
+                </button>
+              </div>
+            )}
+          </>
         )}
       </PopoverContent>
     </Popover>
@@ -862,8 +1152,66 @@ export function PersonRow({ person }: { person: ProjectPerson }) {
  * 프로젝트에 적는 코멘트. 직원이 이 일에 대해 적어 두는 글이다.
  * 손님과 나눈 대화는 여기가 아니라 그 손님의 상담에 적는다.
  */
-/** panel: 옆 패널(매물관리 패널과 같은 모양). page: 상세 페이지(매물 상세 2판의 "기록"과 같은 모양). */
-export type ProjectPartVariant = "panel" | "page";
+/**
+ * panel: 옆 패널(매물관리 패널과 같은 모양). page: 상세 페이지(매물 상세 2판의 "기록"과 같은 모양).
+ * flow: 상세 페이지 오른쪽 열의 상담 · 코멘트 한 흐름(상담 줄과 같은 머리 모양).
+ */
+export type ProjectPartVariant = "panel" | "page" | "flow";
+
+/**
+ * 코멘트를 고치거나 지운 뒤의 새로 고침과 지우기 확인 창. 코멘트 목록(옆 패널)과 상담 · 코멘트 흐름(상세)이 함께 쓴다.
+ * 지우기는 확인 창을 거친다(되돌릴 수 없다).
+ */
+export function useCommentActions(projectId: string) {
+  const queryClient = useQueryClient();
+  // 코멘트를 고치거나 지운 뒤: 이 탭의 목록을 새로 받고 다른 탭에도 알린다.
+  const refresh = () => {
+    announceProjectChange("changed", projectId);
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: commentsQueryKey(projectId) }),
+      queryClient.invalidateQueries({ queryKey: ["projects", "list"] }),
+    ]);
+  };
+
+  const [removing, setRemoving] = useState<ProjectComment | null>(null);
+  const remove = useMutation({
+    mutationFn: (commentId: string) => api.projects.removeComment(projectId, commentId),
+    onSuccess: async () => {
+      setRemoving(null);
+      await refresh();
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, "코멘트를 지우지 못했습니다."));
+    },
+  });
+
+  const removeDialog = (
+    <ConfirmDialog
+      open={removing !== null}
+      onOpenChange={(next) => {
+        if (!next) setRemoving(null);
+      }}
+      title="코멘트를 지울까요?"
+      description="지운 코멘트는 되돌릴 수 없습니다."
+      confirmLabel="지우기"
+      destructive
+      loading={remove.isPending}
+      onConfirm={() => {
+        if (removing) remove.mutate(removing.id);
+      }}
+    />
+  );
+  return { refresh, requestRemove: setRemoving, removeDialog };
+}
+
+/** 이 코멘트를 지금 사용자가 고치거나 지울 수 있는가: 고치기는 적은 사람만, 지우기는 적은 사람과 대표 · 매니저. */
+export function commentPermissions(
+  comment: ProjectComment,
+  user: { id: string; role: string } | null | undefined,
+) {
+  const mine = comment.author?.id === user?.id;
+  return { canEdit: mine, canRemove: mine || MODERATOR_ROLES.includes(user?.role ?? "") };
+}
 
 export function CommentSection({
   projectId,
@@ -882,6 +1230,7 @@ export function CommentSection({
     queryFn: ({ pageParam }) =>
       api.projects.comments(projectId, { before: pageParam ?? undefined }),
     getNextPageParam: (lastPage) => lastPage.nextBefore ?? undefined,
+    enabled: !isProjectRemoved(projectId),
   });
   const comments = useMemo(
     () => mergeCommentPages(commentsQuery.data?.pages),
@@ -1022,7 +1371,7 @@ export function CommentSection({
   );
 }
 
-function CommentRow({
+export function CommentRow({
   projectId,
   comment,
   variant,
@@ -1059,7 +1408,9 @@ function CommentRow({
     new Date(comment.updatedAt).getTime() - new Date(comment.createdAt).getTime() > 1000;
   const trimmed = draft.trim();
 
-  const page = variant === "page";
+  // flow(상세 오른쪽 열)는 상세 페이지와 같은 단추 · 글 칸을 쓰고, 줄의 머리만 상담 줄과 같은 모양이다.
+  const flow = variant === "flow";
+  const page = variant === "page" || flow;
   const authorName = comment.author?.name ?? "지워진 직원";
   const actionButtonClassName = page
     ? cn(detailButton.icon, "size-6 [&_svg]:size-3.5")
@@ -1096,6 +1447,10 @@ function CommentRow({
   const body = editing ? (
     <form
       className="mt-1.5"
+      // 고치던 글은 "저장"을 눌러야 저장된다. 글이 바뀐 동안 표시해 두어, 패널 밖을 눌러도 닫히지 않게 한다
+      // (탭을 닫을 때의 보호와 같은 표시다).
+      data-native-tab-discard-blocker="true"
+      data-native-tab-dirty={draft !== comment.body ? "true" : undefined}
       onSubmit={(event) => {
         event.preventDefault();
         if (!trimmed || save.isPending) return;
@@ -1168,7 +1523,12 @@ function CommentRow({
       </div>
     </form>
   ) : page ? (
-    <p className="mt-0.5 whitespace-pre-wrap break-keep text-[14px] leading-[1.65] text-[#37352f]/90 [overflow-wrap:anywhere]">
+    <p
+      className={cn(
+        "mt-0.5 whitespace-pre-wrap break-keep text-[#37352f]/90 [overflow-wrap:anywhere]",
+        flow ? "text-[13.5px] leading-5" : "text-[14px] leading-[1.65]",
+      )}
+    >
       {comment.body}
     </p>
   ) : (
@@ -1176,6 +1536,27 @@ function CommentRow({
       {comment.body}
     </p>
   );
+
+  // 상세 오른쪽 열의 상담 · 코멘트 흐름: 상담 줄과 같은 머리(종류 · 누구 · 시각은 오른쪽) · 본문.
+  if (flow) {
+    return (
+      <li data-project-comment data-flow-item="comment" className={PROJECT_FLOW_COMMENT_CLASS}>
+        <div className="flex min-h-[22px] min-w-0 items-center gap-1.5 text-[12.5px] leading-[18px] text-[#37352f]/65">
+          <MessageSquareText aria-hidden="true" className="size-3.5 shrink-0 text-warning" />
+          <span className="shrink-0 font-semibold text-warning-strong">코멘트</span>
+          <span className="text-[#37352f]/25">·</span>
+          <span className="min-w-0 truncate font-medium text-[#37352f]">{authorName}</span>
+          {wasEdited && <span className="shrink-0 text-[#37352f]/45">고침</span>}
+          <span className="flex-1" />
+          {actions}
+          <span className="shrink-0 pl-1 tabular-nums text-[#37352f]/45">
+            {formatCommentTime(comment.createdAt)}
+          </span>
+        </div>
+        {body}
+      </li>
+    );
+  }
 
   // 상세 페이지: 매물 상세의 기록 줄과 같은 모양 (얼굴 · 이름 · 시각은 오른쪽 · 본문).
   if (page) {

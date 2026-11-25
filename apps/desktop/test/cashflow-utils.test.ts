@@ -6,7 +6,10 @@ import {
   billableAmount,
   buildTodayQueue,
   buildTrendBars,
+  checkReceiptInput,
   checkReceivedAmount,
+  clientSideLabel,
+  commissionBasisLabel,
   collectPercent,
   countsAsBilled,
   currentShares,
@@ -16,21 +19,28 @@ import {
   isDistributionEditable,
   isFullyCollected,
   isOpenPayment,
+  isOurReceivable,
   isPaymentOverdue,
   monthContracts,
   monthlyExpenseAmount,
   monthlyOwed,
-  nextCollectedTotal,
+  markCancelledDeals,
+  collectedInMonth,
+  nextDueDate,
+  ourCollectedWonOf,
   ourRatioFrom,
+  parseWonInput,
   participantSettlement,
   partnerBalance,
   partnerIdOf,
+  partnerSettleRows,
   paymentOfAdjustment,
   paymentRemaining,
   paymentWithAdjustment,
   planDealDistribution,
   receivedAmount,
   relativeDueLabel,
+  remainingSupplyWon,
   rollupPayments,
   shareRowAmounts,
   shareTotals,
@@ -61,6 +71,9 @@ function payment(overrides: Partial<LedgerPayment> = {}): LedgerPayment {
     note: null,
     taxInvoiceStatus: 'none',
     taxInvoiceNo: null,
+    taxInvoiceDate: null,
+    receivedAmountWon: 0,
+    receivedSupplyWon: 0,
     distributions: [],
     pendingAdjustments: 0,
     ...overrides,
@@ -109,9 +122,35 @@ describe('청구 금액과 기한', () => {
     assert.equal(paymentRemaining(payment({ status: 'waived' })), 0);
   });
 
-  it('서버가 금액을 덮어쓰므로 이어 받은 돈은 누적액으로 보낸다', () => {
-    assert.equal(nextCollectedTotal(payment({ actualAmount: 500 }), 290), 790);
-    assert.equal(nextCollectedTotal(payment(), 470), 470);
+  it('남은 수수료는 입금 기록 합계(원)로 1원까지 센다', () => {
+    // 470만 청구에 부가세 포함 100만원을 받으면 부가세를 뺀 909,091원이 들어간 것이다
+    assert.equal(remainingSupplyWon(payment({ status: 'partial', receivedSupplyWon: 909_091 })), 3_790_909);
+    assert.equal(remainingSupplyWon(payment({ status: 'collected', receivedSupplyWon: 4_700_000 })), 0);
+    assert.equal(remainingSupplyWon(payment({ status: 'waived', receivedSupplyWon: 0 })), 0);
+  });
+
+  it('받은 금액(원)은 부가세를 포함했으면 뺀 금액으로 남은 수수료와 비교한다', () => {
+    assert.equal(checkReceiptInput(5_170_000, true, 4_700_000), null); // 470만 + 부가세 47만
+    assert.equal(checkReceiptInput(5_170_000, false, 4_700_000), 'over'); // 부가세 없이 받았으면 넘는다
+    assert.equal(checkReceiptInput(4_170_001, true, 3_790_909), null); // 반올림 1원 차이는 서버가 맞춘다
+    assert.equal(checkReceiptInput(0, true, 4_700_000), 'empty');
+    assert.equal(checkReceiptInput(Number.NaN, true, 4_700_000), 'empty');
+    assert.equal(parseWonInput('1,672,000'), 1_672_000);
+    assert.equal(parseWonInput('1,672,000원'), 1_672_000);
+    assert.ok(Number.isNaN(parseWonInput('12.5')));
+    // "만"이 있으면 앞은 만원, 뒤는 원 (다른 금액 칸처럼 한글 금액을 받는다)
+    assert.equal(parseWonInput('1324만 4천'), 13_244_000);
+    assert.equal(parseWonInput('1,324만 4천원'), 13_244_000);
+    assert.equal(parseWonInput('1324.4만'), 13_244_000);
+    assert.equal(parseWonInput('1억 324만'), 103_240_000);
+    assert.equal(parseWonInput('110만'), 1_100_000);
+    assert.equal(parseWonInput('4천5백'), 4_500);
+    assert.equal(parseWonInput('13,244,000'), 13_244_000);
+    // 억이 있고 만이 없으면 앱 공통 규칙대로 만원으로 읽는다 (1억 5천 = 1억 5천만)
+    assert.equal(parseWonInput('1억 5천'), 150_000_000);
+    assert.ok(Number.isNaN(parseWonInput('1324만 1만')));
+    assert.ok(Number.isNaN(parseWonInput('1324만 abc')));
+    assert.ok(Number.isNaN(parseWonInput('')));
   });
 
   it('받은 금액은 남은 금액을 넘거나 만원 단위 정수가 아니면 받지 않는다', () => {
@@ -189,6 +228,105 @@ describe('청구 금액과 기한', () => {
   });
 });
 
+describe('공동중개 상대가 수금하는 청구', () => {
+  const partner = (over: Partial<LedgerPayment> = {}) =>
+    payment({ id: 'pp', collectedByOffice: 'partner', dueDate: day(10, 20), ...over });
+
+  it('우리 연체·독촉·받을 돈·예정·미수에서 뺀다', () => {
+    assert.equal(isOurReceivable(partner()), false);
+    assert.equal(isPaymentOverdue(partner(), null, NOW), false);
+    // 서버에 연체로 적혀 있어도 수금 대기로 보인다
+    assert.equal(displayStatus(partner({ status: 'overdue' }), null, NOW), 'pending');
+    const queue = buildTodayQueue([group([partner(), payment({ id: 'ours', dueDate: day(10, 20) })])], NOW);
+    assert.deepEqual(queue.overdue.map((i) => i.payment.id), ['ours']);
+    const owed = monthlyOwed([group([partner(), payment({ id: 'ours', dueDate: day(10, 20) })])], 2026, 11, NOW);
+    assert.equal(owed.overdue, 470);
+    assert.equal(rollupPayments([partner(), payment()]).remaining, 470);
+    const bars = buildTrendBars([{ month: '2026-11', collected: 0, expense: 0, net: 0 }], [group([partner({ dueDate: day(12, 5) })])], NOW);
+    assert.equal(bars.find((b) => b.key === '2026-12')?.forecast, 0);
+  });
+});
+
+describe('취소한 거래와 원장 월 보기', () => {
+  it('취소한 거래의 청구는 받을 돈이 아니지만 받은 돈은 수금에 남는다', () => {
+    const g = group([payment({ status: 'partial', actualAmount: 150, ourCollectedWon: 1_500_000, dueDate: day(10, 1) })], {
+      isCancelled: true,
+    });
+    const [marked] = markCancelledDeals([g]);
+    assert.equal(marked.payments[0].status, 'cancelled');
+    assert.equal(rollupPayments(marked.payments).collected, 150);
+    assert.equal(rollupPayments(marked.payments).remaining, 0);
+    assert.equal(buildTodayQueue([marked], NOW).overdue.length, 0);
+    assert.equal(monthContracts([marked], 2026, 11).length, 0);
+  });
+
+  it('원장 월 보기의 수금은 그 달에 받은 돈만 더한다', () => {
+    const p = payment({
+      collections: [
+        { id: 'a', kind: 'receipt', at: new Date(2026, 9, 15).toISOString(), won: 500_000 },
+        { id: 'b', kind: 'receipt', at: new Date(2026, 10, 3).toISOString(), won: 1_000_000 },
+      ],
+    });
+    assert.equal(collectedInMonth([p], '2026-10'), 50);
+    assert.equal(collectedInMonth([p], '2026-11'), 100);
+  });
+
+  it('월별 순이익 = 수금 − 공동중개 줄 몫 − 고정비', () => {
+    const bars = buildTrendBars([{ month: '2026-11', collected: 200, partnerShare: 100, expense: 30, net: 70 }], [], NOW);
+    const nov = bars.find((b) => b.key === '2026-11');
+    assert.equal(nov?.net, 70);
+    assert.equal(nov?.partnerShare, 100);
+  });
+});
+
+describe('우리 통장에 들어온 돈', () => {
+  const settledOurs = { recipientType: 'our_office', shareRatio: 40, shareAmount: 40, status: 'settled' };
+  const partnerRow = { recipientType: 'partner_broker', shareRatio: 60, shareAmount: 60, status: 'pending' };
+  it('상대가 수금한 청구는 받음 기록한 우리 몫만 수금에 넣고, 진행 %는 청구 기준으로 센다', () => {
+    const theirs = payment({
+      collectedByOffice: 'partner',
+      status: 'collected',
+      expectedAmount: 100,
+      actualAmount: 100,
+      receivedSupplyWon: 1_000_000,
+      distributions: [settledOurs, partnerRow] as never,
+    });
+    // 원장 응답이면 서버가 센 값을 그대로 쓴다
+    assert.equal(ourCollectedWonOf({ ...theirs, ourCollectedWon: 400_000 }), 400_000);
+    // 거래 응답처럼 서버 값이 없으면 같은 규칙(정산한 우리 몫)으로 센다
+    assert.equal(ourCollectedWonOf({ ...theirs, ourCollectedWon: undefined }), 400_000);
+    const ours = payment({ status: 'collected', expectedAmount: 660, actualAmount: 660, receivedSupplyWon: 6_600_000 });
+    const total = rollupPayments([{ ...theirs, ourCollectedWon: undefined }, ours]);
+    assert.equal(total.collected, 700); // 660 + 40
+    assert.equal(total.claimCollected, 760); // 상대가 받은 100 포함
+  });
+
+  it('상대가 수금하는 청구의 기한은 거래 줄의 예정일로 쓰지 않는다', () => {
+    const g = group([
+      payment({ id: 'theirs', collectedByOffice: 'partner', dueDate: day(10, 20) }),
+      payment({ id: 'ours', dueDate: day(11, 29) }),
+    ]);
+    assert.equal(nextDueDate(g), day(11, 29));
+  });
+});
+
+describe('거래 줄의 예정일', () => {
+  it('받을 돈이 남은 청구의 가장 빠른 예정일을 쓰고, 다 받은 청구의 날짜는 보지 않는다', () => {
+    const g = group(
+      [
+        payment({ id: 'a', status: 'collected', actualAmount: 470, dueDate: day(11, 9), paidAt: day(11, 9) }),
+        payment({ id: 'b', dueDate: day(11, 29) }),
+      ],
+      { balanceDueDate: day(1, 14, 2027) },
+    );
+    assert.equal(nextDueDate(g), day(11, 29));
+    assert.equal(
+      nextDueDate(group([payment({ status: 'collected', actualAmount: 470, paidAt: day(11, 9) })])),
+      null,
+    );
+  });
+});
+
 describe('거래 합계', () => {
   it('면제와 취소는 합계에서 빼고, 수금은 실제 받은 금액을 더한다', () => {
     assert.deepEqual(
@@ -197,7 +335,7 @@ describe('거래 합계', () => {
         payment({ status: 'partial', actualAmount: 100 }),
         payment({ status: 'waived' }),
       ]),
-      { billed: 940, collected: 570, remaining: 370 },
+      { billed: 940, collected: 570, claimCollected: 570, remaining: 370 },
     );
   });
 
@@ -372,6 +510,29 @@ describe('공동중개 몫', () => {
     assert.deepEqual(
       partnerBalance([balance({ collectedByOffice: 'partner' })]),
       { receivable: 60, payable: 0 },
+    );
+  });
+
+  it('정산 기록은 다 받은 청구에서만 하고, 기록한 줄은 굳힌 금액을 쓴다', () => {
+    const rows = [
+      { id: 'our', recipientType: 'our_office', shareRatio: '60', shareAmount: 282, status: 'pending' },
+      { id: 'partner', recipientType: 'partner_broker', shareRatio: '40', shareAmount: 188, status: 'pending' },
+    ];
+    assert.deepEqual(partnerSettleRows([balance({ distributions: rows })]), [
+      { distributionId: 'partner', direction: 'pay', amount: 40, ready: false, settledAt: null },
+    ]);
+    assert.deepEqual(
+      partnerSettleRows([balance({ status: 'collected', actualAmount: 470, distributions: rows })]),
+      [{ distributionId: 'partner', direction: 'pay', amount: 188, ready: true, settledAt: null }],
+    );
+    const settled = [rows[0], { ...rows[1], status: 'settled', shareAmount: 180, settledAt: day(11, 20) }];
+    assert.deepEqual(
+      partnerSettleRows([balance({ status: 'collected', actualAmount: 470, distributions: settled })]),
+      [{ distributionId: 'partner', direction: 'pay', amount: 180, ready: true, settledAt: day(11, 20) }],
+    );
+    assert.deepEqual(
+      partnerSettleRows([balance({ status: 'collected', actualAmount: 470, collectedByOffice: 'partner', distributions: rows })]),
+      [{ distributionId: 'our', direction: 'receive', amount: 282, ready: true, settledAt: null }],
     );
   });
 
@@ -600,6 +761,25 @@ describe('기타', () => {
       dealLocation({ siteName: '고덕그라시움', dongName: '105동', unitName: '1203호' }),
       '고덕그라시움 105동 1203호',
     );
+    // 화면 공통 표기(STANDARDS): 단지 + 동 + 호 "고덕그라시움 101동 3401호"
+    assert.equal(
+      dealLocation({ siteName: '고덕그라시움', dongName: '101', unitName: '3401' }),
+      '고덕그라시움 101동 3401호',
+    );
+    // 서버가 만든 표기가 있으면 그것을 쓴다
+    assert.equal(
+      dealLocation({ siteName: 'x', dongName: 'y', unitName: 'z', placeLabel: '고덕상가 2층' }),
+      '고덕상가 2층',
+    );
+    assert.equal(clientSideLabel('seller', 'monthly'), '임대인측');
+    assert.equal(clientSideLabel('buyer', 'jeonse'), '임차인측');
+    assert.equal(clientSideLabel('buyer', 'sale'), '매수측');
+    // 법정 요율 그대로면 식을, 할인했거나 사람이 정한 금액이면 "협의 금액"
+    const money = (n: number) => `${n}만`;
+    assert.equal(commissionBasisLabel({ baseAmount: 132000, rate: 0.5, expectedAmount: 660 }, money), '거래가 132000만 × 0.5%');
+    assert.equal(commissionBasisLabel({ baseAmount: 132000, rate: 0.5, expectedAmount: 600 }, money), '협의 금액');
+    assert.equal(commissionBasisLabel({ baseAmount: 50000, rate: 0.3, expectedAmount: 150 }, money), '거래가 50000만 × 0.3%');
+    assert.equal(commissionBasisLabel({ baseAmount: 50000, rate: 0.2933, expectedAmount: 147 }, money), '협의 금액');
     assert.equal(
       dealLocation({ siteName: null, dongName: null, unitName: null }),
       '매물 미지정',
@@ -644,11 +824,11 @@ describe('받은 돈과 청구로 남는 금액', () => {
   it('거래 합계에 대손 전에 받은 돈이 남고 미수는 없다', () => {
     assert.deepEqual(
       rollupPayments([payment({ status: 'waived', actualAmount: 300 })]),
-      { billed: 300, collected: 300, remaining: 0 },
+      { billed: 300, collected: 300, claimCollected: 300, remaining: 0 },
     );
     assert.deepEqual(
       rollupPayments([payment({ status: 'collected', actualAmount: null })]),
-      { billed: 470, collected: 470, remaining: 0 },
+      { billed: 470, collected: 470, claimCollected: 470, remaining: 0 },
     );
   });
 

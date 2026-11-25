@@ -240,11 +240,17 @@ describe('wanted properties inline edits: budget', () => {
     const draft = toBudgetDraft(requirement);
     assert.throws(
       () => buildBudgetChange(requirement, { ...draft, price: { min: '9000.5', max: '' } }),
-      /만원 단위 정수/,
+      /금액을 읽을 수 없습니다/,
     );
     assert.throws(
       () => buildBudgetChange(requirement, { ...draft, price: { min: '억', max: '' } }),
-      /만원 단위 정수/,
+      /금액을 읽을 수 없습니다/,
+    );
+    // 전화로 들은 대로 "8억 5천"처럼 적어도 받는다 (앱 공용 금액 규칙)
+    assert.deepEqual(
+      patchOf(buildBudgetChange(requirement, { ...draft, price: { min: '8억 5천', max: '' } }))
+        ?.priceMin,
+      85000,
     );
     assert.throws(
       () => buildBudgetChange(requirement, { ...draft, price: { min: '110000', max: '105000' } }),
@@ -319,8 +325,8 @@ describe('wanted properties inline edits: move-in date', () => {
     assert.throws(() => buildMoveInDateChange(requirement, '27-2-3'), /올바른 날짜/);
   });
 
-  it('reads an empty input as "not edited" because the server cannot clear the date', () => {
-    assert.equal(buildMoveInDateChange(requirement, ''), null);
+  it('clears a saved date when the input is emptied, and leaves an empty one alone', () => {
+    assert.deepEqual(patchOf(buildMoveInDateChange(requirement, '')), { moveInDate: null });
     assert.equal(
       buildMoveInDateChange({ moveInDate: null } as BuyerRequirement, ''),
       null,

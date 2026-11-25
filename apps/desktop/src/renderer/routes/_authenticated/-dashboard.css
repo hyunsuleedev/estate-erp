@@ -1216,25 +1216,56 @@ a.dash-tr:focus-visible {
   container-name: dash-canvas;
   width: 100%;
   background: var(--color-background);
+  /* 높이를 화면에 묶는다. 세 단이 들어가는 넓이에서는 굴러가지 않고 카드 안쪽만 굴린다(아래 '화면에 맞추기').
+     좁거나 낮은 화면에서는 이 상자가 굴러간다 — container-type이 넘친 내용을 바깥(main)의 굴림 영역에 넣어 주지 않아서
+     main이 아니라 여기서 굴려야 한다. */
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 .dash-wrap {
   width: 100%;
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 0 0 36px;
 }
+/* 카드 안에서 굴러가는 목록. 줄의 hover 바탕이 좌우로 6px 나가므로 그만큼 안쪽 여백으로 받아 준다. */
+.dash-scroll {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-inline: -10px;
+  padding-inline: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(55 53 47 / 0.2) transparent;
+}
+.dash-scroll > * {
+  flex-shrink: 0;
+}
+/* 진행 중인 거래는 두 줄 반만 보이고 나머지는 굴린다 (잘린 셋째 줄이 더 있음을 알린다) */
+.dash-scroll.dash-deals-scroll {
+  max-height: 226px;
+}
+/* 공지는 네 줄까지 보이고 나머지는 굴린다 */
+.dash-scroll.dash-notice-scroll {
+  max-height: 136px;
+}
 .dash-bento-grid {
   display: grid;
-  grid-template-columns: clamp(308px, 21cqi, 368px) minmax(0, 1fr) clamp(276px, 18.5cqi, 336px);
-  column-gap: 18px;
+  grid-template-columns: clamp(292px, 21cqi, 368px) minmax(0, 1fr) clamp(364px, 28cqi, 430px);
+  column-gap: 16px;
   align-items: start;
 }
+/* 카드: 희망매물의 매물 카드와 같은 Notion형 판 — 테두리 대신 옅은 선 한 겹 + 얕은 그림자, 모서리 10px (2026-11-23) */
 .dash-bento-card {
   background: var(--color-background);
-  border-radius: 14px;
-  border: 1px solid rgb(55 53 47 / 0.09);
-  box-shadow: 0 1px 2px rgb(15 15 15 / 0.03);
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgb(42 28 0 / 0.09), 0 2px 4px rgb(25 25 25 / 0.04);
 }
 
 /* 왼쪽 단: 월간 달력 + 연결 일정 */
@@ -1254,6 +1285,13 @@ a.dash-tr:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.dash-sched-part {
+  flex: 0 1 auto;
+  /* 머리와 한 줄은 남긴다 — 더 줄면 '일정 없음' 글이 아래 구획의 선과 겹친다 */
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
 }
 .dash-cal-btn {
   height: 22px;
@@ -1394,7 +1432,9 @@ a.dash-tr:focus-visible {
   gap: 14px;
 }
 .dash-center-card {
-  padding: 15px 18px 12px;
+  padding: 10px 14px 10px;
+  display: flex;
+  flex-direction: column;
 }
 .dash-scope-caption {
   font-size: 12px;
@@ -1421,8 +1461,10 @@ a.dash-tr:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 8px;
-  border-radius: 7px;
+  min-height: 36px;
+  padding: 0 8px;
+  margin: 0 -6px;
+  border-radius: 6px;
   transition: background-color 110ms ease, opacity 120ms ease;
 }
 .dash-todo:hover,
@@ -1503,7 +1545,160 @@ a.dash-tr:focus-visible {
   background: rgb(33 27 23 / 0.045);
 }
 
-/* 오른쪽 단: 수금 · 공지 · 사용법 가이드 · 뉴스 */
+/* 할 일 탭: 지남 · 오늘 · 다가옴. 화면 위쪽의 묶음 탭(전체 · 매매 …)과 같은 모양 — 고른 것은 먹색 알약 */
+.dash-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 15px;
+  background: #f1f1ef;
+}
+.dash-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--color-muted-foreground-strong);
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.dash-tab > span {
+  font-size: 12px;
+  opacity: 0.75;
+}
+.dash-tab:hover {
+  color: var(--color-foreground);
+}
+.dash-tab[aria-pressed='true'] {
+  background: var(--color-foreground);
+  color: var(--color-primary-foreground);
+  font-weight: 500;
+}
+/* "N건 더 보기" · "접기" */
+.dash-more-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  height: 30px;
+  margin: 2px 0 0 -4px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--color-muted-foreground);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.dash-more-btn:hover {
+  background: rgb(33 27 23 / 0.045);
+  color: var(--color-foreground);
+}
+
+/* 진행 중인 거래: 줄마다 이름 · 단계 띠 · 다음 일정 */
+.dash-deals {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -6px;
+}
+.dash-deal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 6px 9px;
+  border-radius: 6px;
+  transition: background-color 110ms ease;
+}
+.dash-deal:hover {
+  background: rgb(33 27 23 / 0.045);
+}
+.dash-deal:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: -2px;
+}
+/* 단계 띠: 희망매물의 화살표 띠를 작게 줄인 것. 끝낸 단계는 초록, 지금 단계는 단계 색을 채운 흰 글씨, 남은 단계는 회색 */
+.dash-band {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+}
+.dash-band-step {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px 0 8px;
+  overflow: hidden;
+  font-size: 11px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  color: var(--color-muted-foreground-strong);
+  background: #efeeec;
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%);
+}
+.dash-band-step:first-child {
+  padding-left: 2px;
+  border-radius: 5px 0 0 5px;
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%);
+}
+.dash-band-step:last-child {
+  border-radius: 0 5px 5px 0;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 6px 50%);
+}
+.dash-band-step.is-done {
+  background: #cfe6d2;
+  color: #0a5c51;
+}
+.dash-band-step.is-current {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 소식 카드: 공지사항 · 부동산 뉴스 탭과 한 줄짜리 공지 줄 */
+.dash-feed-tabs {
+  display: inline-flex;
+  gap: 2px;
+}
+.dash-feed-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.dash-feed-tab:hover {
+  color: var(--color-foreground);
+}
+.dash-feed-tab[aria-pressed='true'] {
+  background: #f1f1ef;
+  color: var(--color-foreground);
+  font-weight: 500;
+}
+.dash-feed-row {
+  width: calc(100% + 12px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  text-align: left;
+  transition: background-color 110ms ease;
+}
+.dash-feed-row:hover {
+  background: rgb(33 27 23 / 0.045);
+}
+
+/* 오른쪽 단: 진행 중인 거래 · 소식 · 사용법 가이드 */
 .dash-rail {
   position: sticky;
   top: 12px;
@@ -1513,10 +1708,10 @@ a.dash-tr:focus-visible {
   gap: 12px;
 }
 .dash-side-card {
-  padding: 13px 15px;
+  padding: 10px 14px 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 .dash-cash-card {
   width: 100%;
@@ -1619,28 +1814,123 @@ a.dash-tr:focus-visible {
 }
 
 /* 컨테이너 너비 반응형 — 사이드바 여닫기·창 크기 모두 대응 */
+/* 오른쪽 단은 좁아져도 숨기지 않는다. 세 단이 들어가지 않으면 두 단 아래로 내려와 카드를 가로로 놓는다.
+   (예전에는 1260px 아래에서 숨기고 할 일 머리의 단추로만 열었다 — 거래와 공지가 화면에서 사라졌다) */
+/* 화면에 맞추기: 세 단이 들어가고 높이가 넉넉하면 대시보드는 굴러가지 않는다.
+   단마다 카드가 남은 높이를 나눠 갖고, 넘치는 내용은 카드 안(.dash-scroll)에서 굴린다. */
+@container dash-canvas (min-width: 960px) {
+  @media (min-height: 700px) {
+    .dash-wrap {
+      flex: 1 1 0;
+      min-height: 0;
+      padding-bottom: 0;
+    }
+    .dash-wrap > * {
+      flex-shrink: 0;
+    }
+    .dash-wrap > .dash-bento-grid {
+      flex: 1 1 0;
+      min-height: 0;
+      grid-template-rows: minmax(0, 1fr);
+      align-items: stretch;
+    }
+    .dash-left,
+    .dash-center,
+    .dash-rail {
+      position: static;
+      min-height: 0;
+    }
+    .dash-bento-grid .dash-bento-card {
+      flex: 0 1 auto;
+      min-height: 104px;
+    }
+    .dash-bento-grid .dash-cal-card,
+    .dash-bento-grid .dash-setup,
+    .dash-bento-grid .dash-guide-banner {
+      flex: none;
+    }
+    /* 가운데 단: 할 일은 내용만큼(단의 절반 남짓까지), 최근 상담이 남은 높이를 채운다 */
+    .dash-bento-grid .dash-tasks-card {
+      max-height: 54%;
+    }
+    /* '처음 할 일'이 떠 있으면 그 칸이 단의 위를 차지한다. 그대로 두면 낮은 화면(1440×760)에서 할 일 카드가
+       머리와 입력 줄만 남고 업무가 한 줄도 안 보였다. 처음 할 일은 다음 단계의 설명만 남기고, 할 일은 두세 줄을 지킨다. */
+    .dash-setup li:not(.is-next) .dash-setup-desc {
+      display: none;
+    }
+    .dash-center:has(.dash-setup) .dash-tasks-card {
+      min-height: 168px;
+      max-height: 40%;
+    }
+    .dash-bento-grid .dash-consult-card {
+      flex: 1 1 0;
+    }
+    .dash-scroll:not(.dash-deals-scroll, .dash-notice-scroll) {
+      max-height: none;
+    }
+    /* 왼쪽 단: 일정 카드가 줄어들 때 다가오는 일정이 먼저 줄고, 고른 날(오늘)의 일정은 되도록 남긴다.
+       같은 비율로 줄면 1440×900에서 오늘의 두 번째 일정이 가려지고 아래 '다가오는 일정'만 길게 보였다. */
+    .dash-sched-part:first-child {
+      flex-shrink: 1;
+    }
+    /* 줄어드는 비율의 합이 1보다 작으면 모자란 높이의 일부만 줄어 카드 밖으로 넘친다(1440×800에서 56px 넘쳐
+       대시보드가 굴러갔다). 그래서 0.2 : 1이 아니라 1 : 5로 둔다. */
+    .dash-sched-part:last-child {
+      flex-shrink: 5;
+    }
+    /* 오른쪽 단: 공지·가이드는 제 높이. 진행 중인 거래는 큰 화면에서도 두 줄 반에 묶어 둔다
+       (사용자 지시 2026-11-23: 거래 카드는 작게, 안에서 굴린다 — 남은 높이로 늘리지 않는다). */
+    .dash-rail .dash-notice-card {
+      flex: none;
+    }
+  }
+}
 @container dash-canvas (max-width: 1259px) {
-  .dash-bento-grid {
-    grid-template-columns: 296px minmax(0, 1fr);
-    column-gap: 16px;
-  }
-  .dash-rail {
-    display: none;
-  }
   .dash-scope-caption {
     display: none;
   }
-  .dash-compact-actions {
-    display: inline-flex;
+}
+/* 작은 노트북(1280×800 · 1366×768, 사이드바 열림 → 판 992~1078px)도 세 단으로 한 화면에 담는다.
+   양옆 단을 조금 좁혀 가운데 단의 자리를 낸다. 두 단으로 내리면 오른쪽 단이 아래로 가 대시보드가 굴러간다. */
+@container dash-canvas (min-width: 960px) and (max-width: 1099px) {
+  .dash-bento-grid {
+    grid-template-columns: 268px minmax(0, 1fr) 312px;
+    column-gap: 12px;
   }
 }
 @container dash-canvas (max-width: 959px) {
+  .dash-bento-grid {
+    grid-template-columns: 296px minmax(0, 1fr);
+    row-gap: 14px;
+  }
+  /* 두 단일 때는 왼쪽 단을 붙여 두지 않는다. 붙여 두면 굴렸을 때 아래로 내려온 오른쪽 단(거래 · 소식) 위를 덮는다. */
+  .dash-left {
+    position: static;
+  }
+  .dash-rail {
+    position: static;
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    align-items: start;
+  }
+}
+/* 한 줄로 쌓는 것은 정말 좁을 때만. 작은 노트북(창 1100px, 사이드바 열림 → 판 약 830px)에서 한 줄로 쌓으면
+   판 너비로 늘어난 달력이 첫 화면을 다 차지하고 할 일이 그 아래로 밀려 보이지 않는다. 두 단이면 달력 옆에 할 일이 보인다. */
+@container dash-canvas (max-width: 759px) {
   .dash-bento-grid {
     grid-template-columns: minmax(0, 1fr);
     row-gap: 14px;
   }
   .dash-left {
     position: static;
+  }
+  .dash-rail {
+    grid-column: auto;
+  }
+  /* 새 사무소의 '처음 할 일'이 있으면 한 줄로 쌓일 때 달력보다 먼저 보이게 한다 */
+  .dash-center:has(.dash-setup) {
+    order: -1;
   }
 }
 @container dash-canvas (max-width: 640px) {

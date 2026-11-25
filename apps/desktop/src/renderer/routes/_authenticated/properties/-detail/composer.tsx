@@ -13,7 +13,7 @@ import { Avatar, Kbd, nb } from './ui';
 
 /*
  * 아래에 붙은 상담 입력칸. 누구와(연락처) · 어떻게(전화·방문·문자) · 무슨 이야기를 했는지 바로 남긴다.
- * 소유주 쪽 사람과 한 상담은 "매물 확인"으로도 남길 수 있다(확인 기록이 상담을 함께 만든다).
+ * 소유자 쪽 사람과 한 상담은 "매물 확인"으로도 남길 수 있다(확인 기록이 상담을 함께 만든다).
  */
 
 export type ComposerSide = 'owner' | 'other' | 'tenant' | 'buyer';
@@ -43,7 +43,7 @@ const typeOptions: Array<[ComposerType, string]> = [
 ];
 
 const sideLabel: Record<ComposerSide, string> = {
-  owner: '소유주 쪽',
+  owner: '소유자 쪽',
   other: '관련인',
   tenant: '세입자',
   buyer: '매수·임차 손님',
@@ -135,7 +135,7 @@ export function ComposerDock({
           className="flex h-[34px] w-full items-center gap-2.5 rounded px-1 text-left text-[14px] text-[#37352f]/45 hover:bg-[#37352f]/[0.04]"
         >
           <Avatar name="나" />
-          <span className="flex-1 truncate">{text ? text : '상담 기록 남기기… 누구와 무슨 이야기를 했나요?'}</span>
+          <span className="flex-1 truncate">{text ? text : '상담 적기… 누구와 무슨 이야기를 했나요?'}</span>
           <Kbd className="text-[12px]">R</Kbd>
         </button>
       </Dock>
@@ -227,7 +227,7 @@ export function ComposerDock({
             </label>
           ) : (
             <span className="text-[13px] text-[#37352f]/45">
-              {who?.side === 'owner' ? '진행 중인 의뢰가 없어 상담으로만 남습니다' : '소유주·대리인과 한 상담만 매물 확인으로 남길 수 있습니다'}
+              {who?.side === 'owner' ? '진행 중인 의뢰가 없어 상담으로만 남습니다' : '소유자·대리인과 한 상담만 매물 확인으로 남길 수 있습니다'}
             </span>
           )}
           <span className="flex-1" />

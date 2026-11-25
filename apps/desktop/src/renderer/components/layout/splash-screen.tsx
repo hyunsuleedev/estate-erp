@@ -70,9 +70,22 @@ export function SplashBoundary({ children }: { children: ReactNode }) {
     if (blockers.current.size === 0) setVisible(false);
   }, []);
   const show = visible || count > 0;
-  // Native content tabs also use SplashScreen for brief loads. They need the
-  // same identity, without constructing a WebGL scene for each tab.
-  const animated = getRendererSurface().kind !== "native-tab";
+  const isNativeTab = getRendererSurface().kind === "native-tab";
+  // 창의 시작 화면만 장면을 그린다. 탭 화면은 아래에서 따로 처리한다.
+  const animated = !isNativeTab;
+
+  if (isNativeTab) {
+    // 탭 화면은 이미 켜진 앱 안에서 열린다. "시작하고 있습니다" 화면을 다시 보여 줄 이유가 없다.
+    // 준비되는 동안에는 앱의 틀(사이드바 자리와 빈 본문)을 그려 두고, 준비되면 기다림 없이 바로 내용을 보인다.
+    // 전에는 여기서도 시작 화면을 띄우고 사라지는 순서(약 0.5초)를 다 밟아서, 내용이 0.3초에 준비돼도
+    // 0.8초가 지나야 쓸 수 있었다(2026-11-22 실제 창에서 잼). 데이터는 각 화면이 불러오는 대로 채운다.
+    return (
+      <LoadingContext.Provider value={register}>
+        {children}
+        {count > 0 && <TabShellSkeleton />}
+      </LoadingContext.Provider>
+    );
+  }
 
   return (
     <LoadingContext.Provider value={register}>
@@ -87,6 +100,46 @@ export function SplashBoundary({ children }: { children: ReactNode }) {
         />
       )}
     </LoadingContext.Provider>
+  );
+}
+
+/**
+ * 탭 화면이 준비되는 동안 보이는 앱의 틀. 실제 화면과 같은 자리에 사이드바와 본문을 비워 그린다.
+ * 사이드바를 접어 둔 사람에게는 잠깐 펼친 모양으로 보이지만, 준비되면 곧바로 실제 상태로 바뀐다.
+ */
+function TabShellSkeleton() {
+  const line = "h-3 rounded bg-black/[0.06]";
+  return (
+    <div
+      className="fixed inset-0 z-40 flex bg-background"
+      data-testid="tab-shell-skeleton"
+      role="status"
+      aria-busy="true"
+    >
+      <span className="sr-only">화면을 불러오는 중입니다.</span>
+      <div
+        aria-hidden="true"
+        className="flex w-64 shrink-0 flex-col gap-3 border-r border-sidebar-border bg-sidebar px-4 pt-5"
+      >
+        <div className={`${line} w-24`} />
+        <div className="mt-4 flex flex-col gap-3">
+          {["w-28", "w-24", "w-32", "w-20", "w-28", "w-24", "w-32", "w-20"].map((width, index) => (
+            <div key={index} className={`${line} ${width}`} />
+          ))}
+        </div>
+      </div>
+      <div aria-hidden="true" className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-[50px] items-center gap-3 border-b border-[#f0efed] px-4">
+          <div className={`${line} w-40`} />
+          <div className={`${line} w-16`} />
+        </div>
+        <div className="flex flex-col gap-4 px-6 pt-6">
+          {["w-1/2", "w-2/3", "w-1/3", "w-3/5"].map((width, index) => (
+            <div key={index} className={`${line} ${width}`} />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

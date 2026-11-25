@@ -1,22 +1,15 @@
-import { formatFloorRange } from '@estate-erp/shared';
+import { formatPlaceLabel } from '@estate-erp/shared';
 import type { Task } from '@estate-erp/api-client';
 
-function withSuffix(value: string, suffix: string) {
-  return value.endsWith(suffix) ? value : `${value}${suffix}`;
-}
-
+/** "고덕그라시움 102동 3401호" — 화면 전체의 주소 기준(formatPlaceLabel). 매물이 없으면 "매물". */
 export function getPropertyLabel(task: Task): string {
-  const siteName = task.property?.site?.name?.trim();
   const unit = task.property?.unit;
-  const dongName = unit?.dong?.name?.trim();
-  const dongLabel =
-    dongName && dongName !== '-' && !unit?.dong?.isPlaceholder
-      ? withSuffix(dongName, '동')
-      : null;
-  const unitName = unit?.name?.trim();
-  // 호 없이 층이 단위인 공간은 층이 이름이다
-  const unitLabel =
-    unitName && unitName !== '-' ? withSuffix(unitName, '호') : formatFloorRange(unit ?? {}) || null;
-
-  return [siteName, dongLabel, unitLabel].filter(Boolean).join(' ') || '매물';
+  return (
+    formatPlaceLabel({
+      siteName: task.property?.site?.name,
+      dongName: unit?.dong?.name,
+      dongIsPlaceholder: unit?.dong?.isPlaceholder,
+      unit,
+    }) || '매물'
+  );
 }

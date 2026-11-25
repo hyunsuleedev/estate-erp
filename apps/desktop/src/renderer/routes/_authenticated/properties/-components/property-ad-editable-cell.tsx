@@ -20,8 +20,8 @@ const statusOptions = [
 ];
 const channelOptions = naverCpChannels.map(channel => ({ ...channel, className: 'bg-transparent text-foreground' }));
 
-export function PropertyAdEditableCell({ advertisement, field, label, children }: {
-  advertisement: ListingAdvertisement; field: AdEditableField; label: string; children: ReactNode;
+export function PropertyAdEditableCell({ advertisement, field, label, disabled = false, children }: {
+  advertisement: ListingAdvertisement; field: AdEditableField; label: string; disabled?: boolean; children: ReactNode;
 }) {
   const queryClient = useQueryClient();
   async function save(value: unknown) {
@@ -30,6 +30,20 @@ export function PropertyAdEditableCell({ advertisement, field, label, children }
     await api.listingAdvertisements.update(advertisement.id, patch);
     await Promise.all(['listing-intakes', 'listings', 'listing-advertisements', 'properties'].map(key =>
       queryClient.invalidateQueries({ queryKey: [key] })));
+  }
+  const urlLink = field === 'url' && advertisement.url && /^https?:\/\//i.test(advertisement.url) ? (
+    <a
+      href={advertisement.url} target="_blank" rel="noreferrer" aria-label={`${label} 열기`}
+      onClick={event => event.stopPropagation()}
+      className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <ExternalLink className="size-3.5" />
+    </a>
+  ) : null;
+  if (disabled) {
+    return <div className="relative h-full">
+      <span className={`flex h-full items-center ${cellClass}${urlLink ? ' pr-8' : ''}`}>{children}</span>
+      {urlLink}
+    </div>;
   }
   const money = field.startsWith('advertised');
   if (field === 'channel' && !canChangeAdChannel(advertisement)) {
@@ -53,12 +67,7 @@ export function PropertyAdEditableCell({ advertisement, field, label, children }
           className={`${cellClass}${field === 'url' && advertisement.url ? ' pr-8' : ''}`}>
           {children}
         </EditableCell>
-        {field === 'url' && advertisement.url && /^https?:\/\//i.test(advertisement.url) && <a
-          href={advertisement.url} target="_blank" rel="noreferrer" aria-label={`${label} 열기`}
-          onClick={event => event.stopPropagation()}
-          className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-foreground/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <ExternalLink className="size-3.5" />
-        </a>}
+        {urlLink}
       </div>}
   </CellTableNavigationProvider>;
 }

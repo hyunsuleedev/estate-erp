@@ -189,6 +189,11 @@ export class ElectronNativeTabWindowHost implements NativeTabHostPort {
     this.afterReorder?.();
   }
 
+  attachBehind(view: NativeTabViewPort): void {
+    // 맨 아래(0번)에 붙인다. 보이는 탭 화면이 같은 자리를 덮고 있어 화면에는 드러나지 않는다.
+    this.window.contentView.addChildView(electronView(view), 0);
+  }
+
   detach(view: NativeTabViewPort): void {
     if (!this.window.isDestroyed()) {
       this.window.contentView.removeChildView(electronView(view));

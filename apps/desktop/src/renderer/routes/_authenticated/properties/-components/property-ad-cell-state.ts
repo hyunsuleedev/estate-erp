@@ -4,7 +4,7 @@ import { isNaverCpChannel } from '../../../../lib/advertisement-channels';
 export type AdEditableField = 'advertisedPrice' | 'advertisedDeposit' | 'advertisedMonthlyRent' | 'memo' | 'url' | 'startedAt' | 'status' | 'channel';
 
 export function canChangeAdChannel(ad: ListingAdvertisement) {
-  return ad.source === 'manual' && !ad.externalAdId && !ad.naverArticleNo && !ad.naverUrl && !ad.lastSyncedAt;
+  return !ad.lastSyncedAt && !ad.externalAdId && !ad.naverArticleNo && !ad.naverUrl;
 }
 
 /** Patch only the edited advertisement field; never copy parent listing terms or CP metadata. */

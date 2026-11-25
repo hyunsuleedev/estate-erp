@@ -1,5 +1,5 @@
 /**
- * 호실 상세 — 후속 작업(Task) 섹션.
+ * 호실 상세 — 다음 업무(Task) 섹션.
  * 서버에 unit/property 필터 파라미터가 없어 사무소 Task 전체를 가져와 클라이언트에서 필터한다.
  */
 import { useMemo } from 'react';
@@ -55,9 +55,9 @@ export function UnitTasksSection({ propertyIds }: { propertyIds: Set<string> }) 
 
   return (
     <section>
-      <SectionTitle count={unitTasks.length || undefined}>후속 작업</SectionTitle>
+      <SectionTitle count={unitTasks.length || undefined}>다음 업무</SectionTitle>
       {propertyIds.size === 0 ? (
-        <EmptyText>관리호수로 등록하면 이 호실에 후속 작업을 연결할 수 있습니다.</EmptyText>
+        <EmptyText>관리호수로 등록하면 이 호실에 업무를 연결할 수 있습니다.</EmptyText>
       ) : tasksQuery.isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 2 }).map((_, index) => (
@@ -65,7 +65,7 @@ export function UnitTasksSection({ propertyIds }: { propertyIds: Set<string> }) 
           ))}
         </div>
       ) : tasksQuery.isError ? (
-        <RetryNote onRetry={() => void tasksQuery.refetch()}>후속 작업을 불러오지 못했습니다.</RetryNote>
+        <RetryNote onRetry={() => void tasksQuery.refetch()}>업무를 불러오지 못했습니다.</RetryNote>
       ) : unitTasks.length > 0 ? (
         <div className="divide-y divide-[#f1f0ec]">
           {unitTasks.slice(0, 8).map((task) => (
@@ -107,7 +107,7 @@ export function UnitTasksSection({ propertyIds }: { propertyIds: Set<string> }) 
           )}
         </div>
       ) : (
-        <EmptyText>연결된 후속 작업이 없습니다. 업무 페이지에서 이 호실의 매물을 연결해 만들 수 있습니다.</EmptyText>
+        <EmptyText>연결된 업무가 없습니다. 업무 화면에서 이 호실의 매물을 연결해 업무를 추가할 수 있습니다.</EmptyText>
       )}
     </section>
   );

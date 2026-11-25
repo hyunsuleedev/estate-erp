@@ -30,7 +30,7 @@ export const siteTypeShort: Record<string, string> = {
 export const consultationTypeLabels: Record<string, string> = {
   phone: '전화',
   visit: '방문',
-  online: '온라인',
+  online: '문자·온라인',
 };
 
 export const tenantStatusLabels: Record<string, string> = {

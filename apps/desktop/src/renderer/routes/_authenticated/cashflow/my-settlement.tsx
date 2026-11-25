@@ -7,7 +7,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Fragment, useState } from 'react';
 import { Handshake } from 'lucide-react';
-import type { MySettlementLine } from '@estate-erp/api-client';
+import type { MySettlementLine, SettlementDetailItem } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/domain';
@@ -18,7 +18,7 @@ import {
   CashflowPage,
   FoldButton,
 } from './-cashflow-ui';
-import { shortDate } from './-cashflow-utils';
+import { dayLabel } from './-cashflow-utils';
 
 export const Route = createFileRoute('/_authenticated/cashflow/my-settlement')({
   component: MySettlementPage,
@@ -33,6 +33,28 @@ function monthLabel(month: string): string {
   return `${year}년 ${Number(index)}월`;
 }
 
+/** 계산 근거의 날짜·금액. 공동중개 받은 몫은 꼬리표를 붙이고 부가세 별도 금액 그대로 나눈다. */
+function DetailMoney({ item }: { item: SettlementDetailItem }) {
+  if (item.source === 'partner_share') {
+    return (
+      <>
+        <span className="rounded-md bg-neutral-soft px-1.5 py-px text-[11px] leading-[18px] font-medium">공동중개 받은 몫</span>
+        {dayLabel(item.receivedAt, false)} {item.kind === 'refund' ? '받음 기록 되돌림' : '받음'}{' '}
+        <b className="font-medium text-foreground tabular-nums">{won(Math.abs(item.supplyWon))}원</b>
+        <span>(부가세 별도)</span>
+      </>
+    );
+  }
+  return (
+    <>
+      {dayLabel(item.receivedAt, false)} {item.kind === 'refund' ? '돌려줌' : '입금'}{' '}
+      <span className="tabular-nums">{won(Math.abs(item.amountWon))}원</span>
+      <span>→ 부가세 빼고</span>
+      <b className="font-medium text-foreground tabular-nums">{won(Math.abs(item.supplyWon))}원</b>
+    </>
+  );
+}
+
 function Dash() {
   return <span className="text-muted-foreground/50">—</span>;
 }
@@ -40,7 +62,7 @@ function Dash() {
 function statusText(line: MySettlementLine): string {
   const employee = line.employmentType === 'employee';
   if (line.netWon <= 0) return '받을 돈 없음';
-  if (line.paidAt) return `${shortDate(line.paidAt)} ${employee ? '급여에 반영' : '지급'}`;
+  if (line.paidAt) return `${dayLabel(line.paidAt, false)} ${employee ? '급여에 반영' : '지급'}`;
   return employee ? '급여 반영을 기다리는 중' : '지급을 기다리는 중';
 }
 
@@ -55,6 +77,13 @@ function MySettlementPage() {
       return next;
     });
   const lines = mine.data ?? [];
+  // 아직 확정하지 않은 다음 정산의 내 몫 (정산 화면과 같은 계산). 대표가 확정하면 위 목록의 그 달로 들어간다.
+  const preview = useQuery({
+    queryKey: ['settlement', 'mine', 'preview'],
+    queryFn: () => api.finance.settlements.minePreview(),
+  });
+  const draft = preview.data?.line ? { month: preview.data.month, line: preview.data.line } : null;
+  const [draftOpen, setDraftOpen] = useState(false);
 
   return (
     <CashflowPage title="내 수수료">
@@ -63,7 +92,7 @@ function MySettlementPage() {
           <CashflowLoading />
         ) : mine.isError ? (
           <CashflowError icon={Handshake} title="내 수수료를 불러오지 못했습니다" onRetry={() => void mine.refetch()} />
-        ) : lines.length === 0 ? (
+        ) : lines.length === 0 && !draft ? (
           <EmptyState
             icon={Handshake}
             title="아직 확정된 정산이 없습니다"
@@ -99,6 +128,68 @@ function MySettlementPage() {
               </tr>
             </thead>
             <tbody>
+              {draft && (
+                <Fragment key="draft">
+                  <tr data-row="group" className="opacity-70" title="아직 확정 전이라 입금·담당·직원 조건에 따라 바뀔 수 있습니다">
+                    <td>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <FoldButton open={draftOpen} onToggle={() => setDraftOpen((v) => !v)} />
+                        <span className="truncate">{monthLabel(draft.month)}</span>
+                        <span className="cf-plain shrink-0 text-xs text-warning-strong">아직 확정 전 · 바뀔 수 있음</span>
+                      </span>
+                    </td>
+                    <td className="cf-num cf-plain">{won(draft.line.shareWon)}</td>
+                    <td className="cf-num cf-plain">{draft.line.baseWon > 0 ? won(draft.line.baseWon) : <Dash />}</td>
+                    <td className={cn('cf-num cf-plain', draft.line.adjustWon - draft.line.carryInWon < 0 && 'text-destructive-strong')}>
+                      {draft.line.adjustWon - draft.line.carryInWon !== 0 ? (
+                        `−${won(Math.abs(draft.line.adjustWon - draft.line.carryInWon))}`
+                      ) : (
+                        <Dash />
+                      )}
+                    </td>
+                    <td className="cf-num cf-plain">
+                      {draft.line.employmentType === 'employee' ? (
+                        <span className="text-xs text-muted-foreground">급여에서 계산</span>
+                      ) : !draft.line.withholdTax ? (
+                        <span className="text-xs text-muted-foreground">공제 안 함</span>
+                      ) : draft.line.withholdingWon > 0 ? (
+                        `−${won(draft.line.withholdingWon)}`
+                      ) : (
+                        <Dash />
+                      )}
+                    </td>
+                    <td className="cf-num">
+                      <span className="block leading-tight">{won(draft.line.netWon)}</span>
+                      {draft.line.carryOutWon > 0 && (
+                        <span className="cf-plain block text-[11px] leading-tight text-destructive-strong">
+                          다음 달로 넘김 {won(draft.line.carryOutWon)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="cf-plain text-muted-foreground">대표가 확정하면 정해집니다</td>
+                  </tr>
+                  {draftOpen &&
+                    draft.line.detail.map((item) => (
+                      <tr key={`draft-${item.receiptId}`} className="opacity-70">
+                        <td className="!whitespace-normal">
+                          <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 py-1 pl-6 text-[12.5px] text-muted-foreground">
+                            <b className="font-medium text-foreground">{item.dealTitle}</b>
+                            <DetailMoney item={item} />
+                            {item.ourRatio < 100 && <span>→ 우리 사무소 {item.ourRatio}%</span>}
+                            {item.sharePercent < 100 && <span>→ 내 배분 {item.sharePercent}%</span>}
+                            <span>× 몫 {item.ratio}%</span>
+                          </span>
+                        </td>
+                        <td className="cf-num text-muted-foreground">{item.kind === 'receipt' ? won(item.shareWon) : ''}</td>
+                        <td />
+                        <td className="cf-num text-destructive-strong">
+                          {item.kind === 'refund' ? `−${won(Math.abs(item.shareWon))}` : ''}
+                        </td>
+                        <td colSpan={3} />
+                      </tr>
+                    ))}
+                </Fragment>
+              )}
               {lines.map((line) => {
                 const isOpen = opened.has(line.lineId);
                 const employee = line.employmentType === 'employee';
@@ -111,7 +202,7 @@ function MySettlementPage() {
                           <FoldButton open={isOpen} onToggle={() => toggle(line.lineId)} />
                           <span className="truncate">{monthLabel(line.month)}</span>
                           <span className="cf-plain shrink-0 text-xs text-muted-foreground">
-                            {shortDate(line.confirmedAt)} 확정
+                            {dayLabel(line.confirmedAt, false)} 확정
                           </span>
                         </span>
                       </td>
@@ -152,11 +243,9 @@ function MySettlementPage() {
                           <td className="!whitespace-normal">
                             <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 py-1 pl-6 text-[12.5px] text-muted-foreground">
                               <b className="font-medium text-foreground">{item.dealTitle}</b>
-                              {shortDate(item.receivedAt)} {item.kind === 'refund' ? '돌려줌' : '입금'}
-                              <span>· 부가세 빼고</span>
-                              <span className="tabular-nums">{won(Math.abs(item.supplyWon))}원</span>
-                              {item.ourRatio < 100 && <span>· 우리 사무소 {item.ourRatio}%</span>}
-                              {item.sharePercent < 100 && <span>· 내 배분 {item.sharePercent}%</span>}
+                              <DetailMoney item={item} />
+                              {item.ourRatio < 100 && <span>→ 우리 사무소 {item.ourRatio}%</span>}
+                              {item.sharePercent < 100 && <span>→ 내 배분 {item.sharePercent}%</span>}
                               <span>× 몫 {item.ratio}%</span>
                             </span>
                           </td>

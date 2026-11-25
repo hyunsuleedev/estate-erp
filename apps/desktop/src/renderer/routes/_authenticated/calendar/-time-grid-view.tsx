@@ -37,6 +37,7 @@ import {
   type CalendarDraftPreview,
 } from "./-event-draft-preview";
 import type { EventTiming } from "./-use-event-timing";
+import { EventTitle, eventTitleText } from "./-event-title";
 
 const PX_PER_MINUTE = GRID_HOUR_HEIGHT / 60;
 const clock = (minute: number) =>
@@ -362,7 +363,7 @@ export function TimeGridCalendarView({
                         backgroundColor: withAlpha(getEventColor(event), "18"),
                       }}
                     >
-                      {event.title}
+                      <EventTitle event={event} />
                     </button>
                   ))}
                 {(overlaysByDate.get(getLocalDateKey(date)) ?? []).map(
@@ -482,7 +483,7 @@ export function TimeGridCalendarView({
                       type="button"
                       data-calendar-event
                       data-event-id={event.id}
-                      aria-label={`${event.title} · ${formatEventTimeRange(event)}`}
+                      aria-label={`${eventTitleText(event)} · ${formatEventTimeRange(event)}`}
                       aria-busy={pendingId === event.id}
                       className={cn(
                         "flex size-full flex-col items-start overflow-hidden rounded-r px-1.5 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -490,7 +491,7 @@ export function TimeGridCalendarView({
                           !continuesBefore &&
                           "cursor-grab active:cursor-grabbing",
                       )}
-                      title={`${event.title}\n${formatEventTimeRange(event)}\n${formatEventContext(event)}\n드래그: 시간 이동 · Alt+방향키: 15분/하루 이동`}
+                      title={`${eventTitleText(event)}\n${formatEventTimeRange(event)}\n${formatEventContext(event)}\n드래그: 시간 이동 · Alt+방향키: 15분/하루 이동`}
                       onPointerDown={(e) => {
                         if (!continuesBefore) begin(e, "move", dayIndex, event);
                       }}
@@ -534,7 +535,7 @@ export function TimeGridCalendarView({
                     >
                       <span className="w-full truncate text-[11px] font-semibold leading-4 text-foreground">
                         {continuesBefore ? "↳ " : ""}
-                        {event.title}
+                        <EventTitle event={event} />
                       </span>
                       {height >= 40 && (
                         <span className="mt-0.5 w-full truncate text-[10px] tabular-nums text-muted-foreground">

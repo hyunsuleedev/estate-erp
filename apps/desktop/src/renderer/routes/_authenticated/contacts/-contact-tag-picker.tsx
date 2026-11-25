@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type R
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Ellipsis, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { ApiError } from '@estate-erp/api-client';
+import { apiErrorMessage } from '@/lib/api-error';
 import {
   CONTACT_TAG_COLORS,
   CONTACT_TAG_COLOR_LABELS,
@@ -40,7 +40,7 @@ export function useContactTagColors() {
 }
 
 function errorMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
+  return apiErrorMessage(error, fallback);
 }
 
 /** Notion 선택 창의 겉모습: 너비 300 · 모서리 6 · 흰 바탕 · 세 겹 그림자(맨 아래가 1px 테두리 역할). */

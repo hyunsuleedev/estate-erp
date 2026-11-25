@@ -112,6 +112,7 @@ export function PersonLine({
   terms,
   phone,
   detail,
+  actions,
 }: {
   contactId: string | null;
   name: string;
@@ -121,6 +122,7 @@ export function PersonLine({
   terms?: string | null;
   phone: string | null;
   detail?: string | null;
+  actions?: ReactNode;
 }) {
   return (
     <li className="-mx-1.5 flex items-start gap-2.5 rounded px-1.5 py-1.5 hover:bg-[#37352f]/[0.04]">
@@ -154,6 +156,7 @@ export function PersonLine({
           <Phone />
         </a>
       )}
+      {actions}
     </li>
   );
 }
@@ -171,7 +174,7 @@ export function ContactsSection({
     <RailSection title="연락처" count={people.length + tenants.length} action={addMenu}>
       {people.length === 0 && tenants.length === 0 ? (
         <p className="break-keep rounded bg-[rgb(251,243,219)] px-2.5 py-2 text-[12.5px] leading-5 text-[rgb(64,44,27)]">
-          소유주 연락처가 없습니다. 확인 전화를 하려면 소유주나 대리인 번호가 필요합니다.
+          소유자 연락처가 없습니다. 확인 전화를 하려면 소유자나 대리인 번호가 필요합니다.
         </p>
       ) : (
         <ul>
@@ -181,7 +184,7 @@ export function ContactsSection({
               contactId={person.contactId}
               name={person.name}
               role={person.role}
-              roleTone={person.role === '소유주' ? 'brown' : 'gray'}
+              roleTone={person.role === '소유자' ? 'brown' : 'gray'}
               badge={person.isPrimary ? '주 연락처' : null}
               phone={person.phone}
               detail={person.detail}
@@ -255,7 +258,7 @@ export function ConfirmSection({
           className={cn(nb.solid, 'flex-1')}
           disabled={pending}
           onClick={onConfirm}
-          title="소유주에게 가격과 거래 가능 여부를 확인했으면 누르세요"
+          title="소유자에게 가격과 거래 가능 여부를 확인했으면 누르세요"
         >
           {pending ? <Loader2 className="animate-spin" /> : <Check />}
           확인 완료
@@ -270,7 +273,16 @@ export function ConfirmSection({
 
 // ── 광고 ───────────────────────────────────────────────────────────
 
-export function AdsSection({ rows, onOpenMyAds }: { rows: OfferRow[]; onOpenMyAds: () => void }) {
+export function AdsSection({
+  rows,
+  onOpenMyAds,
+  actions,
+}: {
+  rows: OfferRow[];
+  onOpenMyAds: () => void;
+  /** 이 매물의 광고를 그 자리에서 기록·요청하는 단추(진행 중 의뢰가 있을 때만) */
+  actions?: ReactNode;
+}) {
   if (rows.length === 0) return null;
   return (
     <RailSection
@@ -282,6 +294,7 @@ export function AdsSection({ rows, onOpenMyAds }: { rows: OfferRow[]; onOpenMyAd
         </button>
       }
     >
+      {actions && <div className="-ml-1.5 mb-1">{actions}</div>}
       <ul>
         {rows.map((row) => (
           <li

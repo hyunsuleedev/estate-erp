@@ -1,7 +1,7 @@
 /**
  * 업무 페이지 상단 툴바 — 매물관리 툴바와 같은 부품(알약 탭·필터 칩)을 쓴다.
  *
- * - 1행: 누구의 업무(내 담당·내가 요청·팀 전체) · 검색 · (오른쪽) 기한 지남 · 필터 · 표시 · 목록/보드 · 업무 추가
+ * - 1행: 누구의 업무(내 담당·내가 요청·사무소 전체) · 검색 · (오른쪽) 기한 지남 · 필터 · 표시 · 목록/보드 · 업무 추가
  * - 2행(필터를 열었거나 걸려 있을 때만): 상태 · 마감 · 카테고리 · 우선순위 · 담당자 · 건수 · 초기화
  * 묶기·정렬·완료 보기·보이는 정보는 "표시" 메뉴에서 고른다.
  */
@@ -66,7 +66,8 @@ const LAYOUT_OPTIONS: { value: TaskLayout; label: string; icon: ReactNode }[] = 
 const SCOPE_LABELS: Record<TaskScope, string> = {
   mine: '내 담당',
   requested: '내가 요청',
-  team: '팀 전체',
+  // 대시보드의 '내 담당 · 사무소 전체' 전환과 같은 말을 쓴다
+  team: '사무소 전체',
 };
 
 const GROUP_OPTIONS: { value: TaskGroupBy; label: string }[] = [
@@ -92,7 +93,7 @@ const VISIBLE_OPTIONS: { value: keyof TaskVisibleProps; label: string }[] = [
 
 const STATUS_FILTER_OPTIONS = ['in_progress', 'pending', 'completed', 'cancelled'] as const;
 const STATUS_FILTER_LABELS: Record<(typeof STATUS_FILTER_OPTIONS)[number], string> = {
-  in_progress: '진행중',
+  in_progress: '진행 중',
   pending: '대기',
   completed: '완료',
   cancelled: '취소',

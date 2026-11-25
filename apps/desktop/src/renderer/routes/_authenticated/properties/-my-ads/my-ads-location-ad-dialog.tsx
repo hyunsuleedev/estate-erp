@@ -7,6 +7,7 @@ import type { Listing, Site } from "@estate-erp/api-client";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { naverCpChannels } from "@/lib/advertisement-channels";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -103,15 +104,37 @@ function LocationAdForm({ onClose }: { onClose: () => void }) {
   const patch = (next: Partial<Draft>) =>
     setDraft((current) => ({ ...current, ...next }));
 
-  const sitesQuery = useQuery({
-    queryKey: ["sites"],
-    queryFn: () => api.sites.findAll(),
+  const debouncedSiteQuery = useDebouncedValue(siteQuery.trim(), 250);
+  const officeSitesQuery = useQuery({
+    queryKey: ["office-sites"],
+    queryFn: () => api.officeSites.findAll(),
+    staleTime: 60_000,
+  });
+  const centralSitesQuery = useQuery({
+    queryKey: ["office-sites", "central", debouncedSiteQuery],
+    queryFn: () => api.officeSites.searchCentral(debouncedSiteQuery),
+    enabled: debouncedSiteQuery.length >= 2,
     staleTime: 60_000,
   });
   const siteResults = useMemo(() => {
     const token = siteQuery.replace(/\s+/g, "").toLocaleLowerCase("ko");
     if (!token) return [];
-    return (sitesQuery.data ?? [])
+    const seen = new Set<string>();
+    const combined: Site[] = [];
+    for (const entry of officeSitesQuery.data ?? []) {
+      const item = entry.site ?? (entry as unknown as Site);
+      if (item?.id && !seen.has(item.id)) {
+        seen.add(item.id);
+        combined.push(item);
+      }
+    }
+    for (const item of centralSitesQuery.data ?? []) {
+      if (item?.id && !seen.has(item.id)) {
+        seen.add(item.id);
+        combined.push(item);
+      }
+    }
+    return combined
       .filter((item) =>
         [item.name, item.roadAddress, item.jibunAddress]
           .filter(Boolean)
@@ -121,7 +144,7 @@ function LocationAdForm({ onClose }: { onClose: () => void }) {
           .includes(token),
       )
       .slice(0, MAX_SITE_RESULTS);
-  }, [siteQuery, sitesQuery.data]);
+  }, [centralSitesQuery.data, officeSitesQuery.data, siteQuery]);
 
   const dongsQuery = useQuery({
     queryKey: ["dongs", site?.id],
@@ -204,7 +227,6 @@ function LocationAdForm({ onClose }: { onClose: () => void }) {
             : { siteId: site.id }),
         transactionType: draft.transactionType,
         channel: draft.channel,
-        source: "manual",
         status: "active",
         advertisedPrice: isSale ? parseManwon(draft.price) : null,
         advertisedDeposit: isSale ? null : parseManwon(draft.deposit),
@@ -216,6 +238,7 @@ function LocationAdForm({ onClose }: { onClose: () => void }) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["listing-advertisements"] });
       void queryClient.invalidateQueries({ queryKey: ["listings"] });
+      void queryClient.invalidateQueries({ queryKey: ["properties"] });
       toast.success(
         linkedListing
           ? "광고를 등록하고 매물에 연결했습니다."
@@ -223,7 +246,8 @@ function LocationAdForm({ onClose }: { onClose: () => void }) {
       );
       onClose();
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) =>
+      toast.error(getErrorMessage(error, "광고를 등록하지 못했습니다. 다시 시도해 주세요.")),
   });
 
   const money = (key: "price" | "deposit" | "monthlyRent", label: string) => (
@@ -297,7 +321,7 @@ function LocationAdForm({ onClose }: { onClose: () => void }) {
                 </div>
                 {siteQuery.trim() && (
                   <ul className="mt-1 max-h-52 overflow-y-auto rounded-md border">
-                    {sitesQuery.isLoading ? (
+                    {officeSitesQuery.isLoading || centralSitesQuery.isFetching ? (
                       <li className="px-2.5 py-2 text-xs text-muted-foreground">
                         불러오는 중…
                       </li>

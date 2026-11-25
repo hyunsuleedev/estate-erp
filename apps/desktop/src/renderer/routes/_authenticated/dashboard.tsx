@@ -5,6 +5,7 @@ import {
   ArrowRight,
   BookOpen,
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
   Cloud,
@@ -15,30 +16,29 @@ import {
   CloudSnow,
   CloudSun,
   Handshake,
+  ListChecks,
   ListTodo,
   Megaphone,
   MessageSquareText,
   Monitor,
   Moon,
-  Newspaper,
   Phone,
   PhoneIncoming,
   PhoneOutgoing,
   Plus,
   Sparkles as SparklesIcon,
   Sun,
-  Tag,
-  Type,
   Users,
-  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { formatFloorRange } from '@estate-erp/shared';
+import { formatFloorRange, normalizeDealStage } from '@estate-erp/shared';
 import type { CalendarEvent, Consultation, Deal, Notice, Task } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
+import { getStatusMeta } from '@/lib/status-config';
 import {
   NOTICES_QUERY_KEY,
   NOTICES_STALE_MS,
@@ -47,7 +47,6 @@ import {
   useKnownNoticeReads,
   withKnownReads,
 } from '@/lib/notices';
-import { StatusBadge } from '@/components/domain';
 import { QuickCreate } from '@/components/layout/quick-create';
 import { Button } from '@/components/ui/button';
 import {
@@ -66,8 +65,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/providers/auth-provider';
-import { formatDate, formatMoney, formatPhone } from '@/lib/format';
-import { collectPercent } from './cashflow/-cashflow-utils';
+import { formatDate, formatPhone, formatRelativeDay } from '@/lib/format';
 import {
   formatConsultationWhen,
   getConsultationChannel,
@@ -77,6 +75,7 @@ import {
   type ConsultationRowStatus,
 } from './consultations/-consultation-list-model';
 import {
+  dealPipelineStages,
   formatDealAmount,
   formatNextPaymentName,
   formatDaysLabel,
@@ -88,6 +87,7 @@ import {
   type DealPipelineHealthState,
 } from './deals/-deal-view-utils';
 import { getPropertyLabel } from './tasks/-task-property-label';
+import { taskEndedTags } from './tasks/-task-filters';
 import {
   OfflineState,
   QueryErrorState,
@@ -97,6 +97,9 @@ import {
   localDateKey,
 } from './-dashboard-widgets';
 import { DashboardScene, type SceneFlag } from './-dashboard-scene';
+import { OVERLAY_META, assignedDealIds, useCalendarOverlays, type OverlayItem } from './calendar/-calendar-overlay';
+import { formatEventPlace, getEventSuperseded, isEventMoot } from './calendar/-event-meta';
+import { EventTitle } from './calendar/-event-title';
 import { PRECIP, WEATHER_LABEL, clock, sceneState, type SceneWeather, type WeatherKind } from './-dashboard-sky';
 import './-dashboard.css';
 
@@ -108,10 +111,14 @@ export const Route = createFileRoute('/_authenticated/dashboard')({
  * 디자인 메모 — 오늘의 보드와 3단 풀화면 카드 워크벤치
  * 맨 위는 인사 영역이다. 판 전체가 하늘이고 오른쪽에 색이 있는 작은 동네가 있다(-dashboard-scene.tsx).
  * 땅이 오늘의 시간 축이라 해가 지금 시각 위에 뜨고 오늘 일정이 깃발로 꽂힌다. 하늘은 시각과 사무소 위치의 날씨를 따른다.
- * 아래는 순백(#ffffff) 바탕 위에 둥근 흰 카드(14px) 3단으로 나눈다:
- *   왼쪽 단(308px, sticky): 월간 달력 · 선택한 날의 타임라인 + 다가오는 일정
- *   가운데 단(유동): 내 할 일(지남/오늘/다가옴 접는 묶음) · 진행 중인 거래 표 · 최근 상담 내역
- *   오른쪽 단(276px, sticky, 1260px 미만에서 자동 숨김): 이달 수금(대표·실장) · 공지사항 · 앱 사용법 가이드 · 부동산 뉴스(준비 중)
+ * 아래는 순백(#ffffff) 바탕 위에 Notion형 카드(모서리 10px, 옅은 선 + 얕은 그림자) 3단으로 나눈다
+ * (2026-11-23 개편, 시안 docs/mockups/dashboard-board/v12.html):
+ *   왼쪽 단(sticky): 월간 달력 · 선택한 날의 타임라인 + 다가오는 일정
+ *   가운데 단(유동): 할 일(지남 · 오늘 · 다가옴 탭, 한 줄씩, 기한은 알약) · 최근 상담 내역
+ *   오른쪽 단(sticky): 진행 중인 거래(단계 띠) · 소식(공지사항 · 부동산 뉴스 탭) · 앱 사용법 가이드
+ * 오른쪽 단은 좁아져도 숨기지 않는다. 960px 아래에서는 두 단 아래로 내려와 가로로 놓인다
+ * (예전에는 1260px 아래에서 숨기고 할 일 머리에 "이달 수금 · 공지" 단추를 냈다. 거래와 공지가 화면에서 사라졌다).
+ * 이달 수금 카드는 대시보드에서 뺐다(사용자 결정 2026-11-23). 예전 코드는 .qa/backups/dashboard-before-v12/에 있다.
  */
 
 /* --------------------------------- 공통 --------------------------------- */
@@ -141,7 +148,6 @@ function greetingByHour(hour: number): string {
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-const WEEKDAYS_MON = ['월', '화', '수', '목', '금', '토', '일'];
 
 function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -161,14 +167,12 @@ function parseDateKey(key: string): Date {
   return new Date(y, (m || 1) - 1, d || 1);
 }
 
+/** "11.6 (금)" — 앱 공통 날짜 표기(formatRelativeDay)와 같은 모양에서 '오늘·내일' 바꿈만 뺀 것 */
 function shortDate(value: string | Date): string {
   const date = typeof value === 'string' ? new Date(value) : value;
-  return `${formatDate(date).slice(5)} (${WEEKDAYS[date.getDay()]})`;
+  return `${date.getMonth() + 1}.${date.getDate()} (${WEEKDAYS[date.getDay()]})`;
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : '요청을 처리하지 못했습니다';
-}
 
 /** 등장 순서. 처음 한 번(.dash-play가 붙어 있는 동안)만 -dashboard.css가 이 값만큼 늦춰 올린다. */
 function stagger(order: number): CSSProperties {
@@ -249,10 +253,20 @@ function queryView(query: { isPending: boolean; isError: boolean; fetchStatus: s
 
 /** 불러오는 중·오프라인·오류일 때 목록 자리에 그릴 것. 준비됐으면 null. */
 function statusBody(view: QueryView, onRetry: () => void, rows = 4): ReactNode {
-  if (view === 'offline') return <OfflineState />;
-  if (view === 'pending') return <WidgetSkeleton rows={rows} />;
-  if (view === 'error') return <QueryErrorState onRetry={onRetry} className="py-6" />;
-  return null;
+  if (view === 'ready') return null;
+  // 목록과 같은 굴림 상자에 담는다. 카드가 화면 높이에 맞춰 줄어들 때 상자 밖으로 넘치면
+  // 아래 구획·카드에 덮여 '다시 시도'를 누를 수 없다.
+  return (
+    <div className="dash-scroll">
+      {view === 'offline' ? (
+        <OfflineState />
+      ) : view === 'pending' ? (
+        <WidgetSkeleton rows={rows} />
+      ) : (
+        <QueryErrorState onRetry={onRetry} className="py-6" />
+      )}
+    </div>
+  );
 }
 
 /* --------------------------------- 카드 머리 --------------------------------- */
@@ -275,7 +289,7 @@ function SectionHead({
   return (
     <header className={cn('flex min-h-8 items-center gap-2', divided && 'mb-2 border-b border-border pb-2')}>
       <Icon className="size-4 shrink-0 text-sidebar-icon" strokeWidth={1.6} aria-hidden="true" />
-      <h2 className="min-w-0 truncate text-[15.5px] leading-6 font-bold tracking-[-0.02em] text-foreground">{title}</h2>
+      <h2 className="min-w-0 truncate text-[14px] leading-6 font-semibold text-foreground">{title}</h2>
       {count != null && <span className="shrink-0 text-[13px] text-muted-foreground/75 tabular-nums">{count}</span>}
       {meta != null && (
         <span className="min-w-0 truncate text-xs text-muted-foreground/80 tabular-nums">{meta}</span>
@@ -285,17 +299,18 @@ function SectionHead({
   );
 }
 
+const MORE_LINK_CLASS =
+  'group inline-flex h-[26px] items-center gap-[3px] rounded-md px-[7px] text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+
+function MoreArrow() {
+  return <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />;
+}
+
 function MoreLink({ to, children }: { to: LinkProps['to']; children: ReactNode }) {
   return (
-    <Link
-      to={to}
-      className="group inline-flex h-[26px] items-center gap-[3px] rounded-md px-[7px] text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-    >
+    <Link to={to} className={MORE_LINK_CLASS}>
       {children}
-      <ArrowRight
-        className="size-3 transition-transform group-hover:translate-x-0.5"
-        aria-hidden="true"
-      />
+      <MoreArrow />
     </Link>
   );
 }
@@ -562,17 +577,16 @@ function eventDotTone(type: string | null | undefined): 'contract' | 'meeting' |
   return 'default';
 }
 
+/** 다가오는 일정의 날: '내일' · '11.26 (목)' (앱 공통 표기) */
 function upcomingDayLabel(startIso: string, now: Date): string {
-  const start = new Date(startIso);
-  const diffDays = Math.round((startOfDay(start).getTime() - startOfDay(now).getTime()) / 86_400_000);
-  if (diffDays === 1) return '내일';
-  return `${start.getMonth() + 1}.${start.getDate()} (${WEEKDAYS[start.getDay()]})`;
+  return formatRelativeDay(startIso, now);
 }
 
 function MiniCalendarCard({
   viewMonth,
   calendarDays,
   monthEvents,
+  overlaysByDate,
   selectedKey,
   todayKey,
   onSelectDay,
@@ -584,6 +598,7 @@ function MiniCalendarCard({
   viewMonth: { year: number; month: number };
   calendarDays: Date[];
   monthEvents: CalendarEvent[];
+  overlaysByDate: Map<string, OverlayItem[]>;
   selectedKey: string;
   todayKey: string;
   onSelectDay: (day: Date) => void;
@@ -599,14 +614,15 @@ function MiniCalendarCard({
 
   const countByDay = new Map<string, number>();
   for (const day of calendarDays) {
-    countByDay.set(localDateKey(day), monthEvents.filter((event) => eventCoversDay(event, day)).length);
+    const key = localDateKey(day);
+    countByDay.set(key, monthEvents.filter((event) => eventCoversDay(event, day)).length + (overlaysByDate.get(key)?.length ?? 0));
   }
 
   return (
     <section className="dash-sec dash-bento-card dash-cal-card min-w-0" style={stagger(0)}>
       <div className="mb-2.5 flex items-center justify-between gap-2">
         <h2 className="text-[13.5px] font-bold tracking-[-0.015em] text-foreground tabular-nums">
-          {viewMonth.year}년 {viewMonth.month + 1}월
+          {`${viewMonth.year}년 ${viewMonth.month + 1}월`}
         </h2>
         <div className="inline-flex items-center gap-0.5">
           <button
@@ -636,7 +652,7 @@ function MiniCalendarCard({
       </div>
 
       <div className="dash-cal-weekdays" aria-hidden="true">
-        {WEEKDAYS_MON.map((day) => (
+        {WEEKDAYS.map((day) => (
           <span key={day}>{day}</span>
         ))}
       </div>
@@ -673,11 +689,69 @@ function MiniCalendarCard({
   );
 }
 
+/** 다가오는 일정에서 줄로 보이는 수. 나머지는 '더 보기'로 캘린더에서 본다. */
+const UPCOMING_SHOWN = 5;
+
+/**
+ * 계약일 · 대금일 · 수금예정 한 줄을 눌렀을 때 갈 곳. 캘린더를 거치지 않고 그 날짜가 나온 원본(계약 · 거래 · 수금)으로 바로 간다
+ * (예전에는 캘린더의 그 날로만 가서, 거기서 줄을 다시 찾아 누르고 '원본 열기'를 또 눌러야 했다).
+ * 갈 곳은 캘린더의 '원본 열기'와 같다. 수금 원장은 대표 · 매니저만 보므로 중개사는 그 거래로 보낸다.
+ */
+function OverlaySourceLink({
+  item,
+  canSeeLedger,
+  className,
+  children,
+}: {
+  item: OverlayItem;
+  canSeeLedger: boolean;
+  className: string;
+  children: ReactNode;
+}) {
+  const source = item.source;
+  if (source.type === 'contract') {
+    return (
+      <Link to="/contracts" search={{ editorContractId: source.contract.id }} className={className}>
+        {children}
+      </Link>
+    );
+  }
+  if (source.type === 'dealPayment') {
+    return (
+      <Link to="/deals" search={{ dealId: source.deal.id }} className={className}>
+        {children}
+      </Link>
+    );
+  }
+  if (canSeeLedger) {
+    return (
+      <Link
+        to="/cashflow/ledger"
+        search={{ deal: source.payment.dealId, payment: source.payment.id }}
+        className={className}
+      >
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <Link to="/deals" search={{ dealId: source.payment.dealId }} className={className}>
+      {children}
+    </Link>
+  );
+}
+
+type UpcomingItem =
+  | { kind: 'event'; event: CalendarEvent; at: number }
+  | { kind: 'overlay'; item: OverlayItem; at: number };
+
 function ScheduleCard({
   scope,
   userId,
+  canSeeLedger,
   eventsQuery,
   monthEvents,
+  overlaysByDate,
   selectedDate,
   selectedKey,
   todayKey,
@@ -685,24 +759,47 @@ function ScheduleCard({
 }: {
   scope: Scope;
   userId: string | undefined;
+  /** 수금예정을 수금 원장으로 열 수 있는가 (대표 · 매니저) */
+  canSeeLedger: boolean;
   eventsQuery: ReturnType<typeof useMonthEventsQuery>;
   monthEvents: CalendarEvent[];
+  /** 계약일·중도금일·잔금일·수금예정 — 캘린더에 보이는 것과 같은 날짜 */
+  overlaysByDate: Map<string, OverlayItem[]>;
   selectedDate: Date;
   selectedKey: string;
   todayKey: string;
   now: Date;
 }) {
   const view = queryView(eventsQuery);
+  const dayOverlays = overlaysByDate.get(selectedKey) ?? [];
   const spansDay = (event: CalendarEvent) => event.allDay || startedBefore(event, selectedDate);
   const dayEvents = monthEvents
     .filter((event) => eventCoversDay(event, selectedDate))
     .sort((a, b) => Number(spansDay(b)) - Number(spansDay(a)) || byDateAsc(a.start, b.start));
 
   const afterSelectedMs = addDays(selectedDate, 1).getTime();
-  const upcomingEvents = monthEvents
-    .filter((event) => new Date(event.start).getTime() >= afterSelectedMs)
-    .sort((a, b) => byDateAsc(a.start, b.start))
-    .slice(0, 4);
+  const rangeEndMs = addDays(selectedDate, 15).getTime();
+  // 다가오는 2주. 계약·잔금 같은 날짜도 같이 세운다. 건수는 전부 세고, 줄은 앞의 몇 개만 보인 뒤 '더 보기'로 캘린더에 넘긴다
+  // (같은 날 일정이 몇 개 앞에 있으면 주말 임장이 잘려 보이지 않던 것을 막는다).
+  const upcomingItems: UpcomingItem[] = [
+    ...monthEvents
+      .filter((event) => {
+        const at = new Date(event.start).getTime();
+        // 매칭이 임장을 지났거나 거래가 끝난 일정은 앞으로 할 일이 아니다(캘린더에는 흐리게 남는다)
+        return at >= afterSelectedMs && at < rangeEndMs && !getEventSuperseded(event, now);
+      })
+      .map((event): UpcomingItem => ({ kind: 'event', event, at: new Date(event.start).getTime() })),
+    ...[...overlaysByDate.entries()].flatMap(([key, items]) => {
+      const at = parseDateKey(key).getTime();
+      // 받은 대금 · 정산 끝난 거래의 날짜는 앞으로 할 일이 아니다(캘린더에는 흐리게 남는다)
+      return at >= afterSelectedMs && at < rangeEndMs
+        ? items.filter((item) => !item.done).map((item): UpcomingItem => ({ kind: 'overlay', item, at }))
+        : [];
+    }),
+  ]
+    .sort((a, b) => a.at - b.at);
+  const upcomingEvents = upcomingItems.slice(0, UPCOMING_SHOWN);
+  const upcomingHidden = upcomingItems.length - upcomingEvents.length;
 
   const isToday = selectedKey === todayKey;
   const nowIndex = isToday
@@ -725,24 +822,73 @@ function ScheduleCard({
 
   return (
     <section className="dash-sec dash-bento-card dash-sched-card min-w-0" style={stagger(1)}>
-      <div>
+      <div className="dash-sched-part">
         <SectionHead
           icon={CalendarDays}
           title={`${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일 (${WEEKDAYS[selectedDate.getDay()]})${isToday ? ' · 오늘' : ''}`}
-          count={view === 'ready' ? dayEvents.length : undefined}
-          action={<MoreLink to="/calendar">캘린더</MoreLink>}
+          count={
+            view === 'ready'
+              ? dayEvents.filter((event) => !isEventMoot(event, now)).length + dayOverlays.length
+              : undefined
+          }
+          action={
+            // 달력에서 고른 날로 캘린더를 연다(예전에는 늘 캘린더가 마지막에 보던 날로 열려 고른 날을 다시 찾아야 했다)
+            <Link to="/calendar" search={isToday ? {} : { date: selectedKey }} className={MORE_LINK_CLASS}>
+              캘린더
+              <MoreArrow />
+            </Link>
+          }
           divided
         />
         {status ??
-          (dayEvents.length === 0 ? (
-            <EmptyNote>
-              {isToday ? '오늘 잡힌 일정이 없습니다.' : '이 날 잡힌 일정이 없습니다.'}
-            </EmptyNote>
+          (dayEvents.length === 0 && dayOverlays.length === 0 ? (
+            <div className="flex items-center justify-between gap-2">
+              <EmptyNote>
+                {isToday ? '오늘 잡힌 일정이 없습니다.' : '이 날 잡힌 일정이 없습니다.'}
+              </EmptyNote>
+              {/* 빈 날에서 바로 그 날의 일정을 잡는다 — 캘린더의 새 일정 창이 이 날짜로 열린다 */}
+              <Link to="/calendar" search={{ date: selectedKey, new: true }} className={MORE_LINK_CLASS}>
+                <Plus className="size-3" aria-hidden="true" />
+                일정 추가
+              </Link>
+            </div>
           ) : (
+            <div className="dash-scroll">
             <ol className="dash-timeline">
+              {dayOverlays.map((item) => (
+                <li key={item.id} className="relative">
+                  <span
+                    className={cn('dash-tl-dot', item.kind !== 'commissionDue' && 'is-contract')}
+                    aria-hidden="true"
+                  />
+                  <OverlaySourceLink
+                    item={item}
+                    canSeeLedger={canSeeLedger}
+                    // 받은 대금 · 정산 끝난 거래의 날짜는 흐리게(그 날 있었던 일로는 남긴다)
+                    className={cn(
+                      'dash-tl-item focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+                      item.done && 'opacity-55',
+                    )}
+                  >
+                    <span className="w-[46px] shrink-0 pt-px text-[11px] leading-5 font-semibold tracking-[-0.02em] whitespace-nowrap text-foreground">
+                      {OVERLAY_META[item.kind].label}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] leading-5 font-medium text-foreground">
+                        {item.title.replace(`${OVERLAY_META[item.kind].label} · `, '')}
+                      </span>
+                      {item.sublabel && (
+                        <span className="block truncate text-[11.5px] leading-4 text-muted-foreground tabular-nums">
+                          {item.sublabel}
+                        </span>
+                      )}
+                    </span>
+                  </OverlaySourceLink>
+                </li>
+              ))}
               {dayEvents.map((event, index) => {
                 const meta = [
-                  event.property?.site?.name,
+                  formatEventPlace(event),
                   event.contact?.name,
                   scope === 'all' && event.user?.name
                     ? personLabel(event.userId, event.user.name)
@@ -765,6 +911,7 @@ function ScheduleCard({
                       />
                       <Link
                         to="/calendar"
+                        search={{ date: selectedKey, event: event.id }}
                         className="dash-tl-item focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                       >
                         <span className="w-[46px] shrink-0 pt-px text-xs leading-5 font-semibold text-foreground tabular-nums">
@@ -772,7 +919,7 @@ function ScheduleCard({
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[13px] leading-5 font-medium text-foreground">
-                            {event.title}
+                            <EventTitle event={event} now={now} />
                           </span>
                           {meta && (
                             <span className="block truncate text-[11.5px] leading-4 text-muted-foreground">
@@ -787,14 +934,15 @@ function ScheduleCard({
               })}
               {isToday && nowIndex === -1 && nowLine}
             </ol>
+            </div>
           ))}
       </div>
 
-      <div className="border-t border-border pt-3.5">
+      <div className="dash-sched-part border-t border-border pt-3.5">
         <div className="mb-2 flex items-baseline justify-between gap-2">
           <h3 className="text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">다가오는 일정</h3>
-          {view === 'ready' && upcomingEvents.length > 0 && (
-            <span className="text-[11.5px] text-muted-foreground/80 tabular-nums">{upcomingEvents.length}건</span>
+          {view === 'ready' && upcomingItems.length > 0 && (
+            <span className="text-[11.5px] text-muted-foreground/80 tabular-nums">2주 · {upcomingItems.length}건</span>
           )}
         </div>
         {view !== 'ready' ? (
@@ -804,12 +952,47 @@ function ScheduleCard({
         ) : upcomingEvents.length === 0 ? (
           <EmptyNote>예정된 다가오는 일정이 없습니다.</EmptyNote>
         ) : (
-          <ul className="flex flex-col gap-0.5">
-            {upcomingEvents.map((event) => {
+          <ul className="dash-scroll flex flex-col gap-0.5">
+            {upcomingEvents.map((entry) => {
+              if (entry.kind === 'overlay') {
+                const { item } = entry;
+                return (
+                  <li key={item.id}>
+                    <OverlaySourceLink
+                      item={item}
+                      canSeeLedger={canSeeLedger}
+                      className="flex items-start gap-2 rounded-md px-1.5 py-1.5 transition-colors hover:bg-foreground/[0.045] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                    >
+                      <span className="w-[52px] shrink-0 pt-0.5 text-[11.5px] font-semibold text-muted-foreground tabular-nums">
+                        {upcomingDayLabel(parseDateKey(item.dateKey).toISOString(), now)}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'mt-[6px] size-1.5 shrink-0 rounded-full',
+                          item.kind === 'commissionDue' ? 'bg-success' : 'bg-violet',
+                        )}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] leading-[1.35] font-medium text-foreground">
+                          {item.title}
+                        </span>
+                        {item.sublabel && (
+                          <span className="block truncate text-[11px] leading-4 text-muted-foreground tabular-nums">
+                            {item.sublabel}
+                          </span>
+                        )}
+                      </span>
+                    </OverlaySourceLink>
+                  </li>
+                );
+              }
+              const { event } = entry;
+              const eventStart = new Date(event.start);
               const dotTone = eventDotTone(event.type);
               const meta = [
-                event.allDay ? '종일' : clockLabel(new Date(event.start)),
-                event.property?.site?.name ?? event.contact?.name,
+                event.allDay ? '종일' : clockLabel(eventStart),
+                formatEventPlace(event) || event.contact?.name,
               ]
                 .filter(Boolean)
                 .join(' · ');
@@ -817,6 +1000,7 @@ function ScheduleCard({
                 <li key={event.id}>
                   <Link
                     to="/calendar"
+                    search={{ date: localDateKey(eventStart), event: event.id }}
                     className="flex items-start gap-2 rounded-md px-1.5 py-1.5 transition-colors hover:bg-foreground/[0.045] focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                   >
                     <span className="w-[52px] shrink-0 pt-0.5 text-[11.5px] font-semibold text-muted-foreground tabular-nums">
@@ -832,7 +1016,7 @@ function ScheduleCard({
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[12.5px] leading-[1.35] font-medium text-foreground">
-                        {event.title}
+                        <EventTitle event={event} now={now} />
                       </span>
                       {meta && (
                         <span className="block truncate text-[11px] leading-4 text-muted-foreground tabular-nums">
@@ -844,6 +1028,18 @@ function ScheduleCard({
                 </li>
               );
             })}
+            {upcomingHidden > 0 && (
+              <li>
+                <Link
+                  to="/calendar"
+                  search={{ date: localDateKey(new Date(upcomingItems[UPCOMING_SHOWN].at)) }}
+                  className="mt-0.5 inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                >
+                  {upcomingHidden}건 더 보기
+                  <ArrowRight className="size-3" aria-hidden="true" />
+                </Link>
+              </li>
+            )}
           </ul>
         )}
       </div>
@@ -865,10 +1061,18 @@ function taskBucket(task: Task): TaskBucket {
 }
 
 const TASK_TABS: Array<{ key: TaskBucket; label: string }> = [
-  { key: 'overdue', label: '기한 지남' },
+  { key: 'overdue', label: '지남' },
   { key: 'today', label: '오늘' },
-  { key: 'upcoming', label: '다가오는 할 일' },
+  { key: 'upcoming', label: '다가옴' },
 ];
+
+
+/** 기한 알약의 색: 지남 빨강 · 오늘 노랑 · 그 밖 회색. 프로젝트 · 희망매물의 점 알약과 같은 값이다. */
+const DUE_PILL_CLASS: Record<'late' | 'today' | 'later', { pill: string; dot: string }> = {
+  late: { pill: 'bg-[#fdebec] text-[#b0423a]', dot: 'bg-[#e16259]' },
+  today: { pill: 'bg-[#fbf3db] text-[#9f6b00]', dot: 'bg-[#dfab01]' },
+  later: { pill: 'bg-[#f1f1ef] text-[#787774]', dot: 'bg-[#b4b4b1]' },
+};
 
 /** 미룰 날짜 후보. 지금 기한(없으면 오늘)보다 뒤인 날만 남긴다. */
 function snoozeOptions(task: Task, now: Date): Array<{ label: string; date: Date }> {
@@ -902,40 +1106,32 @@ function TaskSection({
   now,
   reveal,
   onCheer,
-  canViewCashflow,
-  ledgerPercentLabel,
-  unreadNotices,
-  onOpenDigest,
-  digestTriggerRef,
 }: {
   scope: Scope;
   userId: string | undefined;
   tasks: ReturnType<typeof useTasksQuery>;
   openTasks: Task[];
   now: Date;
-  /** 바뀔 때마다 그 묶음을 펴고 묶음 머리로 포커스를 옮긴다 (인사 영역의 알약) */
-  reveal: { bucket: TaskBucket; n: number } | null;
+  /** 바뀔 때마다 그 탭을 고르고 탭으로 포커스를 옮긴다 (인사 영역의 알약). focus가 false면 탭만 고른다. */
+  reveal: { bucket: TaskBucket; n: number; focus?: boolean } | null;
   /** 완료가 저장됐을 때 불린다 (해가 뛰고 반짝이가 튄다) */
   onCheer: () => void;
-  canViewCashflow: boolean;
-  ledgerPercentLabel: string;
-  unreadNotices: number;
-  onOpenDigest: () => void;
-  digestTriggerRef: React.RefObject<HTMLButtonElement | null>;
 }) {
   const queryClient = useQueryClient();
   // 방금 완료를 누른 줄. 체크 상자에서 반짝이가 한 번 튄다.
   const [burst, setBurst] = useState<{ id: string; n: number } | null>(null);
-  // 펴 둔 묶음. 처음에는 지남과 오늘.
-  const [opened, setOpened] = useState<Record<TaskBucket, boolean>>({ overdue: true, today: true, upcoming: false });
+  // 고른 탭. 고르기 전에는 일이 있는 첫 탭(지남 → 오늘 → 다가옴)을 보인다.
+  const [pickedTab, setPickedTab] = useState<TaskBucket | null>(null);
   const [draft, setDraft] = useState('');
-  const headRefs = useRef<Partial<Record<TaskBucket, HTMLButtonElement | null>>>({});
+  const tabRefs = useRef<Partial<Record<TaskBucket, HTMLButtonElement | null>>>({});
+  const selectTab = (bucket: TaskBucket) => setPickedTab(bucket);
   useEffect(() => {
     if (!reveal) return;
-    setOpened((prev) => ({ ...prev, [reveal.bucket]: true }));
-    const head = headRefs.current[reveal.bucket];
-    head?.focus();
-    head?.scrollIntoView({ block: 'nearest' });
+    setPickedTab(reveal.bucket);
+    if (reveal.focus === false) return;
+    const tabButton = tabRefs.current[reveal.bucket];
+    tabButton?.focus();
+    tabButton?.scrollIntoView({ block: 'nearest' });
   }, [reveal]);
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['tasks'] });
@@ -945,7 +1141,7 @@ function TaskSection({
   const restore = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: { status?: string; dueDate?: string | null } }) =>
       api.tasks.update(id, patch),
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(apiErrorMessage(error, '되돌리지 못했습니다. 다시 시도해 주세요.')),
     onSettled: invalidate,
   });
   const complete = useMutation({
@@ -961,7 +1157,7 @@ function TaskSection({
         },
       });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(apiErrorMessage(error, '업무를 완료하지 못했습니다. 다시 시도해 주세요.')),
     onSettled: invalidate,
   });
   const snooze = useMutation({
@@ -975,9 +1171,11 @@ function TaskSection({
           onClick: () => restore.mutate({ id: task.id, patch: { dueDate: task.dueDate } }),
         },
       }),
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(apiErrorMessage(error, '기한을 미루지 못했습니다. 다시 시도해 주세요.')),
     onSettled: invalidate,
   });
+  // 엔터를 연달아 쳐도 한 건만 만든다 (isPending은 다음 그리기에야 바뀐다)
+  const creatingRef = useRef(false);
   // 오늘 묶음 끝에서 바로 적어 넣는다. 기한은 오늘, 담당은 나.
   const create = useMutation({
     mutationFn: (title: string) => {
@@ -988,17 +1186,24 @@ function TaskSection({
     onSuccess: (_result, title) => {
       // 저장되는 사이에 다음 것을 적기 시작했으면 그 글은 지우지 않는다.
       setDraft((current) => (current.trim() === title ? '' : current));
-      toast.success('오늘 할 일에 추가했습니다', { description: title });
+      // 방금 적은 업무가 보이게 '오늘' 탭으로 옮긴다. '지남' 탭을 보던 채로 두면 적은 것이 어디로 갔는지 안 보인다.
+      setPickedTab('today');
+      toast.success('오늘 업무에 추가했습니다', { description: title });
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
-    onSettled: invalidate,
+    onError: (error) => toast.error(apiErrorMessage(error, '업무를 추가하지 못했습니다. 다시 시도해 주세요.')),
+    onSettled: () => {
+      creatingRef.current = false;
+      invalidate();
+    },
   });
 
   const view = queryView(tasks);
   const mine = scope === 'mine' && Boolean(userId);
   const groups: Record<TaskBucket, Task[]> = { overdue: [], today: [], upcoming: [] };
   for (const task of openTasks) groups[taskBucket(task)].push(task);
-  const visibleGroups = TASK_TABS.filter((item) => groups[item.key].length > 0 || reveal?.bucket === item.key);
+  const activeTab: TaskBucket =
+    pickedTab ?? TASK_TABS.find((item) => groups[item.key].length > 0)?.key ?? 'today';
+  const activeList = groups[activeTab];
   const emptyText: Record<TaskBucket, string> = {
     overdue: '기한이 지난 업무가 없습니다.',
     today: mine ? '오늘 안에 할 내 업무가 없습니다.' : '오늘 안에 할 업무가 없습니다.',
@@ -1018,18 +1223,24 @@ function TaskSection({
       task.property ? getPropertyLabel(task) : null,
       task.contact?.name,
       scope === 'all' ? personLabel(task.assignedToId, task.assignedTo?.name) : null,
+      // 걸린 일이 끝났으면 알려 둔다(업무를 알아서 닫지는 않는다)
+      ...taskEndedTags(task),
     ]
       .filter(Boolean)
       .join(' · ');
     const dueLabel = !task.dueDate
-      ? '기한 없음'
+      ? '마감일 없음'
       : bucket === 'overdue' && days != null
-        ? `${Math.abs(days)}일 지남`
+        ? // 업무 화면과 같은 말: 하루 지난 것은 '어제'
+          days === -1
+          ? '어제'
+          : `${Math.abs(days)}일 지남`
         : days === 0
           ? '오늘'
           : days === 1
             ? '내일'
-            : shortDate(task.dueDate);
+            : formatRelativeDay(task.dueDate, now);
+    const dueTone = DUE_PILL_CLASS[bucket === 'overdue' ? 'late' : days === 0 ? 'today' : 'later'];
     return (
       <li
         key={task.id}
@@ -1053,14 +1264,19 @@ function TaskSection({
           </svg>
           {burst?.id === task.id && <Sparkles key={burst.n} count={6} />}
         </button>
-        <div className="min-w-0 flex-1">
-          <Link to="/tasks" className="block truncate text-[13.5px] leading-[1.4] text-foreground hover:underline">
+        {/* 한 줄: 제목 뒤에 곁 정보(매물 · 고객 · 담당)를 흐리게 잇는다. 좁으면 곁 정보가 먼저 줄어든다. */}
+        <div className="flex min-w-0 flex-1 items-baseline gap-2">
+          <Link
+            to="/tasks"
+            search={{ task: task.id }}
+            className="min-w-0 shrink truncate text-[14px] leading-[21px] font-[450] text-foreground hover:underline"
+          >
             {task.title}
           </Link>
           {meta && (
-            <div className="truncate text-[11.5px] leading-[1.4] text-muted-foreground">
+            <span className="min-w-0 flex-1 basis-0 truncate text-[12.5px] leading-[21px] text-muted-foreground">
               {meta}
-            </div>
+            </span>
           )}
         </div>
         {options.length > 0 && (
@@ -1094,10 +1310,11 @@ function TaskSection({
         <span
           title={task.dueDate ? formatDate(task.dueDate) : undefined}
           className={cn(
-            'shrink-0 text-xs leading-5 whitespace-nowrap tabular-nums',
-            bucket === 'overdue' ? 'font-medium text-destructive-strong' : 'text-muted-foreground',
+            'inline-flex h-5 shrink-0 items-center gap-[5px] rounded-full pl-[7px] pr-[9px] text-[13px] leading-5 font-[450] whitespace-nowrap tabular-nums',
+            dueTone.pill,
           )}
         >
+          <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', dueTone.dot)} />
           {dueLabel}
         </span>
       </li>
@@ -1105,108 +1322,206 @@ function TaskSection({
   };
 
   return (
-    <section className="dash-sec dash-bento-card dash-center-card min-w-0" style={stagger(1)}>
-      <header className="mb-2 flex min-h-8 items-center justify-between gap-2.5 border-b border-border pb-2">
-        <span className="flex min-w-0 items-baseline gap-2">
-          <ListTodo className="size-4 shrink-0 translate-y-[2px] text-sidebar-icon" strokeWidth={1.6} aria-hidden="true" />
-          <h2 className="truncate text-[16px] leading-6 font-bold tracking-[-0.02em] text-foreground">
-            내 할 일
-          </h2>
-          {view === 'ready' && (
-            <span className="shrink-0 text-xs font-normal text-muted-foreground tabular-nums">
-              남은 업무 {openTasks.length}건
-            </span>
-          )}
-        </span>
+    <section className="dash-sec dash-bento-card dash-center-card dash-tasks-card min-w-0" style={stagger(1)}>
+      <header className="mb-1.5 flex min-h-8 items-center gap-2">
+        <ListTodo className="size-4 shrink-0 text-sidebar-icon" strokeWidth={1.6} aria-hidden="true" />
+        <h2 className="shrink-0 text-[14px] leading-6 font-semibold text-foreground">
+          {/* '사무소 전체'일 때는 다른 직원의 업무도 섞여 있다 */}
+          {mine ? '내 할 일' : '사무소 할 일'}
+        </h2>
+        {/* 지남 · 오늘 · 다가옴은 접는 묶음이 아니라 탭이다. 한 번에 한 묶음만 보여 카드가 길어지지 않는다. */}
+        <div role="group" aria-label="할 일 나누기" className="dash-tabs ml-1">
+          {TASK_TABS.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              aria-pressed={activeTab === item.key}
+              ref={(element) => {
+                tabRefs.current[item.key] = element;
+              }}
+              onClick={() => selectTab(item.key)}
+              className="dash-tab focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
+              {item.label}
+              {view === 'ready' && <span className="tabular-nums">{groups[item.key].length}</span>}
+            </button>
+          ))}
+        </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <span className="dash-scope-caption">{mine ? '내 담당 기준' : '사무소 전체 기준'}</span>
-          <div className="dash-compact-actions">
-            {canViewCashflow && (
-              <Link
-                to="/cashflow"
-                className="dash-compact-pill focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                이달 수금
-                <b className="font-semibold text-foreground tabular-nums">{ledgerPercentLabel}</b>
-              </Link>
-            )}
-            <button
-              ref={digestTriggerRef}
-              type="button"
-              onClick={onOpenDigest}
-              className="dash-compact-pill focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            >
-              공지
-              {unreadNotices > 0 && (
-                <b className="font-semibold text-info tabular-nums">{unreadNotices}</b>
-              )}
-              {' · 가이드'}
-            </button>
-          </div>
           <MoreLink to="/tasks">업무</MoreLink>
         </div>
       </header>
       {status ?? (
         <>
-          {visibleGroups.length === 0 ? (
-            <EmptyNote>{mine ? '남은 내 할 일이 없습니다.' : '남은 할 일이 없습니다.'}</EmptyNote>
+          {activeList.length === 0 ? (
+            <EmptyNote>{openTasks.length === 0 ? (mine ? '남은 내 업무가 없습니다.' : '남은 업무가 없습니다.') : emptyText[activeTab]}</EmptyNote>
           ) : (
-            visibleGroups.map((item) => {
-              const list = groups[item.key];
-              const isOpen = opened[item.key];
-              return (
-                <div key={item.key}>
-                  <button
-                    type="button"
-                    aria-expanded={isOpen}
-                    ref={(element) => {
-                      headRefs.current[item.key] = element;
-                    }}
-                    onClick={() => setOpened((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
-                    className="dash-group-btn focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-                  >
-                    <ChevronRight
-                      className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', isOpen && 'rotate-90')}
-                      strokeWidth={2}
-                      aria-hidden="true"
-                    />
-                    <span className={cn(item.key === 'overdue' && list.length > 0 && 'text-destructive-strong')}>
-                      {item.label}
-                    </span>
-                    <span className="font-normal text-muted-foreground tabular-nums">
-                      {list.length}
-                    </span>
-                  </button>
-                  {isOpen &&
-                    (list.length > 0 ? (
-                      <ul className="mb-1 flex flex-col gap-0.5">{list.map(row)}</ul>
-                    ) : (
-                      <EmptyNote>{emptyText[item.key]}</EmptyNote>
-                    ))}
-                </div>
-              );
-            })
+            // 탭의 일을 모두 싣고 카드 안에서 굴린다. 탭을 바꾸면 맨 위에서 시작하도록 key를 준다.
+            <ul key={activeTab} className="dash-scroll flex flex-col">
+              {activeList.map(row)}
+            </ul>
           )}
           <form
             className="dash-todo-add"
             onSubmit={(event) => {
               event.preventDefault();
               const title = draft.trim();
+              if (creatingRef.current) return;
               if (title && !create.isPending) create.mutate(title);
+              if (title) creatingRef.current = true;
             }}
           >
             <Plus className="size-4 shrink-0" aria-hidden="true" />
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="새 할 일 추가 후 Enter..."
-              aria-label="오늘 할 일 추가"
+              placeholder="새 업무 적고 Enter"
+              aria-label="오늘 업무 추가"
               autoComplete="off"
               className="h-6 min-w-0 flex-1 bg-transparent text-[13.5px] text-foreground outline-none placeholder:text-muted-foreground/75"
             />
           </form>
         </>
       )}
+    </section>
+  );
+}
+
+/* -------------------------------- 처음 할 일 -------------------------------- */
+
+interface SetupStep {
+  key: 'sites' | 'properties' | 'contacts';
+  title: string;
+  desc: string;
+  done: boolean;
+  link: ReactNode;
+}
+
+/**
+ * 새 사무소의 '처음 할 일'. 저장하지 않고 지금 데이터에서 센다(각 목록의 건수).
+ * 매물·연락처 가운데 하나라도 비어 있을 때만 보이고, 다 채우면 사라진다.
+ * 관리단지는 순서상 첫 단계라 함께 보이지만, 그것만 비었다고 이 칸을 띄우지는 않는다
+ * (단독주택·토지만 다루는 사무소는 관리단지 없이도 일한다).
+ * 직원 추가는 넣지 않는다. 혼자 일하는 대표에게는 끝나지 않는 할 일이 된다.
+ */
+function useSetupProgress() {
+  const sites = useQuery({ queryKey: ['office-sites'], queryFn: () => api.officeSites.findAll(), staleTime: 60_000 });
+  const properties = useQuery({
+    queryKey: ['properties', 'dashboard-setup'],
+    queryFn: () => api.properties.findAll({ limit: 1 }),
+    staleTime: 60_000,
+  });
+  const contacts = useQuery({
+    queryKey: ['contacts', 'dashboard-setup'],
+    queryFn: () => api.contacts.findAll({ limit: 1 }),
+    staleTime: 60_000,
+  });
+  const queries = [sites, properties, contacts];
+  // 하나라도 못 불러왔으면 띄우지 않는다 (모르는 것을 '아직 안 함'으로 보이지 않게)
+  if (queries.some((query) => !query.data)) return null;
+  return {
+    sites: (sites.data?.length ?? 0) > 0,
+    properties: (properties.data?.pagination.total ?? 0) > 0,
+    contacts: (contacts.data?.pagination.total ?? 0) > 0,
+  };
+}
+
+function SetupSection() {
+  const progress = useSetupProgress();
+  if (!progress || (progress.properties && progress.contacts)) return null;
+
+  const linkClass =
+    'inline-flex h-[26px] shrink-0 items-center gap-[3px] rounded-md px-[7px] text-xs font-medium text-foreground/80 transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+  const arrow = <ArrowRight className="size-3" aria-hidden="true" />;
+  const steps: SetupStep[] = [
+    {
+      key: 'sites',
+      title: '관리단지 고르기',
+      desc: '우리 사무소가 다루는 아파트·건물을 고릅니다. 매물과 광고가 이 단지에 붙습니다.',
+      done: progress.sites,
+      link: (
+        <Link to="/sites" className={linkClass}>
+          단지 고르기{arrow}
+        </Link>
+      ),
+    },
+    {
+      key: 'properties',
+      title: '매물 등록',
+      desc: '관리하는 호실을 매물로 올리고 매매·전세·월세 조건을 적습니다.',
+      done: progress.properties,
+      link: (
+        <Link to="/properties/new" className={linkClass}>
+          매물 등록{arrow}
+        </Link>
+      ),
+    },
+    {
+      key: 'contacts',
+      title: '연락처 추가',
+      desc: '집주인·손님 연락처를 넣어 두면 상담과 매물에 바로 연결됩니다.',
+      done: progress.contacts,
+      link: (
+        <Link to="/contacts/new" className={linkClass}>
+          연락처 추가{arrow}
+        </Link>
+      ),
+    },
+  ];
+  const doneCount = steps.filter((step) => step.done).length;
+  // 다음에 할 단계. 화면 높이에 맞춰 줄일 때는 이 단계의 설명만 남긴다(-dashboard.css의 .dash-setup-desc).
+  const nextKey = steps.find((step) => !step.done)?.key;
+
+  return (
+    <section className="dash-sec dash-bento-card dash-center-card dash-setup min-w-0" style={stagger(0)} aria-labelledby="dash-setup-title">
+      <header className="mb-1 flex min-h-8 items-center gap-2 border-b border-border pb-2">
+        <ListChecks className="size-4 shrink-0 text-sidebar-icon" strokeWidth={1.6} aria-hidden="true" />
+        <h2 id="dash-setup-title" className="text-[15.5px] leading-6 font-bold tracking-[-0.02em] text-foreground">
+          처음 할 일
+        </h2>
+        <span className="text-xs text-muted-foreground/80 tabular-nums">
+          {steps.length}개 중 {doneCount}개 마침
+        </span>
+      </header>
+      <ol className="flex flex-col">
+        {steps.map((step, index) => (
+          <li
+            key={step.key}
+            className={cn(
+              'flex items-start gap-3 border-b border-border/70 px-1.5 py-2.5 last:border-b-0',
+              step.key === nextKey && 'is-next',
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                'mt-px grid size-[18px] shrink-0 place-items-center rounded-full text-[10.5px] font-semibold tabular-nums',
+                step.done
+                  ? 'bg-success text-white'
+                  : 'text-muted-foreground shadow-[inset_0_0_0_1.5px_rgb(55_53_47_/_0.22)]',
+              )}
+            >
+              {step.done ? <Check className="size-3" strokeWidth={3} /> : index + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p
+                className={cn(
+                  'text-[13.5px] leading-5 font-medium',
+                  step.done ? 'text-muted-foreground' : 'text-foreground',
+                )}
+              >
+                {step.title}
+                <span className="sr-only">{step.done ? ' (마침)' : ' (아직 안 함)'}</span>
+              </p>
+              {!step.done && (
+                <p className="dash-setup-desc mt-0.5 text-xs leading-[1.5] text-muted-foreground">{step.desc}</p>
+              )}
+            </div>
+            {!step.done && step.link}
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
@@ -1219,49 +1534,71 @@ const HEALTH_TEXT: Record<Exclude<DealPipelineHealthState, 'healthy'>, string> =
   unscheduled: 'text-muted-foreground',
 };
 
-function DealsSection({ deals }: { deals: ReturnType<typeof useDealsQuery> }) {
+/**
+ * 거래 단계 띠에서 지금 단계의 바탕색. 단계 색(lib/status-config의 dealStage)을 꽉 채운다 — 희망매물의 단계 띠와 같은 규칙이다.
+ * 클래스가 아니라 색 값으로 넣는다: 띠 칸의 바탕은 -dashboard.css가 정하는데, 그 규칙이 유틸리티 클래스보다 앞서서
+ * 클래스로 준 바탕색은 먹지 않는다.
+ */
+const DEAL_BAND_CURRENT_COLOR: Record<string, string> = {
+  gray: 'var(--color-muted-foreground-strong)',
+  neutral: 'var(--color-muted-foreground-strong)',
+  violet: 'var(--color-violet)',
+  info: 'var(--color-info-strong)',
+  orange: '#c2650b',
+  success: 'var(--color-success)',
+};
+
+function DealsSection({
+  deals,
+  scope,
+  userId,
+}: {
+  deals: ReturnType<typeof useDealsQuery>;
+  scope: Scope;
+  userId: string | undefined;
+}) {
   const view = queryView(deals);
+  const mine = scope === 'mine' && Boolean(userId);
+  // '내 담당'이면 내가 담당인 거래만(직원 정산·캘린더 '내 일정만'과 같은 기준). 예전에는 '내 담당'에서도 사무소 전체 거래가 보였다.
+  const assigned = mine && userId ? assignedDealIds(deals.data ?? [], userId) : null;
   // 종료·취소를 뺀 거래를 거래관리와 같은 순서로 놓는다.
-  const active = sortDealsForDisplay((deals.data ?? []).filter(isActiveDeal));
-  const inProgress = active.filter((deal) => getDealDisplayGroupKey(deal.stage) !== 'completed');
+  const active = sortDealsForDisplay(
+    (deals.data ?? []).filter((deal) => isActiveDeal(deal) && (!assigned || assigned.has(deal.id))),
+  );
   const status = statusBody(view, () => void deals.refetch());
-  const headIcon = 'size-[13px] shrink-0';
 
   return (
-    <section className="dash-sec dash-bento-card dash-center-card min-w-0" style={stagger(2)}>
+    <section className="dash-sec dash-bento-card dash-side-card min-w-0" style={stagger(2)}>
       <SectionHead
         icon={Handshake}
         title="진행 중인 거래"
-        count={view === 'ready' ? inProgress.length : undefined}
+        // 숫자는 아래에 보이는 줄 수와 같게 센다. 잔금 완료(정산 전) 거래도 줄로 보이므로 함께 센다
+        // (예전에는 잔금 완료를 빼고 세어 머리의 숫자와 줄 수가 달랐다).
+        count={view === 'ready' ? active.length : undefined}
         action={<MoreLink to="/deals">거래관리</MoreLink>}
-        divided={active.length === 0}
       />
       {status ??
         (active.length === 0 ? (
-          <EmptyNote>진행 중인 거래가 없습니다.</EmptyNote>
+          <EmptyNote>{mine ? '내가 담당인 진행 중인 거래가 없습니다.' : '진행 중인 거래가 없습니다.'}</EmptyNote>
         ) : (
-          // 줄 하나가 통째로 링크라서 표 역할(role=row)은 쓰지 않는다 — 씌우면 보조 기술에서 링크가 사라진다.
-          <div className="dash-table mt-1 border-t border-border">
-            <div className="dash-tr" aria-hidden="true">
-              <span className="dash-th">
-                <Type className={headIcon} /> 거래
-              </span>
-              <span className="dash-th">
-                <Tag className={headIcon} /> 단계
-              </span>
-              <span className="dash-th">
-                <CalendarDays className={headIcon} /> 다음 일정
-              </span>
+          // 줄 하나가 통째로 링크다. 표 역할을 씌우지 않는다 — 씌우면 보조 기술에서 링크가 사라진다.
+          // 거래는 모두 싣고 카드 안에서 굴린다. 카드 높이는 두 줄 반으로 묶는다(-dashboard.css의 .dash-deals-scroll).
+          <div className="dash-scroll dash-deals-scroll">
+            <div className="dash-deals">
+              {active.map((deal) => (
+                <DealRow key={deal.id} deal={deal} />
+              ))}
             </div>
-            {active.map((deal) => (
-              <DealRow key={deal.id} deal={deal} />
-            ))}
           </div>
         ))}
     </section>
   );
 }
 
+/**
+ * 거래 한 줄: 이름과 금액 · 단계 띠 · 다음 일정.
+ * 단계는 꼬리표 하나 대신 희망매물과 같은 화살표 띠로 보여 준다(2026-11-23) — 지금 단계가 전체 흐름의 어디인지가 보인다.
+ */
 function DealRow({ deal }: { deal: Deal }) {
   const health = getDealPipelineHealth(deal);
   const nextPayment = getNextDealPaymentSummary(deal);
@@ -1269,47 +1606,68 @@ function DealRow({ deal }: { deal: Deal }) {
   const title = getDealTitle(deal);
   // 좁은 카드에서 단지 이름이 길어도 동·호는 잘리지 않게 둘로 나눠 그린다.
   const [, site = title, unit = ''] = /^(.*?)\s((?:\S+동\s)?\S+호)$/.exec(title) ?? [];
+  const stageKey = normalizeDealStage(deal.stage);
+  // 띠에 없는 단계(정산 종료 등)는 마지막 칸을 지금으로 본다
+  const found = dealPipelineStages.indexOf(stageKey as (typeof dealPipelineStages)[number]);
+  const currentIndex = found < 0 ? dealPipelineStages.length - 1 : found;
 
   return (
-    <Link to="/deals" search={{ dealId: deal.id }} className="dash-tr">
-      <span className="dash-td">
-        <span className="min-w-0">
-          <span className="flex min-w-0 gap-1 text-sm leading-5 font-medium" title={title}>
-            <span className="truncate">{site}</span>
-            {unit && <span className="shrink-0">{unit}</span>}
+    <Link to="/deals" search={{ dealId: deal.id }} className="dash-deal">
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span className="flex min-w-0 gap-1 text-[14px] leading-[21px] font-medium text-foreground" title={title}>
+          <span className="truncate">{site}</span>
+          {unit && <span className="shrink-0">{unit}</span>}
+        </span>
+        {amount !== '—' && (
+          <span className="ml-auto shrink-0 text-[13px] leading-[21px] text-muted-foreground-strong tabular-nums">
+            {amount}
           </span>
-          {amount !== '—' && (
-            <span className="block truncate text-xs leading-4 text-muted-foreground tabular-nums">
-              {amount}
-            </span>
-          )}
-        </span>
+        )}
       </span>
-      <span className="dash-td">
-        <StatusBadge kind="dealStage" status={deal.stage} />
-      </span>
-      <span className="dash-td">
-        <span className="min-w-0 truncate text-sm tabular-nums">
-          {health.state !== 'healthy' ? (
-            <span title={health.description} className={cn('font-medium', HEALTH_TEXT[health.state])}>
-              {health.label}
+      <span className="dash-band" role="img" aria-label={`거래 단계: ${getStatusMeta('dealStage', stageKey).label}`}>
+        {dealPipelineStages.map((stage, index) => {
+          const meta = getStatusMeta('dealStage', stage);
+          return (
+            <span
+              key={stage}
+              aria-hidden="true"
+              className={cn(
+                'dash-band-step',
+                index < currentIndex && 'is-done',
+                index === currentIndex && 'is-current',
+              )}
+              style={
+                index === currentIndex
+                  ? { background: DEAL_BAND_CURRENT_COLOR[meta.tone] ?? 'var(--color-muted-foreground-strong)' }
+                  : undefined
+              }
+            >
+              {meta.label}
             </span>
-          ) : nextPayment?.payment.scheduledDate ? (
-            <>
-              {formatNextPaymentName(nextPayment)}
-              <span
-                className={cn(
-                  'ml-1.5 font-semibold',
-                  nextPayment.isUrgent ? 'text-warning-strong' : 'text-foreground',
-                )}
-              >
-                {formatDaysLabel(nextPayment.daysUntil)}
-              </span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )}
-        </span>
+          );
+        })}
+      </span>
+      <span className="flex min-w-0 justify-end text-[12.5px] leading-[18px] tabular-nums text-muted-foreground">
+        {health.state !== 'healthy' ? (
+          <span title={health.description} className={cn('truncate font-medium', HEALTH_TEXT[health.state])}>
+            {health.label}
+          </span>
+        ) : nextPayment?.payment.scheduledDate ? (
+          <span className="truncate">
+            {formatNextPaymentName(nextPayment, deal)}
+            <span
+              className={cn(
+                'ml-1.5 font-medium',
+                nextPayment.isUrgent ? 'text-warning-strong' : 'text-foreground',
+              )}
+            >
+              {formatDaysLabel(nextPayment.daysUntil)}
+            </span>
+          </span>
+        ) : (
+          // 거래관리와 같은 말: 대금을 다 받았으면 '대금 완료', 아니면 '일정 미정'
+          <span>{formatNextPaymentName(nextPayment, deal)}</span>
+        )}
       </span>
     </Link>
   );
@@ -1367,11 +1725,14 @@ function ConsultationsSection({
   userId,
   consultations,
   now,
+  onFollowUpCreated,
 }: {
   scope: Scope;
   userId: string | undefined;
   consultations: ReturnType<typeof useRecentConsultationsQuery>;
   now: Date;
+  /** '다음 업무 추가'가 저장됐을 때 — 할 일 카드를 그 업무가 있는 '오늘' 탭으로 옮긴다 */
+  onFollowUpCreated?: () => void;
 }) {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Consultation | null>(null);
@@ -1384,7 +1745,7 @@ function ConsultationsSection({
       due.setHours(9);
       const who = consultation.contact?.name ?? '고객';
       return api.tasks.create({
-        title: `[상담 후속] ${who} 확인`,
+        title: `${who} 상담 뒤 다시 연락`,
         dueDate: due.toISOString(),
         assignedToId: userId,
         contactId: consultation.contactId,
@@ -1395,12 +1756,13 @@ function ConsultationsSection({
     onSuccess: (_result, consultation) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      toast.success('후속 할 일을 추가했습니다', {
-        description: `${consultation.contact?.name ?? '고객'} 상담 후속`,
+      toast.success('다음 업무를 추가했습니다', {
+        description: `${consultation.contact?.name ?? '고객'} 상담 · 오늘 할 일에 넣었습니다`,
       });
       setSelected(null);
+      onFollowUpCreated?.();
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(apiErrorMessage(error, '다음 업무를 추가하지 못했습니다. 다시 시도해 주세요.')),
   });
 
   const view = queryView(consultations);
@@ -1414,7 +1776,7 @@ function ConsultationsSection({
   const selectedAiSummary = selected?.callRecording?.summary?.trim();
 
   return (
-    <section ref={sectionRef} className="dash-sec dash-bento-card dash-center-card min-w-0" style={stagger(3)}>
+    <section ref={sectionRef} className="dash-sec dash-bento-card dash-center-card dash-consult-card min-w-0" style={stagger(3)}>
       <SectionHead
         icon={MessageSquareText}
         title="최근 상담 내역"
@@ -1428,7 +1790,7 @@ function ConsultationsSection({
             {scope === 'mine' ? '내가 기록한 최근 상담이 없습니다.' : '최근 상담 내역이 없습니다.'}
           </EmptyNote>
         ) : (
-          <div>
+          <div className="dash-scroll">
             {items.map((item) => {
               const channel = getConsultationChannel(item);
               const ChannelIcon = CHANNEL_ICON[channel.kind];
@@ -1557,6 +1919,14 @@ function ConsultationsSection({
             </div>
 
             <DialogFooter className="gap-2">
+              {/* 상담 뒤 다음 일은 대개 그 사람에게 이어진다(다시 전화, 희망 조건, 매물 연결) — 연락처로 바로 간다 */}
+              {selected.contactId && (
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/contacts/$id" params={{ id: selected.contactId }}>
+                    연락처 열기
+                  </Link>
+                </Button>
+              )}
               <Button asChild variant="outline" size="sm">
                 <Link to="/consultations" search={{ consultationId: selected.id }}>
                   상담분석에서 열기
@@ -1568,7 +1938,7 @@ function ConsultationsSection({
                 disabled={createFollowUp.isPending}
                 onClick={() => createFollowUp.mutate(selected)}
               >
-                {createFollowUp.isPending ? '추가 중...' : '후속 할 일 추가'}
+                {createFollowUp.isPending ? '추가 중…' : '다음 업무 추가'}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1577,108 +1947,6 @@ function ConsultationsSection({
     </section>
   );
 }
-
-/* ----------------------------- 오른쪽 레일 카드 ----------------------------- */
-
-function CollectionCard({
-  ledger,
-}: {
-  ledger: ReturnType<typeof useMonthlyLedgerQuery>;
-}) {
-  const paused = isQueryPaused(ledger);
-  const summary = ledger.data?.summary;
-  const pct = summary ? collectPercent(summary.collectedTotal, summary.billedTotal) : 0;
-  const radius = 17;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - pct / 100);
-
-  return (
-    <Link
-      to="/cashflow"
-      className="dash-sec dash-bento-card dash-cash-card min-w-0 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-      style={stagger(2)}
-    >
-      {paused || ledger.isError ? (
-        <div className="flex w-full items-center gap-2.5 text-xs text-muted-foreground">
-          <Wallet className="size-4 shrink-0 text-sidebar-icon" aria-hidden="true" />
-          <span className="truncate">
-            {paused ? '오프라인 상태라 이달 수금을 불러올 수 없습니다.' : '이달 수금 정보를 불러오지 못했습니다.'}
-          </span>
-        </div>
-      ) : ledger.isPending ? (
-        <div className="flex w-full items-center gap-3">
-          <Skeleton className="size-[42px] shrink-0 rounded-full" />
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <Skeleton className="h-3 w-16" />
-            <Skeleton className="h-4 w-28" />
-          </div>
-        </div>
-      ) : summary ? (
-        <>
-          <div className="relative size-[42px] shrink-0" aria-hidden="true">
-            <svg viewBox="0 0 42 42" className="size-[42px] -rotate-90">
-              <circle
-                cx="21"
-                cy="21"
-                r={radius}
-                fill="none"
-                stroke="rgb(55 53 47 / 0.09)"
-                strokeWidth="3.8"
-              />
-              <circle
-                cx="21"
-                cy="21"
-                r={radius}
-                fill="none"
-                stroke="var(--color-success)"
-                strokeWidth="3.8"
-                strokeLinecap="round"
-                strokeDasharray={circumference.toFixed(2)}
-                strokeDashoffset={dashOffset.toFixed(2)}
-              />
-            </svg>
-            <span className="absolute inset-0 grid place-items-center text-[10.5px] font-bold text-foreground tabular-nums">
-              {pct}%
-            </span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-1.5">
-              <span className="text-[11px] font-semibold text-muted-foreground">이달 수금</span>
-              {summary.overdueCount > 0 && (
-                <span className="rounded bg-destructive-soft px-1.5 py-px text-[10px] font-semibold text-destructive-strong tabular-nums">
-                  미수 {summary.overdueCount}건
-                </span>
-              )}
-            </div>
-            <div className="truncate text-[14.5px] leading-tight font-bold text-foreground tabular-nums">
-              {summary.billedTotal <= 0 ? (
-                '이번 달 청구 없음'
-              ) : (
-                <>
-                  {summary.collectedTotal > 0 ? formatMoney(summary.collectedTotal) : '0원'}
-                  <span className="text-[11px] font-normal text-muted-foreground">
-                    {' '}
-                    / {formatMoney(summary.billedTotal)}
-                  </span>
-                </>
-              )}
-            </div>
-            <div className="mt-0.5 truncate text-[11px] text-muted-foreground tabular-nums">
-              {summary.paymentCount > 0
-                ? `완료 ${summary.collectedCount}/${summary.paymentCount}건`
-                : ledger.data?.periodLabel ?? '이번 달'}
-            </div>
-          </div>
-        </>
-      ) : null}
-    </Link>
-  );
-}
-
-/* -------------------------------- 공지사항 -------------------------------- */
-
-/** 접힌 상태에서 보이는 공지 수 */
-const NOTICE_PREVIEW = 4;
 
 function noticeDate(value: string): string {
   const date = new Date(value);
@@ -1741,6 +2009,10 @@ function useNoticeReader(notices: ReturnType<typeof useNoticesQuery>) {
   return { view, items, unread, openId, setOpenId, shownNotice, openNotice, openerRef };
 }
 
+/**
+ * 소식 카드: 공지사항과 부동산 뉴스를 한 카드에서 탭으로 본다 (2026-11-23).
+ * 예전에는 카드 둘이었고, 좁은 화면에서는 둘 다 숨긴 채 할 일 머리의 "공지 · 가이드" 단추로만 열었다.
+ */
 function NoticeSection({
   notices,
   reader,
@@ -1750,33 +2022,53 @@ function NoticeSection({
   reader: ReturnType<typeof useNoticeReader>;
   sectionRef: React.RefObject<HTMLElement | null>;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [feed, setFeed] = useState<'notice' | 'news'>('notice');
   const { view, items, unread, openNotice } = reader;
   const status = statusBody(view, () => void notices.refetch(), 3);
-  const shown = expanded ? items : items.slice(0, NOTICE_PREVIEW);
-  const hidden = items.length - shown.length;
 
   return (
-    <section ref={sectionRef} className="dash-sec dash-bento-card dash-side-card min-w-0" style={stagger(3)}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
-          <Megaphone className="size-3.5 text-sidebar-icon" strokeWidth={1.7} aria-hidden="true" />
-          공지사항
-        </span>
-        {view === 'ready' && items.length > 0 && (
-          <span className={cn('text-[11px] tabular-nums', unread > 0 ? 'font-semibold text-info-strong' : 'text-muted-foreground')}>
-            {unread > 0 ? `안 읽음 ${unread}` : '모두 읽음'}
-          </span>
-        )}
-      </div>
+    <section ref={sectionRef} className="dash-sec dash-bento-card dash-side-card dash-notice-card min-w-0" style={stagger(3)}>
+      <header className="flex min-h-8 items-center gap-2">
+        <Megaphone className="size-4 shrink-0 text-sidebar-icon" strokeWidth={1.6} aria-hidden="true" />
+        <h2 className="shrink-0 text-[14px] leading-6 font-semibold text-foreground">소식</h2>
+        <div role="group" aria-label="소식 나누기" className="dash-feed-tabs ml-auto">
+          <button
+            type="button"
+            aria-pressed={feed === 'notice'}
+            onClick={() => setFeed('notice')}
+            className="dash-feed-tab focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            공지사항
+            {view === 'ready' && unread > 0 && (
+              <span className="font-semibold text-destructive-strong tabular-nums" aria-label={`안 읽음 ${unread}`}>
+                {unread}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            aria-pressed={feed === 'news'}
+            onClick={() => setFeed('news')}
+            className="dash-feed-tab focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            부동산 뉴스
+          </button>
+        </div>
+      </header>
 
-      {status ??
+      {feed === 'news' ? (
+        // 부동산 · 시장 뉴스는 아직 서버 데이터가 없다. 지어낸 기사로 채우지 않고 준비 중임을 알린다.
+        <p className="px-1.5 py-2 text-[13px] leading-[1.55] break-keep text-muted-foreground/85">
+          부동산 · 시장 뉴스는 준비 중입니다. 정책, 시장, 우리 지역 소식이 여기에 나옵니다.
+        </p>
+      ) : (
+        (status ??
         (items.length === 0 ? (
           <EmptyNote>새 공지가 없습니다.</EmptyNote>
         ) : (
-          <>
-            <ul className="dash-tl-feed">
-              {shown.map((notice) => {
+          // 공지는 모두 싣고 네 줄 높이 안에서 굴린다 (-dashboard.css의 .dash-notice-scroll)
+            <ul className="dash-scroll dash-notice-scroll flex flex-col">
+              {items.map((notice) => {
                 const isUnread = !notice.readAt;
                 return (
                   <li key={notice.id}>
@@ -1784,23 +2076,18 @@ function NoticeSection({
                       type="button"
                       onClick={(event) => openNotice(notice, event.currentTarget)}
                       aria-label={`${notice.isRequired ? '필독 ' : ''}${notice.title}${isUnread ? ' (안 읽음)' : ''}`}
-                      className={cn(
-                        'dash-tl-entry group focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                        isUnread && 'is-unread',
-                      )}
+                      className="dash-feed-row group focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                     >
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        {notice.isRequired && <RequiredBadge />}
-                        <span
-                          className={cn(
-                            'line-clamp-2 text-[12.5px] leading-[1.38] transition-colors group-hover:text-foreground',
-                            isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground-strong',
-                          )}
-                        >
-                          {notice.title}
-                        </span>
+                      {notice.isRequired && <RequiredBadge />}
+                      <span
+                        className={cn(
+                          'min-w-0 flex-1 truncate text-[14px] leading-[21px] transition-colors group-hover:text-foreground',
+                          isUnread ? 'font-semibold text-foreground' : 'font-[450] text-muted-foreground-strong',
+                        )}
+                      >
+                        {notice.title}
                       </span>
-                      <span className="text-[11px] text-muted-foreground/80 tabular-nums">
+                      <span className="shrink-0 text-[12.5px] text-muted-foreground tabular-nums">
                         {noticeDate(notice.publishedAt)}
                       </span>
                     </button>
@@ -1808,18 +2095,8 @@ function NoticeSection({
                 );
               })}
             </ul>
-            {(hidden > 0 || expanded) && items.length > NOTICE_PREVIEW && (
-              <button
-                type="button"
-                aria-expanded={expanded}
-                onClick={() => setExpanded((value) => !value)}
-                className="self-start rounded-md px-1.5 py-0.5 text-[11.5px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.055] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                {expanded ? '접기' : `${hidden}건 더 보기`}
-              </button>
-            )}
-          </>
-        ))}
+        )))
+      )}
     </section>
   );
 }
@@ -1843,7 +2120,7 @@ const APP_GUIDES: AppGuide[] = [
     badge: 'GUIDE · 3분 시작',
     title: '에스테잇플로우 빠른 시작 가이드',
     sub: '매물 접수부터 프로젝트·계약까지 핵심 흐름 한눈에',
-    tip: '⌘K로 거래·고객·메뉴를 즉시 열고, 사이드바 접기/펼치기로 넓은 화면을 확보할 수 있습니다.',
+    tip: '사이드바 맨 위 ‘검색’(⌘K)으로 거래·고객·메뉴를 바로 열고, 사이드바 접기/펼치기로 넓은 화면을 확보할 수 있습니다.',
     steps: [
       { title: '1. 매물·의뢰 등록', desc: '단지와 동·호수를 고르고 매매·전세·월세 의뢰 조건을 차곡차곡 쌓습니다.' },
       { title: '2. 프로젝트로 손님별 진행 묶기', desc: '계속 주고받을 손님이나 공동중개 건은 프로젝트로 열어 상담·단계·코멘트를 한곳에서 봅니다.' },
@@ -1869,11 +2146,11 @@ const APP_GUIDES: AppGuide[] = [
     badge: 'TIP · 멀티탭',
     title: '멀티탭 & 단축키로 빠르게 일하기',
     sub: '여러 거래·고객을 탭으로 열어두고 오가며 상담하세요',
-    tip: '상단 전역 검색(⌘K)이나 왼쪽 메뉴에서 여러 업무 화면을 탭으로 열어두고 빠르게 오갈 수 있습니다.',
+    tip: '사이드바 맨 위 ‘검색’(⌘K)이나 왼쪽 메뉴에서 여러 업무 화면을 탭으로 열어두고 빠르게 오갈 수 있습니다.',
     steps: [
       { title: '1. 상단 탭으로 여러 업무 동시에 열기', desc: '상담 중인 매물과 계약서 화면 여러 개를 상단 탭에 나란히 열어두고 전환할 수 있습니다.' },
-      { title: '2. 상단 ⌘K로 거래·고객·메뉴 즉시 이동', desc: '마우스 이동 없이 검색창에서 단지명·고객명·정산 화면으로 한 번에 점프합니다.' },
-      { title: '3. 대시보드에서 바로 후속 할 일 연결', desc: '최근 상담 내역을 열어 통화·방문 메모를 확인하고 오늘 후속 할 일을 바로 추가합니다.' },
+      { title: '2. 사이드바 ‘검색’(⌘K)으로 거래·고객·메뉴 바로 이동', desc: '사이드바 맨 위 ‘검색’을 누르거나 ⌘K를 눌러 단지명·고객명·정산 화면으로 한 번에 이동합니다.' },
+      { title: '3. 대시보드에서 바로 다음 업무 연결', desc: '최근 상담 내역을 열어 통화·방문 메모를 확인하고 오늘 할 다음 업무를 바로 추가합니다.' },
     ],
   },
 ];
@@ -1940,23 +2217,6 @@ function GuideBannerCard({
   );
 }
 
-function NewsCard() {
-  return (
-    <section className="dash-sec dash-bento-card dash-side-card min-w-0" style={stagger(5)}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
-          <Newspaper className="size-3.5 text-sidebar-icon" strokeWidth={1.7} aria-hidden="true" />
-          부동산 · 시장 뉴스
-        </span>
-        <span className="text-[11px] font-medium text-muted-foreground/75">준비 중</span>
-      </div>
-      <p className="text-xs leading-[1.55] break-keep text-muted-foreground/85">
-        정책, 시장, 우리 지역 소식이 여기에 나옵니다.
-      </p>
-    </section>
-  );
-}
-
 /* --------------------------------- 쿼리 --------------------------------- */
 
 /** 필독 팝업(components/layout/required-notice-popup)과 같은 캐시를 쓴다. */
@@ -2009,18 +2269,7 @@ function useRecentConsultationsQuery(scope: Scope, userId: string | undefined) {
   });
 }
 
-/** 이달 수금은 대표·실장 권한 전용(/finance/ledger @Roles('owner', 'manager')). */
-function useMonthlyLedgerQuery(enabled: boolean) {
-  return useQuery({
-    queryKey: ['finance', 'ledger', 'this-month'],
-    queryFn: () => api.finance.ledger.get({ preset: 'this-month' }),
-    enabled,
-    staleTime: 60_000,
-  });
-}
-
-/* --------------------------------- 페이지 --------------------------------- */
-
+/** 이달 수금은 대표·매니저 권한 전용(/finance/ledger @Roles('owner', 'manager')). */
 function DashboardPage() {
   const { user } = useAuth();
   const now = useMinuteClock();
@@ -2031,7 +2280,7 @@ function DashboardPage() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const [reveal, setReveal] = useState<{ bucket: TaskBucket; n: number } | null>(null);
+  const [reveal, setReveal] = useState<{ bucket: TaskBucket; n: number; focus?: boolean } | null>(null);
   const [cheer, setCheer] = useState(0);
   // 사무소 위치의 날씨는 서버가 아직 주지 않는다. 주게 되면 여기에 잇는다. 그때까지 그림은 맑은 날이고 날씨 글자는 없다.
   const preview = useWeatherPreview(now.getHours() + now.getMinutes() / 60);
@@ -2048,22 +2297,18 @@ function DashboardPage() {
 
   const [bannerIdx, setBannerIdx] = useState(0);
   const [openGuideId, setOpenGuideId] = useState<string | null>(null);
-  const [digestOpen, setDigestOpen] = useState(false);
 
-  const digestTriggerRef = useRef<HTMLButtonElement | null>(null);
   const noticeSectionRef = useRef<HTMLElement | null>(null);
   const scheduleAsideRef = useRef<HTMLElement | null>(null);
 
-  // 월간 캘린더 5~6주 격자 계산 (월요일 시작)
+  // 월간 캘린더 5~6주 격자 계산. 캘린더 화면과 같이 일요일부터 놓는다.
   const monthFirst = new Date(viewMonth.year, viewMonth.month, 1);
-  const gridStart = startOfWeek(monthFirst);
+  const gridStart = addDays(monthFirst, -monthFirst.getDay());
   const all42 = Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
   const calendarDays = all42[35].getMonth() === viewMonth.month ? all42 : all42.slice(0, 35);
   const gridEnd = addDays(gridStart, calendarDays.length);
   const rangeStart = new Date(Math.min(gridStart.getTime(), startOfDay(selectedDate).getTime()));
   const rangeEnd = new Date(Math.max(addDays(gridEnd, 14).getTime(), addDays(selectedDate, 15).getTime()));
-
-  const canViewCashflow = user?.role === 'owner' || user?.role === 'manager';
 
   const tasks = useTasksQuery();
   const deals = useDealsQuery();
@@ -2071,27 +2316,25 @@ function DashboardPage() {
   const todayEventsQuery = useTodayEventsQuery(todayKey, todayStart);
   const monthEventsQuery = useMonthEventsQuery(rangeStart, rangeEnd);
   const consultations = useRecentConsultationsQuery(scope, user?.id);
-  const ledger = useMonthlyLedgerQuery(canViewCashflow);
+  // 캘린더에 보이는 계약일·중도금일·잔금일·수금예정을 대시보드에도 같이 보인다 (같은 캐시를 쓴다)
+  // '내 담당'이면 내가 담당인 거래의 날짜만 (담당이 없는 옛 거래는 '사무소 전체'에서만)
+  const { overlaysByDate } = useCalendarOverlays(true, scope === 'mine' ? (user?.id ?? null) : null);
 
   const noticeReader = useNoticeReader(notices);
-  const {
-    items: noticeItems,
-    unread: unreadNotices,
-    openId,
-    setOpenId,
-    shownNotice,
-    openNotice,
-    openerRef: noticeOpenerRef,
-  } = noticeReader;
+  const { openId, setOpenId, shownNotice, openerRef: noticeOpenerRef } = noticeReader;
 
   const mine = scope === 'mine' && Boolean(user?.id);
   const scopedOpenTasks = (tasks.data ?? [])
     .filter(isOpenTask)
     .filter((task) => !mine || task.assignedToId === user?.id)
     .sort((a, b) => byDateAsc(a.dueDate, b.dueDate));
-  const scopedTodayEvents = (todayEventsQuery.data ?? []).filter((event) => !mine || event.userId === user?.id);
+  // 닫힌 매칭에 걸린 앞날의 임장은 없어진 약속이다 — '오늘 일정' 숫자와 그림의 깃발에서 뺀다
+  const scopedTodayEvents = (todayEventsQuery.data ?? []).filter(
+    (event) => (!mine || event.userId === user?.id) && !isEventMoot(event, now),
+  );
   const scopedMonthEvents = (monthEventsQuery.data ?? []).filter((event) => !mine || event.userId === user?.id);
-  const todayEventCount = scopedTodayEvents.filter((event) => eventCoversDay(event, now)).length;
+  const todayEventCount =
+    scopedTodayEvents.filter((event) => eventCoversDay(event, now)).length + (overlaysByDate.get(todayKey)?.length ?? 0);
   const overdueTasks = scopedOpenTasks.filter((task) => taskBucket(task) === 'overdue');
 
   // 그림의 시간 축에는 오늘 시작하는, 시각이 있는 일정만 꽂는다.
@@ -2140,10 +2383,6 @@ function DashboardPage() {
         ? 'pending'
         : 'ready';
 
-  const ledgerPercentLabel = ledger.data
-    ? `${collectPercent(ledger.data.summary.collectedTotal, ledger.data.summary.billedTotal)}%`
-    : '—';
-
   const activeGuide = APP_GUIDES.find((g) => g.id === openGuideId) ?? null;
 
   return (
@@ -2175,7 +2414,9 @@ function DashboardPage() {
             <MiniCalendarCard
               viewMonth={viewMonth}
               calendarDays={calendarDays}
-              monthEvents={scopedMonthEvents}
+              // 달력의 점도 없어진 약속(닫힌 매칭의 앞날 임장)은 세지 않는다
+              monthEvents={scopedMonthEvents.filter((event) => !isEventMoot(event, now))}
+              overlaysByDate={overlaysByDate}
               selectedKey={selectedKey}
               todayKey={todayKey}
               onSelectDay={selectCalendarDay}
@@ -2187,8 +2428,10 @@ function DashboardPage() {
             <ScheduleCard
               scope={scope}
               userId={user?.id}
+              canSeeLedger={user?.role === 'owner' || user?.role === 'manager'}
               eventsQuery={monthEventsQuery}
               monthEvents={scopedMonthEvents}
+              overlaysByDate={overlaysByDate}
               selectedDate={selectedDate}
               selectedKey={selectedKey}
               todayKey={todayKey}
@@ -2197,6 +2440,7 @@ function DashboardPage() {
           </aside>
 
           <div className="dash-center">
+            <SetupSection />
             <TaskSection
               scope={scope}
               userId={user?.id}
@@ -2205,35 +2449,30 @@ function DashboardPage() {
               now={now}
               reveal={reveal}
               onCheer={() => setCheer((count) => count + 1)}
-              canViewCashflow={canViewCashflow}
-              ledgerPercentLabel={ledgerPercentLabel}
-              unreadNotices={unreadNotices}
-              onOpenDigest={() => setDigestOpen(true)}
-              digestTriggerRef={digestTriggerRef}
             />
-            <DealsSection deals={deals} />
             <ConsultationsSection
               scope={scope}
               userId={user?.id}
               consultations={consultations}
               now={now}
+              onFollowUpCreated={() => setReveal((prev) => ({ bucket: 'today', n: (prev?.n ?? 0) + 1, focus: false }))}
             />
           </div>
 
+          {/* 오른쪽 단은 좁아져도 숨기지 않는다. 좁으면 두 단 아래로 내려온다(-dashboard.css의 @container). */}
           <aside className="dash-rail">
-            {canViewCashflow && <CollectionCard ledger={ledger} />}
+            <DealsSection deals={deals} scope={scope} userId={user?.id} />
             <NoticeSection notices={notices} reader={noticeReader} sectionRef={noticeSectionRef} />
             <GuideBannerCard
               bannerIdx={bannerIdx}
               onSelectBanner={setBannerIdx}
               onOpenGuide={(id) => setOpenGuideId(id)}
             />
-            <NewsCard />
           </aside>
         </div>
       </div>
 
-      {/* 공지 본문 창 — 3단 오른쪽 레일과 좁은 화면 요약 창이 함께 쓴다 */}
+      {/* 공지 본문 창 */}
       <Dialog open={openId !== null} onOpenChange={(next) => !next && setOpenId(null)}>
         {shownNotice && (
           <DialogContent
@@ -2241,9 +2480,7 @@ function DashboardPage() {
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               const opener = noticeOpenerRef.current;
-              const fallback =
-                noticeSectionRef.current?.querySelector<HTMLButtonElement>('li button') ??
-                digestTriggerRef.current;
+              const fallback = noticeSectionRef.current?.querySelector<HTMLButtonElement>('li button');
               (opener?.isConnected && opener.offsetParent !== null ? opener : fallback)?.focus();
             }}
           >
@@ -2317,87 +2554,6 @@ function DashboardPage() {
         )}
       </Dialog>
 
-      {/* 좁은 화면(1260px 미만) 공지·가이드 요약 창 */}
-      <Dialog open={digestOpen} onOpenChange={setDigestOpen}>
-        <DialogContent
-          className="sm:max-w-md"
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            digestTriggerRef.current?.focus();
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>공지사항 · 앱 사용법 가이드</DialogTitle>
-            <DialogDescription>오른쪽 레일이 접힌 화면에서 공지와 가이드를 바로 확인합니다.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <h3 className="mb-2 text-xs font-semibold text-muted-foreground">공지사항</h3>
-              {noticeItems.length === 0 ? (
-                <EmptyNote>새 공지가 없습니다.</EmptyNote>
-              ) : (
-                <ul className="max-h-52 space-y-1 overflow-auto">
-                  {noticeItems.map((notice) => {
-                    const isUnread = !notice.readAt;
-                    return (
-                      <li key={notice.id}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDigestOpen(false);
-                            openNotice(notice, null);
-                          }}
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                        >
-                          <span
-                            aria-hidden="true"
-                            className={cn('size-1.5 shrink-0 rounded-full', isUnread && 'bg-info')}
-                          />
-                          {notice.isRequired && <RequiredBadge />}
-                          <span
-                            className={cn(
-                              'min-w-0 flex-1 truncate text-sm',
-                              isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground-strong',
-                            )}
-                          >
-                            {notice.title}
-                          </span>
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            {noticeDate(notice.publishedAt)}
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-            <div className="border-t border-border pt-3">
-              <h3 className="mb-2 text-xs font-semibold text-muted-foreground">앱 사용법 가이드</h3>
-              <div className="space-y-1.5">
-                {APP_GUIDES.map((g, index) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    onClick={() => {
-                      setBannerIdx(index);
-                      setDigestOpen(false);
-                      setOpenGuideId(g.id);
-                    }}
-                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-semibold text-foreground">{g.title}</div>
-                      <div className="truncate text-[11.5px] text-muted-foreground">{g.sub}</div>
-                    </div>
-                    <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{g.badge}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

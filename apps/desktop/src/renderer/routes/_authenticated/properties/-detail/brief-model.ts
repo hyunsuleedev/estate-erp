@@ -10,8 +10,12 @@ import {
   formatPrice,
   formatFloorRange,
   IntakeConfirmationState,
+  IntakeLifecycleStatus,
   ListingAvailability,
   MaintenanceFeeInclude,
+  MatchStage,
+  findDealThatOutlivedEvent,
+  normalizeMatchStage,
 } from '@estate-erp/shared';
 import { getIntakeConfirmationState } from '@/lib/listing-status';
 import {
@@ -34,6 +38,7 @@ import {
   type PersonRow,
   type TenantRow,
 } from './model';
+import { formatPyeong } from '@/lib/format';
 
 /*
  * 매물 상세 2판(중개사 업무 순서) 표시 계산.
@@ -306,8 +311,8 @@ export function getHeaderSpecs(property: Property, guest: boolean): HeaderSpec[]
       ? {
           key: 'area',
           text: [
-            supply ? `공급 ${(supply * 0.3025).toFixed(1)}평` : null,
-            exclusive ? `전용 ${(exclusive * 0.3025).toFixed(1)}평` : null,
+            supply ? `공급 ${formatPyeong(supply)}` : null,
+            exclusive ? `전용 ${formatPyeong(exclusive)}` : null,
           ]
             .filter(Boolean)
             .join(' · '),
@@ -427,10 +432,15 @@ export function buildUpcomingViewings(
 ): ViewingItem[] {
   const items: ViewingItem[] = [];
   for (const match of matches) {
-    if (match.stage === 'closed') continue;
+    // 닫힌 매칭의 일정은 없는 약속이다
+    if (normalizeMatchStage(match.stage) === MatchStage.CLOSED) continue;
     for (const event of match.calendarEvents ?? []) {
       if (event.type !== 'viewing') continue;
       if (new Date(event.start).getTime() < now.getTime()) continue;
+      // 거래 전환 전에 잡아 둔 임장이 그 거래가 끝난(잔금 완료 · 정산 종료) 뒤에도 남은 것은 끝난 일이다
+      // (끝난 거래의 임장이 "D-4"로 남던 문제). 매칭 단계만으로는 빼지 않는다 — 고객 검토 · 협상 중의 재임장,
+      // 거래 전환 뒤에 잡은 약속(잔금 전 집 확인 등)은 다가오는 임장이다.
+      if (findDealThatOutlivedEvent(event.createdAt, match.deals ?? [])) continue;
       const type = getTransactionTypeMeta(listingTypeById.get(match.listingId) ?? '');
       items.push({
         id: event.id,
@@ -439,7 +449,7 @@ export function buildUpcomingViewings(
         whenText: formatDayTime(event.start),
         ddayText: formatDday(event.start),
         daysLeft: daysUntil(event.start) ?? 0,
-        buyerName: match.buyerRequirement?.contact?.name ?? '구매자 미상',
+        buyerName: match.buyerRequirement?.contact?.name ?? '이름 없는 고객',
         typeLabel: type.label,
         typeClassName: type.className,
       });
@@ -452,6 +462,7 @@ export function buildUpcomingViewings(
 
 export type TodoAction =
   | { kind: 'confirm' }
+  | { kind: 'open-my-ads' }
   | { kind: 'edit-listing'; listingId: string }
   | { kind: 'open-url'; url: string; label: string }
   | { kind: 'open-deal'; dealId: string }
@@ -486,6 +497,7 @@ export function buildTodos({
   viewings,
   people,
   tenants,
+  leftoverAdRows = [],
 }: {
   intake: ListingIntake | null;
   offerRows: OfferRow[];
@@ -493,8 +505,22 @@ export function buildTodos({
   viewings: ViewingItem[];
   people: PersonRow[];
   tenants: TenantRow[];
+  /** 끝난 의뢰의 거래 조건 가운데 아직 게재 중인 광고가 있는 것 */
+  leftoverAdRows?: OfferRow[];
 }): TodoItem[] {
   const items: TodoItem[] = [];
+
+  // 의뢰를 끝냈는데 광고가 남아 있음 — 내리지 않으면 없는 매물을 광고하는 셈이 된다
+  for (const row of leftoverAdRows) {
+    items.push({
+      key: `ad-leftover-${row.listing.id}`,
+      tone: 'danger',
+      text: '끝난 의뢰인데 광고가 게재 중입니다',
+      sub: `${row.typeLabel} · ${row.activeAds.map((ad) => ad.channelLabel).join(', ')}`,
+      actionLabel: '내광고관리에서 내리기',
+      action: { kind: 'open-my-ads' },
+    });
+  }
 
   // 매물 확인
   if (intake) {
@@ -513,7 +539,7 @@ export function buildTodos({
       items.push({
         key: 'confirm',
         tone: 'warn',
-        text: '소유주가 전화를 받지 않았습니다',
+        text: '소유자가 전화를 받지 않았습니다',
         sub: `${formatAgo(intake.lastCheckedAt)} 연락 · 다시 확인하세요`,
         actionLabel: '확인 완료',
         action: { kind: 'confirm' },
@@ -522,7 +548,7 @@ export function buildTodos({
       items.push({
         key: 'confirm',
         tone: 'warn',
-        text: '아직 소유주 확인 전입니다',
+        text: '아직 소유자 확인 전입니다',
         sub: `접수 ${daysSince(intake.receivedAt) ?? 0}일째`,
         actionLabel: '확인 완료',
         action: { kind: 'confirm' },
@@ -537,6 +563,21 @@ export function buildTodos({
         action: { kind: 'confirm' },
       });
     }
+  }
+
+  // 보류·일시 중단했는데 광고가 아직 게재 중 — 내리는 일을 잊지 않게
+  const intakeOnHold = intake?.lifecycleStatus === IntakeLifecycleStatus.HOLD;
+  for (const row of offerRows) {
+    if (row.activeAds.length === 0) continue;
+    if (!intakeOnHold && row.availability !== ListingAvailability.PAUSED) continue;
+    items.push({
+      key: `ad-hold-${row.listing.id}`,
+      tone: 'warn',
+      text: `${intakeOnHold ? '보류 중인데' : '일시 중단했는데'} 광고가 게재 중입니다`,
+      sub: `${row.typeLabel} · ${row.activeAds.map((ad) => ad.channelLabel).join(', ')} · 광고에서 '광고 요청'으로 내리세요`,
+      actionLabel: null,
+      action: null,
+    });
   }
 
   // 광고 가격이 지금 가격과 다름
@@ -620,13 +661,13 @@ export function buildTodos({
     });
   }
 
-  // 소유주 연락처 없음
+  // 소유자 연락처 없음
   if (intake && people.length === 0) {
     items.push({
       key: 'no-owner',
       tone: 'warn',
-      text: '소유주 연락처가 없습니다',
-      sub: '확인 전화를 하려면 소유주나 대리인 번호가 필요합니다',
+      text: '소유자 연락처가 없습니다',
+      sub: '확인 전화를 하려면 소유자나 대리인 번호가 필요합니다',
       actionLabel: '연락처 추가',
       action: { kind: 'add-contact' },
     });

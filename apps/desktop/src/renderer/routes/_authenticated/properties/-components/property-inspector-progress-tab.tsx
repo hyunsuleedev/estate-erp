@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import { formatPhoneNumber } from "@/lib/contacts";
 import { cn } from "@/lib/utils";
 import { MatchCreateDialog } from "../../wanted-properties/-match-create-dialog";
+import { PropertyMatchConnectDialog } from "./property-match-connect-dialog";
 import { MatchConvertDialog } from "../../wanted-properties/-match-convert-dialog";
 import {
   MatchProgressTrack,
@@ -52,6 +53,7 @@ import {
   TextAction,
 } from "./property-inspector-view";
 import { saveViewingSchedule, ViewingStageMoveError } from "./inspector-viewing-schedule";
+import { propertyErrorMessage } from "../-error-message";
 
 /*
  * 매물 상세 패널 "매칭·거래" 탭.
@@ -73,7 +75,13 @@ export function PropertyInspectorProgressTab({
   onOpenMatch,
   onOpenDeal,
   typeMeta,
+  connectTarget,
 }: {
+  /**
+   * 주면 "고객 연결"이 매물 쪽 창(조건에 맞는 고객 / 전체, 줄마다 맞음·다름)으로 열린다.
+   * 없으면 희망매물의 매칭 만들기 창을 쓴다.
+   */
+  connectTarget?: Parameters<typeof PropertyMatchConnectDialog>[0]["group"];
   /** 이 의뢰의 거래 조건(Listing) id */
   listingIds: string[];
   /**
@@ -127,6 +135,7 @@ export function PropertyInspectorProgressTab({
         onRetry={onRetryMatches}
         onOpenMatch={onOpenMatch}
         preContractDealByListing={preContractDealByListing}
+        connectTarget={connectTarget}
       />
       <DealSection
         deals={deals}
@@ -155,7 +164,9 @@ function MatchSection({
   onRetry,
   onOpenMatch,
   preContractDealByListing,
+  connectTarget,
 }: {
+  connectTarget?: Parameters<typeof PropertyMatchConnectDialog>[0]["group"];
   listingIds: string[];
   matches: Match[];
   status: "loading" | "error" | "ready";
@@ -211,7 +222,7 @@ function MatchSection({
       );
       await refreshRelated();
     },
-    onError: (error: Error) => toast.error(error.message || "단계 변경에 실패했습니다."),
+    onError: (error: Error) => toast.error(propertyErrorMessage(error, "단계를 바꾸지 못했습니다. 다시 시도해 주세요.")),
   });
 
   const memoMutation = useMutation({
@@ -220,7 +231,7 @@ function MatchSection({
     // 저장 응답만으로 끝내지 않고 목록을 다시 받은 뒤 끝낸다(메모 칸은 그때 저장 중 표시를 푼다).
     onSuccess: () => refreshRelated(),
     onError: async (error: Error) => {
-      toast.error(error.message || "매칭 메모 저장에 실패했습니다.");
+      toast.error(propertyErrorMessage(error, "매칭 메모를 저장하지 못했습니다. 다시 시도해 주세요."));
       // 충돌이면 최신 updatedAt을 받아 둬야 다시 저장할 수 있다.
       await refreshRelated();
     },
@@ -252,12 +263,12 @@ function MatchSection({
         if (savedEvent) await putViewingEventInCache(match.id, savedEvent);
       }
     },
-    onSuccess: () => toast.success("방문 일정을 저장했습니다."),
+    onSuccess: () => toast.success("임장 일정을 저장했습니다."),
     onError: (error: Error) =>
       toast.error(
         error instanceof ViewingStageMoveError
           ? error.message
-          : `방문 일정 저장에 실패했습니다: ${error.message}`,
+          : propertyErrorMessage(error, "임장 일정을 저장하지 못했습니다. 다시 시도해 주세요."),
       ),
     // 성공·실패 모두 다시 받는다: 일정만 저장되고 단계 변경이 실패해도 새 일정이 매칭에 반영돼야
     // 다시 시도할 때 기존 일정을 고친다. 다시 받는 동안은 진행 트랙이 잠겨 있다(isScheduling).
@@ -321,7 +332,7 @@ function MatchSection({
       <SectionTitle
         action={
           listingIds.length > 0 ? (
-            <TextAction icon={<Plus />} label="매칭 추가" onClick={() => setCreateOpen(true)} />
+            <TextAction icon={<Plus />} label="고객 연결" onClick={() => setCreateOpen(true)} />
           ) : undefined
         }
       >
@@ -359,12 +370,21 @@ function MatchSection({
         </>
       )}
 
-      <MatchCreateDialog
-        open={createOpen && listingIds.length > 0}
-        onOpenChange={setCreateOpen}
-        matches={matches}
-        scope={{ kind: "listing", listingIds }}
-      />
+      {connectTarget && connectTarget.listings.length > 0 ? (
+        <PropertyMatchConnectDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          group={connectTarget}
+          matches={matches}
+        />
+      ) : (
+        <MatchCreateDialog
+          open={createOpen && listingIds.length > 0}
+          onOpenChange={setCreateOpen}
+          matches={matches}
+          scope={{ kind: "listing", listingIds }}
+        />
+      )}
       <MatchConvertDialog
         match={convertMatch}
         open={convertMatchId !== null}
@@ -391,7 +411,7 @@ function MatchCard({
   onSaveMemo: (memo: string) => Promise<void>;
 }) {
   const buyer = match.buyerRequirement;
-  const name = buyer?.contact?.name ?? "구매자 미상";
+  const name = buyer?.contact?.name ?? "이름 없는 고객";
   const phone = buyer?.contact?.phone ?? null;
   const upcoming = getUpcomingViewingEvent(match);
   const areaText = buyer ? getBuyerRequirementSummaryParts(buyer).areaText : null;
@@ -417,7 +437,7 @@ function MatchCard({
   ].filter(Boolean);
 
   return (
-    <article className="py-3">
+    <article data-match-card={match.id} className="py-3">
       <div className="flex min-w-0 items-start gap-2.5">
         <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#f1f0ec] text-[12px] font-semibold text-muted-foreground">
           {name.slice(0, 1)}
@@ -438,7 +458,7 @@ function MatchCard({
           <span className="shrink-0 pt-0.5 text-[12px] text-muted-foreground">종료 · {closedReasonLabel}</span>
         ) : upcoming ? (
           <span className="shrink-0 pt-0.5 text-[12px] font-medium tabular-nums text-[#4b3f72]">
-            방문 {formatViewingEventTime(upcoming)}
+            임장 {formatViewingEventTime(upcoming)}
           </span>
         ) : null}
         <button
@@ -468,7 +488,10 @@ function MatchCard({
             <Check className="size-3" />
             매칭 완료
           </span>
-          → 거래 진행 중 · {getDealStageLabel(convertedDeal.stage)}
+          {/* 잔금·정산까지 끝난 거래는 "진행 중"이 아니다 */}
+          {convertedDeal.stage === DealStage.COMPLETED || convertedDeal.stage === DealStage.CLOSED
+            ? `→ 거래 완료 · ${getDealStageLabel(convertedDeal.stage)}`
+            : `→ 거래 진행 중 · ${getDealStageLabel(convertedDeal.stage)}`}
         </div>
       ) : (
         /* 희망매물 페이지와 같은 진행 트랙: 단계를 눌러 바꾸고 방문 일정을 잡는다 */
@@ -590,9 +613,10 @@ function DealFlowCard({ deal, typeMeta, onOpen }: { deal: Deal; typeMeta: TypeMe
   // 가계약은 선택 단계: 지금 가계약이거나 가계약금 기록이 있을 때만 흐름에 넣는다.
   const hasPreContract =
     stage === DealStage.PRE_CONTRACT || payments.some((payment) => payment.kind === "pre_contract");
+  // 단계 띠는 거래관리와 같게 가계약을 늘 보인다. 가계약이 없는 거래에서는 '선택'으로 흐리게 둔다.
   const stages = [
     DealStage.PREPARING,
-    ...(hasPreContract ? [DealStage.PRE_CONTRACT] : []),
+    DealStage.PRE_CONTRACT,
     DealStage.CONTRACTED,
     DealStage.SETTLING,
     DealStage.COMPLETED,
@@ -602,9 +626,11 @@ function DealFlowCard({ deal, typeMeta, onOpen }: { deal: Deal; typeMeta: TypeMe
   const health =
     !deal.isCancelled && stage !== DealStage.CLOSED ? getDealPipelineHealth(deal, now) : null;
   const meta = typeMeta(deal.transactionType);
+  // 매매는 매수인·매도인, 전세·월세는 임차인·임대인
+  const isLease = deal.transactionType === "jeonse" || deal.transactionType === "monthly";
   const parties = [
-    deal.buyerContact?.name ? `매수 ${deal.buyerContact.name}` : null,
-    deal.sellerContact?.name ? `매도 ${deal.sellerContact.name}` : null,
+    deal.buyerContact?.name ? `${isLease ? "임차인" : "매수인"} ${deal.buyerContact.name}` : null,
+    deal.sellerContact?.name ? `${isLease ? "임대인" : "매도인"} ${deal.sellerContact.name}` : null,
     deal.isJointBrokerage ? `공동중개${deal.partnerBroker?.name ? ` ${deal.partnerBroker.name}` : ""}` : null,
   ].filter(Boolean);
 
@@ -661,8 +687,10 @@ function DealFlowCard({ deal, typeMeta, onOpen }: { deal: Deal; typeMeta: TypeMe
           )}
           <ol aria-label="거래 흐름" className="mt-3">
             {stages.map((stageKey, index) => {
-              const state =
-                index < currentIndex ? "done" : index === currentIndex ? "current" : "pending";
+              const skippedPreContract = stageKey === DealStage.PRE_CONTRACT && !hasPreContract;
+              const state = skippedPreContract
+                ? "pending"
+                : index < currentIndex ? "done" : index === currentIndex ? "current" : "pending";
               const stagePayments = payments.filter(
                 (payment) => getPaymentStage(payment.kind) === stageKey,
               );
@@ -673,9 +701,11 @@ function DealFlowCard({ deal, typeMeta, onOpen }: { deal: Deal; typeMeta: TypeMe
                   state={state}
                   isLast={index === stages.length - 1}
                   note={
-                    state === "current"
-                      ? `${formatMonthDay(deal.stageChangedAt)}부터 · ${getDealStageAgeDays(deal, now)}일째`
-                      : null
+                    skippedPreContract
+                      ? index < currentIndex ? "가계약 없이 진행" : "선택"
+                      : state === "current"
+                        ? `${formatMonthDay(deal.stageChangedAt)}부터 · ${getDealStageAgeDays(deal, now)}일째`
+                        : null
                   }
                   payments={stagePayments}
                   now={now}

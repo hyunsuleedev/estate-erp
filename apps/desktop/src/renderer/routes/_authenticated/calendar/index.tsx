@@ -11,6 +11,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import type { CalendarEvent } from "@estate-erp/api-client";
+import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/providers/auth-provider";
@@ -67,14 +68,66 @@ const viewOptions: Array<{ value: CalendarViewMode; label: string }> = [
 const EMPTY_CALENDAR_EVENTS: CalendarEvent[] = [];
 const EMPTY_OVERLAYS_BY_DATE = new Map<string, OverlayItem[]>();
 
+type CalendarSearch = {
+  /** 이 날(YYYY-MM-DD)로 옮겨 연다 (대시보드에서 일정·날짜를 눌러 들어올 때) */
+  date?: string;
+  /** 이 일정을 골라 둔다 */
+  event?: string;
+  /** 새 일정 편집창을 바로 연다 (빠른 등록에서 들어올 때) */
+  new?: boolean;
+};
+
+function parseDateParam(value: string | undefined): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [y, m, d] = value.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  // 없는 날(13월, 2월 30일)은 Date가 다음 달로 넘겨 버린다 — 엉뚱한 달을 열지 않고 무시한다
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== y ||
+    date.getMonth() !== m - 1 ||
+    date.getDate() !== d
+  )
+    return null;
+  return date;
+}
+
 export const Route = createFileRoute("/_authenticated/calendar/")({
+  validateSearch: (search: Record<string, unknown>): CalendarSearch => ({
+    date: typeof search.date === "string" ? search.date : undefined,
+    event: typeof search.event === "string" ? search.event : undefined,
+    new:
+      search.new === true ||
+      search.new === "true" ||
+      search.new === 1 ||
+      search.new === "1"
+        ? true
+        : undefined,
+  }),
   component: CalendarPage,
 });
 
 function CalendarPage() {
   const { user } = useAuth();
+  const {
+    date: dateFromUrl,
+    event: eventFromUrl,
+    new: createFromUrl,
+  } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const storageKey = `calendar-workspace:${user?.id ?? "anonymous"}`;
-  const [initialWorkspace] = useState(() => readWorkspaceState(storageKey));
+  const [initialWorkspace] = useState(() => {
+    const saved = readWorkspaceState(storageKey);
+    const linked = parseDateParam(dateFromUrl);
+    if (!linked) return saved;
+    // 대시보드에서 고른 날로 연다. 월 보기의 스크롤 위치는 그 날을 기준으로 다시 잡는다.
+    return {
+      ...saved,
+      currentDate: linked.toISOString(),
+      selectedDate: linked.toISOString(),
+      monthViewport: undefined,
+    };
+  });
   const [viewMode, setViewMode] = useState<CalendarViewMode>(
     initialWorkspace.viewMode,
   );
@@ -115,14 +168,53 @@ function CalendarPage() {
   const [typeFilter, setTypeFilter] = useState("");
   const [isMineOnly, setIsMineOnly] = useState(false);
   const [showFinance, setShowFinance] = useState(true);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  // 빠른 등록의 '일정 추가'로 들어오면 새 일정 편집창을 연 채로 시작한다
+  const [isDialogOpen, setIsDialogOpen] = useState(Boolean(createFromUrl));
   const [dialogEvent, setDialogEvent] = useState<CalendarEvent | null>(null);
-  const [dialogDefaultDate, setDialogDefaultDate] = useState(new Date());
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  // 대시보드의 '일정 추가'(?date=&new=1)로 들어오면 고른 날로 새 일정 창을 연다(오늘이면 지금 시각 기준).
+  const [dialogDefaultDate, setDialogDefaultDate] = useState(() => {
+    const linked = createFromUrl ? parseDateParam(dateFromUrl) : null;
+    if (!linked || getLocalDateKey(linked) === getLocalDateKey(new Date()))
+      return new Date();
+    return linked;
+  });
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(
+    eventFromUrl ?? null,
+  );
+  // 주소의 날짜·일정은 처음 열 때 한 번만 쓴다. 지워 두어야 새로 고침·뒤로 가기 때 다시 그 날로 튀지 않는다.
+  useEffect(() => {
+    if (dateFromUrl || eventFromUrl || createFromUrl)
+      void navigate({ search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [selectedOverlay, setSelectedOverlay] = useState<OverlayItem | null>(
     null,
   );
-  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
+  // 대시보드에서 일정을 눌러 들어오면 고른 일정을 오른쪽 패널에 펼쳐 둔다.
+  // 날짜만 넘어온 때(계약·대금 날짜, '더 보기')는 펼치지 않는다 — 좁은 창에서 패널이 도구 줄을 가린다.
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(() =>
+    Boolean(eventFromUrl),
+  );
+  // 주소로 넘어온 일정은 서버에 한 번 따로 묻는다(주소는 위에서 바로 지우므로 처음 값을 붙들어 둔다).
+  // 보고 있는 달 밖의 일정이어도 패널에 보이고, 지워진 일정이면 빈 패널 대신 알린다
+  // (예전에는 없는 일정의 주소로 들어오면 아무 말 없이 빈 달력만 보였다 — 업무 화면은 알린다).
+  const [linkedEventId] = useState(() => eventFromUrl ?? null);
+  const linkedEventQuery = useQuery({
+    // 'calendar-events'로 시작하지 않게 둔다: 일정을 고치거나 지울 때 그 묶음이 다시 불려
+    // 방금 지운 일정을 '찾을 수 없습니다'로 알리게 된다.
+    queryKey: ["calendar-event-linked", linkedEventId],
+    queryFn: () => api.calendarEvents.findOne(linkedEventId!),
+    enabled: Boolean(linkedEventId),
+    retry: false,
+    staleTime: 30_000,
+  });
+  useEffect(() => {
+    if (!linkedEventQuery.isError) return;
+    toast.error("일정을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.");
+    setSelectedEventId((current) => (current === linkedEventId ? null : current));
+    setIsRightPanelOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedEventQuery.isError]);
 
   const range = useMemo(
     () =>
@@ -188,7 +280,8 @@ function CalendarPage() {
           .includes(query),
     );
   }, [searchQuery.data, searchText]);
-  const overlay = useCalendarOverlays(showFinance);
+  // '내 일정만'·담당자를 고르면 계약·대금·수금 날짜도 그 직원이 담당인 거래의 것만 보인다
+  const overlay = useCalendarOverlays(showFinance, effectiveUserId ?? null);
   const persistWorkspace = () =>
     writeWorkspaceState(storageKey, {
       viewMode,
@@ -231,6 +324,7 @@ function CalendarPage() {
   const selectedEvent = selectedEventId
     ? (events.find((event) => event.id === selectedEventId) ??
       searchQuery.data?.find((event) => event.id === selectedEventId) ??
+      (linkedEventQuery.data?.id === selectedEventId ? linkedEventQuery.data : null) ??
       null)
     : null;
 

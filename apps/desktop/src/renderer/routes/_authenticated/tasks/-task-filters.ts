@@ -2,6 +2,7 @@
  * tasks 페이지 필터·정렬·집계 순수 로직 (React 의존 없음 → 단위 테스트 대상).
  */
 import { formatUnitName } from '@estate-erp/shared';
+import { formatRelativeDay } from '@/lib/format';
 import type { Task, TaskContact, UpdateTaskDto } from '@estate-erp/api-client';
 import { getPropertyLabel } from './-task-property-label';
 import { TASK_SCOPES, type TaskGroupBy, type TaskScope, type TaskSortBy } from './-task-display';
@@ -18,7 +19,7 @@ export interface TaskFilterState {
   category: string;
   /** '' = 전체, ASSIGNEE_UNASSIGNED = 미배정, 그 외 userId */
   assignee: string;
-  /** 위쪽 탭: 내 담당(나에게 배정) · 내가 요청(내가 만들어 남에게 맡긴 업무) · 팀 전체 */
+  /** 위쪽 탭: 내 담당(나에게 배정) · 내가 요청(내가 만들어 남에게 맡긴 업무) · 사무소 전체 */
   scope: TaskScope;
   /** scope 판단 기준 사용자. 없으면 scope를 적용하지 않는다 */
   currentUserId: string | null;
@@ -36,8 +37,41 @@ function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
+/**
+ * 마감일의 '그 사람 달력의 날짜'(YYYY-MM-DD). 목록의 "오늘·3일 지남"과 같은 기준이다.
+ * 저장값 앞 10글자(UTC 날짜)를 쓰면 한국 시간 0~9시 사이의 마감이 하루 앞날로 보이고,
+ * 그 값으로 다시 저장하면 마감이 하루 당겨진다.
+ */
+export function dueDateKey(dueDate: string | null | undefined): string {
+  if (!dueDate) return '';
+  const date = new Date(dueDate);
+  if (Number.isNaN(date.getTime())) return '';
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${m}-${d}`;
+}
+
 export function isTaskActive(task: Pick<Task, 'status'>): boolean {
   return task.status !== 'completed' && task.status !== 'cancelled';
+}
+
+/**
+ * 열린 업무가 걸린 일이 이미 끝났는지 — 매물이 팔린 뒤의 '소유자 확인 전화'처럼.
+ * 업무를 알아서 닫지 않는다. 화면이 흐린 글자로 알려 사람이 정리하게 한다.
+ */
+export function taskEndedTags(
+  task: Pick<Task, 'status' | 'deal' | 'listingIntake' | 'listing' | 'property'>,
+): string[] {
+  if (!isTaskActive(task)) return [];
+  const tags: string[] = [];
+  const intakeClosed =
+    task.listingIntake?.lifecycleStatus === 'closed' ||
+    task.listing?.intake?.lifecycleStatus === 'closed' ||
+    (!task.listingIntake && !task.listing && task.property?.listingIntakes?.[0]?.lifecycleStatus === 'closed');
+  if (intakeClosed) tags.push('종료된 매물');
+  if (task.deal?.isCancelled) tags.push('취소된 거래');
+  else if (task.deal && ['completed', 'closed'].includes(task.deal.stage)) tags.push('끝난 거래');
+  return tags;
 }
 
 export function isTaskOverdue(task: Pick<Task, 'status' | 'dueDate'>, now = new Date()): boolean {
@@ -262,7 +296,7 @@ export function countByScope(
   return counts;
 }
 
-/** 행 앞 체크 순환 — 대기 → 진행중(반체크) → 완료 → 대기 */
+/** 행 앞 체크 순환 — 대기 → 진행 중(반체크) → 완료 → 대기 */
 export function nextCheckStatus(status: string): 'pending' | 'in_progress' | 'completed' {
   if (status === 'pending') return 'in_progress';
   if (status === 'in_progress') return 'completed';
@@ -271,22 +305,13 @@ export function nextCheckStatus(status: string): 'pending' | 'in_progress' | 'co
 
 // ─── 마감일 표기 · 묶기 · 정렬 ───────────────────────────────
 
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-
 function dayDiff(dueDate: string, now: Date): number {
   return Math.round((startOfDay(new Date(dueDate)).getTime() - startOfDay(now).getTime()) / 86_400_000);
 }
 
-/** 올해면 "11.6 (금)", 다른 해면 "2027.01.05" */
+/** 앱 공통 날짜 표기(@/lib/format의 formatRelativeDay): 올해면 "11.6 (금)", 다른 해면 "27.1.5 (화)" */
 export function formatDueDay(dueDate: string, now = new Date()): string {
-  const date = new Date(dueDate);
-  if (Number.isNaN(date.getTime())) return '-';
-  if (date.getFullYear() !== now.getFullYear()) {
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${date.getFullYear()}.${mm}.${dd}`;
-  }
-  return `${date.getMonth() + 1}.${date.getDate()} (${WEEKDAYS[date.getDay()]})`;
+  return formatRelativeDay(dueDate, now) || '-';
 }
 
 export type DueTone = 'overdue' | 'today' | 'normal' | 'muted';
@@ -355,7 +380,7 @@ export type ListStatus = (typeof LIST_STATUS_ORDER)[number];
 /**
  * 상태별 목록에 그릴 묶음.
  * - 상태 필터가 있으면 그 상태 묶음만 (다른 묶음은 늘 비어 있으므로)
- * - 없으면 진행중·대기 + "완료 업무 보기"가 켜져 있을 때 완료
+ * - 없으면 진행 중·대기 + "완료 업무 보기"가 켜져 있을 때 완료
  * 완료를 숨긴 채 상태 필터로 완료를 고른 경우에도 완료 묶음이 빠지지 않게 필터를 먼저 본다.
  */
 export function listStatusColumns(statusFilter: string, showCompleted: boolean): ListStatus[] {
@@ -371,7 +396,7 @@ export interface TaskGroup {
 
 /**
  * 묶기 — 빈 묶음은 돌려주지 않는다. held 업무는 바꾸기 전 상태의 묶음에 남는다.
- * - status: 진행중 → 대기 → 완료 → 취소
+ * - status: 진행 중 → 대기 → 완료 → 취소
  * - due: 기한 지남 → 오늘 → 내일 → 7일 이내 → 나중 → 마감 없음 → 완료 → 취소 (끝난 업무는 날짜와 상관없이 아래)
  * - category: categoryOrder 순서
  * - assignee: 나 → 다른 직원(이름순) → 미배정
@@ -493,6 +518,10 @@ export function applyTaskUpdate(
   if (dto.contractId === null) {
     next.contractId = null;
     next.contract = null;
+  }
+  if (dto.projectId === null) {
+    next.projectId = null;
+    next.project = null;
   }
   return next;
 }

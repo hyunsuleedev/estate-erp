@@ -44,7 +44,7 @@ function ad(
     comparison:
       values.articleConfirmYmd === undefined
         ? null
-        : { mainAdvertisement: { articleConfirmYmd: values.articleConfirmYmd } },
+        : { ownAdvertisement: { articleConfirmYmd: values.articleConfirmYmd } },
     listing: {
       property: {
         site: { name: values.site ?? "래미안고덕" },

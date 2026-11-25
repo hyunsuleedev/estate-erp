@@ -1,15 +1,15 @@
 /**
- * 만기/변동 뷰 — 내부 CRM(Tenant 계약 종료일) 기반 임대차 만기 추적 +
- * 외부 신호(등기변동/거래 AI) 정보 구조 자리.
+ * 만기 뷰 — 우리가 적어 둔 세입자 계약 만료일·퇴거 예정일을 가까운 순서로 본다.
+ * (등기변동·실거래 신호 자리는 2026-11-22에 뺐다: 연결된 데이터가 없는데 "준비 중" 상자만 있었고,
+ * 제품에 AI를 넣지 않는다는 방침과도 맞지 않았다.)
  */
-import { formatUnitName } from '@estate-erp/shared';
 import { useMemo } from 'react';
-import { CalendarClock, FileSearch, TrendingUp } from 'lucide-react';
+import { CalendarClock } from 'lucide-react';
 import type { Unit, UnitTenant } from '@estate-erp/api-client';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/domain';
 import { cn } from '@/lib/utils';
-import { formatDate, formatDday, formatRent } from '@/lib/format';
+import { formatDday, formatRelativeDay, formatRent } from '@/lib/format';
 import { tenantStatusLabels } from './-site-helpers';
 
 interface ExpiryRow {
@@ -32,11 +32,12 @@ function ddayTone(dueDate: string): string {
 
 export function ExpiryBoard({
   units,
-  getDongName,
+  getPlaceLabel,
   onUnitOpen,
 }: {
   units: Unit[];
-  getDongName: (dongId: string | null) => string;
+  /** "101동 3401호" — formatPlaceLabel로 만든 집 이름 */
+  getPlaceLabel: (unit: Unit) => string;
   onUnitOpen: (unit: Unit) => void;
 }) {
   const rows = useMemo<ExpiryRow[]>(() => {
@@ -58,7 +59,7 @@ export function ExpiryBoard({
   return (
     <div className="h-full overflow-auto px-4 py-4">
       <div className="space-y-6">
-        {/* ── 임대차 만기 (내부 CRM 데이터) ── */}
+        {/* ── 임대차 만기 ── */}
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="flex items-center gap-1.5 text-sm font-medium">
@@ -68,7 +69,7 @@ export function ExpiryBoard({
             <span className="text-xs tabular-nums text-muted-foreground">{rows.length}건</span>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            내부 CRM에 기록된 세입자 계약 종료일/퇴거 예정일 기준 · 날짜순 정렬
+            세입자의 계약 만료일(없으면 퇴거 예정일)이 가까운 순서입니다.
           </p>
           {rows.length > 0 ? (
             <div className="overflow-hidden rounded-lg border border-border/60">
@@ -82,20 +83,20 @@ export function ExpiryBoard({
                     index > 0 && 'border-t border-border/40',
                   )}
                 >
-                  <span className="w-28 shrink-0 text-[13px] font-medium tabular-nums">
-                    {getDongName(unit.dongId)} {formatUnitName(unit)}
+                  <span className="w-32 shrink-0 text-[13px] font-medium tabular-nums">
+                    {getPlaceLabel(unit)}
                   </span>
                   <span className="min-w-0 truncate text-[13px]">{tenant.contact.name}</span>
                   <span className="text-[12px] tabular-nums text-muted-foreground">
                     {formatRent(tenant.deposit, tenant.monthlyRent)}
                   </span>
-                  <Badge variant="secondary" className="text-[10px] font-normal">
+                  <Badge variant="secondary" className="text-[11.5px] font-normal">
                     {tenantStatusLabels[tenant.status] ?? tenant.status}
                   </Badge>
                   <span className="ml-auto text-[12px] tabular-nums text-muted-foreground">
-                    {tenant.contractEnd ? '계약 만기' : '퇴거 예정'} {formatDate(dueDate)}
+                    {tenant.contractEnd ? '계약 만기' : '퇴거 예정'} {formatRelativeDay(dueDate)}
                   </span>
-                  <Badge className={cn('text-[10px] font-medium tabular-nums', ddayTone(dueDate))}>
+                  <Badge className={cn('text-[11.5px] font-medium tabular-nums', ddayTone(dueDate))}>
                     {formatDday(dueDate)}
                   </Badge>
                 </button>
@@ -105,39 +106,12 @@ export function ExpiryBoard({
             <EmptyState
               icon={CalendarClock}
               title="추적할 임대차 만기가 없습니다"
-              description="세입자에 계약 종료일을 기록하면 만기 도래 순으로 표시됩니다"
+              description="호실을 열어 ‘소유자·세입자’에서 세입자를 추가하고 계약 만료일을 적으면 가까운 순서로 나옵니다."
               className="rounded-lg border border-dashed py-8"
             />
           )}
         </section>
 
-        {/* ── 외부 신호 (수집 파이프라인 연동 전) ── */}
-        <div className="grid gap-4 lg:grid-cols-2">
-          <section className="space-y-3">
-            <h3 className="flex items-center gap-1.5 text-sm font-medium">
-              <FileSearch className="size-4 text-muted-foreground" />
-              등기변동 알림
-            </h3>
-            <EmptyState
-              icon={FileSearch}
-              title="준비 중인 기능입니다"
-              description="인터넷등기소 변동 이력(소유권이전·근저당·압류 등) 수집 파이프라인 연동 후 제공됩니다"
-              className="rounded-lg border border-dashed py-8"
-            />
-          </section>
-          <section className="space-y-3">
-            <h3 className="flex items-center gap-1.5 text-sm font-medium">
-              <TrendingUp className="size-4 text-muted-foreground" />
-              거래 AI 알림
-            </h3>
-            <EmptyState
-              icon={TrendingUp}
-              title="준비 중인 기능입니다"
-              description="실거래가 데이터 기반 평형/라인 유사군 거래 신호는 데이터 파이프라인 연동 후 제공됩니다"
-              className="rounded-lg border border-dashed py-8"
-            />
-          </section>
-        </div>
       </div>
     </div>
   );

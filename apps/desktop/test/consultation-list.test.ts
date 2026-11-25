@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import {
+  consultationDisplayText,
+  splitConsultationTag,
   buildConsultationThread,
   consultationViewParams,
   formatConsultationWhen,
@@ -236,7 +238,8 @@ describe('consultation list model', () => {
     assert.equal(formatConsultationWhen(new Date(2026, 10, 16, 9, 5).toISOString(), now), '오늘 09:05');
     assert.equal(formatConsultationWhen(new Date(2026, 10, 15, 23, 50).toISOString(), now), '어제 23:50');
     assert.equal(formatConsultationWhen(new Date(2026, 10, 13, 16, 5).toISOString(), now), '11.13 (금) 16:05');
-    assert.equal(formatConsultationWhen(new Date(2025, 11, 31, 10, 0).toISOString(), now), '25.12.31 (수) 10:00');
+    // 다른 해는 요일 없이 연도 네 자리 (.qa/STANDARDS.md, lib/format formatRelativeDay)
+    assert.equal(formatConsultationWhen(new Date(2025, 11, 31, 10, 0).toISOString(), now), '2025.12.31 10:00');
     assert.equal(formatConsultationWhen('not a date', now), '');
   });
 
@@ -351,3 +354,21 @@ describe('consultation full page', () => {
     assert.match(detail, /const Title = isPage \? 'h1' : SheetTitle;/);
   });
 });
+
+describe('매물 확인 꼬리표', () => {
+  it('첫 줄의 [매물확인] 꼬리표를 화면 낱말로 떼어 내고 나머지를 본문으로 둔다', () => {
+    assert.deepEqual(splitConsultationTag('[매물확인] 살아있음'), { tag: '매물 확인 · 유효함', body: '', tone: 'good' });
+    assert.deepEqual(splitConsultationTag('[매물확인] 가격변경\n2억 내려 달라고 함'), {
+      tag: '매물 확인 · 가격 변경',
+      body: '2억 내려 달라고 함',
+      tone: 'attention',
+    });
+    assert.equal(consultationDisplayText('[매물확인] 부재중\n저녁에 다시'), '매물 확인 · 부재중 — 저녁에 다시');
+  });
+
+  it('사람이 대괄호로 시작해 적은 글은 꼬리표로 보지 않는다', () => {
+    assert.deepEqual(splitConsultationTag('[중요] 계약금 내일 입금'), { tag: null, body: '[중요] 계약금 내일 입금', tone: 'quiet' });
+    assert.equal(consultationDisplayText('그냥 메모'), '그냥 메모');
+  });
+});
+

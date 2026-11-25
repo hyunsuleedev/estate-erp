@@ -39,11 +39,16 @@ import {
   type TaskPriority,
   type TaskUpdatePatch,
 } from './-task-shared';
+import { dueDateKey } from './-task-filters';
 
 // ─── 공통 행 핸들러 타입 ───────────────────────────────────
 
 export type TaskRowHandlers = {
   onRowClick: (task: Task) => void;
+  /** 지금 옆 패널(서랍)에 열려 있는 업무. 그 줄의 "열기" 단추가 "닫기"가 된다 */
+  openTaskId?: string | null;
+  /** 열려 있는 서랍을 닫는다 (그 줄의 "닫기") */
+  onCloseTask?: () => void;
   onStatusChange: (id: string, status: string, options?: StatusChangeOptions) => void;
   /** 행 앞 체크 한 단계 진행 — 다음 상태는 페이지가 최신 캐시에서 계산한다 (연속 클릭 안전) */
   onCycleCheck: (id: string) => void;
@@ -58,6 +63,13 @@ const pickerTriggerClassName =
 
 const pickerOptionClassName =
   'flex items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none';
+
+/**
+ * 표의 칸 전체가 누르는 곳이 되는 트리거 (업무 목록의 담당 · 마감 칸). 매물관리 표의 칸 편집과 같은 모양이다:
+ * 올리면 옅게 물들고, 열려 있거나 키보드로 닿으면 칸 안쪽에 파란 선이 그려진다.
+ */
+const cellTriggerClassName =
+  'flex h-full w-full min-w-0 items-center px-2.5 text-left transition-colors hover:bg-[rgba(55,53,47,0.04)] data-[state=open]:bg-white data-[state=open]:shadow-[inset_0_0_0_2px_#2383e2] focus-visible:shadow-[inset_0_0_0_2px_#2383e2] focus-visible:outline-none';
 
 /** 아이콘 하나짜리 트리거 (목록 행의 우선순위·담당자) */
 const compactTriggerClassName =
@@ -84,10 +96,10 @@ export function TaskAssigneeAvatar({ name, className }: { name: string | null; c
   );
 }
 
-// ─── 상태 체크 (대기 → 진행중 → 완료 순환) ─────────────────
+// ─── 상태 체크 (대기 → 진행 중 → 완료 순환) ─────────────────
 
 const CHECK_COPY: Record<string, { aria: string; title: string }> = {
-  pending: { aria: '진행중으로 표시', title: '진행중으로 표시 · 한 번 더 누르면 완료' },
+  pending: { aria: '진행 중으로 표시', title: '진행 중으로 표시 · 한 번 더 누르면 완료' },
   in_progress: { aria: '완료로 표시', title: '완료로 표시' },
   completed: { aria: '대기로 되돌리기', title: '완료 취소 (대기로 되돌리기)' },
 };
@@ -126,7 +138,7 @@ export function TaskCompleteToggle({
         className,
       )}
     >
-      {/* 진행중: 오른쪽 반이 채워진 원. 대기에서 hover하면 다음 단계(반체크)를 미리 보여준다 */}
+      {/* 진행 중: 오른쪽 반이 채워진 원. 대기에서 hover하면 다음 단계(반체크)를 미리 보여준다 */}
       {(inProgress || (!completed && !cancelled)) && (
         <span
           aria-hidden="true"
@@ -266,14 +278,18 @@ export function DueDatePickerPopover({
   task,
   onUpdate,
   compact = false,
+  cell = false,
 }: {
   task: Task;
   onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
   /** 목록 행 오른쪽 끝 — 오른쪽 정렬, 마감일이 없으면 행에 마우스를 올렸을 때만 안내 */
   compact?: boolean;
+  /** 표의 칸 — 칸 전체가 누르는 곳이고 글자는 표 본문 크기(14px) */
+  cell?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const selected = parseDateKey(task.dueDate);
+  const currentKey = dueDateKey(task.dueDate);
+  const selected = parseDateKey(currentKey || null);
   const today = new Date();
   const quickPicks = [
     { label: '오늘', date: addDays(today, 0) },
@@ -284,7 +300,7 @@ export function DueDatePickerPopover({
   const commit = (date: Date | null) => {
     setOpen(false);
     const next = date ? toDateKey(date) : null;
-    if (next === (task.dueDate ? task.dueDate.substring(0, 10) : null)) return;
+    if (next === (currentKey || null)) return;
     onUpdate?.(task.id, { dueDate: next });
   };
 
@@ -293,11 +309,17 @@ export function DueDatePickerPopover({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={cn(pickerTriggerClassName, compact && 'justify-end')}
+          className={cell ? cellTriggerClassName : cn(pickerTriggerClassName, compact && 'justify-end')}
           aria-label="마감일 변경"
         >
           {task.dueDate ? (
-            <DueDateText task={task} />
+            <DueDateText task={task} className={cell ? 'truncate text-[14px] leading-[21px] font-[450]' : undefined} />
+          ) : cell ? (
+            // 빈 값은 매물관리 표처럼 흐린 "-"
+            <span className="text-[14px] text-muted-foreground/50">
+              <span aria-hidden="true">-</span>
+              <span className="sr-only">마감일 없음</span>
+            </span>
           ) : (
             <span
               className={cn(
@@ -355,12 +377,15 @@ export function TaskAssigneePicker({
   employeeOptions,
   onUpdate,
   compact = false,
+  cell = false,
 }: {
   task: Task;
   employeeOptions: Employee[];
   onUpdate?: (id: string, dto: TaskUpdatePatch) => void;
   /** 목록 행 — 이름 없이 동그란 머리글자만 (이름은 툴팁) */
   compact?: boolean;
+  /** 표의 칸 — 칸 전체가 누르는 곳이고 머리글자 동그라미 옆에 이름을 표 본문 크기(14px)로 적는다 */
+  cell?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const commit = (assignedToId: string | null) => {
@@ -374,11 +399,29 @@ export function TaskAssigneePicker({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={compact ? compactTriggerClassName : pickerTriggerClassName}
+          className={cell ? cellTriggerClassName : compact ? compactTriggerClassName : pickerTriggerClassName}
           aria-label={label}
           title={compact ? (task.assignedTo?.name ?? '미배정') : undefined}
         >
-          {compact ? (
+          {cell ? (
+            task.assignedTo ? (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Avatar className="size-5 shrink-0">
+                  <AvatarFallback className="bg-info-soft text-[11px] font-medium text-info-strong">
+                    {task.assignedTo.name.charAt(0)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="truncate text-[14px] leading-[21px] font-[450] text-foreground">
+                  {task.assignedTo.name}
+                </span>
+              </span>
+            ) : (
+              <span className="text-[14px] text-muted-foreground/50">
+                <span aria-hidden="true">-</span>
+                <span className="sr-only">미배정</span>
+              </span>
+            )
+          ) : compact ? (
             <TaskAssigneeAvatar name={task.assignedTo?.name ?? null} />
           ) : task.assignedTo ? (
             <span className="flex min-w-0 items-center gap-1.5">
@@ -471,7 +514,7 @@ export function TaskRowActionsMenu({
         {task.status !== 'in_progress' && (
           <DropdownMenuItem onClick={() => onStatusChange(task.id, 'in_progress')}>
             <ArrowRight className="mr-2 size-4" />
-            진행중으로 변경
+            진행 중으로 변경
           </DropdownMenuItem>
         )}
         {task.status !== 'completed' && (

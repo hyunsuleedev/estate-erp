@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Building2, CalendarDays, Link2, PenLine, RotateCcw, UserRound, Waypoints, X } from 'lucide-react';
 import { api } from '@/lib/api';
+import { formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { Dong, Site, Unit } from '@estate-erp/api-client';
 import { Button } from '@/components/ui/button';
@@ -31,14 +32,14 @@ import {
 const TYPE_OPTIONS = [
   { value: 'phone', label: '전화' },
   { value: 'visit', label: '방문' },
-  { value: 'online', label: '온라인' },
+  { value: 'online', label: '문자·온라인' },
 ];
 
 /** 무엇에 연결된 상담인지 */
 const CONTEXT_OPTIONS = [
   { value: 'property', label: '매물 연결' },
   { value: 'listingIntake', label: '의뢰 연결' },
-  { value: 'buyerRequirement', label: '구매요건 연결' },
+  { value: 'buyerRequirement', label: '희망 조건 연결' },
   { value: 'unlinked', label: '연결 없음' },
 ];
 
@@ -253,7 +254,9 @@ function ContactFilterPicker({
                   </div>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">{contact.name}</div>
-                    <div className="truncate text-xs text-muted-foreground">{contact.phone ?? '연락처 없음'}</div>
+                    <div className="truncate text-xs tabular-nums text-muted-foreground">
+                      {contact.phone ? formatPhone(contact.phone) : '전화번호 없음'}
+                    </div>
                   </div>
                 </CommandItem>
               ))}

@@ -37,3 +37,14 @@ export function registrationSpace(draft: SpaceDraft, wholeDong: boolean) {
 export function formatPropertySpaceLabel(unit: UnitSpace | null | undefined, siteType?: string) {
   return formatUnitLabel(unit) || (!unit && (siteType === 'commercial' || siteType === 'house') ? '건물 전체' : '');
 }
+
+/**
+ * 아파트·오피스텔처럼 호가 정해진 건물에서 목록에 없는 호를 적을 때.
+ * "1203호"는 다른 호들처럼 이름 "1203"으로 두고, 층을 비웠으면 호 번호에서 읽는다(1203 → 12층).
+ */
+export function normalizeHoDraft(draft: SpaceDraft): SpaceDraft {
+  const raw = draft.partName?.trim() ?? '';
+  const name = /^\d{3,4}호$/.test(raw) ? raw.slice(0, -1) : raw;
+  const inferredFloor = /^\d{3,4}$/.test(name) ? String(Math.floor(Number(name) / 100)) : '';
+  return { ...draft, partName: name, startFloor: draft.startFloor?.trim() || inferredFloor };
+}

@@ -1,8 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
+import { ApiError } from '@estate-erp/api-client';
 import {
   Activity,
+  Archive,
   CircleDot,
   Columns3,
   FileText,
@@ -182,10 +185,6 @@ function DealsPage() {
     () => filteredDeals.filter((deal) => !deal.isCancelled && deal.stage !== 'closed'),
     [filteredDeals],
   );
-  const atRiskDealCount = useMemo(
-    () => activeDeals.filter((deal) => getDealPipelineHealth(deal, referenceDate).isAtRisk).length,
-    [activeDeals, referenceDate],
-  );
   const listedDeal = deals.find((deal) => deal.id === selectedDealId);
   const detailQuery = useQuery({
     queryKey: ['deals', 'detail', selectedDealId],
@@ -193,6 +192,33 @@ function DealsPage() {
     enabled: Boolean(selectedDealId && !listedDeal),
   });
   const selectedDeal = listedDeal ?? detailQuery.data;
+  const navigateDeals = Route.useNavigate();
+  // 주소(?dealId=)나 다른 화면에서 연 거래를 불러오지 못했을 때: 빈 패널·날 단추를 남기지 않고 한 번 알린다.
+  // 없는 거래(404)·형식이 틀린 id(400)는 주소에서 지워 새로 고침·뒤로 가기 때 다시 묻지 않는다.
+  const reportedDealErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedDealId || listedDeal || !detailQuery.isError) return;
+    if (reportedDealErrorRef.current === selectedDealId) return;
+    reportedDealErrorRef.current = selectedDealId;
+    const failedId = selectedDealId;
+    const error = detailQuery.error;
+    const notFound = error instanceof ApiError && (error.statusCode === 404 || error.statusCode === 400);
+    setSelectedDealId(null);
+    if (notFound) {
+      toast.error('거래를 찾을 수 없습니다. 지워졌을 수 있습니다.');
+    } else {
+      toast.error('거래를 불러오지 못했습니다.', {
+        action: {
+          label: '다시 시도',
+          onClick: () => {
+            reportedDealErrorRef.current = null;
+            setSelectedDealId(failedId);
+          },
+        },
+      });
+    }
+    if (deepLinkDealId === failedId) void navigateDeals({ search: {}, replace: true });
+  }, [selectedDealId, listedDeal, detailQuery.isError, detailQuery.error, deepLinkDealId, navigateDeals]);
 
   // 상세 패널은 매물관리와 같은 방식으로 열고 닫는다: 닫을 때는 미끄러져 나간 뒤에 선택을 지운다.
   const [isInspectorClosing, setIsInspectorClosing] = useState(false);
@@ -222,6 +248,11 @@ function DealsPage() {
     onOpenDeal: openDealInspector,
     onDeleted: (deal) => {
       if (selectedDealId === deal.id) setSelectedDealId(null);
+    },
+    // 종료된 거래 탭에서 되살렸으면 진행 중 탭으로 옮겨 그 거래를 이어서 보여 준다
+    onRestored: (dealId) => {
+      setScope('active');
+      openDealInspector(dealId);
     },
   });
   const rowActions: DealRowActions = {
@@ -255,18 +286,65 @@ function DealsPage() {
     Boolean(contractFilter) ||
     Boolean(healthFilter);
 
+  // 진행 중인 거래와 끝난 거래(정산 종료·취소)를 오가는 단추. 두 목록의 툴바 오른쪽 같은 자리에 둔다.
+  const scopeToggle = (
+    <ToolbarPillToggle
+      shape="muted"
+      ariaLabel="거래 목록 구분"
+      value={scope}
+      onChange={(next) => {
+        if (next === scope) return;
+        setScope(next);
+        setSelectedDealId(null);
+      }}
+      options={[
+        { value: 'active', label: '진행', icon: <CircleDot /> },
+        { value: 'archive', label: '종료', icon: <Archive /> },
+      ]}
+    />
+  );
+
+  // 툴바 오른쪽 묶음. 진행·종료 두 목록이 같은 자리에 같은 단추를 둬서 오갈 때 화면이 이어진다.
+  // 보드는 진행 중인 거래의 단계판이라 종료 목록에서는 고를 수 없다(자리는 지키고 흐리게 둔다).
+  // 종료 목록에서는 리스트로 보이지만 고른 보기는 그대로 두어, 진행으로 돌아오면 보던 보기로 이어진다.
+  const toolbarActions = (
+    <>
+      {scopeToggle}
+      <ToolbarPillToggle
+        shape="muted"
+        ariaLabel="거래 보기 방식"
+        value={scope === 'archive' ? 'list' : viewMode}
+        onChange={(next) => {
+          if (scope === 'active') setViewMode(next);
+        }}
+        options={[
+          { value: 'list', label: '리스트', icon: <List /> },
+          {
+            value: 'board',
+            label: '보드',
+            icon: <Columns3 />,
+            disabled: scope === 'archive',
+            disabledTitle: '보드는 진행 중인 거래에서 볼 수 있습니다.',
+          },
+        ]}
+      />
+      <Button
+        type="button"
+        size="sm"
+        aria-label="새 거래"
+        className="h-[30px] shrink-0 rounded-[8px] px-3"
+        onClick={() => setCreateOpen(true)}
+      >
+        <Plus className="size-3.5" aria-hidden="true" />
+        {/* 툴바 폭이 768px보다 좁으면 아이콘만 */}
+        <span className="@max-3xl:hidden">새 거래</span>
+      </Button>
+    </>
+  );
+
   return (
     <div data-deals-page className="relative -m-4 flex min-h-0 flex-1 flex-col bg-white">
-      <nav aria-label="거래 목록 구분" className="flex gap-4 border-b px-4">
-        {(['active', 'archive'] as const).map((item) => (
-          <button key={item} type="button" aria-pressed={scope === item}
-            className={cn('border-b-2 border-transparent py-2 text-sm text-muted-foreground', scope === item && 'border-foreground font-medium text-foreground')}
-            onClick={() => { setScope(item); setSelectedDealId(null); }}>
-            {item === 'active' ? '진행 중' : '종료된 거래'}
-          </button>
-        ))}
-      </nav>
-      {scope === 'archive' ? <EndedDeals onOpen={openDealInspector} /> : <>
+      {scope === 'archive' ? <EndedDeals onOpen={openDealInspector} trailing={toolbarActions} /> : <>
       {/* 1행 "찾기": 매물관리와 같은 순서 — 거래유형 · 검색 · 필터 접기 │ 요약 · 보기 전환 · 새 거래 */}
       <section className="shrink-0 border-b border-border bg-white px-3 py-2.5">
         <div className="@container flex min-w-0 items-center gap-2">
@@ -332,47 +410,7 @@ function DealsPage() {
                 초기화
               </button>
             ) : null}
-            <div
-              className="flex shrink-0 items-center gap-2.5 px-1 text-[12.5px] text-muted-foreground @max-3xl:hidden"
-              aria-label={`진행 거래 ${activeDeals.length}건, 일정 주의 ${atRiskDealCount}건`}
-            >
-              <span>
-                진행 <strong className="font-semibold tabular-nums text-foreground">{activeDeals.length}</strong>
-              </span>
-              <span className="h-3.5 w-px bg-border" aria-hidden="true" />
-              <span>
-                일정 주의{' '}
-                <strong
-                  className={cn(
-                    'font-semibold tabular-nums',
-                    atRiskDealCount > 0 ? 'text-amber-700' : 'text-foreground',
-                  )}
-                >
-                  {atRiskDealCount}
-                </strong>
-              </span>
-            </div>
-            <ToolbarPillToggle
-              shape="muted"
-              ariaLabel="거래 보기 방식"
-              value={viewMode}
-              onChange={setViewMode}
-              options={[
-                { value: 'list', label: '리스트', icon: <List /> },
-                { value: 'board', label: '보드', icon: <Columns3 /> },
-              ]}
-            />
-            <Button
-              type="button"
-              size="sm"
-              aria-label="새 거래"
-              className="h-[30px] shrink-0 rounded-[8px] px-3"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="size-3.5" aria-hidden="true" />
-              {/* 툴바 폭이 768px보다 좁으면 아이콘만 */}
-              <span className="@max-3xl:hidden">새 거래</span>
-            </Button>
+            {toolbarActions}
           </div>
         </div>
       </section>
@@ -447,7 +485,7 @@ function DealsPage() {
           <EmptyState
             icon={Handshake}
             title="등록된 거래가 없습니다"
-            description="매칭에서 거래로 전환하거나, 새 거래를 직접 생성하세요."
+            description="손님이 집을 정하면 희망매물에서 '거래 전환'을 누르거나, 새 거래로 바로 만드세요. 계약금·잔금 일정과 수수료는 거래 안에서 관리합니다."
             className="flex-1"
             action={
               <Button type="button" onClick={() => setCreateOpen(true)}>
@@ -490,7 +528,6 @@ function DealsPage() {
       </section>
 
       </>}
-      {selectedDealId && detailQuery.isError && !listedDeal && <button onClick={() => detailQuery.refetch()}>거래 상세를 불러오지 못했습니다. 재시도</button>}
       {selectedDeal ? (
         <DealInspector
           deal={selectedDeal}
@@ -507,7 +544,11 @@ function DealsPage() {
       <DealCreateDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={(deal) => openDealInspector(deal.id)}
+        // 종료 목록에서 만들었으면 새 거래가 보이는 진행 목록으로 옮긴다
+        onCreated={(deal) => {
+          setScope('active');
+          openDealInspector(deal.id);
+        }}
       />
 
       {dealDialogs}

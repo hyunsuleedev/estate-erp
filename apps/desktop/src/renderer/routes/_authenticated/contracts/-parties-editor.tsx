@@ -33,6 +33,7 @@ import type {
   ContractPartySide,
 } from '@estate-erp/api-client';
 import { getContractPartySideLabels } from './-document-engine';
+import { isUnconfirmedContactName, UNCONFIRMED_CONTACT_MESSAGE } from './-contract-shared';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
@@ -620,14 +621,17 @@ function PartyRowEditor({
             </Badge>
           ) : (
             <ContactLinkPicker
-              onSelect={(contact) =>
+              onSelect={(contact) => {
+                // "미확인 5678" 같은 임시 이름은 계약서 성명 칸에 옮기지 않는다
+                const unconfirmed = isUnconfirmedContactName(contact.name);
+                if (unconfirmed) toast.warning(UNCONFIRMED_CONTACT_MESSAGE);
                 onUpdate(row.uid, {
                   contactId: contact.id,
                   contactName: contact.name,
-                  name: row.name || contact.name,
+                  name: row.name || (unconfirmed ? '' : contact.name),
                   phone: row.phone || contact.phone || '',
-                })
-              }
+                });
+              }}
             />
           )}
         </div>

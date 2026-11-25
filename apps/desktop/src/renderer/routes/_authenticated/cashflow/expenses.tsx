@@ -1,7 +1,10 @@
+// 2026-11-22에 화면에서 내렸다(사용자 결정: 이 영역의 목적은 직원 정산 계산이고, 고정비는 순이익 숫자에만 쓰였다).
+// 다시 켜는 법: 아래 EXPENSES_ENABLED 를 true 로, nav-config.ts의 '고정비 설정' 메뉴와 캐시플로우 첫 화면의 고정비·순이익 칸을 되돌린다.
 /**
  * 고정비 설정. 왼쪽 표에서 항목을 관리하고, 오른쪽에서 분류별 금액과 이번 달 결제 일정을 본다.
+ * 서버 API(finance/expenses)와 표는 그대로 남아 있다.
  */
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import {
@@ -60,8 +63,17 @@ import {
   SummaryStrip,
 } from './-cashflow-ui';
 import { monthlyExpenseAmount } from './-cashflow-utils';
+import { apiErrorMessage } from '@/lib/api-error';
+
+const EXPENSES_ENABLED = false as boolean;
 
 export const Route = createFileRoute('/_authenticated/cashflow/expenses')({
+  // 열려 있던 탭이나 주소로 들어와도 캐시플로우로 보낸다
+  beforeLoad: () => {
+    if (!EXPENSES_ENABLED) {
+      throw redirect({ to: '/cashflow', replace: true });
+    }
+  },
   component: ExpensesRoute,
 });
 
@@ -75,6 +87,7 @@ function ExpensesRoute() {
 
 const CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'rent', label: '임대료' },
+  { value: 'salary', label: '인건비' },
   { value: 'ad', label: '광고비' },
   { value: 'telecom', label: '통신비' },
   { value: 'insurance', label: '보험료' },
@@ -131,7 +144,7 @@ function ExpensesPage() {
       );
       invalidate();
     },
-    onError: () => toast.error('상태를 바꾸지 못했습니다.'),
+    onError: (error) => toast.error(apiErrorMessage(error, '상태를 바꾸지 못했습니다.')),
   });
 
   const remove = useMutation({
@@ -141,7 +154,7 @@ function ExpensesPage() {
       invalidate();
       setDeleting(null);
     },
-    onError: () => toast.error('삭제하지 못했습니다.'),
+    onError: (error) => toast.error(apiErrorMessage(error, '삭제하지 못했습니다.')),
   });
 
   const currentMonth = {
@@ -649,14 +662,15 @@ function ExpenseFormDialog({
 
   const mutation = useMutation({
     mutationFn: () => {
+      // 고칠 때 비운 결제일·메모는 null 로 보내야 지워진다 (undefined 는 그대로 둔다는 뜻)
       const payload = {
         title: title.trim(),
         category,
         amount: Number(amount),
         frequency,
-        dayOfMonth: dayOfMonth ? Number(dayOfMonth) : undefined,
+        dayOfMonth: dayOfMonth.trim() ? Number(dayOfMonth) : null,
         taxDeductible,
-        note: note.trim() || undefined,
+        note: note.trim() || null,
       };
       return isEdit
         ? api.finance.expenses.update(editing.id, payload)
@@ -668,14 +682,16 @@ function ExpenseFormDialog({
       qc.invalidateQueries({ queryKey: ['cashflow'] });
       onOpenChange(false);
     },
-    onError: () =>
-      toast.error(isEdit ? '수정하지 못했습니다.' : '등록하지 못했습니다.'),
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, isEdit ? '수정하지 못했습니다.' : '등록하지 못했습니다.')),
   });
 
   const amountValue = Number(amount);
-  const day = dayOfMonth ? Number(dayOfMonth) : null;
-  const dayValid = day === null || (day >= 1 && day <= 31);
-  const valid = title.trim().length > 0 && amountValue > 0 && dayValid;
+  // 금액은 만원 단위 정수다. 12.5처럼 소수를 넣으면 서버가 받지 않는다.
+  const amountValid = Number.isInteger(amountValue) && amountValue > 0;
+  const day = dayOfMonth.trim() ? Number(dayOfMonth) : null;
+  const dayValid = day === null || (Number.isInteger(day) && day >= 1 && day <= 31);
+  const valid = title.trim().length > 0 && amountValid && dayValid;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -740,13 +756,17 @@ function ExpenseFormDialog({
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="예) 250"
               />
-              {amountValue > 0 && (
+              {amount.trim() && !amountValid ? (
+                <p className="text-xs text-destructive-strong">
+                  만원 단위 정수로 적어 주세요. 예) 250
+                </p>
+              ) : amountValue > 0 ? (
                 <p className="text-xs text-muted-foreground">
                   = {formatMoney(amountValue)}원
                   {frequency !== 'monthly' &&
                     ` · 월 ${formatMoney(monthlyExpenseAmount({ amount: amountValue, frequency }))}`}
                 </p>
-              )}
+              ) : null}
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="expense-day">결제일 (선택)</Label>

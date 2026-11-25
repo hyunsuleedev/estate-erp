@@ -35,6 +35,7 @@ import {
   getNextDealPaymentSummary,
   type DealDisplayGroup,
   type DealRowActions,
+  formatPartyNames,
 } from './-deal-view-utils';
 
 /** DataTable이 체크박스 열에 쓰는 폭 */
@@ -355,7 +356,7 @@ function createDealColumns(
             className="block truncate"
             title={getDealPropertyCells(deal).site ?? undefined}
           >
-            {getDealPropertyCells(deal).site ?? '매물 정보 없음'}
+            {getDealPropertyCells(deal).site ?? '매물 미지정'}
           </span>
           {/* 매물관리 표의 열기 버튼과 같은 모양·자리: 행에 올리면 칸 오른쪽에 뜬다 */}
           <span
@@ -535,9 +536,9 @@ function NextPaymentCell({
           'truncate',
           daysUntil === null && 'text-muted-foreground',
         )}
-        title={formatNextPaymentName(nextPayment)}
+        title={formatNextPaymentName(nextPayment, deal)}
       >
-        {formatNextPaymentName(nextPayment)}
+        {formatNextPaymentName(nextPayment, deal)}
       </span>
       {daysUntil !== null && (
         <span
@@ -639,8 +640,8 @@ function ArchiveDealRow({
         </div>
         <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
           {cancelled
-            ? `${deal.cancelledAt ? formatDate(deal.cancelledAt) : '—'} · ${formatCancelledBy(deal.cancelledBy)}${deal.cancelReason ? ` · ${deal.cancelReason}` : ''}`
-            : `매도 ${deal.sellerContact?.name ?? '미지정'} · 매수 ${deal.buyerContact?.name ?? '미지정'}${deal.memo ? ` · ${deal.memo}` : ''}`}
+            ? `${deal.cancelledAt ? formatDate(deal.cancelledAt) : '—'} · ${formatCancelledBy(deal.cancelledBy, getDealTransactionType(deal))}${deal.cancelReason ? ` · ${deal.cancelReason}` : ''}`
+            : `${formatPartyNames(deal, '미지정')}${deal.memo ? ` · ${deal.memo}` : ''}`}
         </p>
       </button>
       <div className="shrink-0 text-right">

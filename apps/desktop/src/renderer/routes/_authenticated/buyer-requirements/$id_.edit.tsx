@@ -5,13 +5,13 @@ import { RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import type { UpdateBuyerRequirementDto } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
-import { PageHeader } from '@/components/domain';
+import { apiErrorMessage } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
 import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
-import { BuyerRequirementForm, type BuyerFormSubmitDto } from './-buyer-form';
+import { BuyerFormPage, BuyerRequirementForm, type BuyerFormSubmitDto } from './-buyer-form';
 
 export const Route = createFileRoute('/_authenticated/buyer-requirements/$id_/edit')({
   component: EditBuyerRequirementPage,
@@ -39,7 +39,7 @@ function EditBuyerRequirementPage() {
   const updateMutation = useMutation({
     mutationFn: (dto: UpdateBuyerRequirementDto) => api.buyerRequirements.update(id, dto),
     onSuccess: async () => {
-      toast.success('구매고객 조건이 수정되었습니다.');
+      toast.success('희망 조건을 저장했습니다.');
       await queryClient.invalidateQueries({ queryKey: ['buyer-requirements'] });
       const ownerTabId = ownerTabIdRef.current;
       if (!ownerTabId) return;
@@ -59,8 +59,8 @@ function EditBuyerRequirementPage() {
         navigate({ href: route, replace: true });
       }
     },
-    onError: () => {
-      toast.error('구매고객 조건 수정에 실패했습니다.');
+    onError: (error: Error) => {
+      toast.error(apiErrorMessage(error, '희망 조건을 저장하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -73,10 +73,6 @@ function EditBuyerRequirementPage() {
   const handleCancel = () => {
     if (ownerTabIdRef.current) clearTabFormDraft(ownerTabIdRef.current);
     navigate({ to: '/buyer-requirements/$id', params: { id } });
-  };
-  const handleBackToList = () => {
-    if (ownerTabIdRef.current) clearTabFormDraft(ownerTabIdRef.current);
-    navigate({ to: '/customers-table' });
   };
 
   if (isLoading) {
@@ -92,7 +88,7 @@ function EditBuyerRequirementPage() {
   if (isError || !requirement) {
     return (
       <div className="flex flex-col items-center gap-3 py-16 text-center">
-        <p className="text-sm text-muted-foreground">구매고객 조건을 불러오지 못했습니다.</p>
+        <p className="text-sm text-muted-foreground">희망 조건을 불러오지 못했습니다.</p>
         <Button variant="outline" size="sm" onClick={() => refetch()}>
           <RefreshCw className="size-3.5" />
           다시 시도
@@ -102,12 +98,10 @@ function EditBuyerRequirementPage() {
   }
 
   return (
-    <div className="pt-4">
-      <PageHeader
-        showTitle
-        title={`${requirement.contact?.name ?? '구매고객'} 조건 수정`}
-        onBack={handleBackToList}
-      />
+    <BuyerFormPage
+      title={`${requirement.contact?.name ?? '고객'} 희망 조건 수정`}
+      onBack={handleCancel}
+    >
       <BuyerRequirementForm
         mode="edit"
         initial={requirement}
@@ -115,6 +109,6 @@ function EditBuyerRequirementPage() {
         onSubmit={handleSubmit}
         onCancel={handleCancel}
       />
-    </div>
+    </BuyerFormPage>
   );
 }

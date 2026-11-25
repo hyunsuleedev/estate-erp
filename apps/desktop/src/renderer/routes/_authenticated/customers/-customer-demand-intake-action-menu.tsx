@@ -25,7 +25,7 @@ const LIFECYCLE_ACTIONS: Array<{
   label: string;
   Icon: typeof CirclePlay;
 }> = [
-  { value: "open", label: "진행중", Icon: CirclePlay },
+  { value: "open", label: "진행 중", Icon: CirclePlay },
   { value: "hold", label: "보류", Icon: CirclePause },
   { value: "closed", label: "종료", Icon: CircleCheck },
 ];

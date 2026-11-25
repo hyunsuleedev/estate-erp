@@ -126,7 +126,7 @@ export function UploadRecordingDialog({
           <DialogDescription className="text-xs">
             {attachTo
               ? `${attachTo.contactName} 님과의 상담에 녹음을 붙입니다. 적어 둔 내용은 그대로 두고 받아쓰기·요약·업무 제안을 더합니다.`
-              : '받아쓰기와 분석이 끝나면 상담 기록이 남고, 할 일·일정 같은 업무를 제안합니다.'}
+              : '받아쓰기와 분석이 끝나면 상담 기록이 남고, 업무·일정을 제안합니다.'}
           </DialogDescription>
         </DialogHeader>
 

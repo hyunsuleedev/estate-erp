@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { BuyerRequirement, Match } from '@estate-erp/api-client';
-import { MatchStage } from '@estate-erp/shared';
+import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   buildViewingCalendarEventPayload,
   getMatchStageBlockReason,
@@ -50,10 +50,12 @@ import {
   type RequirementFilters,
 } from './-wanted-filters';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { getStatusMeta } from '@/lib/status-config';
 import { ConfirmDialog, EmptyState } from '@/components/domain';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
+import { useAuth } from '@/providers/auth-provider';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -85,8 +87,13 @@ const TRANSACTION_TYPE_TABS = [
 const NO_MATCH_STAGE_OPTIONS = [{ value: NO_MATCH_STAGE, label: '매칭 없음' }];
 
 export const Route = createFileRoute('/_authenticated/wanted-properties/')({
-  validateSearch: (search: Record<string, unknown>): { matchId?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { matchId?: string; q?: string } => ({
     matchId: typeof search.matchId === 'string' ? search.matchId : undefined,
+    // 희망 조건 상세의 "희망매물에서 진행"처럼 다른 화면에서 한 손님을 찾아 열 때 검색어를 넘긴다
+    q:
+      typeof search.q === 'string' || typeof search.q === 'number'
+        ? String(search.q).slice(0, 100) || undefined
+        : undefined,
   }),
   component: WantedPropertiesPage,
 });
@@ -94,9 +101,9 @@ export const Route = createFileRoute('/_authenticated/wanted-properties/')({
 function WantedPropertiesPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate({ from: Route.fullPath });
-  const { matchId: deepLinkMatchId } = Route.useSearch();
+  const { matchId: deepLinkMatchId, q: deepLinkQuery } = Route.useSearch();
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(deepLinkQuery ?? '');
   const [stageFilters, setStageFilters] = useState<string[]>([]);
   const [transactionTypeFilter, setTransactionTypeFilter] = useState('');
   const [requirementFilters, setRequirementFilters] =
@@ -138,6 +145,9 @@ function WantedPropertiesPage() {
    */
   const [editingRequirement, setEditingRequirement] =
     useState<BuyerRequirement | null>(null);
+  /** "내 손님": 담당이 나인 조건만 본다 (사용자 의견 2026-11-22 검수 보고 → 지휘자 결정) */
+  const { user: currentUser } = useAuth();
+  const [mineOnly, setMineOnly] = useState(false);
   /** 필터 줄은 접을 수 있다. 접혀 있는 동안에는 도구 줄의 필터 버튼이 걸린 조건 수를 알린다. */
   const [isFilterRowOpen, setIsFilterRowOpen] = useState(true);
   /** 값이 바뀌면 검색 칸을 열고 커서를 둔다 */
@@ -191,7 +201,7 @@ function WantedPropertiesPage() {
     queryFn: () => api.matches.findAll(),
   });
   const {
-    data: requirements = [],
+    data: openRequirements = [],
     isLoading: isRequirementsLoading,
     isError: isRequirementsError,
     refetch: refetchRequirements,
@@ -199,16 +209,36 @@ function WantedPropertiesPage() {
     queryKey: ['buyer-requirements', 'wanted-properties', 'open'],
     queryFn: () => fetchBuyerRequirements('active,hold'),
   });
+  // 완료한 조건은 평소에는 받지 않는다. 상태 필터에서 '완료'를 고르면 받아 함께 보여 준다
+  // (다른 곳에서 구한 손님을 다시 찾거나, 실수로 완료한 것을 되돌릴 때).
+  const includeCompleted = requirementFilters.statuses.includes('completed');
+  const completedQuery = useQuery({
+    queryKey: ['buyer-requirements', 'wanted-properties', 'completed'],
+    queryFn: () => fetchBuyerRequirements('completed'),
+    enabled: includeCompleted,
+  });
+  const requirements = useMemo(
+    () =>
+      includeCompleted
+        ? [...openRequirements, ...(completedQuery.data ?? [])]
+        : openRequirements,
+    [completedQuery.data, includeCompleted, openRequirements],
+  );
   // 매칭과 조건이 모두 있어야 한다. 하나만 실패한 채 그리면 매칭이 있는 조건을
   // '매칭 없음'으로 보여주거나, 조건 필터로 매칭을 잘못 걸러내게 된다.
-  const isLoading = isMatchesLoading || isRequirementsLoading;
-  const isError = isMatchesError || isRequirementsError;
+  const isLoading =
+    isMatchesLoading ||
+    isRequirementsLoading ||
+    (includeCompleted && completedQuery.isLoading);
+  const isError =
+    isMatchesError || isRequirementsError || (includeCompleted && completedQuery.isError);
   // 칸 편집기가 열려 있는 동안에는 목록을 다시 받다 실패해도 표를 오류 화면으로 바꾸지 않는다.
   // 바꾸면 편집기와 고치던 입력이 사라진다. 받아 둔 목록을 그대로 두고, 편집기를 닫으면 오류 화면이 보인다.
   const showError = isError && editingRequirement === null;
   const refetch = () => {
     void refetchMatches();
     void refetchRequirements();
+    if (includeCompleted) void completedQuery.refetch();
   };
 
   const openMatchCreate = (requirementId: string | null = null) => {
@@ -240,6 +270,15 @@ function WantedPropertiesPage() {
     }
   }, [deepLinkMatchId, navigate]);
 
+  // 딥링크 검색어 (?q=...) → 검색 칸에 넣어 그 손님만 보이게 한 뒤 URL 정리 (검색 칸은 그대로 남는다)
+  useEffect(() => {
+    if (deepLinkQuery) {
+      setSearchQuery(deepLinkQuery);
+      setSearchFocusSignal((value) => value + 1);
+      navigate({ search: {}, replace: true });
+    }
+  }, [deepLinkQuery, navigate]);
+
   const stageMutation = useMutation({
     mutationFn: ({ id, stage }: { id: string; stage: string }) =>
       api.matches.updateStage(id, { stage }),
@@ -252,7 +291,7 @@ function WantedPropertiesPage() {
       );
     },
     onError: (error: Error) => {
-      toast.error(`단계 변경에 실패했습니다: ${error.message}`);
+      toast.error(apiErrorMessage(error, '단계를 바꾸지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -272,7 +311,7 @@ function WantedPropertiesPage() {
       toast.success('메모를 저장했습니다');
     },
     onError: (error: Error) => {
-      toast.error(`메모 저장에 실패했습니다: ${error.message}`);
+      toast.error(apiErrorMessage(error, '메모를 저장하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -308,10 +347,10 @@ function WantedPropertiesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
-      toast.success('방문 일정을 저장했습니다');
+      toast.success('임장 일정을 저장했습니다');
     },
     onError: (error: Error) => {
-      toast.error(`방문 일정 저장에 실패했습니다: ${error.message}`);
+      toast.error(apiErrorMessage(error, '임장 일정을 저장하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -326,7 +365,7 @@ function WantedPropertiesPage() {
       toast.success('매칭을 삭제했습니다');
     },
     onError: (error: Error) => {
-      toast.error(`매칭 삭제에 실패했습니다: ${error.message}`);
+      toast.error(apiErrorMessage(error, '매칭을 삭제하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -379,14 +418,21 @@ function WantedPropertiesPage() {
 
     if (change.kind === 'status' && change.status === 'completed') {
       // 이 목록은 진행 · 보류 조건만 보여 주므로 완료하면 줄이 사라진다. 이유를 알리고 되돌릴 길을 둔다.
+      // 서버는 완료와 함께 이 조건의 진행 중 매칭을 닫는다 (손님 조건 종료).
       const previous = currentStatus(requirement);
+      const closedCount =
+        'closedMatchCount' in saved && typeof saved.closedMatchCount === 'number'
+          ? saved.closedMatchCount
+          : 0;
       toast.success('완료로 바꿨습니다', {
-        description: `${requirement.contact?.name ?? '미지정'} · 진행 중인 조건만 보는 이 목록에서는 빠집니다`,
+        description: `${requirement.contact?.name ?? '미지정'} · ${
+          closedCount > 0 ? `연결한 매물 ${closedCount}건의 진행도 끝냈습니다. ` : ''
+        }목록에서 빠집니다. 상태 필터에서 '완료'를 고르면 다시 볼 수 있습니다`,
         action:
           previous === 'active' || previous === 'hold'
             ? {
                 label: '되돌리기',
-                onClick: () => void undoCompleted(requirement.id, previous),
+                onClick: () => void undoCompleted(requirement.id, previous, closedCount),
               }
             : undefined,
       });
@@ -395,7 +441,11 @@ function WantedPropertiesPage() {
 
   // 되돌리기는 알림이 떠 있는 동안 언제든 눌릴 수 있다. 그 사이 다른 곳에서 상태를 다시 바꿨다면
   // (더는 완료가 아니라면) 되돌리지 않는다 — 누른 사람이 본 적 없는 새 상태를 예전 값으로 덮게 된다.
-  const undoCompleted = async (id: string, previous: 'active' | 'hold') => {
+  const undoCompleted = async (
+    id: string,
+    previous: 'active' | 'hold',
+    closedMatchCount: number,
+  ) => {
     try {
       const latest = await api.buyerRequirements.findOne(id);
       if (currentStatus(latest) !== 'completed') {
@@ -404,6 +454,12 @@ function WantedPropertiesPage() {
         return;
       }
       await saveRequirement(latest, { kind: 'status', status: previous });
+      // 다시 열어도 함께 끝낸 매물 진행은 저절로 열리지 않는다 (매물 의뢰를 다시 열 때와 같다)
+      if (closedMatchCount > 0) {
+        toast.info('상태를 되돌렸습니다', {
+          description: `끝낸 매물 진행 ${closedMatchCount}건은 각 매물의 메뉴에서 '다시 시작'으로 열 수 있습니다`,
+        });
+      }
     } catch {
       toast.error('상태를 되돌리지 못했습니다');
     }
@@ -445,10 +501,28 @@ function WantedPropertiesPage() {
       viewingScheduleMutation.mutate({ match, startLocalValue }),
   };
 
+  // 조건마다 진행 중인 매칭 수 (단계 필터 · 검색과 상관없이). 완료로 바꾸기 전에 "N건의 진행도 끝납니다"를 알린다.
+  const openMatchCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const match of matches) {
+      const stage = normalizeMatchStage(match.stage);
+      if (stage === MatchStage.CLOSED || stage === MatchStage.DEAL_CREATED) continue;
+      counts.set(match.buyerReqId, (counts.get(match.buyerReqId) ?? 0) + 1);
+    }
+    return counts;
+  }, [matches]);
+
   const selectedMatch = useMemo(
     () => matches.find((match) => match.id === selectedMatchId) ?? null,
     [matches, selectedMatchId],
   );
+  // 바로 가기로 연 매칭이 목록에 없으면(지워졌거나 다른 사무소의 것) 빈 창을 남기지 않는다
+  useEffect(() => {
+    if (selectedMatchId && !isMatchesLoading && !isMatchesError && !selectedMatch) {
+      setSelectedMatchId(null);
+      toast.error('매칭을 찾을 수 없습니다. 지워졌을 수 있습니다.');
+    }
+  }, [isMatchesError, isMatchesLoading, selectedMatch, selectedMatchId]);
   const convertMatch = useMemo(
     () => matches.find((match) => match.id === convertMatchId) ?? null,
     [matches, convertMatchId],
@@ -458,9 +532,14 @@ function WantedPropertiesPage() {
     [matches, deleteMatchId],
   );
 
+  // '완료'를 고른 동안에는 완료 조건을 받아 오므로, 받아 온 것이 비어 있어도 그 선택을 그대로 둔다
+  // (지우면 '완료'만 골랐는데 진행 중인 조건이 모두 보인다).
   const activeRequirementFilters = useMemo(
-    () => scopeRequirementFilters(requirementFilters, requirements),
-    [requirementFilters, requirements],
+    () =>
+      scopeRequirementFilters(requirementFilters, requirements, {
+        keepCompleted: includeCompleted && completedQuery.isSuccess,
+      }),
+    [completedQuery.isSuccess, includeCompleted, requirementFilters, requirements],
   );
 
   // 편집 중인 조건이 지금 목록에 있으면 그 값.
@@ -488,10 +567,15 @@ function WantedPropertiesPage() {
   const editingDetached = editingRequirement !== null && editingListed === undefined;
 
   const groupedBuyerMatches = useMemo(() => {
-    const listed =
-      editingRequirement && editingDetached
-        ? [...requirements, editingRequirement]
+    const mine =
+      mineOnly && currentUser
+        ? requirements.filter(
+            (item) =>
+              item.assignedToId === currentUser.id || item.id === editingRequirement?.id,
+          )
         : requirements;
+    const listed =
+      editingRequirement && editingDetached ? [...mine, editingRequirement] : mine;
     return groupMatchesByRequirement({
       requirements: listed,
       matches,
@@ -504,10 +588,12 @@ function WantedPropertiesPage() {
   }, [
     activeRequirementFilters,
     stageFilters,
+    currentUser,
     deferredSearch,
     editingDetached,
     editingRequirement,
     matches,
+    mineOnly,
     requirements,
     transactionTypeFilter,
   ]);
@@ -581,16 +667,19 @@ function WantedPropertiesPage() {
     groupedBuyerMatches.length > 0;
 
   const hasActiveFilters =
+    mineOnly ||
     searchQuery.trim().length > 0 ||
     stageFilters.length > 0 ||
     transactionTypeFilter.length > 0 ||
     hasRequirementFilters(activeRequirementFilters);
   // 필터 줄의 알약 수와 같다: 단계 + 희망 조건 필터 (검색어와 거래유형 탭은 늘 보이므로 세지 않는다)
   const activeFilterCount =
+    (mineOnly ? 1 : 0) +
     (stageFilters.length > 0 ? 1 : 0) +
     countRequirementFilters(activeRequirementFilters);
 
   const resetFilters = () => {
+    setMineOnly(false);
     setSearchQuery('');
     setStageFilters([]);
     setTransactionTypeFilter('');
@@ -656,13 +745,16 @@ function WantedPropertiesPage() {
             transactionType={transactionTypeFilter}
             hasActiveFilters={hasActiveFilters}
             onReset={resetFilters}
+            mineOnly={mineOnly}
+            onMineOnlyChange={currentUser ? setMineOnly : undefined}
           />
         )}
       </header>
 
       <main
         className={cn(
-          'min-h-0 min-w-0 flex-1 overflow-auto',
+          // @container/wanted: 표가 화면보다 넓을 때(작은 노트북) 매칭 가지를 보이는 폭(100cqw)에 맞추는 기준
+          '@container/wanted min-h-0 min-w-0 flex-1 overflow-auto',
           showBuyerTable ? 'bg-white' : 'bg-muted/20 p-3',
         )}
       >
@@ -684,14 +776,14 @@ function WantedPropertiesPage() {
               onClick={() => refetch()}
             >
               <RefreshCw className="size-4" />
-              재시도
+              다시 시도
             </Button>
           </div>
         ) : requirements.length === 0 && editingRequirement === null ? (
           <EmptyState
             icon={UserSearch}
             title="진행 중인 희망 조건이 없습니다"
-            description="고객의 구함 의뢰를 등록하면 여기에서 조건에 맞는 매물을 연결할 수 있습니다."
+            description="손님이 찾는 집의 조건을 적어 두면 여기에서 조건에 맞는 매물을 연결할 수 있습니다."
             action={
               <Button type="button" onClick={openRequirementCreate}>
                 <Plus className="size-4" />
@@ -727,6 +819,7 @@ function WantedPropertiesPage() {
                 onTogglePeek={() =>
                   openPeekId === group.buyerReqId ? closePeek() : openPeek(group.buyerReqId)
                 }
+                openMatchCount={openMatchCounts.get(group.buyerReqId) ?? 0}
                 onEditRequirement={saveRequirement}
                 onRefreshRequirement={refreshRequirement}
                 onRequirementEditingChange={(editing) =>

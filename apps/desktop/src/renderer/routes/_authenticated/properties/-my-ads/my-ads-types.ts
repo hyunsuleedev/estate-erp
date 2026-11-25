@@ -18,7 +18,8 @@ export const viewTabs: Array<{ value: MyAdsView; label: string }> = [
 ];
 
 export type MyAdsTransactionFilter = "all" | "sale" | "jeonse" | "monthly";
-export type MyAdsChannelFilter = "all" | "esiljang" | "budongsanbank";
+export type MyAdsChannelFilter = string;
+export type MyAdsStatusFilter = "active" | "ended" | "all";
 export type MyAdsVerificationFilter =
   | "all"
   | "owner"
@@ -51,8 +52,10 @@ export type MyAdsFilterState = {
   siteIds: string[];
   dongSearch: string;
   unitSearch: string;
+  status: MyAdsStatusFilter;
   transactionType: MyAdsTransactionFilter;
   channel: MyAdsChannelFilter;
+  cpAccountId: string;
   primaryAmountMin: string;
   primaryAmountMax: string;
   monthlyRentMin: string;
@@ -69,8 +72,10 @@ export const initialMyAdsFilters: MyAdsFilterState = {
   siteIds: [],
   dongSearch: "",
   unitSearch: "",
+  status: "active",
   transactionType: "all",
   channel: "all",
+  cpAccountId: "all",
   primaryAmountMin: "",
   primaryAmountMax: "",
   monthlyRentMin: "",
@@ -80,6 +85,12 @@ export const initialMyAdsFilters: MyAdsFilterState = {
   exposurePeriod: "all",
   comparison: "all",
 };
+
+export const statusFilterOptions: MyAdsFilterOption[] = [
+  { value: "active", label: "광고 중" },
+  { value: "ended", label: "종료" },
+  { value: "all", label: "상태 전체" },
+];
 
 export const transactionFilterOptions: MyAdsFilterOption[] = [
   { value: "all", label: "거래 전체" },
@@ -93,6 +104,24 @@ export const channelFilterOptions: MyAdsFilterOption[] = [
   { value: "esiljang", label: cpChannelLabel("esiljang") },
   { value: "budongsanbank", label: cpChannelLabel("budongsanbank") },
 ];
+
+export function buildChannelFilterOptions(
+  advertisements: Pick<ListingAdvertisementWithListing, "channel">[],
+): MyAdsFilterOption[] {
+  const seen = new Set<string>(["esiljang", "budongsanbank"]);
+  const extras: string[] = [];
+  for (const ad of advertisements) {
+    if (!seen.has(ad.channel)) {
+      seen.add(ad.channel);
+      extras.push(ad.channel);
+    }
+  }
+  extras.sort((left, right) => cpChannelLabel(left).localeCompare(cpChannelLabel(right), "ko"));
+  return [
+    ...channelFilterOptions,
+    ...extras.map((channel) => ({ value: channel, label: cpChannelLabel(channel) })),
+  ];
+}
 
 export const verificationFilterOptions: MyAdsFilterOption[] = [
   { value: "all", label: "검증방식 전체" },

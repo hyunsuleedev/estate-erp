@@ -45,7 +45,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { EmptyState } from '@/components/domain';
 import { ToolbarPillTabs } from '../properties/-components/property-toolbar';
 import {
   SITES_PANEL_MAX_WIDTH_CSS,
@@ -378,20 +377,8 @@ export function SitesPanel({
       );
     }
     if (officeSites.length === 0) {
-      return (
-        <EmptyState
-          icon={Building2}
-          title="관리 단지가 없습니다"
-          description="자주 다루는 단지를 추가해보세요"
-          action={
-            <Button size="sm" variant="outline" onClick={onAdd}>
-              <Plus className="size-3.5" />
-              단지 추가
-            </Button>
-          }
-          className="py-8"
-        />
-      );
+      // 자세한 안내와 추가 버튼은 본문 가운데에 있다. 여기서는 한 줄만 둔다(같은 안내가 두 번 보였다).
+      return <p className="px-2 py-1.5 text-xs text-muted-foreground">아직 관리단지가 없습니다</p>;
     }
     if (visibleSiteCount === 0) {
       return (
@@ -588,8 +575,8 @@ export function SitesPanel({
             >
               {renderList()}
             </div>
-            {/* 목록 끝의 추가 줄 — 단지가 없을 때는 빈 화면 안내의 버튼이 대신한다 */}
-            {!isLoading && !isError && officeSites.length > 0 && (
+            {/* 목록 끝의 추가 줄 — 단지가 없을 때도 둔다(본문 가운데에 같은 버튼이 크게 있다) */}
+            {!isLoading && !isError && (
               <button
                 type="button"
                 onClick={onAdd}

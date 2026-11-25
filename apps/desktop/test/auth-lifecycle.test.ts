@@ -271,9 +271,16 @@ describe('desktop auth lifecycle wiring', () => {
     const mainSource = source('../src/main/windowManager.ts');
 
     // 탭바 문서에는 탭바 통로만 내준다. 로그인·토큰·실시간·전화 통로는 없다.
+    // 사이드바 미리보기 요청(탭바의 사이드바 단추 → main)은 탭 통로 안의 신호 하나라 허용한다.
     const bridge = methodBody(preloadSource, 'const tabBarWindowBridge = {', '\n};');
-    assert.match(bridge, /tabs: \{ tabBar: tabBarBridge \}/);
-    assert.doesNotMatch(bridge, /auth|realtime|cti|updater/);
+    assert.match(bridge, /tabs: \{\s*tabBar: tabBarBridge,/);
+    const tabsKeys = [...bridge.matchAll(/^\s{4}(\w+):/gm)].map((match) => match[1]);
+    assert.deepEqual(tabsKeys.sort(), ['requestSidebarPreview', 'tabBar']);
+    assert.match(
+      bridge,
+      /requestSidebarPreview: \(command: SidebarPreviewCommand, tabId: string\) =>\s*ipcRenderer\.send\('tabs:requestSidebarPreview', \{ command, tabId \}\)/,
+    );
+    assert.doesNotMatch(bridge, /auth|realtime|cti|updater|invoke\(/);
     assert.match(
       preloadSource,
       /: isTabBarDocument\s*\? tabBarWindowBridge\s*: windowShellBridge/,

@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   CalendarClock,
@@ -15,10 +18,13 @@ import {
 } from "lucide-react";
 import type { CalendarEvent } from "@estate-erp/api-client";
 
+import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/providers/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { EntityChip } from "@/components/domain";
+import { ConfirmDialog, EntityChip } from "@/components/domain";
 import { isSameCalendarDate } from "./-calendar-view-utils";
 import {
   formatDayTitle,
@@ -29,8 +35,10 @@ import {
   getEventColor,
   getEventMeta,
   getEventStatus,
+  getMatchClosure,
   withAlpha,
 } from "./-event-meta";
+import { EventTitle, eventTitleText } from "./-event-title";
 import { OVERLAY_META, type OverlayItem } from "./-calendar-overlay";
 import { CalendarOverlayInspector } from "./-overlay-detail-dialog";
 import {
@@ -55,7 +63,7 @@ export function MonthEventPill({
     <button
       type="button"
       data-calendar-event
-      title={`${formatEventTimeRange(event)} · ${event.title} · 더블클릭하여 수정`}
+      title={`${formatEventTimeRange(event)} · ${eventTitleText(event)} · 더블클릭하여 수정`}
       onClick={(clickEvent) => {
         clickEvent.stopPropagation();
         onSelect(event, clickEvent.currentTarget);
@@ -77,7 +85,7 @@ export function MonthEventPill({
           </span>
         )}
         <span className="min-w-0 truncate text-[11px] font-semibold text-foreground">
-          {event.title}
+          <EventTitle event={event} />
         </span>
       </span>
     </button>
@@ -103,7 +111,11 @@ export function OverlayPill({
         clickEvent.stopPropagation();
         onSelect(item, clickEvent.currentTarget);
       }}
-      className="pointer-events-auto block w-full rounded-[5px] border-l-2 px-2 py-1 text-left transition-[background-color,filter] hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      className={cn(
+        "pointer-events-auto block w-full rounded-[5px] border-l-2 px-2 py-1 text-left transition-[background-color,filter] hover:brightness-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+        // 받은 대금·정산 끝난 거래의 날짜는 흐리게 남긴다
+        item.done && "opacity-50",
+      )}
       style={{
         borderLeftColor: meta.color,
         backgroundColor: withAlpha(meta.color, "14"),
@@ -260,7 +272,7 @@ export function SelectedDayPanel({
                       />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[12.5px] text-foreground">
-                          {event.title}
+                          <EventTitle event={event} />
                         </span>
                         <span className="block truncate text-[11px] text-muted-foreground">
                           {formatEventContext(event)}
@@ -282,7 +294,10 @@ export function SelectedDayPanel({
                       key={item.id}
                       type="button"
                       onClick={(e) => onSelectOverlay(item, e.currentTarget)}
-                      className="flex w-full items-center gap-2.5 border-b border-border/60 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
+                      className={cn(
+                        "flex w-full items-center gap-2.5 border-b border-border/60 py-2.5 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                        item.done && "opacity-60",
+                      )}
                     >
                       <Landmark
                         className="size-4 shrink-0"
@@ -339,8 +354,34 @@ export function SelectedEventInspector({
   onEdit: (event: CalendarEvent) => void;
 }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const meta = getEventMeta(event);
-  const status = getEventStatus(event);
+  const closure = getMatchClosure(event);
+  const status = closure
+    ? { label: "매칭 종료", className: "bg-muted text-muted-foreground" }
+    : getEventStatus(event);
+  // 직원은 자기 일정만 지운다 (서버도 같은 규칙)
+  const canDelete =
+    user?.role === "owner" ||
+    user?.role === "manager" ||
+    event.userId === user?.id;
+  const deleteMutation = useMutation({
+    mutationFn: () => api.calendarEvents.remove(event.id),
+    onSuccess: () => {
+      queryClient.setQueriesData<CalendarEvent[]>(
+        { queryKey: ["calendar-events"] },
+        (old) => old?.filter((item) => item.id !== event.id),
+      );
+      void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+      toast.success("일정을 지웠습니다.");
+      setConfirmDelete(false);
+      onClose();
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, "일정을 지우지 못했습니다. 다시 시도해 주세요.")),
+  });
   const linkedItems = Object.entries(linksFromEvent(event)) as Array<
     [EventLinkKind, LinkedEntity | null]
   >;
@@ -419,7 +460,7 @@ export function SelectedEventInspector({
         </div>
 
         <h2 className="mt-3 break-words text-lg font-semibold leading-7 tracking-[-0.02em] text-foreground">
-          {event.title}
+          <EventTitle event={event} />
         </h2>
         <div className="mt-3 flex items-start gap-2 text-xs leading-5 text-muted-foreground">
           <CalendarClock className="mt-0.5 size-3.5 shrink-0" />
@@ -430,6 +471,34 @@ export function SelectedEventInspector({
             <span className="tabular-nums">{formatEventTimeRange(event)}</span>
           </span>
         </div>
+        {closure && (
+          <div className="mt-4 border-t border-border pt-3 text-xs leading-5">
+            <p className="font-medium text-foreground">
+              연결된 매물 진행이 끝났습니다
+              {closure.reasonLabel ? (
+                <span className="font-normal text-muted-foreground">
+                  {" "}
+                  · {closure.reasonLabel}
+                </span>
+              ) : null}
+            </p>
+            <p className="text-muted-foreground">
+              이 약속은 더 이상 없습니다. 기록으로 남겨 두거나 지울 수 있습니다.
+            </p>
+            {canDelete && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2 h-7 text-xs"
+                disabled={deleteMutation.isPending}
+                onClick={() => setConfirmDelete(true)}
+              >
+                일정 지우기
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -466,7 +535,7 @@ export function SelectedEventInspector({
           <div className="flex items-center gap-2">
             <Link2 className="size-3.5 text-muted-foreground" />
             <h3 className="text-[11px] font-semibold text-muted-foreground">
-              CRM 연결
+              연결된 연락처·매물
             </h3>
           </div>
           {hasLinks ? (
@@ -479,7 +548,10 @@ export function SelectedEventInspector({
                       key={kind}
                       type="button"
                       onClick={() =>
-                        void navigate({ to: "/wanted-properties" })
+                        void navigate({
+                          to: "/wanted-properties",
+                          search: { matchId: link.id },
+                        })
                       }
                       className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background py-1 pr-2.5 pl-2 text-xs transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                     >
@@ -510,8 +582,8 @@ export function SelectedEventInspector({
             </div>
           ) : (
             <div className="mt-3 rounded-md bg-muted/40 px-3 py-3 text-[11px] leading-5 text-muted-foreground">
-              연결된 연락처나 매물이 없습니다. 수정 화면에서 CRM 문맥을 연결할
-              수 있습니다.
+              연결된 연락처나 매물이 없습니다. 일정 수정에서 연결할 수
+              있습니다.
             </div>
           )}
         </section>
@@ -523,6 +595,16 @@ export function SelectedEventInspector({
           일정 수정
         </Button>
       </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="일정을 지울까요?"
+        description={`"${event.title}" 일정이 지워집니다. 되돌릴 수 없습니다.`}
+        confirmLabel="지우기"
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
+      />
     </>
   );
 }

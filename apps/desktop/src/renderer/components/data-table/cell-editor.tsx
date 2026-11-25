@@ -29,6 +29,7 @@ import {
   type CellSaveResult,
 } from './cell-edit-state';
 import { useCellTableNavigation } from './cell-navigation';
+import { describeManwon, MANWON_INPUT_HINT } from '@/lib/manwon';
 
 // ── Cell Edit Context (Twenty-inspired draft pattern) ───────────
 // Portal-based editing prevents table reflow.
@@ -612,7 +613,7 @@ function CellEditPortal({
       return true;
     }
     if (editType === 'number') {
-      const parsed = parseCellNumber(draft, numberMinimum);
+      const parsed = parseCellNumber(draft, numberMinimum, numberUnit);
       if (!parsed.valid) {
         patchStore({ error: parsed.error });
         inputRef.current?.focus({ preventScroll: true });
@@ -864,7 +865,7 @@ function CellEditPortal({
                 inputRef.current = node;
               }}
               type="text"
-              inputMode={editType === 'number' ? 'decimal' : undefined}
+              inputMode={editType === 'number' && numberUnit !== '만원' ? 'decimal' : undefined}
             />
           )}
           {feedback ||
@@ -873,9 +874,11 @@ function CellEditPortal({
                 id={helpId}
                 className="px-2.5 pb-1.5 text-[10px] leading-4 text-muted-foreground"
               >
-                {numberUnit
-                  ? `단위: ${numberUnit} · Enter 저장`
-                  : 'Enter 저장 · Shift+Enter 줄바꿈'}
+                {numberUnit === '만원'
+                  ? manwonHelpText(draft)
+                  : numberUnit
+                    ? `단위: ${numberUnit} · Enter 저장`
+                    : 'Enter 저장 · Shift+Enter 줄바꿈'}
               </div>
             ))}
         </div>
@@ -1048,4 +1051,11 @@ function CellEditPortal({
   );
 
   return createPortal(portalContent, scrollParent);
+}
+
+/** 만원 칸 아래 도움말: 적은 금액을 읽어 되비춘다("= 15억 8,000만 · Enter 저장"). */
+function manwonHelpText(draft: string): string {
+  const echo = describeManwon(draft);
+  if (echo.invalid) return `금액을 읽을 수 없습니다 · ${MANWON_INPUT_HINT}`;
+  return echo.text ? `${echo.text} · Enter 저장` : `단위: 만원 · ${MANWON_INPUT_HINT}`;
 }

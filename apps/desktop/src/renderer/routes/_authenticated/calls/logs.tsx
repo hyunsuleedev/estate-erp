@@ -12,7 +12,9 @@ import {
 } from 'lucide-react';
 import type { CallLogStatus } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { formatConsultationWhen } from '../consultations/-consultation-list-model';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,11 +55,18 @@ const statusBadgeClass: Record<CallLogStatus, string> = {
   ended: '',
 };
 
-function formatPhone(phone: string): string {
-  if (/^01\d{9}$/.test(phone)) {
-    return `${phone.slice(0, 3)}-${phone.slice(3, 7)}-${phone.slice(7)}`;
+/**
+ * 전화기가 "끊김" 신호를 보내지 못한 통화는 몇 시간이 지나도 "수신 중"으로 남는다.
+ * 지금 울리는 전화처럼 보이지 않게, 오래된 것은 끝났는지 모른다고 말한다.
+ */
+const STALE_LIVE_CALL_MS = 2 * 60 * 60 * 1000;
+
+function displayStatus(log: { status: CallLogStatus; startedAt: string }) {
+  const isLive = log.status === 'ringing' || log.status === 'answered';
+  if (isLive && Date.now() - new Date(log.startedAt).getTime() > STALE_LIVE_CALL_MS) {
+    return { label: '끝남 확인 안 됨', className: 'text-muted-foreground' };
   }
-  return phone;
+  return { label: statusLabel[log.status], className: statusBadgeClass[log.status] };
 }
 
 function formatDuration(sec: number): string {
@@ -112,7 +121,7 @@ function CallLogsPage() {
         <div>
           <h1 className="text-xl font-semibold">통화 이력</h1>
           <p className="text-sm text-muted-foreground">
-            CTI로 수집된 수신/발신 통화 기록 (녹음과 별개)
+            사무실 전화로 받고 건 통화가 시간 순서로 남습니다. 녹음과 상담 기록은 상담분석에서 봅니다.
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
@@ -196,19 +205,16 @@ function CallLogsPage() {
             ) : !data || data.items.length === 0 ? (
               <tr className="border-t">
                 <td colSpan={7} className="px-3 py-10 text-center text-muted-foreground">
-                  통화 기록이 없습니다
+                  {phoneFilter || direction !== 'all' || status !== 'all'
+                    ? '조건에 맞는 통화가 없습니다.'
+                    : '아직 남은 통화가 없습니다. 사무실 전화가 연결되면 받고 건 통화가 여기에 쌓입니다.'}
                 </td>
               </tr>
             ) : (
               data.items.map((log) => (
                 <tr key={log.id} className="border-t hover:bg-muted/30">
-                  <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">
-                    {new Date(log.startedAt).toLocaleString('ko-KR', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                  <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-muted-foreground">
+                    {formatConsultationWhen(log.startedAt)}
                   </td>
                   <td className="px-3 py-2.5">
                     {log.direction === 'inbound' ? (
@@ -223,9 +229,27 @@ function CallLogsPage() {
                   </td>
                   <td className="px-3 py-2.5">
                     {log.contact ? (
-                      <span className="font-medium">{log.contact.name}</span>
+                      <Link
+                        to="/contacts/$id"
+                        params={{ id: log.contact.id }}
+                        className="font-medium underline-offset-2 hover:underline"
+                      >
+                        {log.contact.name}
+                      </Link>
                     ) : (
-                      <span>{formatPhone(log.phoneNumber)}</span>
+                      <>
+                        <span>{formatPhone(log.phoneNumber)}</span>
+                        {/* 모르는 번호: 바로 연락처로 등록한다 (번호를 채워 연다) */}
+                        {log.phoneNumber && (
+                          <Link
+                            to="/contacts/new"
+                            search={{ phone: log.phoneNumber }}
+                            className="ml-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                          >
+                            연락처로 등록
+                          </Link>
+                        )}
+                      </>
                     )}
                     {log.contact && (
                       <span className="ml-2 text-xs text-muted-foreground">
@@ -236,9 +260,9 @@ function CallLogsPage() {
                   <td className="px-3 py-2.5">
                     <Badge
                       variant="outline"
-                      className={cn('font-normal', statusBadgeClass[log.status])}
+                      className={cn('font-normal', displayStatus(log).className)}
                     >
-                      {statusLabel[log.status]}
+                      {displayStatus(log).label}
                     </Badge>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">

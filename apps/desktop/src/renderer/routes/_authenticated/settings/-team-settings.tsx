@@ -8,7 +8,6 @@ import {
   KeyRound,
   Plus,
   RotateCw,
-  Save,
   Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -59,9 +58,8 @@ import {
 
 const NONE_VALUE = '__none__';
 
-/** 설정 화면의 카드와 같은 모양 (settings/index.tsx의 SettingsSurface) */
-const surfaceClassName =
-  'overflow-hidden rounded-lg border border-border/80 bg-card shadow-[0_1px_2px_rgba(55,53,47,0.035)]';
+/** 설정 화면의 줄 묶음과 같은 모양 (settings/index.tsx의 SettingsSurface): 상자 없이 위아래 선만 */
+const surfaceClassName = 'border-y border-border/70';
 
 interface AccountForm {
   name: string;
@@ -195,7 +193,8 @@ function TeamList({
       toast.success(`${created.name}님 계정이 생성되었습니다.`);
       onOpen(created.id);
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) =>
+      toast.error(getErrorMessage(error, '직원 계정을 만들지 못했습니다. 다시 시도해 주세요.')),
   });
 
   const closeCreate = () => {
@@ -204,7 +203,7 @@ function TeamList({
   };
 
   return (
-    <div data-team-settings className="space-y-7">
+    <div data-team-settings className="space-y-10">
       <div>
         <div className="mb-3 flex items-end justify-between gap-4">
           <SectionHeading
@@ -219,7 +218,7 @@ function TeamList({
 
         <section className={surfaceClassName} aria-label="직원 계정 목록">
           {/* 요금제의 계정 수 */}
-          <div className="flex items-center gap-4 border-b border-border/70 px-5 py-4">
+          <div className="flex items-center gap-4 border-b border-border/70 py-4">
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-medium">
                 활성 계정{' '}
@@ -254,7 +253,7 @@ function TeamList({
           </div>
 
           {employees.length > 6 ? (
-            <div className="border-b border-border/70 px-4 py-2.5">
+            <div className="border-b border-border/70 py-2.5">
               <div className="relative max-w-[320px]">
                 <Search
                   className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
@@ -275,7 +274,7 @@ function TeamList({
           {employeesQuery.isLoading ? (
             <div className="divide-y divide-border/70">
               {[0, 1, 2].map((item) => (
-                <div key={item} className="flex items-center gap-3 px-5 py-4">
+                <div key={item} className="flex items-center gap-3 py-4">
                   <Skeleton className="size-9 rounded-full" />
                   <div className="flex-1 space-y-2">
                     <Skeleton className="h-3.5 w-28" />
@@ -315,7 +314,7 @@ function TeamList({
         <SectionHeading title="역할별 권한" description="역할은 직원 계정을 열어 바꿉니다." className="mb-3" />
         <section className={cn(surfaceClassName, 'divide-y divide-border/70')}>
           {(['owner', 'manager', 'agent'] as const).map((role) => (
-            <div key={role} className="flex items-baseline gap-4 px-5 py-3.5">
+            <div key={role} className="flex items-baseline gap-4 py-3">
               <p className="w-16 shrink-0 text-[13px] font-medium">{ROLE_LABELS[role]}</p>
               <p className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
                 {ROLE_DESCRIPTIONS[role]}
@@ -475,7 +474,7 @@ function MemberRow({
         data-team-member
         onClick={onOpen}
         aria-label={`${employee.name} 계정 설정 열기`}
-        className="group flex w-full items-center gap-3 px-5 py-3.5 text-left outline-none hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/35"
+        className="group -mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-3 text-left outline-none hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/35"
       >
         <span
           aria-hidden="true"
@@ -597,7 +596,8 @@ function EmployeeAccount({
       invalidate();
       toast.success('직원 정보가 저장되었습니다.');
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) =>
+      toast.error(getErrorMessage(error, '직원 정보를 저장하지 못했습니다. 다시 시도해 주세요.')),
   });
 
   const roleMutation = useMutation({
@@ -607,7 +607,8 @@ function EmployeeAccount({
       setPendingRole(null);
       toast.success(`역할이 '${ROLE_LABELS[role] ?? role}'(으)로 변경되었습니다.`);
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) =>
+      toast.error(getErrorMessage(error, '역할을 바꾸지 못했습니다. 다시 시도해 주세요.')),
   });
 
   const statusMutation = useMutation({
@@ -618,7 +619,8 @@ function EmployeeAccount({
       setIsStatusConfirmOpen(false);
       toast.success(isActive ? '계정이 재활성화되었습니다.' : '계정이 비활성화되었습니다.');
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) =>
+      toast.error(getErrorMessage(error, '계정 상태를 바꾸지 못했습니다. 다시 시도해 주세요.')),
   });
 
   const passwordMutation = useMutation({
@@ -627,7 +629,8 @@ function EmployeeAccount({
       setNewPassword('');
       toast.success(result.message ?? '비밀번호가 재설정되었습니다. 직원에게 전달하세요.');
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) =>
+      toast.error(getErrorMessage(error, '비밀번호를 바꾸지 못했습니다. 다시 시도해 주세요.')),
   });
 
   const backLink = (
@@ -743,9 +746,9 @@ function EmployeeAccount({
         </div>
       </header>
 
-      <div className="space-y-7">
+      <div className="space-y-10">
         {!canEdit ? (
-          <p className="rounded-lg border border-border/70 bg-background px-4 py-3 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             매니저는 중개사 계정만 변경할 수 있습니다. 이 계정은 대표가 관리합니다.
           </p>
         ) : null}
@@ -756,7 +759,7 @@ function EmployeeAccount({
             description="이름, 연락처와 중개 자격입니다. 로그인 ID는 바꿀 수 없습니다."
             className="mb-3"
           />
-          <section className={cn(surfaceClassName, 'p-5')}>
+          <section className={cn(surfaceClassName, 'border-b-0 pt-5')}>
             <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
               <TextField
                 id="employee-name"
@@ -819,7 +822,7 @@ function EmployeeAccount({
               }
               className="mb-3"
             />
-            <section className={cn(surfaceClassName, 'p-5')}>
+            <section className={cn(surfaceClassName, 'border-b-0 pt-5')}>
               <div className="grid gap-x-5 gap-y-4 sm:grid-cols-3">
                 <div className="space-y-2">
                   <Label className="text-xs">급여 유형</Label>
@@ -1065,8 +1068,8 @@ function SectionHeading({
 }) {
   return (
     <div className={className}>
-      <h3 className="text-[13px] font-semibold">{title}</h3>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
+      <h3 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h3>
+      <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -1082,7 +1085,7 @@ function ControlRow({
   children: ReactNode;
 }) {
   return (
-    <div className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <div className="grid gap-x-6 gap-y-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="min-w-0">
         <p className="text-[13px] font-medium">{title}</p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
@@ -1184,16 +1187,13 @@ function SaveBar({
   onSave: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/90 bg-background px-4 py-3 shadow-[0_8px_24px_rgba(55,53,47,0.07)]">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-center gap-2 text-xs" aria-live="polite">
-        <span
-          className={cn(
-            'flex size-5 items-center justify-center rounded-full',
-            isDirty ? 'bg-info-soft text-info-strong' : 'bg-success-soft text-success',
-          )}
-        >
-          {isDirty ? <span className="size-1.5 rounded-full bg-current" /> : <Check className="size-3" />}
-        </span>
+        {isDirty ? (
+          <span className="size-1.5 rounded-full bg-info" />
+        ) : (
+          <Check className="size-3.5 text-muted-foreground" />
+        )}
         <span className={isDirty ? 'text-foreground' : 'text-muted-foreground'}>
           {isSaving
             ? '변경사항을 저장하는 중입니다…'
@@ -1203,7 +1203,6 @@ function SaveBar({
         </span>
       </div>
       <Button size="sm" onClick={onSave} disabled={!isDirty || isSaving}>
-        <Save className="size-3.5" aria-hidden="true" />
         {isSaving ? '저장 중…' : '직원 정보 저장'}
       </Button>
     </div>

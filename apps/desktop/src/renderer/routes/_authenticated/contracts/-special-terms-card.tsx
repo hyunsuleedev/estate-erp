@@ -14,6 +14,7 @@ import {
 import type { ContractClauseTemplate } from '@estate-erp/api-client';
 import type { ContractForm } from './-contract-shared';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { RichTextEditor } from '@/components/rich-text-editor';
 import { ConfirmDialog } from '@/components/domain';
 import { Button } from '@/components/ui/button';
@@ -91,7 +92,7 @@ export function SpecialTermsCard({
     },
     onError: (error) => {
       toast.error(
-        error instanceof Error ? error.message : '특약 템플릿을 저장하지 못했습니다.',
+        apiErrorMessage(error, '특약 템플릿을 저장하지 못했습니다. 다시 시도해 주세요.'),
       );
     },
   });
@@ -106,7 +107,7 @@ export function SpecialTermsCard({
     },
     onError: (error) => {
       toast.error(
-        error instanceof Error ? error.message : '특약 템플릿을 삭제하지 못했습니다.',
+        apiErrorMessage(error, '특약 템플릿을 삭제하지 못했습니다. 다시 시도해 주세요.'),
       );
     },
   });

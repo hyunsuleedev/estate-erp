@@ -1,0 +1,32 @@
+{
+  "strings": {
+    "건 —": " —",
+    "건의 미완료 업무": " more open tasks",
+    "고객 상세": "Client details",
+    "고객 이름": "Client name",
+    "고객 정보 조회 중...": "Looking up client...",
+    "구하는 조건:": "Looking for:",
+    "보증금 ~{0}": "Deposit up to {0}",
+    "부재중 전화": "Missed call",
+    "상담 기록에 실패했습니다": "Couldn't log the consultation",
+    "상담 내용을 입력하세요...": "Enter consultation notes...",
+    "상담 저장": "Save consultation",
+    "상담이 기록되었습니다": "Consultation logged",
+    "신규": "New",
+    "연락처 \"{0}\" 등록됨": "Contact \"{0}\" added",
+    "연락처 등록": "Add contact",
+    "연락처 등록에 실패했습니다": "Couldn't add the contact",
+    "월 ~{0}만": "Rent up to {0} × ₩10K",
+    "이력 보기": "View history",
+    "전화 수신 중": "Incoming call",
+    "조건 등록됨": "Requirement saved",
+    "최근 상담 ·": "Last consultation ·",
+    "최근 통화": "Recent calls:",
+    "통화 종료 ·": "Call ended ·"
+  },
+  "files": {
+    "features/cti/call-popup.tsx": {
+      "상담 기록": "Log consultation"
+    }
+  }
+}

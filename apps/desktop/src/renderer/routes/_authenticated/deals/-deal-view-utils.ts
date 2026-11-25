@@ -1,12 +1,20 @@
-import type { Deal } from '@estate-erp/api-client';
-import { normalizeDealStage, formatFloorRange } from '@estate-erp/shared';
+import type { Contract, Deal } from '@estate-erp/api-client';
+import { normalizeDealStage, formatPlaceLabel } from '@estate-erp/shared';
 import { formatMoney, formatRent } from '@/lib/format';
 
 export type DealListItem = Deal;
 
 export type DealPayment = NonNullable<Deal['payments']>[number];
 
-/** Deal.cancelledBy(취소 주체) 표시 라벨 */
+/** 거래 당사자 이름: 매매는 매도인/매수인, 전세·월세는 임대인/임차인 */
+export function getPartyLabels(transactionType: string | null | undefined) {
+  const lease = transactionType === 'jeonse' || transactionType === 'monthly';
+  return lease
+    ? { seller: '임대인', buyer: '임차인', sellerShort: '임대', buyerShort: '임차' }
+    : { seller: '매도인', buyer: '매수인', sellerShort: '매도', buyerShort: '매수' };
+}
+
+/** Deal.cancelledBy(취소 주체) 표시 라벨. 거래유형을 주면 당사자 이름을 그에 맞춘다. */
 export const cancelledByLabels: Record<string, string> = {
   buyer: '매수인',
   seller: '매도인',
@@ -16,9 +24,26 @@ export const cancelledByLabels: Record<string, string> = {
   other: '기타',
 };
 
-export function formatCancelledBy(value: string | null | undefined) {
+export function getCancelledByLabels(transactionType?: string | null): Record<string, string> {
+  const parties = getPartyLabels(transactionType);
+  return { ...cancelledByLabels, buyer: parties.buyer, seller: parties.seller };
+}
+
+export function formatCancelledBy(value: string | null | undefined, transactionType?: string | null) {
   if (!value) return '미기록';
-  return cancelledByLabels[value] ?? value;
+  return getCancelledByLabels(transactionType)[value] ?? value;
+}
+
+/** "매도 홍길동 · 매수 김철수" / "임대 홍길동 · 임차 김철수" (이름이 있는 쪽만) */
+export function formatPartyNames(deal: Deal, empty?: string) {
+  const parties = getPartyLabels(getDealTransactionType(deal));
+  return [
+    deal.sellerContact?.name ?? (empty ? empty : null),
+    deal.buyerContact?.name ?? (empty ? empty : null),
+  ]
+    .map((name, index) => (name ? `${index === 0 ? parties.sellerShort : parties.buyerShort} ${name}` : null))
+    .filter(Boolean)
+    .join(' · ');
 }
 
 /** ourSide(공동중개 시 우리 담당 측) 라벨 */
@@ -27,6 +52,19 @@ export const ourSideLabels: Record<string, string> = {
   buyer: '매수측',
   both: '양측',
 };
+
+const LEASE_OUR_SIDE_LABELS: Record<string, string> = {
+  seller: '임대인측',
+  buyer: '임차인측',
+  both: '양측',
+};
+
+/** 우리 담당 측 이름. 전세·월세는 "임대인측 / 임차인측"(화면 낱말 기준), 매매는 "매도측 / 매수측" */
+export function getOurSideLabel(side: string | null | undefined, transactionType?: string | null) {
+  const labels =
+    transactionType === 'jeonse' || transactionType === 'monthly' ? LEASE_OUR_SIDE_LABELS : ourSideLabels;
+  return labels[side ?? 'both'] ?? '양측';
+}
 
 export const dealPipelineStages = [
   'preparing',
@@ -90,7 +128,7 @@ export const dealDisplayGroups: DealDisplayGroup[] = [
   },
   {
     key: 'settling',
-    label: '중도금·잔금',
+    label: '중도금/잔금',
     stages: ['settling'],
     dotClassName: 'bg-emerald-600',
   },
@@ -254,7 +292,9 @@ export function getDealPipelineHealth(
 
   if (
     (groupKey === 'contracted' || groupKey === 'settling') &&
-    (!nextPayment || nextPayment.daysUntil === null)
+    (!nextPayment || nextPayment.daysUntil === null) &&
+    // 대금을 다 받았으면 등록할 다음 지급일이 없다
+    !(nextPayment === null && isDealPaymentsComplete(deal))
   ) {
     return {
       state: 'unscheduled',
@@ -269,7 +309,12 @@ export function getDealPipelineHealth(
   return {
     state: 'healthy',
     label: '정상',
-    description: nextPayment?.daysUntil === 0 ? '오늘 지급 일정' : '진행 상태 양호',
+    description:
+      nextPayment?.daysUntil === 0
+        ? '오늘 지급 일정'
+        : nextPayment === null && isDealPaymentsComplete(deal)
+          ? '대금 완료'
+          : '진행 상태 양호',
     stageAgeDays,
     targetDays,
     isAtRisk: false,
@@ -376,28 +421,29 @@ export function getDaysUntil(target: Date, reference: Date) {
 // ============================================================
 
 export function getDealTitle(deal: Deal) {
-  const siteName = deal.property?.site?.name?.trim();
-  const dong = deal.property?.unit?.dong;
-  const dongName = dong?.name?.trim();
-  const dongLabel =
-    dongName && dongName !== '-' && !dong?.isPlaceholder
-      ? withSuffix(dongName, '동')
-      : null;
-  const unitName = deal.property?.unit?.name?.trim();
-  // 호 없이 층이 단위인 공간은 층이 이름이다
-  const unitLabel =
-    unitName && unitName !== '-'
-      ? withSuffix(unitName, '호')
-      : formatFloorRange(deal.property?.unit ?? {}) || null;
-
-  return [siteName, dongLabel, unitLabel].filter(Boolean).join(' ') || '매물 정보 없음';
+  // 주소 표기는 STANDARDS: "고덕그라시움 102동 2203호" — 공용 formatPlaceLabel 로 만든다
+  const label = formatPlaceLabel({
+    siteName: deal.property?.site?.name,
+    dongName: deal.property?.unit?.dong?.name,
+    dongIsPlaceholder: deal.property?.unit?.dong?.isPlaceholder,
+    unit: deal.property?.unit ?? null,
+  });
+  return label || '매물 미지정';
 }
 
-function withSuffix(value: string, suffix: string) {
-  return value.endsWith(suffix) ? value : `${value}${suffix}`;
+/** 탭 제목: "고덕그라시움 102동 2203호 매매". 매물 없는 거래는 "매도 홍길동 · 매수 김철수 매매". */
+export function getDealTabTitle(deal: Deal) {
+  const type = getDealTransactionType(deal);
+  const typeLabel = type === 'sale' ? '매매' : type === 'jeonse' ? '전세' : type === 'monthly' ? '월세' : '';
+  const place = deal.property ? getDealTitle(deal) : formatPartyNames(deal) || '거래';
+  return [place, typeLabel].filter(Boolean).join(' ');
 }
 
 export function getDealLocationLine(deal: Deal) {
+  // 매물 없이 만든 거래(다른 사무소 매물 공동중개 등)는 주소 대신 당사자로 구분한다
+  if (!deal.property) {
+    return formatPartyNames(deal) || '매물 없이 만든 거래';
+  }
   const address = deal.property?.site?.roadAddress ?? deal.property?.site?.jibunAddress ?? '주소 정보 없음';
   const area = deal.property?.unit?.exclusiveAreaM2;
   return area ? `${address} · 전용 ${Math.round(Number(area))}㎡` : address;
@@ -447,14 +493,31 @@ export function formatShortDate(value: string) {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
-export function formatNextPaymentLabel(summary: ReturnType<typeof getNextDealPaymentSummary>) {
-  if (!summary) return '일정 미정';
+/**
+ * 대금 일정이 하나라도 있고, 남은(취소·환불 아닌) 일정을 모두 받았다. 이때는 다음 일정이 없는 것이
+ * "일정 미정"이 아니라 "대금 완료"다.
+ */
+export function isDealPaymentsComplete(deal: Pick<DealListItem, 'payments'> | null | undefined) {
+  const active = (deal?.payments ?? []).filter(
+    (payment) => payment.status !== 'cancelled' && payment.kind !== 'refund',
+  );
+  return active.length > 0 && active.every((payment) => payment.status === 'paid');
+}
+
+export function formatNextPaymentLabel(
+  summary: ReturnType<typeof getNextDealPaymentSummary>,
+  deal?: Pick<DealListItem, 'payments'> | null,
+) {
+  if (!summary) return isDealPaymentsComplete(deal) ? '대금 완료' : '일정 미정';
   if (!summary.payment.scheduledDate) return `${summary.label} · 일정 미정`;
   return `${summary.label} ${formatShortDate(summary.payment.scheduledDate)} · ${formatDaysLabel(summary.daysUntil)}`;
 }
 
-export function formatNextPaymentName(summary: ReturnType<typeof getNextDealPaymentSummary>) {
-  if (!summary) return '일정 미정';
+export function formatNextPaymentName(
+  summary: ReturnType<typeof getNextDealPaymentSummary>,
+  deal?: Pick<DealListItem, 'payments'> | null,
+) {
+  if (!summary) return isDealPaymentsComplete(deal) ? '대금 완료' : '일정 미정';
   if (!summary.payment.scheduledDate) return `${summary.label} 일정 미정`;
   return `${summary.label} ${formatShortDate(summary.payment.scheduledDate)}`;
 }
@@ -466,6 +529,83 @@ export interface DealRowActions {
   onCloseDetail?: () => void;
   onRequestStage: (deal: Deal, stage: string) => void;
   onRequestCancel: (deal: Deal) => void;
+  /** 취소한 거래 되살리기 (확인 대화상자를 거친다) */
+  onRequestRestore?: (deal: Deal) => void;
   onRequestDelete: (deal: Deal) => void;
   isUpdating: boolean;
+}
+
+// ============================================================
+// 계약서 요약 ↔ 거래 대금 일정 비교
+// ============================================================
+
+export interface ContractPaymentDifference {
+  key: string;
+  label: string;
+  /** 계약서에 적힌 값 */
+  contractText: string;
+  /** 거래 대금 일정의 값 */
+  dealText: string;
+}
+
+type ContractStatedAmounts = Pick<
+  Contract,
+  'statedDeposit' | 'statedInterimPayment' | 'statedInterimDate' | 'statedBalance' | 'statedBalanceDate'
+>;
+
+function localDay(iso: string) {
+  const date = new Date(iso);
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+}
+
+function monthDay(iso: string) {
+  const date = new Date(iso);
+  return `${date.getMonth() + 1}.${date.getDate()}`;
+}
+
+/**
+ * 계약서 요약(계약금·중도금·잔금과 날짜)과 거래 대금 일정이 다른 곳.
+ * 계약서에 값이 있는 칸만 본다. 서버의 "계약서 값으로 맞추기"(matchPaymentsToContract)와 같은 기준이다.
+ */
+export function getContractPaymentDifferences(
+  deal: Pick<Deal, 'payments'>,
+  contract: ContractStatedAmounts | null | undefined,
+): ContractPaymentDifference[] {
+  if (!contract) return [];
+  const payments = (deal.payments ?? []).filter((payment) => payment.status !== 'cancelled');
+  const differences: ContractPaymentDifference[] = [];
+  const items: Array<{ kind: string; label: string; amount: number | null; date?: string | null; dateLabel?: string }> = [
+    { kind: 'contract', label: '계약금', amount: contract.statedDeposit },
+    { kind: 'interim', label: '중도금', amount: contract.statedInterimPayment, date: contract.statedInterimDate, dateLabel: '중도금일' },
+    { kind: 'balance', label: '잔금', amount: contract.statedBalance, date: contract.statedBalanceDate, dateLabel: '잔금일' },
+  ];
+  for (const item of items) {
+    const rows = payments
+      .filter((payment) => payment.kind === item.kind)
+      .sort((left, right) => left.sequence - right.sequence);
+    if (item.amount != null && item.amount > 0) {
+      const dealAmount = rows.length ? rows.reduce((sum, row) => sum + row.scheduledAmount, 0) : null;
+      if (dealAmount !== item.amount) {
+        differences.push({
+          key: `${item.kind}-amount`,
+          label: item.label,
+          contractText: formatMoney(item.amount),
+          dealText: dealAmount == null ? '없음' : formatMoney(dealAmount),
+        });
+      }
+    }
+    // 거래에 그 줄이 없고 계약서 금액도 없으면 새로 만들 수 없으므로 날짜만으로는 다르다고 하지 않는다
+    if (item.date && item.dateLabel && (rows.length > 0 || (item.amount ?? 0) > 0)) {
+      const dealDate = rows[0]?.scheduledDate ?? null;
+      if (!dealDate || localDay(dealDate) !== localDay(item.date)) {
+        differences.push({
+          key: `${item.kind}-date`,
+          label: item.dateLabel,
+          contractText: monthDay(item.date),
+          dealText: dealDate ? monthDay(dealDate) : '없음',
+        });
+      }
+    }
+  }
+  return differences;
 }

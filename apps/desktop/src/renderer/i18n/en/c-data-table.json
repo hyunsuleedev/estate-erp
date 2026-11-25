@@ -1,0 +1,53 @@
+{
+  "strings": {
+    "{0} · Enter 저장": "{0} · Enter to save",
+    "{0} 날짜 선택": "Select {0} date",
+    "{0} 이상의 금액을 입력해 주세요.": "Enter an amount of at least {0}.",
+    "{0} 이상의 숫자를 입력해 주세요.": "Enter a number of at least {0}.",
+    "{0} 조건 지우기": "Remove {0} filter",
+    "{0} 컬럼 접기": "Collapse {0} columns",
+    "{0} 컬럼 펼치기": "Expand {0} columns",
+    "{0} 편집": "Edit {0}",
+    "{0} 필터 해제": "Clear {0} filter",
+    "{0}번째 행 선택": "Select row {0}",
+    "← 옵션": "← Options",
+    "↑ 오름차순": "↑ Ascending",
+    "↓ 내림차순": "↓ Descending",
+    "개 선택됨": " selected",
+    "검색 결과 없음": "No results",
+    "검색...": "Search...",
+    "검색어를 입력하세요": "Type to search",
+    "금액을 읽을 수 없습니다 · {0}": "Can't read the amount · {0}",
+    "금액을 읽을 수 없습니다. {0}": "Can't read the amount. {0}",
+    "다른 사용자가 수정했습니다. 최신 값을 확인한 뒤 다시 저장해 주세요. 입력은 유지됩니다.": "Someone else changed this. Check the latest value and save again. Your input is kept.",
+    "단위: {0} · Enter 저장": "Unit: {0} · Enter to save",
+    "단위: 만원 · {0}": "Unit: ₩10K · {0}",
+    "더 불러오는 중...": "Loading more...",
+    "데이터가 없습니다.": "No data.",
+    "드래그로 너비 조절 · 더블클릭으로 기본 너비": "Drag to resize · Double-click to reset width",
+    "비어있음": "is empty",
+    "비어있지 않음": "is not empty",
+    "설정됨": "Set",
+    "숫자를 확인해 주세요. 예: 1,000 또는 1000": "Check the number. e.g. 1,000 or 1000",
+    "열 보기": "· show columns",
+    "일 전": " days ago",
+    "저장하지 못했습니다. 입력은 유지됩니다. 다시 시도해 주세요.": "Couldn't save. Your input is kept. Please try again.",
+    "총": "Total",
+    "평)": " py)",
+    "포함": "contains",
+    "필터 추가": "Add filter",
+    "현재 값": "Current value",
+    "현재 목록 전체 행 선택": "Select all rows in this list",
+    "Enter 저장 · Shift+Enter 줄바꿈": "Enter to save · Shift+Enter for new line"
+  },
+  "files": {
+    "components/data-table/cells.tsx": {
+      "층": "F",
+      "평": " py"
+    },
+    "components/data-table/data-table.tsx": {
+      "선택": "selected",
+      "선택 해제": "Clear selection"
+    }
+  }
+}

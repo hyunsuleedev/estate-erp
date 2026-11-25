@@ -109,14 +109,17 @@ describe('desktop managed sites page', () => {
     assert.doesNotMatch(dto, /isPublic|isLocked|officeId/);
   });
 
-  it('offers structure changes only from the row menu of a site the office registered', () => {
+  it('offers structure changes only for a site the office registered', () => {
     const read = (path: string) => readFileSync(resolve(testDir, path), 'utf8');
     const source = read('../src/renderer/routes/_authenticated/sites/index.tsx');
     const panelSource = read('../src/renderer/routes/_authenticated/sites/-sites-panel.tsx');
     const detailSource = read('../src/renderer/routes/_authenticated/sites/-unit-detail-dialog.tsx');
+    const addUnitSource = read('../src/renderer/routes/_authenticated/sites/-add-unit-dialog.tsx');
 
-    // 본문 도구줄에는 없다
-    assert.doesNotMatch(source, /aria-label="동·호수 추가"/);
+    // 본문 도구줄·빈 화면에도 동·호수 추가가 있다(2026-11-22: 직접 등록한 건물에 호수를 넣는 길이
+    // 사이드바 ⋯ 메뉴뿐이라 막혔다). 공공 단지에는 보이지 않는다.
+    assert.match(source, /const canEditStructure = !!siteDetail && canEditSiteStructure\(siteDetail\)/);
+    assert.match(source, /\{canEditStructure && \([\s\S]*?동 추가[\s\S]*?호수 추가[\s\S]*?\)\}/);
     assert.doesNotMatch(source, /canManageUnits/);
 
     const rowMenu = panelSource.slice(panelSource.indexOf('<DropdownMenuContent align="end"'));
@@ -130,16 +133,16 @@ describe('desktop managed sites page', () => {
     // 메뉴가 열려 있는 동안에는 줄 툴팁이 겹치거나 Esc를 가져가지 않는다
     assert.match(panelSource, /<Tooltip delayDuration=\{600\} open=\{isMenuOpen \? false : undefined\}>/);
 
-    // 다른 단지에서 열면 그 단지로 옮기고, 이전 단지의 입력값을 지운다
+    // 다른 단지에서 열면 그 단지로 옮긴다. 호수 추가 창은 열 때마다 새로 그려 이전 입력이 남지 않는다
     assert.match(source, /selectedOfficeSite\?\.id !== os\.id\) handleSelectSite\(os\)/);
-    assert.match(source, /setNewUnit\(EMPTY_NEW_UNIT\)/);
+    assert.match(addUnitSource, /<AddUnitDialogBody \{\.\.\.props\} \/>/);
 
     // 동 목록을 실제로 받기 전(로딩·조회 실패)에는 호수를 추가하지 않는다 — 있는 단지에 본동을 또 만들게 된다
-    assert.match(source, /addUnitMutation\.isPending \|\| !siteDetail/);
-    assert.match(source, /!newUnit\.name\.trim\(\) \|\| !selectedSiteId \|\| !siteDetail\) return/);
-    assert.match(source, /role="alert"[\s\S]{0,200}단지 정보를 불러오지 못했습니다/);
-    const addUnit = source.slice(source.indexOf('const addUnitMutation'), source.indexOf("name: '본동'"));
-    assert.match(addUnit, /if \(!siteDetail\) throw new Error/);
+    assert.match(source, /isSiteReady=\{!!siteDetail\}/);
+    assert.match(addUnitSource, /!isSiteReady\s*\?\s*'단지 정보를 불러오는 중입니다'/);
+    assert.match(addUnitSource, /role="alert"[\s\S]{0,200}단지 정보를 불러오지 못했습니다/);
+    // 동이 둘 이상이면 고르게 한다(첫 동에 말없이 넣지 않는다)
+    assert.match(addUnitSource, /if \(dongs\.length > 1\) throw new Error\('동을 고르세요\.'\)/);
 
     // 공공 단지의 호실은 상세에서도 수정·삭제 메뉴가 없다
     assert.match(detailSource, /canEditSiteStructure\(site\) && \([\s\S]*?호실 수정[\s\S]*?호실 삭제/);

@@ -16,8 +16,10 @@ import {
 } from "../-components/numeric-range-filter";
 import {
   getAnalysisSignal,
+  getCachedComparison,
   getCanonicalLocation,
   primaryAmount,
+  resolvedNaverUrl,
 } from "./my-ads-format";
 import type {
   MyAdsComparisonFilter,
@@ -123,8 +125,10 @@ export function hasMyAdsNarrowingConditions(
     filters.siteIds.length > 0 ||
     filters.dongSearch.trim().length > 0 ||
     filters.unitSearch.trim().length > 0 ||
+    filters.status !== "active" ||
     filters.transactionType !== "all" ||
     filters.channel !== "all" ||
+    filters.cpAccountId !== "all" ||
     filters.primaryAmountMin !== "" ||
     filters.primaryAmountMax !== "" ||
     filters.monthlyRentMin !== "" ||
@@ -143,6 +147,9 @@ export function advertisementMatchesFilters(
   const location = getCanonicalLocation(advertisement);
   const siteId = advertisementSite(advertisement)?.id ?? null;
 
+  if (filters.status !== "all" && advertisement.status !== filters.status) {
+    return false;
+  }
   if (filters.siteIds.length > 0 && !filters.siteIds.includes(siteId ?? "")) {
     return false;
   }
@@ -171,6 +178,12 @@ export function advertisementMatchesFilters(
   if (filters.channel !== "all" && advertisement.channel !== filters.channel) {
     return false;
   }
+  if (
+    filters.cpAccountId !== "all" &&
+    advertisement.cpAccountId !== filters.cpAccountId
+  ) {
+    return false;
+  }
 
   const primaryAdvertisementAmount = primaryAmount(advertisement, {
     price: advertisement.advertisedPrice,
@@ -197,17 +210,17 @@ export function advertisementMatchesFilters(
     return false;
   }
 
-  const main =
-    advertisement.comparison?.mainAdvertisement ?? null;
+  const own =
+    advertisement.comparison?.ownAdvertisement ?? null;
   if (
     filters.verification !== "all" &&
-    verificationMethodFilterKey(main?.verificationTypeCode ?? null) !==
+    verificationMethodFilterKey(own?.verificationTypeCode ?? null) !==
       filters.verification
   ) {
     return false;
   }
 
-  const comparison = analyzeOfficeAdvertisementComparison(advertisement);
+  const comparison = getCachedComparison(advertisement);
   if (filters.floorExposure !== "all") {
     const mode = comparison.ownFloorExposureMode;
     const matchesFloorExposure =
@@ -297,14 +310,14 @@ function advertisementExposurePeriodBucket(
 function advertisementComparisonFilterKey(
   advertisement: ListingAdvertisementWithListing,
   primarySignal: ReturnType<
-    typeof analyzeOfficeAdvertisementComparison
+    typeof getCachedComparison
   >["primarySignal"],
 ): Exclude<MyAdsComparisonFilter, "all"> {
-  if (!advertisement.naverArticleNo || !advertisement.naverUrl) {
+  if (!advertisement.naverArticleNo || !resolvedNaverUrl(advertisement)) {
     return "pending";
   }
   const signalMap: Record<
-    ReturnType<typeof analyzeOfficeAdvertisementComparison>["primarySignal"],
+    ReturnType<typeof getCachedComparison>["primarySignal"],
     Exclude<MyAdsComparisonFilter, "all">
   > = {
     comparison_pending: "pending",
@@ -331,5 +344,5 @@ export function advertisementMatchesView(
   if (view === "comparison_pending") {
     return ["naver_link_pending", "comparison_pending"].includes(signal.kind);
   }
-  return analyzeOfficeAdvertisementComparison(advertisement).hasReviewSignal;
+  return getCachedComparison(advertisement).hasReviewSignal;
 }

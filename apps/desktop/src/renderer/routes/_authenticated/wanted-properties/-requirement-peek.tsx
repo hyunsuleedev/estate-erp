@@ -20,6 +20,7 @@ import {
 import { cn } from '@/lib/utils';
 import { formatDate, formatDday, formatPhone } from '@/lib/format';
 import { StatusBadge } from '@/components/domain';
+import { useInspectorOutsideClose } from '@/hooks/use-inspector-outside-close';
 
 type Requirement = NonNullable<Match['buyerRequirement']>;
 
@@ -101,6 +102,9 @@ export function RequirementPeek({
     );
     return () => window.clearTimeout(timer);
   }, [closing, animate, onExited]);
+
+  // 패널 밖을 누르면 닫는다 (떠 있는 창 · 줄의 열기 단추는 밖이 아니다)
+  useInspectorOutsideClose(() => onClose());
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {

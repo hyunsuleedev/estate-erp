@@ -1,17 +1,18 @@
 import * as React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { DayPicker, getDefaultClassNames } from 'react-day-picker';
-import { ko } from 'react-day-picker/locale';
+import { enUS, ko } from 'react-day-picker/locale';
 
 import { cn } from '@/lib/utils';
 import { buttonVariants } from '@/components/ui/button';
+import { isEnglish } from '@/i18n/auto';
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
 function Calendar({
   className,
   classNames,
-  locale = ko,
+  locale = isEnglish ? enUS : ko,
   showOutsideDays = true,
   ...props
 }: CalendarProps) {

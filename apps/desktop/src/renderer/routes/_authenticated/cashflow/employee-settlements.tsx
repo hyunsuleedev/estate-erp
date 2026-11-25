@@ -22,6 +22,7 @@ import type {
   SettlementWaitingItem,
 } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/providers/auth-provider';
 import { EmptyState } from '@/components/domain';
@@ -59,7 +60,7 @@ import {
   FoldButton,
   MonthStepper,
 } from './-cashflow-ui';
-import { downloadCsv, shortDate } from './-cashflow-utils';
+import { dayLabel, downloadCsv } from './-cashflow-utils';
 
 export const Route = createFileRoute('/_authenticated/cashflow/employee-settlements')({
   component: EmployeeSettlementsRoute,
@@ -100,6 +101,7 @@ const WAITING_LABEL: Record<SettlementWaitingItem['reason'], string> = {
   balance: '잔금이 끝나면 정산',
   participants: '담당이 정해지지 않음',
   ratio: '직원 몫이 정해지지 않음',
+  cancelled: '취소된 거래',
 };
 
 /** 금액은 원 단위다. 0은 흐린 줄표로 보인다. */
@@ -111,11 +113,39 @@ function monthKey(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
+/** '2026-11' → '2026-12' */
+function nextMonthKey(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : monthKey(y, m + 1);
+}
+
+/** '2026-12' → '12월', 해가 다르면 '2027년 1월' */
+function monthName(month: string, base: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return y === Number(base.slice(0, 4)) ? `${m}월` : `${y}년 ${m}월`;
+}
+
+/**
+ * 지금 정산에 들어갈 수 있게 되는 입금이 어느 달 정산에 들어가는지. 확정한 달은 고치지 않으므로
+ * 이 달이나 그 뒤가 이미 확정됐으면 가장 최근 확정 달의 다음 달이다. 그렇지 않으면 null (이 달 그대로).
+ */
+function landingMonth(view: SettlementView): string | null {
+  const latest = view.latestConfirmedMonth;
+  if (!latest || latest < view.month) return null;
+  return nextMonthKey(latest);
+}
+
 function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : '요청을 처리하지 못했습니다';
+  return apiErrorMessage(error, '요청을 처리하지 못했습니다. 다시 시도해 주세요.');
 }
 
 const isEmployee = (line: SettlementLine) => line.employmentType === 'employee';
+
+/** 이 달보다 앞선 달에 들어온 입금이면 그 달 이름("11월"), 아니면 null. 받은 날은 한국 시각으로 센다. */
+function earlierMonth(receivedAt: string, month: string): string | null {
+  const key = new Date(new Date(receivedAt).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 7);
+  return key < month ? monthName(key, month) : null;
+}
 
 function EmployeeSettlementsPage() {
   const queryClient = useQueryClient();
@@ -210,6 +240,32 @@ function EmployeeSettlementsPage() {
   const payable = lines.filter((line) => line.netWon > 0);
   const paidCount = payable.filter((line) => line.paidAt).length;
 
+  // 가장 최근에 확정한 달을 볼 때: 확정한 뒤에 들어왔거나(정산에 들어갈 수 있게 된) 이 달 입금은 규칙대로
+  // 다음 달 정산에 들어간다. 이 달 화면 어디에도 안 보여 사라진 것처럼 읽히므로 몇 건인지 알리고 그 달로 가는 길을 둔다.
+  const followingMonth = nextMonthKey(month);
+  const showsCarriedNote = confirmed && view?.latestConfirmedMonth === month;
+  const following = useQuery({
+    queryKey: ['settlement', followingMonth],
+    queryFn: () => api.finance.settlements.get(followingMonth),
+    enabled: showsCarriedNote,
+  });
+  const carriedReceipts = new Map<string, { amountWon: number; partnerShare: boolean }>();
+  if (showsCarriedNote) {
+    for (const line of following.data?.lines ?? []) {
+      for (const item of line.detail) {
+        if (earlierMonth(item.receivedAt, followingMonth) !== null) {
+          carriedReceipts.set(item.receiptId, {
+            amountWon: item.amountWon,
+            partnerShare: item.source === 'partner_share',
+          });
+        }
+      }
+    }
+  }
+  const carried = [...carriedReceipts.values()];
+  const carriedTotal = carried.reduce((sum, item) => sum + item.amountWon, 0);
+  const carriedHasPartnerShare = carried.some((item) => item.partnerShare);
+
   const exportCsv = () => {
     if (!view) return;
     downloadCsv(`${month}-직원정산.csv`, [
@@ -242,7 +298,7 @@ function EmployeeSettlementsPage() {
               {confirmed ? '확정' : '작성 중'}
             </span>
             {confirmed
-              ? `${shortDate(view.confirmedAt)} 확정${payable.length > 0 ? ` · 지급 ${paidCount}/${payable.length}명` : ''}`
+              ? `${dayLabel(view.confirmedAt, false)} 확정${payable.length > 0 ? ` · 지급 ${paidCount}/${payable.length}명` : ''}`
               : '확정하기 전에는 입금과 직원 조건에 따라 다시 계산됩니다'}
           </span>
         )}
@@ -433,7 +489,7 @@ function EmployeeSettlementsPage() {
                                 '지급할 돈 없음'
                               ) : line.paidAt ? (
                                 <>
-                                  {shortDate(line.paidAt)} {employee ? '급여에 넘김' : '지급함'}
+                                  {dayLabel(line.paidAt, false)} {employee ? '급여에 넘김' : '지급함'}
                                   <Button variant="outline" size="xs" disabled={busy} onClick={() => unpay.mutate(line)}>
                                     취소
                                   </Button>
@@ -452,10 +508,32 @@ function EmployeeSettlementsPage() {
                               <td colSpan={4} className="!whitespace-normal">
                                 <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 py-1 pl-6 text-[12.5px] text-muted-foreground">
                                   <b className="font-medium text-foreground">{item.dealTitle}</b>
-                                  {shortDate(item.receivedAt)} {item.kind === 'refund' ? '돌려줌' : '입금'}{' '}
-                                  <span className="tabular-nums">{won(Math.abs(item.amountWon))}원</span>
-                                  <span>→ 부가세 빼고</span>
-                                  <b className="font-medium text-foreground tabular-nums">{won(Math.abs(item.supplyWon))}원</b>
+                                  {item.source === 'partner_share' && <PartnerShareTag />}
+                                  {dayLabel(item.receivedAt, false)}{' '}
+                                  {item.source === 'partner_share'
+                                    ? item.kind === 'refund'
+                                      ? '받음 기록 되돌림'
+                                      : '받음'
+                                    : item.kind === 'refund'
+                                      ? '돌려줌'
+                                      : '입금'}{' '}
+                                  {earlierMonth(item.receivedAt, view.month) && (
+                                    <span className="text-warning-strong" title="앞 달 정산을 확정한 뒤에 정산할 수 있게 된 입금입니다">
+                                      ({earlierMonth(item.receivedAt, view.month)} 입금분)
+                                    </span>
+                                  )}{' '}
+                                  {item.source === 'partner_share' ? (
+                                    <>
+                                      <b className="font-medium text-foreground tabular-nums">{won(Math.abs(item.supplyWon))}원</b>
+                                      <span>(부가세 별도)</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="tabular-nums">{won(Math.abs(item.amountWon))}원</span>
+                                      <span>→ 부가세 빼고</span>
+                                      <b className="font-medium text-foreground tabular-nums">{won(Math.abs(item.supplyWon))}원</b>
+                                    </>
+                                  )}
                                   {item.ourRatio < 100 && <span>→ 우리 사무소 {item.ourRatio}%</span>}
                                   {item.sharePercent < 100 && <span>→ 내 배분 {item.sharePercent}%</span>}
                                   <span>× 몫 {item.ratio}%</span>
@@ -508,14 +586,36 @@ function EmployeeSettlementsPage() {
               </table>
             )}
 
+            {carriedReceipts.size > 0 && (
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pt-4 text-[12.5px] text-muted-foreground">
+                <span>
+                  확정한 뒤에 들어왔거나 잔금이 끝난 입금 {carriedReceipts.size}건 ({won(carriedTotal)}원
+                  {carriedHasPartnerShare ? ' · 공동중개 받은 몫은 부가세 별도' : ' · 부가세 포함'})은{' '}
+                  {monthName(followingMonth, month)} 정산에 들어갑니다.
+                </span>
+                <Button type="button" variant="outline" size="xs" onClick={() => step(1)}>
+                  {monthName(followingMonth, month)} 보기
+                </Button>
+              </p>
+            )}
+
             {view.waiting.length > 0 && (
               <section aria-label="정산에 들어가지 않은 입금">
                 <h2 className="flex items-baseline gap-2 px-3 pt-5 pb-2 text-[13px] font-semibold">
                   이 달 정산에 들어가지 않은 입금
                   <span className="text-[12.5px] font-normal text-muted-foreground tabular-nums">
                     {view.waiting.length}건 · {won(view.waiting.reduce((sum, item) => sum + item.amountWon, 0))}원
+                    {view.waiting.some((item) => item.source === 'partner_share')
+                      ? ' (입금은 부가세 포함, 공동중개 받은 몫은 부가세 별도)'
+                      : ' (부가세 포함)'}
                   </span>
                 </h2>
+                {landingMonth(view) && (
+                  <p className="px-3 pb-2 text-[12.5px] text-warning-strong">
+                    {monthName(view.latestConfirmedMonth as string, view.month)} 정산을 이미 확정해서, 아래 입금은 담당을 정해도{' '}
+                    {monthName(landingMonth(view) as string, view.month)} 정산에 들어갑니다. 확정한 달은 바뀌지 않습니다.
+                  </p>
+                )}
                 <table className="cf-table" style={{ '--cf-table-min': '760px' } as React.CSSProperties}>
                   <colgroup>
                     <col />
@@ -527,9 +627,18 @@ function EmployeeSettlementsPage() {
                   <tbody>
                     {view.waiting.map((item) => (
                       <tr key={item.receiptId}>
-                        <td>{item.dealTitle}</td>
-                        <td className="text-muted-foreground">{shortDate(item.receivedAt)} 입금</td>
-                        <td className="cf-num">{won(item.amountWon)}</td>
+                        <td>
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className="truncate">{item.dealTitle}</span>
+                            {item.source === 'partner_share' && <PartnerShareTag />}
+                          </span>
+                        </td>
+                        <td className="text-muted-foreground">
+                          {dayLabel(item.receivedAt, false)} {item.source === 'partner_share' ? '받음' : '입금'}
+                        </td>
+                        <td className="cf-num" title={item.source === 'partner_share' ? '부가세 별도' : '부가세 포함'}>
+                          {won(item.amountWon)}
+                        </td>
                         <td className={cn(item.reason === 'balance' ? 'text-muted-foreground' : 'text-warning-strong')}>
                           {WAITING_LABEL[item.reason]}
                         </td>
@@ -537,7 +646,7 @@ function EmployeeSettlementsPage() {
                           <span className="flex justify-end">
                             {item.reason === 'ratio' ? (
                               <Button asChild variant="outline" size="xs">
-                                <Link to="/settings">직원 몫 정하기</Link>
+                                <Link to="/settings" search={{ section: 'team' }}>직원 몫 정하기</Link>
                               </Button>
                             ) : (
                               <Button variant="outline" size="xs" onClick={() => setAssigning(item)}>
@@ -552,6 +661,49 @@ function EmployeeSettlementsPage() {
                 </table>
               </section>
             )}
+
+            {(view.cancelledReceipts?.length ?? 0) > 0 && (
+              <section aria-label="취소된 거래의 입금">
+                <h2 className="flex items-baseline gap-2 px-3 pt-5 pb-1 text-[13px] font-semibold">
+                  취소된 거래의 입금 — 정산에 넣지 않음
+                  <span className="text-[12.5px] font-normal text-muted-foreground tabular-nums">
+                    {view.cancelledReceipts?.length}건 · 부가세 포함{' '}
+                    {won((view.cancelledReceipts ?? []).reduce((sum, item) => sum + item.amountWon, 0))}원
+                  </span>
+                </h2>
+                <p className="px-3 pb-2 text-[12.5px] text-warning-strong">
+                  거래가 취소되어 이 입금은 정산에 넣지 않습니다. 손님에게 돌려줄지 위약금으로 남길지 정해 주세요. 돌려줬다면
+                  수금 원장에서 '돌려준 돈'으로 기록합니다.
+                </p>
+                <table className="cf-table" style={{ '--cf-table-min': '760px' } as React.CSSProperties}>
+                  <colgroup>
+                    <col />
+                    <col style={{ width: 110 }} />
+                    <col style={{ width: 140 }} />
+                    <col style={{ width: 176 }} />
+                  </colgroup>
+                  <tbody>
+                    {(view.cancelledReceipts ?? []).map((item) => (
+                      <tr key={item.receiptId}>
+                        <td>{item.dealTitle}</td>
+                        <td className="text-muted-foreground">{dayLabel(item.receivedAt, false)} 입금</td>
+                        <td className="cf-num">{won(item.amountWon)}</td>
+                        <td>
+                          <span className="flex justify-end">
+                            <Button asChild variant="outline" size="xs">
+                              <Link to="/cashflow/ledger" search={{ dealId: item.dealId }}>
+                                수금 원장에서 보기
+                              </Link>
+                            </Button>
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
+
           </>
         )}
       </div>
@@ -565,6 +717,11 @@ function EmployeeSettlementsPage() {
         <ParticipantsDialog
           dealId={assigning.dealId}
           dealTitle={assigning.dealTitle}
+          landingNotice={
+            view && landingMonth(view)
+              ? `${monthName(view.latestConfirmedMonth as string, view.month)} 정산은 이미 확정되어 이 입금은 ${monthName(landingMonth(view) as string, view.month)} 정산에 들어갑니다.`
+              : null
+          }
           onClose={() => setAssigning(null)}
           onSaved={() => {
             setAssigning(null);
@@ -573,6 +730,18 @@ function EmployeeSettlementsPage() {
         />
       )}
     </CashflowPage>
+  );
+}
+
+/** 공동중개 상대가 수금한 청구에서 받은 우리 몫이라는 꼬리표 */
+function PartnerShareTag() {
+  return (
+    <span
+      className="shrink-0 rounded-md bg-neutral-soft px-1.5 py-px text-[11px] leading-[18px] font-medium text-muted-foreground"
+      title="상대 사무소가 수금한 거래에서 우리 사무소가 받은 몫입니다 (부가세 별도로 봄)"
+    >
+      공동중개 받은 몫
+    </span>
   );
 }
 
@@ -595,11 +764,14 @@ interface ShareRow {
 function ParticipantsDialog({
   dealId,
   dealTitle,
+  landingNotice,
   onClose,
   onSaved,
 }: {
   dealId: string;
   dealTitle: string;
+  /** 확정한 달을 보고 있을 때: 이 입금이 어느 달 정산에 들어가는지 */
+  landingNotice: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -639,7 +811,7 @@ function ParticipantsDialog({
         list.map((row) => ({ userId: row.userId, sharePercent: Number(row.percent) })),
       ),
     onSuccess: () => {
-      toast.success('담당을 정했습니다', { description: dealTitle });
+      toast.success('담당을 정했습니다', { description: landingNotice ?? dealTitle });
       onSaved();
     },
     onError: (error) => toast.error(errorMessage(error)),
@@ -711,6 +883,7 @@ function ParticipantsDialog({
             <p className={cn('text-[12.5px]', problem ? 'text-warning-strong' : 'text-muted-foreground')} role="status">
               {problem ?? '합이 100입니다. 이미 확정한 정산은 바뀌지 않습니다.'}
             </p>
+            {landingNotice && <p className="text-[12.5px] text-warning-strong">{landingNotice}</p>}
           </div>
         )}
         <DialogFooter>

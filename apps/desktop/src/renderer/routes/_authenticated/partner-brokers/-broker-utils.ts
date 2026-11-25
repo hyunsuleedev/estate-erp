@@ -1,4 +1,4 @@
-import { formatUnitName } from '@estate-erp/shared';
+import { formatPlaceLabel } from '@estate-erp/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { SortingState } from '@tanstack/react-table';
 import type { Deal, PartnerBroker } from '@estate-erp/api-client';
@@ -102,14 +102,17 @@ export function summarizePartnerShare(
   return summary;
 }
 
+/** "고덕그라시움 101동 3403호" — 화면 표기 기준의 공용 함수로 만든다 */
 export function dealAddressLabel(deal: DealWithCommission): string {
-  const dong = deal.property?.unit?.dong;
-  const parts = [
-    deal.property?.site?.name,
-    dong && !dong.isPlaceholder ? dong.name : null,
-    formatUnitName(deal.property?.unit),
-  ].filter(Boolean);
-  return parts.length > 0 ? parts.join(' ') : '매물 미지정';
+  const unit = deal.property?.unit;
+  return (
+    formatPlaceLabel({
+      siteName: deal.property?.site?.name,
+      dongName: unit?.dong?.name,
+      dongIsPlaceholder: unit?.dong?.isPlaceholder,
+      unit,
+    }) || '매물 미지정'
+  );
 }
 
 export function dealPriceLabel(deal: DealWithCommission): string {

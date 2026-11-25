@@ -1,13 +1,14 @@
 /**
- * 호실 수정 다이얼로그 + 호실 컨텍스트 상담 추가 다이얼로그.
+ * 호실 수정 다이얼로그 + 이 호실의 상담 적기 다이얼로그.
  */
-import { formatUnitName } from '@estate-erp/shared';
+import { formatPlaceLabel } from '@estate-erp/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { FileText, Home } from 'lucide-react';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import type { Dong, SiteDetail, Unit, UpdateUnitDto } from '@estate-erp/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -85,7 +86,7 @@ export function UnitEditDialog({
       onOpenChange(false);
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '호실 수정에 실패했습니다');
+      toast.error(apiErrorMessage(error, '호실 정보를 저장하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -119,7 +120,12 @@ export function UnitEditDialog({
         <DialogHeader>
           <DialogTitle>호실 수정</DialogTitle>
           <DialogDescription>
-            {site.name} · {formatUnitName(unit)}
+            {formatPlaceLabel({
+              siteName: site.name,
+              dongName: dongs.find((dong) => dong.id === unit.dongId)?.name,
+              dongIsPlaceholder: dongs.find((dong) => dong.id === unit.dongId)?.isPlaceholder,
+              unit,
+            })}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -265,7 +271,7 @@ export function UnitEditDialog({
   );
 }
 
-// ── 상담 추가 (호실 컨텍스트) ────────────────────────────────────
+// ── 상담 적기 (이 호실) ─────────────────────────────────────────
 
 interface ConsultCandidate {
   id: string;
@@ -279,13 +285,17 @@ export function UnitConsultDialog({
   onOpenChange,
   unit,
   site,
-  dongName,
+  placeLabel,
+  onAddOwner,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   unit: Unit;
   site: SiteDetail;
-  dongName: string;
+  /** "고덕그라시움 101동 3401호" — formatPlaceLabel로 만든 집 이름(단지 포함) */
+  placeLabel: string;
+  /** 상담할 상대가 없을 때 소유자를 연결하러 간다(관리호수가 아니면 관리호수로 만든 뒤) */
+  onAddOwner?: () => void;
 }) {
   const queryClient = useQueryClient();
   const properties = useMemo(() => unit.properties ?? [], [unit]);
@@ -350,11 +360,11 @@ export function UnitConsultDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['consultations'] });
       queryClient.invalidateQueries({ queryKey: ['sites', site.id] });
-      toast.success('상담을 기록했습니다');
+      toast.success('상담을 적었습니다');
       onOpenChange(false);
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '상담 기록에 실패했습니다');
+      toast.error(apiErrorMessage(error, '상담을 기록하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -368,19 +378,18 @@ export function UnitConsultDialog({
       toast.success('관리호수로 등록했습니다');
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '관리호수 등록에 실패했습니다');
+      toast.error(apiErrorMessage(error, '관리호수로 등록하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
-  const unitLabel = `${dongName ? `${dongName} ` : ''}${formatUnitName(unit)}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>상담 추가</DialogTitle>
+          <DialogTitle>상담 적기</DialogTitle>
           <DialogDescription>
-            {site.name} {unitLabel} 호실 맥락으로 상담을 기록합니다
+            {placeLabel}의 소유자·세입자와 나눈 상담을 적습니다
           </DialogDescription>
         </DialogHeader>
 
@@ -390,11 +399,17 @@ export function UnitConsultDialog({
             <p className="text-sm text-muted-foreground">
               이 호실은 아직 우리 사무소의 관리호수로 등록되지 않았습니다.
               <br />
-              관리호수로 연결한 뒤 소유자·세입자와 상담을 기록할 수 있습니다.
+              소유자를 연결하면 관리호수로 등록되고, 그 소유자와의 상담을 기록할 수 있습니다.
             </p>
             <div className="flex flex-wrap justify-center gap-2">
+              {onAddOwner && (
+                <Button size="sm" onClick={onAddOwner}>
+                  소유자 연결
+                </Button>
+              )}
               <Button
                 size="sm"
+                variant={onAddOwner ? 'outline' : 'default'}
                 onClick={() => registerManagedUnitMutation.mutate()}
                 disabled={registerManagedUnitMutation.isPending}
               >
@@ -406,7 +421,7 @@ export function UnitConsultDialog({
                   search={{ siteId: site.id, dongId: unit.dongId, unitId: unit.id }}
                 >
                   <FileText className="size-3.5" />
-                  매물 의뢰 등록
+                  매물 등록
                 </Link>
               </Button>
             </div>
@@ -433,10 +448,22 @@ export function UnitConsultDialog({
                     </SelectContent>
                   </Select>
                 ) : (
-                  <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
-                    이 호실에 연결된 연락처(소유자/세입자)가 없습니다. 먼저 소유자나 세입자를
-                    연결해주세요.
-                  </p>
+                  <div className="flex items-center justify-between gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                    <span className="min-w-0">
+                      이 호실에 연결된 소유자·세입자가 없습니다. 상담할 사람을 먼저 연결하세요.
+                    </span>
+                    {onAddOwner && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 shrink-0 px-2 text-xs"
+                        onClick={onAddOwner}
+                      >
+                        소유자 연결
+                      </Button>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="space-y-1.5">
@@ -475,7 +502,7 @@ export function UnitConsultDialog({
                 onClick={() => createMutation.mutate()}
                 disabled={!contactId || !content.trim() || createMutation.isPending}
               >
-                기록
+                저장
               </Button>
             </DialogFooter>
           </>

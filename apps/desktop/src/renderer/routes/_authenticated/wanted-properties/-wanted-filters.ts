@@ -275,8 +275,12 @@ export function getLocationFilterOptions(requirements: BuyerRequirement[]) {
 export function scopeRequirementFilters(
   filters: RequirementFilters,
   requirements: BuyerRequirement[],
+  /** keepCompleted: 완료 조건을 따로 받아 온 뒤라면, 완료가 하나도 없어도 '완료' 선택을 그대로 둔다 */
+  options: { keepCompleted?: boolean } = {},
 ): RequirementFilters {
-  const hasCompleted = requirements.some((item) => item.status === 'completed');
+  const hasCompleted =
+    options.keepCompleted === true ||
+    requirements.some((item) => item.status === 'completed');
   const locations = new Set(
     getLocationFilterOptions(requirements).map((option) => option.value),
   );

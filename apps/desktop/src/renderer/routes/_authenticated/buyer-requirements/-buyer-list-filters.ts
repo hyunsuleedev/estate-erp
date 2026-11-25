@@ -100,7 +100,7 @@ export const staticFilterDefinitions: FilterDefinition[] = [
 // 고객 원장 API가 이 필드명을 정렬 기준으로 해석한다.
 export const sortDefinitions = [
   { field: "customer", label: "고객명" },
-  { field: "intentCount", label: "희망조건 수" },
+  { field: "intentCount", label: "희망 조건 수" },
   { field: "budgetMin", label: "최소예산" },
   { field: "budgetMax", label: "최대예산" },
   { field: "monthlyRentMin", label: "최소월세" },

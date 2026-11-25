@@ -6,6 +6,17 @@ import { fileURLToPath } from 'node:url';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * 매물관리 화면(properties/index.tsx)은 2026-11에 JS 문자열을 큰따옴표로 쓰게 바뀌었다.
+ * 작은따옴표 시절에 쓴 검사는 따옴표 종류와 상관없이 맞춰 보도록 이것으로 감싼다.
+ */
+const anyQuote = (pattern: RegExp) =>
+  new RegExp(pattern.source.replace(/'/g, `['"]`), pattern.flags);
+const indexOfAnyQuote = (source: string, needle: string, from?: number) => {
+  const single = source.indexOf(needle, from);
+  return single !== -1 ? single : source.indexOf(needle.replace(/'/g, '"'), from);
+};
+
 describe('desktop data table', () => {
   it('supports controlled row selection for edit-triggered selection', () => {
     const tableSource = readFileSync(
@@ -100,7 +111,7 @@ describe('desktop data table', () => {
 
     assert.match(
       source,
-      /className="[^"]*outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"/,
+      /className="[^"]*outline-none[^"]*focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"/,
     );
   });
 
@@ -134,13 +145,13 @@ describe('desktop data table', () => {
 
     assert.match(
       pageSource,
-      /\[ListingAvailability\.AVAILABLE\]:\s*\{\s*label: '활성'/,
+      anyQuote(/\[ListingAvailability\.AVAILABLE\]:\s*\{\s*label: '활성'/),
     );
     assert.match(
       statusConfigSource,
-      /listingAvailability:\s*\{\s*available: \{ label: '활성'/,
+      anyQuote(/listingAvailability:\s*\{\s*available: \{ label: '활성'/),
     );
-    assert.match(pageSource, /'활성으로'/);
+    assert.match(pageSource, anyQuote(/'활성으로'/));
   });
 
   it('combines confirm action, date, and next-confirm columns into the web-style confirm column', () => {
@@ -154,12 +165,13 @@ describe('desktop data table', () => {
 
     assert.match(
       source,
-      /id: 'confirmationAt'[\s\S]*?label="확인"[\s\S]*?<IntakeConfirmationCell/,
+      anyQuote(/id: 'confirmationAt'[\s\S]*?label="확인"[\s\S]*?<IntakeConfirmationCell/),
     );
-    assert.match(source, /title="오늘로 확인 갱신"/);
-    assert.doesNotMatch(source, /id: 'confirmAction'/);
-    assert.doesNotMatch(source, /label="확인일"/);
-    assert.doesNotMatch(source, /label="다음확인"/);
+    // 2026-11-18: 확인 칸의 단추는 '오늘로 갱신'이 아니라 결과를 고르는 메뉴(확인 기록)다
+    assert.match(source, /aria-label="확인 기록"/);
+    assert.doesNotMatch(source, anyQuote(/id: 'confirmAction'/));
+    assert.doesNotMatch(source, anyQuote(/label="확인일"/));
+    assert.doesNotMatch(source, anyQuote(/label="다음확인"/));
   });
 
   it('makes property data headers keyboard-sortable with announced direction', () => {
@@ -195,7 +207,7 @@ describe('desktop data table', () => {
       'moveInAvailable',
       'memo',
     ]) {
-      const columnStart = pageSource.indexOf(`id: '${columnId}'`);
+      const columnStart = indexOfAnyQuote(pageSource, `id: '${columnId}'`);
       assert.notEqual(columnStart, -1, `${columnId} column should exist`);
       assert.match(
         pageSource.slice(columnStart, columnStart + 700),
@@ -204,12 +216,13 @@ describe('desktop data table', () => {
       );
     }
 
-    assert.match(tableSource, /aria-sort=\{/);
+    assert.match(tableSource, anyQuote(/aria-sort=\{/));
     assert.match(
       tableSource,
-      /<button[\s\S]*?type="button"[\s\S]*?onClick=\{handleSortToggle\}/,
+      // 정렬은 머리글의 열 메뉴(PropertyColumnMenu)가 맡는다 — 단추라 Tab·Enter로 연다
+      /<PropertyColumnMenu[\s\S]*?onSort=\{canSort \?/,
     );
-    assert.match(tableSource, /focus-visible:ring-2/);
+    assert.match(tableSource, anyQuote(/focus-visible:ring-2/));
   });
 
   it('keeps the confirmation column within the compact property row height', () => {
@@ -221,15 +234,16 @@ describe('desktop data table', () => {
       'utf8',
     );
     const confirmationCell = source.slice(
-      source.indexOf('function IntakeConfirmationCell'),
-      source.indexOf('function ListingPriceDepositStack'),
+      indexOfAnyQuote(source, 'function IntakeConfirmationCell'),
+      indexOfAnyQuote(source, 'function ListingPriceDepositStack'),
     );
 
     assert.match(
       confirmationCell,
-      /className="flex h-8 min-w-0 items-center gap-1\.5"/,
+      // 두 줄(확인한 날 · 마지막 시도)이라도 매물 줄 높이(36px) 안에 드는 h-9
+      /className="relative flex h-9 min-w-0 items-center gap-1\.5"/,
     );
-    assert.doesNotMatch(confirmationCell, /py-1/);
+    assert.doesNotMatch(confirmationCell, anyQuote(/py-1/));
   });
 
   it('gives property controls precise press feedback without transition-all', () => {
@@ -342,7 +356,7 @@ describe('desktop data table', () => {
       );
     }
     assert.match(inspectorViewSource, /role="tablist"/);
-    for (const label of ['상담 남기기', '가격·상태 수정', '매물 확인 완료']) {
+    for (const label of ['상담 적기', '가격·상태 수정', '매물 확인 완료']) {
       assert.match(
         inspectorViewSource,
         new RegExp(label),
@@ -470,7 +484,7 @@ describe('desktop data table', () => {
     );
     assert.match(
       pageSource,
-      /const isConfirmRecord = consultation\.purpose === "listing_confirm";[\s\S]*?title: isConfirmRecord\s*\? "매물 확인"/,
+      /const isConfirmRecord = consultation\.purpose === "listing_confirm";[\s\S]*?title: isConfirmRecord\s*\? \(confirmTag\?\.tag \?\? "매물 확인"\)/,
       'confirm-button records are stored as online consultations but must read as 매물 확인',
     );
     assert.match(
@@ -597,7 +611,7 @@ describe('desktop data table', () => {
       /label: "최근 확인"|label: "다음 확인"|label: "공동중개"/,
       'confirmation dates and joint brokerage already appear in 진행 상황 and the header chips',
     );
-    for (const value of ['확인됨', '부재중', '미확인']) {
+    for (const value of ['확인 완료', '부재중', '미확인']) {
       assert.match(
         pageSource,
         new RegExp(`value: "${value}",\\s*detail: \\[[^\\]]*?nextConfirmText,?\\s*\\]`),
@@ -689,7 +703,8 @@ describe('desktop data table', () => {
     assert.doesNotMatch(source, /id: ["']actions["']/);
     assert.match(
       source,
-      /headerActions=\{\s*<PropertyRowActions[\s\S]*?listings=\{listings\}[\s\S]*?intake=\{intake\}[\s\S]*?triggerLabel="매물 작업 메뉴"/,
+      // 머리 막대에는 '새 매물' 단추가 먼저 오고(있을 때), 그 뒤에 매물 작업 메뉴가 온다
+      /headerActions=\{[\s\S]*?<PropertyRowActions[\s\S]*?listings=\{listings\}[\s\S]*?intake=\{intake\}[\s\S]*?triggerLabel="매물 작업 메뉴"/,
     );
     assert.match(inspectorSource, /headerActions\?: ReactNode/);
     assert.match(inspectorSource, /<div className="flex-1" \/>\s*\{headerActions\}/);
@@ -713,36 +728,40 @@ describe('desktop data table', () => {
 
     assert.match(
       pageSource,
-      /const \[arePropertyDetailColumnsCollapsed, setArePropertyDetailColumnsCollapsed\] = useState\(true\)/,
-    );
-    assert.match(pageSource, /columnGroupControl=\{\{/);
-    assert.match(tableSource, /data-column-group-toggle="property-details"/);
-    assert.match(tableSource, /data-column-group-line="property-details"/);
-    assert.match(
-      tableSource,
-      /aria-expanded=\{!columnGroupControl\.collapsed\}/,
+      // 기본은 접힘. 한 번 펼치면 그 PC·그 사용자에게는 펼친 채로 기억한다(readDetailColumnsCollapsed)
+      /const \[\s*arePropertyDetailColumnsCollapsed,\s*setArePropertyDetailColumnsCollapsed,?\s*\] = useState\((?:true|\(\) => readDetailColumnsCollapsed\(detailColumnsKey\))\)/,
     );
     assert.match(
+      pageSource,
+      /function readDetailColumnsCollapsed\(key: string \| null\) \{\s*if \(!key\) return true;[\s\S]*?!== "open"/,
+    );
+    assert.match(pageSource, anyQuote(/columnGroupControl=\{\{/));
+    assert.match(tableSource, anyQuote(/data-column-group-toggle="property-details"/));
+    // 2026-11: 머리 위의 안내 선(data-column-group-line)은 없앴다. 고정 열 경계선 전체가 접기 손잡이다.
+    assert.doesNotMatch(tableSource, /data-column-group-line=/);
+    assert.match(tableSource, /data-column-edge-hit/);
+    assert.match(
       tableSource,
-      /const leafColumns = table\.getAllLeafColumns\(\)[\s\S]*?column\.id === 'unitType'[\s\S]*?column\.id === 'listingAvailability'[\s\S]*?const propertyDetailGroupStart =/,
+      anyQuote(/aria-expanded=\{!columnGroupControl\.collapsed\}/),
     );
     assert.match(
       tableSource,
-      /data-column-group-line="property-details"[\s\S]*?left: propertyDetailGuideLeft,[\s\S]*?width: propertyDetailGuideWidth/,
+      // 접기 버튼은 고정 열(선택·매물·단지·동·호·공급)이 끝나는 자리에 놓인다
+      /const leafColumns = table\.getVisibleLeafColumns\(\)[\s\S]*?const propertyDetailGroupStart = leafColumns[\s\S]*?'supplyArea'/,
     );
     assert.match(
       tableSource,
-      /data-column-group-toggle="property-details"[\s\S]*?left: propertyDetailToggleLeft,[\s\S]*?marginLeft: propertyDetailToggleLeft/,
+      /data-column-group-toggle="property-details"[\s\S]*?style=\{\{ left: propertyDetailToggleLeft \+ 0\.5 \}\}/,
     );
     // 경계선 위의 작은 +/− 상자: 테두리가 경계선과 같은 색이라 선과 한 부품처럼 보인다.
     assert.match(
       tableSource,
-      /data-column-group-toggle="property-details"[\s\S]*?size-4[\s\S]*?border-\[#cfcecb\] bg-white[\s\S]*?text-\[#8f8c86\]/,
+      anyQuote(/data-column-group-toggle="property-details"[\s\S]*?size-4[\s\S]*?border-\[#cfcecb\] bg-white[\s\S]*?text-\[#8f8c86\]/),
     );
     // 고정 열 경계선은 머리글과 행이 같은 선 하나를 쓴다 (다른 칸 선보다 조금 굵다).
     assert.match(
       tableSource,
-      /const PINNED_EDGE_LINE_CLASS =\s*"shadow-\[1px_0_0_0_#e3e2df\] [^"]*group-has-\[\[data-column-edge-hit\]:hover\]\/ptable:after:bg-foreground\/10/,
+      anyQuote(/const PINNED_EDGE_LINE_CLASS =\s*"shadow-\[1px_0_0_0_#e3e2df\] [^"]*group-has-\[\[data-column-edge-hit\]:hover\]\/ptable:after:bg-foreground\/10/),
     );
     assert.equal(
       (tableSource.match(/isLastPinned && PINNED_EDGE_LINE_CLASS/g) ?? []).length,
@@ -751,7 +770,7 @@ describe('desktop data table', () => {
 
     assert.doesNotMatch(
       tableSource,
-      /border-slate-700 bg-slate-700 text-white/,
+      anyQuote(/border-slate-700 bg-slate-700 text-white/),
     );
     assert.match(
       tableSource,
@@ -760,13 +779,15 @@ describe('desktop data table', () => {
     assert.match(tableSource, /<Minus className="size-2\.5"/);
     assert.match(
       pageSource,
-      /\.\.\.\(!arePropertyDetailColumnsCollapsed[\s\S]*?id: 'unitType'[\s\S]*?id: 'matching'[\s\S]*?id: 'advertisement'[\s\S]*?id: 'confirmationAt'/,
+      anyQuote(/\.\.\.\(!arePropertyDetailColumnsCollapsed[\s\S]*?id: 'unitType'[\s\S]*?id: 'matching'[\s\S]*?id: 'advertisement'[\s\S]*?id: 'confirmationAt'/),
     );
-    assert.doesNotMatch(pageSource, /id: 'exclusiveArea'/);
-    assert.match(tableSource, /타입–확인 컬럼 펼치기/);
+    assert.doesNotMatch(pageSource, anyQuote(/id: 'exclusiveArea'/));
+    assert.match(tableSource, anyQuote(/타입–확인 컬럼 펼치기/));
   });
 
-  it('keeps the button fixed while the property detail guide follows native table scrolling', () => {
+  it('keeps the column-group toggle fixed outside the horizontally scrolling table', () => {
+    // 2026-11: 머리 위 안내 선과 그 가림막(::before)을 없애고, 접기 상자만 남겼다.
+    // 상자는 스크롤 영역 밖에 있어 가로로 밀어도 제자리이고, 위치는 실제 열 너비로 계산한다.
     const pageSource = readFileSync(
       resolve(
         testDir,
@@ -787,52 +808,28 @@ describe('desktop data table', () => {
     );
 
     assert.doesNotMatch(pageSource, /data-property-table-scroll-scope/);
-    assert.match(
-      tableSource,
-      /data-property-table-scroller[\s\S]*?data-property-column-guide[\s\S]*?data-column-group-line="property-details"/,
+    // 상자가 스크롤 영역보다 먼저(바깥에) 놓인다
+    assert.ok(
+      tableSource.indexOf('data-column-group-toggle="property-details"') <
+        tableSource.indexOf('data-property-table-scroller'),
     );
-    assert.match(tableSource, /className="relative flex h-full items-start"/);
     assert.match(
       tableSource,
-      /data-column-group-line="property-details"[\s\S]*?top-\[9px\][\s\S]*?h-\[2px\]/,
-    );
-    assert.doesNotMatch(tableSource, /data-column-group-cap=/);
-    assert.match(
-      tableSource,
-      /data-column-group-toggle="property-details"[\s\S]*?className="sticky z-50/,
+      /data-column-group-toggle="property-details"[\s\S]*?className="absolute top-0 z-50/,
     );
     assert.doesNotMatch(
       tableSource,
-      /data-column-group-(?:line|cap|toggle)="property-details"[\s\S]*?left-\[\d+px\]/,
-      'the property detail guide must follow live TanStack column sizes',
+      /data-column-group-toggle="property-details"[\s\S]*?left-\[\d+px\]/,
+      'the toggle must follow live TanStack column sizes',
     );
     assert.doesNotMatch(
       tableSource,
       /data-column-group-toggle="property-details"[\s\S]*?className="[^"]*active:translate-y-px/,
-      'pressing the sticky toggle must not move its guide mask',
+      'pressing the toggle must not move it',
     );
-    assert.match(
-      cssSource,
-      /\[data-column-group-toggle="property-details"\]\[aria-expanded="true"\]::before[\s\S]*?right: calc\(100% \+ 1px\);[\s\S]*?top: 6px;[\s\S]*?width: 100vw;[\s\S]*?height: 2px;[\s\S]*?background: #ffffff;/,
-      'the sticky toggle should mask guide segments without covering its border',
-    );
-    assert.match(
-      tableSource,
-      /data-property-column-guide[\s\S]*?className="sticky top-0 z-40 bg-white"/,
-      'the guide band and its mask should share the header color',
-    );
-    assert.doesNotMatch(
-      cssSource,
-      /timeline-scope: --property-table-horizontal/,
-    );
-    assert.doesNotMatch(
-      cssSource,
-      /scroll-timeline-name: --property-table-horizontal/,
-    );
-    assert.doesNotMatch(
-      cssSource,
-      /animation-timeline: --property-table-horizontal/,
-    );
+    assert.doesNotMatch(cssSource, /timeline-scope: --property-table-horizontal/);
+    assert.doesNotMatch(cssSource, /scroll-timeline-name: --property-table-horizontal/);
+    assert.doesNotMatch(cssSource, /animation-timeline: --property-table-horizontal/);
     assert.doesNotMatch(cssSource, /property-detail-group-(?:line|cap)-scroll/);
     assert.doesNotMatch(pageSource, /handlePropertyTableHorizontalScroll/);
     assert.doesNotMatch(tableSource, /onHorizontalScroll/);
@@ -847,36 +844,36 @@ describe('desktop data table', () => {
       'utf8',
     );
     const connectorSource = pageSource.slice(
-      pageSource.indexOf('function ActiveDealListingConnector'),
-      pageSource.indexOf('function getConfirmFreshness'),
+      indexOfAnyQuote(pageSource, 'function ActiveDealListingConnector'),
+      indexOfAnyQuote(pageSource, 'function IntakeConfirmationCell'),
     );
 
     assert.match(
       pageSource,
-      /id: 'listingAvailability'[\s\S]*?size: 120,[\s\S]*?minSize: 96/,
+      anyQuote(/id: 'listingAvailability'[\s\S]*?size: 148,[\s\S]*?minSize: 96/),
     );
     assert.match(
       pageSource,
-      /grid-cols-\[max-content_minmax\(0,1fr\)\][\s\S]*?<ActiveDealListingConnector/,
+      anyQuote(/grid-cols-\[max-content_minmax\(0,1fr\)\][\s\S]*?<ActiveDealListingConnector/),
     );
-    assert.match(connectorSource, /w-\[calc\(100%\+1rem\)\]/);
-    assert.match(connectorSource, /-left-1\.5/);
-    assert.match(connectorSource, /const curveWidth = 28/);
-    assert.match(connectorSource, /const chipGap = 6/);
+    assert.match(connectorSource, anyQuote(/w-\[calc\(100%\+1rem\)\]/));
+    assert.match(connectorSource, anyQuote(/-left-1\.5/));
+    assert.match(connectorSource, anyQuote(/const curveWidth = 28/));
+    assert.match(connectorSource, anyQuote(/const chipGap = 6/));
     assert.match(
       connectorSource,
-      /viewBox=\{`0 0 \$\{curveWidth \+ chipGap\} \$\{height\}`\}/,
+      anyQuote(/viewBox=\{`0 0 \$\{curveWidth \+ chipGap\} \$\{height\}`\}/),
     );
-    assert.match(connectorSource, /data-active-deal-connector-line/);
+    assert.match(connectorSource, anyQuote(/data-active-deal-connector-line/));
     assert.match(
       connectorSource,
-      /data-active-deal-connector-end[\s\S]*?size-\[5px\]/,
+      anyQuote(/data-active-deal-connector-end[\s\S]*?size-\[5px\]/),
     );
-    assert.doesNotMatch(connectorSource, /new ResizeObserver/);
-    assert.doesNotMatch(connectorSource, /preserveAspectRatio="none"/);
+    assert.doesNotMatch(connectorSource, anyQuote(/new ResizeObserver/));
+    assert.doesNotMatch(connectorSource, anyQuote(/preserveAspectRatio="none"/));
     assert.doesNotMatch(
       connectorSource,
-      /data-active-deal-connector[\s\S]*?left-\[64px\][\s\S]*?w-16/,
+      anyQuote(/data-active-deal-connector[\s\S]*?left-\[64px\][\s\S]*?w-16/),
     );
   });
 
@@ -889,7 +886,7 @@ describe('desktop data table', () => {
       'utf8',
     );
 
-    assert.match(source, /id: 'site'[\s\S]*?size: 240,/);
+    assert.match(source, anyQuote(/id: 'site'[\s\S]*?size: 240,/));
   });
 
   it('shows the supply area directly after the unit with the unit-type fallback', () => {
@@ -901,23 +898,24 @@ describe('desktop data table', () => {
       'utf8',
     );
 
-    const unitColumnIndex = source.indexOf("id: 'unit'");
-    const supplyAreaColumnIndex = source.indexOf("id: 'supplyArea'");
-    const actionsColumnIndex = source.indexOf("id: 'actions'");
+    const unitColumnIndex = indexOfAnyQuote(source, "id: 'unit'");
+    const supplyAreaColumnIndex = indexOfAnyQuote(source, "id: 'supplyArea'");
+    // 공급 칸 바로 다음은 접히는 묶음(타입…확인)이다. 예전의 'actions' 열은 없어졌다.
+    const nextColumnIndex = indexOfAnyQuote(source, "id: 'unitType'");
 
-    assert.ok(unitColumnIndex < supplyAreaColumnIndex);
-    assert.ok(supplyAreaColumnIndex < actionsColumnIndex);
+    assert.ok(unitColumnIndex !== -1 && unitColumnIndex < supplyAreaColumnIndex);
+    assert.ok(supplyAreaColumnIndex < nextColumnIndex);
     assert.match(
-      source.slice(supplyAreaColumnIndex, actionsColumnIndex),
-      /label="공급"[\s\S]*?size: 72,[\s\S]*?getSupplyAreaM2\(row\.original\.property\),[\s\S]*?0,[\s\S]*?tabular-nums/,
+      source.slice(supplyAreaColumnIndex, nextColumnIndex),
+      /label="공급"[\s\S]*?size: 74,[\s\S]*?getSupplyAreaM2\(row\.original\.property\),[\s\S]*?0,[\s\S]*?tabular-nums/,
     );
     assert.match(
       source,
-      /function formatAreaPyeong\(value\?: number \| null, fractionDigits = 1\)[\s\S]*?toFixed\(fractionDigits\)/,
+      anyQuote(/function formatAreaPyeong\(value\?: number \| null, fractionDigits = 1\)[\s\S]*?toFixed\(fractionDigits\)/),
     );
     assert.match(
       source,
-      /property\?\.unit\?\.supplyAreaM2 \?\?[\s\S]*?property\?\.unit\?\.siteUnitType\?\.supplyAreaM2/,
+      anyQuote(/property\?\.unit\?\.supplyAreaM2 \?\?[\s\S]*?property\?\.unit\?\.siteUnitType\?\.supplyAreaM2/),
     );
   });
 
@@ -984,14 +982,15 @@ describe('desktop data table', () => {
     assert.doesNotMatch(source, /<PopoverContent/);
   });
 
-  it('uses Korean month, weekday, and accessibility labels in date pickers', () => {
+  it('uses Korean month, weekday, and accessibility labels in date pickers (English when the screen is English)', () => {
     const calendarSource = readFileSync(
       resolve(testDir, '../src/renderer/components/ui/calendar.tsx'),
       'utf8',
     );
 
-    assert.match(calendarSource, /import \{ ko \} from 'react-day-picker\/locale'/);
-    assert.match(calendarSource, /locale = ko/);
+    assert.match(calendarSource, /import \{ enUS, ko \} from 'react-day-picker\/locale'/);
+    // 한국어가 기본이고, 화면 언어가 영어일 때만 영어 달력이다.
+    assert.match(calendarSource, /locale = isEnglish \? enUS : ko/);
     assert.match(calendarSource, /<DayPicker[\s\S]*?locale=\{locale\}/);
   });
 
@@ -1086,7 +1085,7 @@ describe('desktop data table', () => {
       'matching and advertisement counts should share the same expansion control',
     );
     // 두 토글 모두 통합 패널을 가리킨다 (광고 전용 패널 ID는 사라졌다).
-    assert.doesNotMatch(pageSource, /property-ad-panel-/);
+    assert.doesNotMatch(pageSource, /(?:panelId|id)=\{`property-ad-panel-/);
     assert.equal(
       (pageSource.match(/panelId=\{`property-expand-panel-\$\{group\.id\}`\}/g) ??
         [])
@@ -1095,7 +1094,7 @@ describe('desktop data table', () => {
     );
     assert.match(panelSource, /id=\{`property-expand-panel-\$\{group\.id\}`\}/);
     // 패널 머리글은 두 탭을 가진다.
-    assert.match(panelSource, /label="연결 구매고객"/);
+    assert.match(panelSource, /label="연결 고객"/);
     assert.match(panelSource, /label="광고"/);
     assert.match(panelSource, /activeTab === 'ad' \? \(\s*adPanel\(/);
     assert.match(tableSource, /expandedRowIds\?: ReadonlySet<string>/);
@@ -1155,7 +1154,7 @@ describe('desktop data table', () => {
 
     assert.match(pageSource, /label="매칭"/);
     // 연결 구매고객 패널 — 고객을 펼치면 단계 경로와 다음 작업이 나온다.
-    assert.match(panelSource, /label="연결 구매고객"/);
+    assert.match(panelSource, /label="연결 고객"/);
     assert.match(panelSource, /data-property-match-row=\{match\.id\}/);
     assert.match(panelSource, /data-property-match-detail=\{match\.id\}/);
     assert.match(panelSource, /<MatchStagePath/);
@@ -1182,7 +1181,9 @@ describe('desktop data table', () => {
     assert.match(clientSource, /_count\?: \{ matches: number \}/);
   });
 
-  it('keeps property quick search controls in tab, site, dong, unit, integrated search order', () => {
+  it('keeps property quick search controls in tab, location, filters, view, create order', () => {
+    // 2026-11: 위쪽 줄은 거래 탭 → 위치·검색 칸(ToolbarSearchBar: 지역·단지 │ 동·호 │ 검색) →
+    // 보기(목록/지도) → 새 매물 등록 순서다. 칸 안의 순서는 property-toolbar 검사가 본다.
     const source = readFileSync(
       resolve(
         testDir,
@@ -1191,32 +1192,17 @@ describe('desktop data table', () => {
       'utf8',
     );
 
-    const tabsIndex = source.indexOf('<Tabs value={selectedTransactionType}');
-    const siteIndex = source.indexOf('placeholder="단지 전체"');
-    const dongIndex = source.indexOf('placeholder="동"');
-    const unitIndex = source.indexOf('placeholder="호"');
-    const integratedSearchIndex = source.indexOf(
-      'placeholder="주소, 연락처, 메모"',
-    );
-    const createIndex = source.indexOf(
-      '<Plus className="size-3.5" />새 매물 등록',
-    );
+    const tabsIndex = source.indexOf('<ToolbarPillTabs');
+    const searchBarIndex = source.indexOf('<ToolbarSearchBar');
+    const viewToggleIndex = source.indexOf('<ToolbarPillToggle');
+    const createIndex = source.indexOf('aria-label="새 매물 등록"');
 
     assert.ok(tabsIndex !== -1, 'transaction tabs should be rendered');
+    assert.ok(searchBarIndex !== -1, 'location and search bar should be rendered in the top row');
     assert.ok(
-      siteIndex !== -1,
-      'site quick search should be rendered in the top row',
-    );
-    assert.ok(
-      integratedSearchIndex !== -1,
-      'integrated search should use the secondary-search placeholder',
-    );
-    assert.ok(
-      tabsIndex < siteIndex &&
-        siteIndex < dongIndex &&
-        dongIndex < unitIndex &&
-        unitIndex < integratedSearchIndex &&
-        integratedSearchIndex < createIndex,
+      tabsIndex < searchBarIndex &&
+        searchBarIndex < viewToggleIndex &&
+        viewToggleIndex < createIndex,
       'top row controls should follow the expected search priority',
     );
   });
@@ -1395,35 +1381,34 @@ describe('desktop data table', () => {
       'utf8',
     );
 
-    assert.match(source, /type PropertyViewMode = 'list' \| 'map'/);
+    assert.match(source, anyQuote(/type PropertyViewMode = 'list' \| 'map'/));
     assert.match(
       source,
-      /const \[viewMode, setViewMode\] = useState<PropertyViewMode>\('list'\)/,
+      anyQuote(/const \[viewMode, setViewMode\] = useState<PropertyViewMode>\('list'\)/),
     );
+    // 목록/지도 전환은 공용 알약 전환(ToolbarPillToggle)을 쓴다
     assert.match(
       source,
-      /<ViewModeSwitch value=\{viewMode\} onChange=\{setViewMode\} \/>/,
+      /<ToolbarPillToggle\s+shape="muted"\s+ariaLabel="매물 보기 방식"\s+value=\{viewMode\}\s+onChange=\{setViewMode\}/,
     );
-    assert.match(source, /function ViewModeSwitch/);
-    assert.match(source, /aria-label="매물 보기 방식"/);
-    assert.match(source, /aria-pressed=\{value === 'map'\}/);
-    assert.match(source, /viewMode === 'list'/);
-    assert.match(source, /<PropertyMapView/);
-    assert.match(source, /api\.listingIntakes\.map/);
-    assert.match(source, /buildPropertyMapPoints\(mapGroups\)/);
-    assert.match(source, /VITE_NAVER_MAPS_NCP_KEY_ID/);
+    assert.match(source, anyQuote(/\{ value: 'map', label: '지도'/));
+    assert.match(source, anyQuote(/viewMode === 'list'/));
+    assert.match(source, anyQuote(/<PropertyMapView/));
+    assert.match(source, anyQuote(/api\.listingIntakes\.map/));
+    assert.match(source, anyQuote(/buildPropertyMapPoints\(mapGroups\)/));
+    assert.match(source, anyQuote(/VITE_NAVER_MAPS_NCP_KEY_ID/));
     assert.match(
       source,
-      /https:\/\/oapi\.map\.naver\.com\/openapi\/v3\/maps\.js\?ncpKeyId=/,
+      anyQuote(/https:\/\/oapi\.map\.naver\.com\/openapi\/v3\/maps\.js\?ncpKeyId=/),
     );
-    assert.match(source, /new mapsApi\.Map/);
-    assert.match(source, /new mapsApi\.Marker/);
-    assert.match(source, /buildPropertyMapClusters/);
-    assert.match(source, /PROPERTY_MAP_CLUSTER_GRID_SIZE/);
-    assert.match(source, /buildPropertyMapClustersFromOffsets/);
-    assert.match(source, /clusterRadius: PROPERTY_MAP_CLUSTER_GRID_SIZE/);
-    assert.match(source, /placeholderData: keepPreviousData/);
-    assert.match(source, /hasAutoFittedRef/);
+    assert.match(source, anyQuote(/new mapsApi\.Map/));
+    assert.match(source, anyQuote(/new mapsApi\.Marker/));
+    assert.match(source, anyQuote(/buildPropertyMapClusters/));
+    assert.match(source, anyQuote(/PROPERTY_MAP_CLUSTER_GRID_SIZE/));
+    assert.match(source, anyQuote(/buildPropertyMapClustersFromOffsets/));
+    assert.match(source, anyQuote(/clusterRadius: PROPERTY_MAP_CLUSTER_GRID_SIZE/));
+    assert.match(source, anyQuote(/placeholderData: keepPreviousData/));
+    assert.match(source, anyQuote(/hasAutoFittedRef/));
   });
 
   it('selects site coordinates for property map view', () => {

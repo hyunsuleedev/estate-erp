@@ -16,6 +16,7 @@ import {
   summarizeSelection,
   toolbarGhostButtonClassName,
   ToolbarFilterChip,
+  ToolbarToggleChip,
 } from '../properties/-components/property-toolbar';
 import {
   AREA_RANGE_MAX,
@@ -109,7 +110,12 @@ export function WantedFilterBar({
   transactionType,
   hasActiveFilters,
   onReset,
+  mineOnly,
+  onMineOnlyChange,
 }: {
+  /** "내 손님": 담당이 나인 조건만 본다. 넘기지 않으면(로그인 정보가 없으면) 단추를 두지 않는다 */
+  mineOnly?: boolean;
+  onMineOnlyChange?: (mineOnly: boolean) => void;
   filters: RequirementFilters;
   onFiltersChange: Dispatch<SetStateAction<RequirementFilters>>;
   requirements: BuyerRequirement[];
@@ -134,16 +140,9 @@ export function WantedFilterBar({
     () => getAssigneeFilterOptions(requirements),
     [requirements],
   );
-  // 완료된 조건이 목록에 있을 때만 '완료'를 고를 수 있다
-  const statusOptions = useMemo(
-    () =>
-      STATUS_OPTIONS.filter(
-        (option) =>
-          option.value !== 'completed' ||
-          requirements.some((item) => item.status === 'completed'),
-      ),
-    [requirements],
-  );
+  // '완료'는 늘 고를 수 있다. 고르면 화면이 완료한 조건을 받아 와 함께 보여 준다
+  // (평소 목록은 활성 · 보류만 받는다). 다른 곳에서 구한 손님을 다시 찾을 때 쓴다.
+  const statusOptions = STATUS_OPTIONS;
   const budgetLabel = BUDGET_LABELS[transactionType] ?? '예산';
 
   const moveInSummary =
@@ -163,6 +162,14 @@ export function WantedFilterBar({
       className="flex shrink-0 items-start gap-2 border-b border-border bg-white px-3 py-2"
     >
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
+        {onMineOnlyChange && (
+          // 하루 종일 자기 손님부터 보는 일이 많아 맨 앞에 둔다 (담당자 필터에서 나를 고르는 것과 같다)
+          <ToolbarToggleChip
+            label="내 손님"
+            active={mineOnly === true}
+            onToggle={() => onMineOnlyChange(!mineOnly)}
+          />
+        )}
         <ToolbarFilterChip
           label="단계"
           shape="soft"

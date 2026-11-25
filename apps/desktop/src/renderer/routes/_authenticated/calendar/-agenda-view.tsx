@@ -16,7 +16,9 @@ import {
   formatRelativeDay,
   getEventColor,
   getEventStatus,
+  getMatchClosure,
 } from "./-event-meta";
+import { EventTitle } from "./-event-title";
 export function AgendaCalendarView({
   dates,
   eventsByDate,
@@ -125,7 +127,11 @@ function AgendaEventRow({
   onEdit: (event: CalendarEvent) => void;
 }) {
   const color = getEventColor(event);
-  const status = getEventStatus(event);
+  const closure = getMatchClosure(event);
+  // 줄 긋기는 '없어진 약속'(닫힌 매칭)에만 쓴다. 지난 일정은 흐리게만 둔다.
+  const status = closure
+    ? { state: "closed", label: "매칭 종료", className: "bg-muted text-muted-foreground" }
+    : getEventStatus(event);
 
   return (
     <button
@@ -143,7 +149,7 @@ function AgendaEventRow({
         className={cn(
           "size-3.5 rounded-sm border",
           status.state === "done"
-            ? "border-success bg-success"
+            ? "border-muted-foreground/30 bg-muted"
             : "border-muted-foreground/40",
         )}
       />
@@ -159,10 +165,10 @@ function AgendaEventRow({
           <span
             className={cn(
               "block truncate text-sm font-semibold",
-              status.state === "done" && "text-muted-foreground line-through",
+              status.state === "done" && "text-muted-foreground",
             )}
           >
-            {event.title}
+            <EventTitle event={event} />
           </span>
         </span>
         <span className="mb-0.5 block text-[11px] tabular-nums text-muted-foreground sm:hidden">

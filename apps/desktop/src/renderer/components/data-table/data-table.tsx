@@ -3,8 +3,11 @@ import {
   useState,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
+  type ReactNode,
+  type RefObject,
 } from 'react';
 import {
   flexRender,
@@ -1049,9 +1052,11 @@ export function DataTable<TData extends { id: string }>({
                   <tr>
                     <td
                       colSpan={allColumns.length}
-                      className="h-32 text-center text-sm text-muted-foreground"
+                      className="p-0 text-sm text-muted-foreground"
                     >
-                      {emptyMessage}
+                      <VisibleWidthEmptyMessage scrollerRef={scrollerRef}>
+                        {emptyMessage}
+                      </VisibleWidthEmptyMessage>
                     </td>
                   </tr>
                 );
@@ -1414,6 +1419,40 @@ export function DataTable<TData extends { id: string }>({
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 빈 표의 안내 문구. 열이 많아 표가 가로로 넘치면 표 전체 폭의 가운데에 놓인 글이 화면 밖으로
+ * 나가므로, 보이는 폭(스크롤 영역의 너비)만큼만 차지하고 왼쪽에 붙어 있게(sticky) 둔다.
+ * 긴 안내는 그 폭 안에서 줄을 바꾼다.
+ */
+function VisibleWidthEmptyMessage({
+  scrollerRef,
+  children,
+}: {
+  scrollerRef: RefObject<HTMLDivElement | null>;
+  children: ReactNode;
+}) {
+  const [width, setWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const update = () => setWidth(scroller.clientWidth);
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, [scrollerRef]);
+  return (
+    <div
+      data-data-table-empty
+      className="sticky left-0 flex min-h-32 items-center justify-center px-6 py-6 text-center leading-6 break-keep"
+      style={{ width: width ?? '100%' }}
+    >
+      <div className="max-w-xl">{children}</div>
     </div>
   );
 }

@@ -2,6 +2,8 @@
  * 상담분석 목록의 계산: 보기 탭, 한 줄에 보이는 값, 한 고객의 상담 흐름.
  * 화면 부품과 떨어진 순수 함수만 둔다 (테스트가 직접 불러 쓴다).
  */
+import { formatRelativeDay, formatRelativeDayTime } from '@/lib/format';
+
 
 /** 목록 한 줄을 계산하는 데 필요한 만큼만 받는다 */
 export interface ConsultationRowLike {
@@ -101,7 +103,8 @@ export function filterPendingRecordings<R extends PendingRecordingLike>(
 
   const q = (filters.q ?? '').trim().toLowerCase();
   const digits = q.replace(/\D/g, '');
-  const from = filters.dateFrom ? new Date(filters.dateFrom).getTime() : null;
+  // 날짜만 있는 글자는 이 컴퓨터의 0시로 읽는다 (new Date("2026-11-22")는 UTC 0시라 아침 녹음이 빠진다)
+  const from = filters.dateFrom ? new Date(`${filters.dateFrom}T00:00:00`).getTime() : null;
   const to = filters.dateTo ? new Date(`${filters.dateTo}T23:59:59.999`).getTime() : null;
 
   return recordings.filter((item) => {
@@ -174,7 +177,7 @@ export interface ConsultationChannel {
 /** 녹음이 있으면 수신·발신까지 안다. 없으면 상담 유형만 안다. */
 export function getConsultationChannel(row: Pick<ConsultationRowLike, 'type' | 'callRecording'>): ConsultationChannel {
   if (row.type === 'visit') return { kind: 'visit', label: '방문' };
-  if (row.type === 'online') return { kind: 'online', label: '온라인' };
+  if (row.type === 'online') return { kind: 'online', label: '문자·온라인' };
   if (row.type === 'phone') {
     const direction = row.callRecording?.direction;
     if (direction === 'outbound') return { kind: 'outbound', label: '전화 발신' };
@@ -377,7 +380,8 @@ function oneLine(value: string) {
 export function getConsultationSummaryLine(
   row: Pick<ConsultationRowLike, 'content' | 'callRecording'>,
 ): ConsultationSummaryLine {
-  const content = oneLine(row.content ?? '');
+  // "[매물확인] 살아있음" 같은 꼬리표는 화면 낱말로 ("매물 확인 · 유효함")
+  const content = oneLine(consultationDisplayText(row.content));
   if (content && hasOwnNote(row)) return { text: content, fromAi: false };
   const summary = row.callRecording?.summary ? oneLine(row.callRecording.summary) : '';
   if (summary) return { text: summary, fromAi: true };
@@ -398,23 +402,71 @@ export function hasOwnNote(row: Pick<ConsultationRowLike, 'content' | 'callRecor
 // 일시
 // ----------------------------------------------------------------
 
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
-/** "오늘 14:20" · "어제 09:05" · "11.14 (금) 16:05" · 다른 해는 "25.11.14 (금) 16:05" */
-export function formatConsultationWhen(value: string, now: Date = new Date()): string {
+/** 저장된 꼬리표의 화면 낱말. 저장된 글은 그대로 두고 보일 때만 바꾼다. */
+const CONSULTATION_TAG_WORDS: Record<string, string> = { 매물확인: '매물 확인' };
+const CONFIRM_RESULT_WORDS: Record<string, string> = {
+  살아있음: '유효함',
+  가격변경: '가격 변경',
+  답변대기: '답변 대기',
+};
+
+/**
+ * 매물 확인으로 생긴 상담("[매물확인] 살아있음\n메모")의 첫 줄 꼬리표를 본문과 나눈다.
+ * 화면은 꼬리표를 작은 표로, 나머지를 본문으로 보인다. 아는 꼬리표([매물확인])만 나눈다 —
+ * 사람이 대괄호로 시작해 적은 글("[중요] …")을 꼬리표로 오해하지 않게.
+ */
+export function splitConsultationTag(content: string | null | undefined): {
+  tag: string | null;
+  body: string;
+  /** 꼬리표 색: 유효함은 good, 부재중·답변 대기·가격 변경은 attention, 그 밖(거래 불가 등)은 quiet */
+  tone: 'good' | 'attention' | 'quiet';
+} {
+  const text = content ?? '';
+  const match = text.match(/^\s*\[([^\]\n]{1,20})\]([^\n]*)(?:\n([\s\S]*))?$/);
+  if (!match || !CONSULTATION_TAG_WORDS[match[1]]) return { tag: null, body: text, tone: 'quiet' };
+  const result = match[2].trim();
+  const tag = result
+    ? `${CONSULTATION_TAG_WORDS[match[1]]} · ${CONFIRM_RESULT_WORDS[result] ?? result}`
+    : CONSULTATION_TAG_WORDS[match[1]];
+  const tone = result === '살아있음' ? 'good' : ['부재중', '답변대기', '가격변경'].includes(result) ? 'attention' : 'quiet';
+  return { tag, body: (match[3] ?? '').trim(), tone };
+}
+
+/** 한 줄로 보일 때: "매물 확인 · 유효함 — 메모" (꼬리표가 없으면 본문 그대로) */
+export function consultationDisplayText(content: string | null | undefined): string {
+  const { tag, body } = splitConsultationTag(content);
+  if (!tag) return body;
+  return body ? `${tag} — ${body}` : tag;
+}
+
+/**
+ * 상담한 날: "오늘" · "어제" · "11.14 (금)" · 다른 해는 "25.11.14 (금)".
+ * 앱 공용 표기(lib/format의 formatRelativeDay)를 그대로 쓴다 — 상담이 보이는 곳(상담분석 · 연락처 목록 ·
+ * 연락처 상세 · 옆 패널 · 통화 이력)이 모두 같은 글자를 보이게. withWeekday=false면 좁은 칸용으로 요일을 뺀다.
+ */
+export function formatConsultationDay(
+  value: string,
+  now: Date = new Date(),
+  options: { withWeekday?: boolean } = {},
+): string {
+  return formatRelativeDay(value, now, options);
+}
+
+/** "14:05" */
+export function formatConsultationClock(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-  const dayGap = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
-  if (dayGap === 0) return `오늘 ${time}`;
-  if (dayGap === 1) return `어제 ${time}`;
-  const day = `${date.getMonth() + 1}.${date.getDate()} (${WEEKDAYS[date.getDay()]})`;
-  const year = date.getFullYear() === now.getFullYear() ? '' : `${String(date.getFullYear()).slice(2)}.`;
-  return `${year}${day} ${time}`;
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+/** "오늘 14:20" · "어제 09:05" · "11.14 (금) 16:05" · 다른 해는 "25.11.14 (금) 16:05" */
+export function formatConsultationWhen(value: string, now: Date = new Date()): string {
+  return formatRelativeDayTime(value, now);
 }
 
 // ----------------------------------------------------------------

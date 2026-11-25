@@ -2,13 +2,17 @@
  * 거래 상세 시트. 원장 행, 칸반 카드, 캘린더 일정, 캐시플로우 어디서 열어도 같다.
  */
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { LedgerDealGroup, LedgerPayment } from '@estate-erp/api-client';
+import type {
+  CommissionReceipt,
+  LedgerDealGroup,
+  LedgerPayment,
+} from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatDate, formatMoney } from '@/lib/format';
-import { EntityChip, StatusBadge } from '@/components/domain';
+import { ConfirmDialog, EntityChip, StatusBadge } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -28,8 +32,11 @@ import {
 import {
   DistributionEditDialog,
   PaymentDialogHost,
+  TAX_DOC_LABEL,
+  apiErrorMessage,
   applyDealDistribution,
   useCreateDunningTasks,
+  useOpenDunning,
   reportBulkDistribution,
   useInvalidateFinance,
   type PaymentDialogKind,
@@ -40,8 +47,10 @@ import {
   billableAmount,
   clientSideLabel,
   collectPercent,
+  commissionBasisLabel,
   dealLocation,
   displayStatus,
+  formatWon,
   isDistributionEditable,
   isOpenPayment,
   isPaymentDone,
@@ -56,6 +65,7 @@ import {
   rollupPayments,
   shareRowAmounts,
   shareTotals,
+  dayLabel,
   shortDateWithDay,
   splitAmount,
   worstStatus,
@@ -121,8 +131,9 @@ function DetailBody({
 }) {
   const { deal, payments } = group;
   const location = dealLocation(deal);
-  const { billed, collected, remaining } = rollupPayments(payments);
-  const percent = collectPercent(collected, billed);
+  // 수금은 우리 통장에 들어온 돈, 막대는 청구가 얼마나 받아졌는지(상대가 받은 돈 포함)
+  const { billed, collected, claimCollected, remaining } = rollupPayments(payments);
+  const percent = collectPercent(claimCollected, billed);
   const isOverdue = worstStatus(group) === 'overdue';
   const isSale = deal.transactionType === 'sale';
 
@@ -142,7 +153,7 @@ function DetailBody({
     setDialog({
       kind,
       payment,
-      label: `${location} · ${clientSideLabel(payment.clientSide)} ${payment.code ?? ''}`.trim(),
+      label: `${location} · ${clientSideLabel(payment.clientSide, deal.transactionType)} ${payment.code ?? ''}`.trim(),
     });
 
   return (
@@ -178,6 +189,9 @@ function DetailBody({
             />
           </div>
           <CollectMeter percent={percent} />
+          <p className="mt-2 text-xs text-muted-foreground">
+            금액은 부가세 별도입니다. 입금 기록은 통장에 들어온 금액(원) 그대로 보여 줍니다.
+          </p>
         </section>
 
         <section className="border-b border-[#eeeeec] px-5 pt-3.5 pb-4">
@@ -324,7 +338,20 @@ function PaymentItem({
   const { deal } = group;
   const overdue = isPaymentOverdue(payment, deal.balanceDueDate);
   const [editOpen, setEditOpen] = useState(false);
+  const [clearingTax, setClearingTax] = useState(false);
   const dunning = useCreateDunningTasks();
+  const openDunning = useOpenDunning();
+  const dunningTask = overdue ? openDunning(payment, deal.id) : null;
+  const invalidate = useInvalidateFinance();
+  const clearTax = useMutation({
+    mutationFn: () => api.finance.commissionPayments.clearTaxInvoice(payment.id),
+    onSuccess: () => {
+      toast.success('발행 기록을 지웠습니다.');
+      invalidate();
+      setClearingTax(false);
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, '발행 기록을 지우지 못했습니다.')),
+  });
   const open = isOpenPayment(payment);
   const taxIssuable =
     (payment.status === 'collected' || payment.status === 'partial') &&
@@ -352,7 +379,7 @@ function PaymentItem({
     return payment.distributions
       .map(
         (d, i) =>
-          `${d.recipientType === 'our_office' ? '우리' : (d.partnerBrokerName ?? '파트너')} ${Number(d.shareRatio)}% (${formatMoney(amounts[i])})${d.status === 'settled' ? ' 정산됨' : ''}`,
+          `${d.recipientType === 'our_office' ? '우리' : (d.partnerBrokerName ?? '파트너')} ${Number(d.shareRatio)}% (${formatMoney(amounts[i])})${d.status === 'settled' ? ` ${d.settledAt ? dayLabel(d.settledAt, false) + ' ' : ''}주고받음` : ''}`,
       )
       .join(' · ');
   })();
@@ -366,7 +393,7 @@ function PaymentItem({
       )}
     >
       <div className="flex items-center gap-1.5 text-[13px]">
-        <span className="font-semibold">{clientSideLabel(payment.clientSide)}</span>
+        <span className="font-semibold">{clientSideLabel(payment.clientSide, deal.transactionType)}</span>
         <span className="min-w-0 truncate text-muted-foreground">
           {[payerName(deal, payment), payment.code].filter(Boolean).join(' · ')}
         </span>
@@ -383,21 +410,21 @@ function PaymentItem({
       <div className="mt-1 grid gap-0.5 text-[12.5px] leading-normal text-muted-foreground">
         {isPaymentDone(payment) && (
           <p>
-            {shortDateWithDay(payment.paidAt)} 수금{' '}
+            {dayLabel(payment.paidAt)} 수금{' '}
             {formatMoney(receivedAmount(payment))}
             {payment.method && ` · ${METHOD_LABEL[payment.method] ?? payment.method}`}
           </p>
         )}
         {payment.status === 'waived' && receivedAmount(payment) > 0 && (
           <p>
-            {shortDateWithDay(payment.paidAt)} 수금{' '}
+            {dayLabel(payment.paidAt)} 수금{' '}
             {formatMoney(receivedAmount(payment))} · 나머지{' '}
             {formatMoney(payment.expectedAmount - receivedAmount(payment))} 면제
           </p>
         )}
         {open && payment.status === 'partial' && (
           <p>
-            {shortDateWithDay(payment.paidAt)} 수금{' '}
+            {dayLabel(payment.paidAt)} 수금{' '}
             {formatMoney(payment.actualAmount)} ·{' '}
             <span className="text-warning-strong">
               남은 금액 {formatMoney(paymentRemaining(payment))}
@@ -413,10 +440,8 @@ function PaymentItem({
             </p>
           )}
         {payment.status === 'draft' && <p>아직 확정하지 않은 청구입니다.</p>}
-        {payment.baseAmount != null && payment.rate != null && (
-          <p>
-            거래가 {formatMoney(payment.baseAmount)} × {Number(payment.rate)}%
-          </p>
+        {commissionBasisLabel(payment, formatMoney) && (
+          <p>{commissionBasisLabel(payment, formatMoney)}</p>
         )}
         {distributionText && (
           <p>
@@ -425,7 +450,20 @@ function PaymentItem({
           </p>
         )}
         {payment.taxInvoiceStatus !== 'none' && (
-          <p>세금계산서 {payment.taxInvoiceNo ?? '발행'}</p>
+          <p className="flex items-center gap-1.5">
+            <span>
+              {TAX_DOC_LABEL[payment.taxInvoiceStatus] ?? '세금계산서'}{' '}
+              {payment.taxInvoiceNo ?? '발행'}
+              {payment.taxInvoiceDate && ` · ${dayLabel(payment.taxInvoiceDate, false)} 발행`}
+            </span>
+            <button
+              type="button"
+              className="text-xs text-muted-foreground underline decoration-[#d8d6d0] underline-offset-2 hover:text-foreground"
+              onClick={() => setClearingTax(true)}
+            >
+              지우기
+            </button>
+          </p>
         )}
         {payment.note && <p>{payment.note}</p>}
         {payment.pendingAdjustments > 0 && (
@@ -434,6 +472,8 @@ function PaymentItem({
           </p>
         )}
       </div>
+
+      {(payment.receivedAmountWon ?? 0) !== 0 && <ReceiptList payment={payment} />}
 
       <div className="mt-2 flex flex-wrap items-center gap-1 empty:hidden">
         {payment.status === 'draft' && (
@@ -446,12 +486,17 @@ function PaymentItem({
             수금 처리
           </ActionButton>
         )}
-        {overdue && (
+        {overdue && dunningTask && (
+          <span className="px-1 text-xs text-muted-foreground" title={dunningTask.title}>
+            {dayLabel(dunningTask.createdAt, false)} 독촉함
+          </span>
+        )}
+        {overdue && !dunningTask && (
           <ActionButton
             disabled={dunning.isPending}
             onClick={() =>
               dunning.mutate([
-                { payment, location: dealLocation(deal), dealId: deal.id },
+                { payment, location: dealLocation(deal), dealId: deal.id, transactionType: deal.transactionType },
               ])
             }
           >
@@ -459,7 +504,7 @@ function PaymentItem({
           </ActionButton>
         )}
         {taxIssuable && (
-          <ActionButton onClick={() => onAction('tax')}>계산서 기록</ActionButton>
+          <ActionButton onClick={() => onAction('tax')}>영수증·계산서 기록</ActionButton>
         )}
         {open && (
           <ActionButton onClick={() => onAction('adjust')}>조정 요청</ActionButton>
@@ -467,7 +512,21 @@ function PaymentItem({
         {open && isDistributionEditable(payment) && previewRatio === null && (
           <ActionButton onClick={() => setEditOpen(true)}>분배 수정</ActionButton>
         )}
+        {(payment.receivedAmountWon ?? 0) > 0 && (
+          <ActionButton onClick={() => onAction('refund')}>돌려준 돈</ActionButton>
+        )}
       </div>
+
+      <ConfirmDialog
+        open={clearingTax}
+        onOpenChange={setClearingTax}
+        title="발행 기록 지우기"
+        description={`${TAX_DOC_LABEL[payment.taxInvoiceStatus] ?? '세금계산서'} ${payment.taxInvoiceNo ?? ''} 기록을 지웁니다. 홈택스에서 발행한 것은 그대로이니, 실제 발행을 취소했다면 홈택스에서도 취소해 주세요.`}
+        confirmLabel="지우기"
+        destructive
+        loading={clearTax.isPending}
+        onConfirm={() => clearTax.mutate()}
+      />
 
       <DistributionEditDialog
         open={editOpen}
@@ -477,6 +536,105 @@ function PaymentItem({
         defaultPartnerBrokerId={deal.partnerBroker?.id ?? null}
       />
     </li>
+  );
+}
+
+/** 이 청구의 입금 기록. 잘못 적은 입금은 여기서 취소한다. */
+function ReceiptList({ payment }: { payment: LedgerPayment }) {
+  const qc = useQueryClient();
+  const invalidate = useInvalidateFinance();
+  const [voiding, setVoiding] = useState<CommissionReceipt | null>(null);
+  const receipts = useQuery({
+    queryKey: ['finance', 'receipts', payment.id],
+    queryFn: () => api.finance.commissionPayments.listReceipts(payment.id),
+  });
+  const voidReceipt = useMutation({
+    mutationFn: (receipt: CommissionReceipt) =>
+      api.finance.commissionPayments.voidReceipt(receipt.id, '잘못 적은 기록'),
+    onSuccess: () => {
+      toast.success('입금 기록을 취소했습니다.');
+      invalidate();
+      qc.invalidateQueries({ queryKey: ['finance', 'receipts', payment.id] });
+      qc.invalidateQueries({ queryKey: ['settlement'] });
+      setVoiding(null);
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, '입금 기록을 취소하지 못했습니다.'));
+      setVoiding(null);
+    },
+  });
+
+  if (receipts.isPending) {
+    return <p className="mt-1.5 text-xs text-muted-foreground">입금 기록을 불러오는 중입니다.</p>;
+  }
+  if (receipts.isError) {
+    return <p className="mt-1.5 text-xs text-destructive-strong">입금 기록을 불러오지 못했습니다.</p>;
+  }
+  const rows = receipts.data ?? [];
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="mt-2 rounded-md border border-[#eeeeec]">
+      <div className="border-b border-[#eeeeec] px-2.5 py-1.5 text-xs font-medium text-muted-foreground-strong">
+        입금 기록
+      </div>
+      <ul className="text-[12.5px]">
+        {rows.map((receipt) => {
+          const voided = receipt.voidedAt !== null;
+          const refund = receipt.kind === 'refund';
+          return (
+            <li
+              key={receipt.id}
+              className="flex min-h-8 items-center gap-2 border-b border-[#f3f3f1] px-2.5 py-1 last:border-b-0"
+            >
+              <span className={cn('min-w-0 flex-1', voided && 'text-[#a5a39f] line-through')}>
+                <span className="tabular-nums">{dayLabel(receipt.receivedAt)}</span>{' '}
+                {refund ? '돌려줌' : '입금'}{' '}
+                <b className={cn('font-semibold tabular-nums', refund && !voided && 'text-destructive-strong')}>
+                  {formatWon(receipt.amountWon)}
+                </b>
+                <span className="text-muted-foreground">
+                  {receipt.method ? ` · ${METHOD_LABEL[receipt.method] ?? receipt.method}` : ''}
+                  {receipt.amountWon === receipt.supplyWon ? ' · 부가세 없음' : ''}
+                  {receipt.memo ? ` · ${receipt.memo}` : ''}
+                </span>
+              </span>
+              {voided ? (
+                <span className="shrink-0 text-xs text-[#a5a39f]">취소함</span>
+              ) : receipt.settlementId ? (
+                <span className="shrink-0 text-xs text-muted-foreground" title="직원 정산에 들어간 입금은 취소할 수 없습니다. 돌려준 돈으로 기록해 주세요.">
+                  정산함
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="shrink-0 rounded px-1 text-xs text-muted-foreground underline decoration-[#d8d6d0] underline-offset-2 hover:text-foreground"
+                  onClick={() => setVoiding(receipt)}
+                >
+                  취소
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <ConfirmDialog
+        open={voiding !== null}
+        onOpenChange={(open) => !open && setVoiding(null)}
+        title="입금 기록 취소"
+        description={
+          voiding
+            ? `${dayLabel(voiding.receivedAt)} ${voiding.kind === 'refund' ? '돌려줌' : '입금'} ${formatWon(voiding.amountWon)} 기록을 취소합니다. 잘못 적은 기록일 때 씁니다. 손님에게 돈을 돌려줬다면 '돌려준 돈'으로 기록해 주세요.`
+            : undefined
+        }
+        confirmLabel="기록 취소"
+        destructive
+        loading={voidReceipt.isPending}
+        onConfirm={() => {
+          if (voiding) voidReceipt.mutate(voiding);
+        }}
+      />
+    </div>
   );
 }
 
@@ -642,7 +800,7 @@ function DistributionSlider({
 
       {save.error && (
         <p className="mt-2 text-xs text-destructive-strong">
-          {(save.error as Error).message}
+          {apiErrorMessage(save.error, '분배를 바꾸지 못했습니다. 다시 시도해 주세요.')}
         </p>
       )}
 

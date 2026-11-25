@@ -6,13 +6,15 @@ import {
 } from "./my-ads-link";
 import type { SortingState } from "@tanstack/react-table";
 import type { ListingAdvertisementWithListing } from "@estate-erp/api-client";
-import { analyzeOfficeAdvertisementComparison } from "@estate-erp/api-client";
 import {
   cpChannelLabel,
+  getCachedComparison,
   getCanonicalLocation,
   primaryAmount,
   verificationMethodPresentation,
 } from "./my-ads-format";
+import type { MyAdsRequestDrafts } from "./my-ads-modes";
+import { draftLines } from "./my-ads-modes";
 import type { AdvertisementSortValue } from "./my-ads-types";
 
 /** "20261115" → 그날 0시(이 컴퓨터 시간대)의 시각. 형식이 틀리거나 없는 날이면 null. */
@@ -45,28 +47,43 @@ function isoToTime(value: string | null | undefined): number | null {
 export function advertisementCheckedAtTime(
   advertisement: Pick<ListingAdvertisementWithListing, "lastCheckedAt"> & {
     comparison?: {
-      mainAdvertisement?: { articleConfirmYmd?: string | null } | null;
+      ownAdvertisement?: { articleConfirmYmd?: string | null } | null;
     } | null;
   },
 ): number | null {
   return (
     ymdToTime(
-      advertisement.comparison?.mainAdvertisement
+      advertisement.comparison?.ownAdvertisement
         ?.articleConfirmYmd,
     ) ?? isoToTime(advertisement.lastCheckedAt)
   );
 }
 
+function parseFloorSortNumber(floorText: string | null | undefined): number | null {
+  if (!floorText) return null;
+  const trimmed = floorText.trim();
+  const basement = trimmed.match(/^(?:B|지하)\s*(\d+)/i);
+  if (basement) return -Number(basement[1]);
+  const num = trimmed.match(/^(-?\d+)/);
+  if (num) return Number(num[1]);
+  const band: Record<string, number> = { 저: -1000, 중: -500, 고: -100 };
+  for (const [key, weight] of Object.entries(band)) {
+    if (trimmed.startsWith(key)) return weight;
+  }
+  return null;
+}
+
 export function sortAdvertisements(
   advertisements: ListingAdvertisementWithListing[],
   sorting: SortingState,
+  drafts?: MyAdsRequestDrafts,
 ): ListingAdvertisementWithListing[] {
   const sort = sorting[0];
   if (!sort) return advertisements;
 
   return [...advertisements].sort((left, right) => {
-    const leftValue = advertisementSortValue(left, sort.id);
-    const rightValue = advertisementSortValue(right, sort.id);
+    const leftValue = advertisementSortValue(left, sort.id, drafts);
+    const rightValue = advertisementSortValue(right, sort.id, drafts);
     const direction = sort.desc ? -1 : 1;
 
     if (leftValue == null && rightValue == null) return 0;
@@ -92,6 +109,7 @@ export function sortAdvertisements(
 function advertisementSortValue(
   advertisement: ListingAdvertisementWithListing,
   columnId: string,
+  drafts?: MyAdsRequestDrafts,
 ): AdvertisementSortValue {
   const location = getCanonicalLocation(advertisement);
   switch (columnId) {
@@ -100,7 +118,7 @@ function advertisementSortValue(
     case "dong":
       return location.dong;
     case "floor":
-      return Number.parseInt(location.floor ?? "", 10) || null;
+      return parseFloorSortNumber(location.floor);
     case "ho":
       return location.ho;
     case "type":
@@ -111,6 +129,9 @@ function advertisementSortValue(
         advertisementLinkLevel(advertisement)
       ];
     case "request": {
+      const draft = drafts?.[advertisement.id];
+      const lines = draftLines(advertisement, draft);
+      if (lines.length > 0) return `작성 중: ${lines.map((l) => l.label).join(", ")}`;
       const [request] = pendingChangeRequests(advertisement);
       return request ? changeRequestSummary(request) : null;
     }
@@ -131,7 +152,7 @@ function advertisementSortValue(
       return advertisement.naverArticleNo;
     case "verification": {
       const code =
-        advertisement.comparison?.mainAdvertisement
+        advertisement.comparison?.ownAdvertisement
           ?.verificationTypeCode;
       return code ? verificationMethodPresentation(code).label : null;
     }
@@ -141,22 +162,26 @@ function advertisementSortValue(
       );
     case "ranking":
       return (
-        advertisement.comparison?.mainAdvertisement?.ranking ??
+        advertisement.comparison?.ownAdvertisement?.ranking ??
         null
       );
     case "floorExposure": {
-      const main =
-        advertisement.comparison?.mainAdvertisement ?? null;
-      if (!main) return null;
-      const comparison = analyzeOfficeAdvertisementComparison(advertisement);
+      const own =
+        advertisement.comparison?.ownAdvertisement ?? null;
+      const comparison = getCachedComparison(advertisement);
+      const mode = own
+        ? comparison.ownFloorExposureMode
+        : advertisement.floorExposure === "exact" || advertisement.floorExposure === "band"
+          ? advertisement.floorExposure
+          : "unknown";
+      if (mode === "unknown" && !own) return null;
       const disadvantage =
-        comparison.ownFloorExposureMode === "band" &&
-        comparison.exactFloorCompetitorCount > 0;
+        mode === "band" && comparison.exactFloorCompetitorCount > 0;
       const tier = disadvantage
         ? 3
-        : comparison.ownFloorExposureMode === "exact"
+        : mode === "exact"
           ? 2
-          : comparison.ownFloorExposureMode === "band"
+          : mode === "band"
             ? 1
             : 0;
       return [tier, comparison.exactFloorCompetitorCount];
@@ -172,7 +197,7 @@ function advertisementSortValue(
       //   2: 더 낮은 가격 조건의 광고가 존재
       //   1: 상대적 순위가 하위권
       //   0: 즉시 검토할 불리한 조건 없음
-      const comparison = analyzeOfficeAdvertisementComparison(advertisement);
+      const comparison = getCachedComparison(advertisement);
       if (comparison.primarySignal === "own_ad_inactive") {
         return [4, 0];
       }

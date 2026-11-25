@@ -7,22 +7,27 @@ import {
   type ReactNode,
 } from 'react';
 import { useInspectorFocus } from '@/hooks/use-inspector-focus';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ArrowRight,
   Ban,
   ExternalLink,
   FilePlus2,
   FileText,
+  Handshake,
   Pencil,
   Phone,
+  RotateCcw,
   UserRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Contact, Contract, Deal } from '@estate-erp/api-client';
 import { normalizeDealStage } from '@estate-erp/shared';
 import { api } from '@/lib/api';
+import { useAuth } from '@/providers/auth-provider';
+import { apiErrorMessage } from '@/lib/api-error';
+import { invalidateListingDerivedCaches } from '@/lib/listing-cache';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
 import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
@@ -38,9 +43,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   EntityChip,
   PipelineSteps,
@@ -55,26 +67,42 @@ import {
   SectionTitle as InspectorSectionTitle,
   TextAction,
 } from '../properties/-components/property-inspector-view';
-import { ContactPicker, DealActionsMenu, DealStagePill } from './-deal-shared';
+import {
+  AssigneeSelect,
+  ContactPicker,
+  DateQuickInput,
+  DealActionsMenu,
+  DealStagePill,
+  isoToDateInput,
+  ManwonInput,
+  PartnerBrokerSelect,
+} from './-deal-shared';
 import { DealCommissionSection } from './-deal-commission';
+import {
+  isUnconfirmedContactName,
+  UNCONFIRMED_CONTACT_MESSAGE,
+} from '../contracts/-contract-shared';
 import { DealPaymentsSection } from './-deal-payments';
 import {
   formatCancelledBy,
+  formatDaysLabel,
+  formatShortDate,
   formatDealAmount,
   formatNextPaymentLabel,
   getDealLocationLine,
   getDealPipelineHealth,
-  getDealShortCode,
   getDealTitle,
   getDealTransactionType,
   getNextDealPaymentSummary,
   getNextDealStage,
-  ourSideLabels,
+  getOurSideLabel,
   type DealRowActions,
+  getPartyLabels,
 } from './-deal-view-utils';
+import { useInspectorOutsideClose } from '@/hooks/use-inspector-outside-close';
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
+function getErrorMessage(error: unknown, fallback = '요청을 처리하지 못했습니다. 다시 시도해 주세요.') {
+  return apiErrorMessage(error, fallback);
 }
 
 function todayInput() {
@@ -86,9 +114,15 @@ function todayInput() {
   ].join('-');
 }
 
-const DEAL_INSPECTOR_MIN_WIDTH = 520;
+const DEAL_INSPECTOR_MIN_WIDTH = 440;
 const DEAL_INSPECTOR_MAX_WIDTH = 640;
 const DEAL_INSPECTOR_DEFAULT_WIDTH = 584;
+
+/** 작은 창(1100px 노트북)에서 패널이 목록을 다 가리지 않게, 처음 폭은 창의 40% 안으로 둔다 */
+function initialInspectorWidth() {
+  if (typeof window === 'undefined') return DEAL_INSPECTOR_DEFAULT_WIDTH;
+  return clampInspectorWidth(Math.min(DEAL_INSPECTOR_DEFAULT_WIDTH, Math.round(window.innerWidth * 0.4)));
+}
 
 function clampInspectorWidth(value: number) {
   return Math.min(DEAL_INSPECTOR_MAX_WIDTH, Math.max(DEAL_INSPECTOR_MIN_WIDTH, value));
@@ -122,7 +156,7 @@ export function DealInspector({
   onExited: () => void;
   actions: DealRowActions;
 }) {
-  const [width, setWidth] = useState(DEAL_INSPECTOR_DEFAULT_WIDTH);
+  const [width, setWidth] = useState(initialInspectorWidth);
   const openOrRevealResource = useTabStore((state) => state.openOrRevealResource);
   // 매물관리 패널과 같다: 전체 화면을 새 탭으로 열고(이미 열려 있으면 그 탭으로 가고) 패널은 닫는다.
   const openInNewTab = () => {
@@ -150,6 +184,9 @@ export function DealInspector({
     );
     return () => window.clearTimeout(timer);
   }, [closing, animate, onExited]);
+
+  // 패널 밖을 누르면 닫는다 (떠 있는 창 · 줄의 열기 단추는 밖이 아니다)
+  useInspectorOutsideClose(() => onClose());
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -317,17 +354,34 @@ export function DealDetailPanel({
   const transactionType = getDealTransactionType(deal);
   const nextPayment = getNextDealPaymentSummary(deal, referenceDate);
   const pipelineHealth = getDealPipelineHealth(deal, referenceDate);
+  // 담당은 맡은 비중이 있는 사람이다 (직원 정산 대상). 비중이 하나도 없던 옛 거래는 배정된 사람을 보인다.
+  const sharingParticipants = (deal.participants ?? []).filter((participant) => participant.sharePercent != null);
   const participantNames = [
-    ...new Set((deal.participants ?? []).map((participant) => participant.user.name)),
+    ...new Set(
+      (sharingParticipants.length ? sharingParticipants : (deal.participants ?? [])).map(
+        (participant) => participant.user.name,
+      ),
+    ),
   ];
+  const { user } = useAuth();
+  const canChooseAssignee = user?.role === 'owner' || user?.role === 'manager';
   const currentStage = normalizeDealStage(deal.stage);
-  const nextStage = getNextDealStage(currentStage);
+  const isDone = currentStage === 'completed' || currentStage === 'closed';
+  // 잔금 완료 다음은 정산 종료다 (진행 단계 띠에는 없지만 아래 막대의 다음 단추로 넘긴다)
+  const nextStage = currentStage === 'completed' ? 'closed' : getNextDealStage(currentStage);
   const canSkipPreContract = currentStage === 'preparing';
   const canCreateContract = ['contracted', 'settling', 'completed', 'closed'].includes(currentStage);
   const billed = deal.commissionSummary?.billed ?? 0;
   const [tab, setTab] = useState<DealInspectorTab>('summary');
+  const [paymentAddRequest, setPaymentAddRequest] = useState<{ seq: number; kind?: string } | null>(null);
+  const navigateToContract = useNavigate();
   const [termsOpen, setTermsOpen] = useState(false);
   const [contractOpen, setContractOpen] = useState(false);
+  // 계약서 없이 중도금/잔금 이후로 넘기려 하면 계약서 작성부터 열고, 만든 뒤 그 단계로 넘긴다
+  const [contractAdvanceStage, setContractAdvanceStage] = useState<string | null>(null);
+  const nextNeedsContract = Boolean(
+    nextStage && ['settling', 'completed', 'closed'].includes(nextStage) && !contract,
+  );
 
   const priceLabel =
     transactionType === 'sale'
@@ -335,7 +389,12 @@ export function DealDetailPanel({
       : transactionType === 'jeonse'
         ? '전세금'
         : '합의 가격';
-  const nextActions = getNextActions(deal.isCancelled ? 'cancelled' : deal.stage);
+  const nextActions = getNextActions(deal, contract, nextPayment);
+  // 대금 일정의 잔금일 (계약서에 잔금일이 비어 있을 때 계약 요약에 보인다)
+  const dealBalanceDate =
+    (deal.payments ?? [])
+      .filter((payment) => payment.kind === 'balance' && payment.status !== 'cancelled' && payment.scheduledDate)
+      .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))[0]?.scheduledDate ?? null;
   const tabs: Array<InspectorTabItem<DealInspectorTab>> = [
     { value: 'summary', label: '요약' },
     { value: 'people', label: '매물·당사자' },
@@ -352,7 +411,22 @@ export function DealDetailPanel({
           headerActions={<DealActionsMenu deal={deal} actions={actions} />}
         />
       ) : (
-        <div className="flex h-11 shrink-0 items-center justify-end px-3">
+        // 전체 화면(새 탭): 위 얇은 줄에 어디인지(거래관리 / 이 거래)와 돌아갈 길을 둔다
+        <div className="flex h-11 shrink-0 items-center gap-1 px-3">
+          <nav aria-label="위치" className="flex min-w-0 flex-1 items-center gap-0.5 text-[13px]">
+            <Link
+              to="/deals"
+              search={{ dealId: deal.id }}
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
+            >
+              <Handshake className="size-3.5" />
+              거래관리
+            </Link>
+            <span className="text-[#37352f]/25">/</span>
+            <span className="min-w-0 truncate px-2 text-[#37352f]" title={getDealTitle(deal)}>
+              {getDealTitle(deal)}
+            </span>
+          </nav>
           <DealActionsMenu deal={deal} actions={actions} />
         </div>
       )}
@@ -364,8 +438,6 @@ export function DealDetailPanel({
         </h2>
         <div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[12.5px] text-muted-foreground">
           <span>{getDealLocationLine(deal)}</span>
-          <span className="text-[#c9c7c1]">·</span>
-          <span className="font-mono text-[11.5px] text-[#a9a7a1]">{getDealShortCode(deal.id)}</span>
         </div>
 
         <div className="mt-4 flex min-w-0 items-center gap-2.5">
@@ -382,9 +454,10 @@ export function DealDetailPanel({
           <span className="min-w-0 truncate text-[20px] font-bold leading-none tracking-[-0.025em] tabular-nums text-[#2f2e2a]">
             {formatDealAmount(deal)}
           </span>
-          {billed ? (
+          {billed && !deal.isCancelled ? (
             <span className="shrink-0 text-[12.5px] text-muted-foreground">
-              예상 수수료 {formatMoney(billed)}
+              {/* 끝난 거래는 예상이 아니라 정해진 수수료다 */}
+              {isDone ? '수수료' : '예상 수수료'} {formatMoney(billed)}
             </span>
           ) : null}
         </div>
@@ -434,7 +507,7 @@ export function DealDetailPanel({
                 <InspectorSectionTitle>취소된 거래</InspectorSectionTitle>
                 <dl className="space-y-2.5">
                   <FactRow label="취소일" value={deal.cancelledAt ? formatDate(deal.cancelledAt) : null} />
-                  <FactRow label="취소 주체" value={formatCancelledBy(deal.cancelledBy)} />
+                  <FactRow label="취소 주체" value={formatCancelledBy(deal.cancelledBy, transactionType)} />
                   <FactRow label="사유" value={deal.cancelReason} />
                 </dl>
               </section>
@@ -443,12 +516,62 @@ export function DealDetailPanel({
             <section>
               <InspectorSectionTitle count={nextActions.length}>지금 할 일</InspectorSectionTitle>
               <ul className="divide-y divide-[#f1f0ec]">
-                {nextActions.map((action) => (
-                  <li key={action} className="flex min-h-9 items-center gap-2.5 py-1.5 text-[13px] text-[#2f2e2a]">
-                    <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-[#529cca]" />
-                    {action}
-                  </li>
-                ))}
+                {nextActions.map((action) => {
+                  const go = action.go;
+                  // 계약서 작성은 본계약 단계부터 된다. 그 전에는 눌러도 갈 곳이 없으니 글로만 둔다.
+                  const actionable =
+                    go !== undefined &&
+                    !(go === 'contract' && (!canCreateContract || deal.isCancelled)) &&
+                    !(go === 'openContract' && !contract) &&
+                    !(go === 'addPayment' && deal.isCancelled) &&
+                    !(go === 'terms' && deal.isCancelled);
+                  const content = (
+                    <>
+                      <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-[#529cca]" />
+                      <span className="min-w-0 flex-1">{action.label}</span>
+                      {actionable ? (
+                        <ArrowRight className="size-3.5 shrink-0 text-[#a9a7a1] transition-colors group-hover:text-foreground" />
+                      ) : null}
+                    </>
+                  );
+                  return (
+                    <li key={action.label}>
+                      {actionable ? (
+                        <button
+                          type="button"
+                          className="group flex min-h-9 w-full items-center gap-2.5 rounded-sm py-1.5 text-left text-[13px] text-[#2f2e2a] hover:bg-[rgba(55,53,47,0.04)]"
+                          onClick={() => {
+                            if (go === 'contract') {
+                              setContractAdvanceStage(null);
+                              setContractOpen(true);
+                            } else if (go === 'openContract') {
+                              if (contract) {
+                                void navigateToContract({
+                                  to: '/contracts',
+                                  search: { editorContractId: contract.id },
+                                });
+                              }
+                            } else if (go === 'addPayment') {
+                              setTab('payments');
+                              setPaymentAddRequest((previous) => ({
+                                seq: (previous?.seq ?? 0) + 1,
+                                kind: action.kind,
+                              }));
+                            } else if (go === 'terms') {
+                              setTermsOpen(true);
+                            } else if (go) {
+                              setTab(go);
+                            }
+                          }}
+                        >
+                          {content}
+                        </button>
+                      ) : (
+                        <div className="flex min-h-9 items-center gap-2.5 py-1.5 text-[13px] text-[#2f2e2a]">{content}</div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </section>
 
@@ -463,24 +586,36 @@ export function DealDetailPanel({
                   }`}
                 />
                 <FactRow label="단계 변경" value={formatDate(deal.stageChangedAt)} />
-                <FactRow label="다음 일정" value={formatNextPaymentLabel(nextPayment)} />
-                <FactRow label="진행 상태" value={pipelineHealth.description} />
+                <FactRow label="다음 일정" value={formatNextPaymentLabel(nextPayment, deal)} />
+                <FactRow
+                  label="진행 상태"
+                  value={deal.isCancelled ? '취소됨' : pipelineHealth.description}
+                />
               </dl>
             </section>
 
             <section>
               <InspectorSectionTitle
                 action={
-                  <TextAction icon={<Pencil />} label="조건 수정" onClick={() => setTermsOpen(true)} />
+                  // 취소한 거래는 조건을 고치지 않는다 (서버도 막는다). 되살린 뒤에 고친다.
+                  deal.isCancelled ? undefined : (
+                    <TextAction icon={<Pencil />} label="조건 수정" onClick={() => setTermsOpen(true)} />
+                  )
                 }
               >
                 합의 조건
               </InspectorSectionTitle>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5">
-                <FactRow
-                  label={priceLabel}
-                  value={deal.agreedPrice != null ? formatMoney(deal.agreedPrice) : null}
-                />
+                {transactionType !== 'monthly' ? (
+                  <FactRow
+                    label={priceLabel}
+                    value={(() => {
+                      const price =
+                        deal.agreedPrice ?? (transactionType === 'jeonse' ? deal.agreedDeposit : null);
+                      return price != null ? formatMoney(price) : null;
+                    })()}
+                  />
+                ) : null}
                 {transactionType === 'monthly' ? (
                   <FactRow
                     label="보증금"
@@ -554,33 +689,45 @@ export function DealDetailPanel({
                   ) : null}
                 </div>
               ) : (
-                <EmptyText>연결된 매물이 없습니다. (매물 없이 생성된 거래)</EmptyText>
+                <EmptyText>매물 없이 만든 거래입니다. (다른 사무소 매물 공동중개 등)</EmptyText>
               )}
             </section>
 
             <section>
               <InspectorSectionTitle>당사자</InspectorSectionTitle>
               <div className="divide-y divide-[#f1f0ec]">
-                <PartyDetailRow label="매도" contact={deal.sellerContact ?? null} />
-                <PartyDetailRow label="매수" contact={deal.buyerContact ?? null} />
+                <PartyDetailRow label={getPartyLabels(transactionType).seller} contact={deal.sellerContact ?? null} />
+                <PartyDetailRow label={getPartyLabels(transactionType).buyer} contact={deal.buyerContact ?? null} />
               </div>
             </section>
+
+            {isDone && !deal.isCancelled && deal.propertyId ? (
+              <DealPropertyTransitionSection dealId={deal.id} />
+            ) : null}
 
             <section>
               <InspectorSectionTitle count={participantNames.length || undefined}>
                 담당 직원
               </InspectorSectionTitle>
-              {participantNames.length ? (
-                <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[13px] text-[#2f2e2a]">
-                  {participantNames.map((participantName) => (
-                    <span key={participantName} className="inline-flex items-center gap-1.5">
-                      <UserRound className="size-3.5 text-[#a9a7a1]" aria-hidden="true" />
-                      {participantName}
-                    </span>
-                  ))}
-                </div>
+              {/* 대표·매니저가 한 사람 담당을 바꿀 수 있으면 고르는 칸이 이름을 보여 준다 (비었을 때의 안내도 그 칸이 한다) */}
+              {canChooseAssignee && sharingParticipants.length <= 1 && !deal.isCancelled ? (
+                <DealAssigneeEditor deal={deal} />
               ) : (
-                <EmptyText>배정된 담당 직원이 없습니다.</EmptyText>
+                <>
+                  <DealAssigneeEditor deal={deal} />
+                  {participantNames.length ? (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[13px] text-[#2f2e2a]">
+                      {participantNames.map((participantName) => (
+                        <span key={participantName} className="inline-flex items-center gap-1.5">
+                          <UserRound className="size-3.5 text-[#a9a7a1]" aria-hidden="true" />
+                          {participantName}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyText>배정된 담당 직원이 없습니다.</EmptyText>
+                  )}
+                </>
               )}
             </section>
 
@@ -611,7 +758,7 @@ export function DealDetailPanel({
                     ) : null}
                   </div>
                   <dl className="mt-1">
-                    <FactRow label="우리 담당" value={ourSideLabels[deal.ourSide ?? 'both'] ?? '양측'} />
+                    <FactRow label="우리 담당" value={getOurSideLabel(deal.ourSide, transactionType)} />
                   </dl>
                 </>
               ) : (
@@ -624,7 +771,12 @@ export function DealDetailPanel({
         {tab === 'payments' && (
           <div className="space-y-7">
             <section>
-              <DealPaymentsSection deal={deal} referenceDate={referenceDate} />
+              <DealPaymentsSection
+                deal={deal}
+                contract={contract}
+                referenceDate={referenceDate}
+                addRequest={paymentAddRequest}
+              />
             </section>
 
             <section>
@@ -633,16 +785,20 @@ export function DealDetailPanel({
                   contract ? (
                     <Link
                       to="/contracts"
+                      search={{ editorContractId: contract.id }}
                       className="inline-flex items-center gap-1 text-[12px] font-normal text-muted-foreground hover:text-foreground"
                     >
-                      계약 관리에서 열기
+                      계약서 열기
                       <ExternalLink className="size-3" />
                     </Link>
                   ) : canCreateContract && !deal.isCancelled ? (
                     <TextAction
                       icon={<FilePlus2 />}
                       label="계약서 작성"
-                      onClick={() => setContractOpen(true)}
+                      onClick={() => {
+                        setContractAdvanceStage(null);
+                        setContractOpen(true);
+                      }}
                     />
                   ) : undefined
                 }
@@ -656,6 +812,11 @@ export function DealDetailPanel({
                     계약서 연결됨
                     <StatusBadge kind="contractStatus" status={contract.status} size="sm" />
                   </div>
+                  {isDone && isContractStillDrafting(contract) ? (
+                    <p className="mb-3 text-[12.5px] text-warning">
+                      거래는 끝났는데 계약서가 아직 작성 중입니다. 계약서 열기에서 상태를 정리해 주세요.
+                    </p>
+                  ) : null}
                   <dl className="grid grid-cols-2 gap-x-6 gap-y-2.5">
                     <FactRow
                       label="계약일"
@@ -667,7 +828,14 @@ export function DealDetailPanel({
                     />
                     <FactRow
                       label="잔금일"
-                      value={contract.statedBalanceDate ? formatDate(contract.statedBalanceDate) : null}
+                      value={
+                        contract.statedBalanceDate
+                          ? formatDate(contract.statedBalanceDate)
+                          : dealBalanceDate
+                            ? // 계약서에 잔금일이 없으면(계약서를 만든 뒤 잔금 일정을 넣은 경우) 바로 위 대금 일정의 값을 보인다
+                              `${formatDate(dealBalanceDate)} (대금 일정)`
+                            : null
+                      }
                     />
                     {contract.leaseStartDate || contract.leaseEndDate ? (
                       <FactRow
@@ -697,16 +865,33 @@ export function DealDetailPanel({
       </div>
 
       {/* 아래 막대: 다음 단계로 넘기는 동작 (매물 상세 패널의 "매물 확인 완료" 자리) */}
-      {!deal.isCancelled ? (
+      {deal.isCancelled && actions.onRequestRestore ? (
         <div className="flex shrink-0 items-center gap-2 border-t border-[#ecebe8] px-6 py-3">
+          <span className="text-[12.5px] text-muted-foreground">취소된 거래입니다.</span>
           <button
             type="button"
-            className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
-            onClick={() => actions.onRequestCancel(deal)}
+            disabled={actions.isUpdating}
+            className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-full bg-[#2f2e2a] px-4 text-[13px] font-medium text-white transition-colors hover:bg-[#1f1e1b] disabled:opacity-50"
+            onClick={() => actions.onRequestRestore?.(deal)}
           >
-            <Ban className="size-3.5" />
-            거래 취소
+            <RotateCcw className="size-3.5" />
+            거래 되살리기
           </button>
+        </div>
+      ) : null}
+      {!deal.isCancelled && (nextStage || !isDone) ? (
+        <div className="flex shrink-0 items-center gap-2 border-t border-[#ecebe8] px-6 py-3">
+          {/* 끝난 거래(잔금 완료·정산 종료)에서는 취소를 아래 막대에 두지 않는다. 바로잡을 일이 있으면 ⋮ 메뉴에서 */}
+          {!isDone ? (
+            <button
+              type="button"
+              className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[rgba(55,53,47,0.06)] hover:text-foreground"
+              onClick={() => actions.onRequestCancel(deal)}
+            >
+              <Ban className="size-3.5" />
+              거래 취소
+            </button>
+          ) : null}
           {canSkipPreContract ? (
             <button
               type="button"
@@ -725,7 +910,14 @@ export function DealDetailPanel({
                 'inline-flex h-8 items-center gap-1.5 rounded-full bg-[#2f2e2a] px-4 text-[13px] font-medium text-white transition-colors hover:bg-[#1f1e1b] disabled:opacity-50',
                 !canSkipPreContract && 'ml-auto',
               )}
-              onClick={() => actions.onRequestStage(deal, nextStage)}
+              onClick={() => {
+                if (nextNeedsContract) {
+                  setContractAdvanceStage(nextStage);
+                  setContractOpen(true);
+                } else {
+                  actions.onRequestStage(deal, nextStage);
+                }
+              }}
             >
               다음: {getStatusMeta('dealStage', nextStage).label}
               <ArrowRight className="size-3.5" />
@@ -735,7 +927,59 @@ export function DealDetailPanel({
       ) : null}
 
       <EditTermsDialog deal={deal} open={termsOpen} onOpenChange={setTermsOpen} />
-      <CreateContractDialog deal={deal} open={contractOpen} onOpenChange={setContractOpen} />
+      {/* 열 때마다 새로 그린다: 창을 연 순간의 거래 금액·당사자·계약금 날짜로 채운다
+          (늘 그려 두면 처음 그린 때의 값이 남아, 조건을 고친 뒤에도 옛 금액이 들어 있었다) */}
+      {contractOpen ? (
+        <CreateContractDialog
+          deal={deal}
+          open
+          onOpenChange={setContractOpen}
+          advanceToStage={contractAdvanceStage}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * 담당 바꾸기 (대표·매니저). 한 사람이 맡은 거래만 여기서 바꾸고, 여러 사람으로 나눈 거래는
+ * 수수료/정산의 담당 배분에서 바꾼다 (나눈 비중이 사라지지 않게).
+ */
+function DealAssigneeEditor({ deal }: { deal: Deal }) {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const canChoose = user?.role === 'owner' || user?.role === 'manager';
+  const sharing = (deal.participants ?? []).filter((participant) => participant.sharePercent != null);
+  const current = sharing[0]?.userId ?? deal.participants?.[0]?.userId ?? '';
+  const mutation = useMutation({
+    mutationFn: (userId: string) => api.deals.setAssignee(deal.id, userId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['deals'] });
+      void queryClient.invalidateQueries({ queryKey: ['settlement'] });
+      toast.success('담당을 바꿨습니다.');
+    },
+    onError: (error) => toast.error(getErrorMessage(error, '담당을 바꾸지 못했습니다. 다시 시도해 주세요.')),
+  });
+  if (!canChoose || deal.isCancelled) return null;
+  if (sharing.length > 1) {
+    return (
+      <p className="mb-2 text-[12.5px] text-muted-foreground">
+        {sharing.map((participant) => `${participant.user.name} ${participant.sharePercent}%`).join(' · ')} — 여러 명으로 나눈 담당은 수수료/정산의 담당 배분에서 바꿉니다.
+      </p>
+    );
+  }
+  return (
+    <div className="mb-2 max-w-[240px]">
+      <AssigneeSelect
+        value={current}
+        disabled={mutation.isPending}
+        onChange={(userId) => {
+          if (userId !== current && !mutation.isPending) mutation.mutate(userId);
+        }}
+      />
+      {!current ? (
+        <p className="mt-1 text-[12px] text-warning">담당이 없으면 직원 정산에서 빠집니다.</p>
+      ) : null}
     </div>
   );
 }
@@ -770,8 +1014,9 @@ function PartyDetailRow({ label, contact }: { label: string; contact: Contact | 
 }
 
 /**
- * 합의 조건 수정 — 서버에 일반 PATCH /deals/:id 가 없어
- * PATCH /deals/:id/stage(동일 stage 유지)로 가격/메모만 갱신한다.
+ * 거래 조건 수정 — 당사자, 합의 금액, 입주 예정일, 특약, 메모, 공동중개.
+ * 금액·공동중개가 바뀌면 서버가 자동으로 만든 수수료 청구를 새 조건에 맞춘다
+ * (사람이 정한 수수료가 있으면 그대로 두고 알려 준다).
  */
 function EditTermsDialog({
   deal,
@@ -782,86 +1027,164 @@ function EditTermsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  return open ? <EditTermsDialogInner deal={deal} onOpenChange={onOpenChange} /> : null;
+}
+
+function EditTermsDialogInner({
+  deal,
+  onOpenChange,
+}: {
+  deal: Deal;
+  onOpenChange: (open: boolean) => void;
+}) {
   const queryClient = useQueryClient();
   const transactionType = getDealTransactionType(deal);
-  const [price, setPrice] = useState(deal.agreedPrice != null ? String(deal.agreedPrice) : '');
-  const [deposit, setDeposit] = useState(deal.agreedDeposit != null ? String(deal.agreedDeposit) : '');
-  const [monthlyRent, setMonthlyRent] = useState(
-    deal.agreedMonthlyRent != null ? String(deal.agreedMonthlyRent) : '',
+  const isMonthly = transactionType === 'monthly';
+  const digits = (value: number | null | undefined) => (value != null ? String(value) : '');
+  const [price, setPrice] = useState(
+    digits(transactionType === 'jeonse' ? (deal.agreedPrice ?? deal.agreedDeposit) : deal.agreedPrice),
   );
+  const [deposit, setDeposit] = useState(digits(deal.agreedDeposit));
+  const [monthlyRent, setMonthlyRent] = useState(digits(deal.agreedMonthlyRent));
+  const [moveInDate, setMoveInDate] = useState(isoToDateInput(deal.agreedMoveInDate));
+  const [seller, setSeller] = useState<Contact | null>(deal.sellerContact ?? null);
+  const [buyer, setBuyer] = useState<Contact | null>(deal.buyerContact ?? null);
+  const [isJoint, setIsJoint] = useState(deal.isJointBrokerage);
+  const [ourSide, setOurSide] = useState<'seller' | 'buyer' | 'both'>(
+    deal.ourSide === 'seller' || deal.ourSide === 'buyer' ? deal.ourSide : 'both',
+  );
+  const [partnerBrokerId, setPartnerBrokerId] = useState(deal.partnerBrokerId ?? '');
+  const [specialTerms, setSpecialTerms] = useState(deal.specialTerms ?? '');
   const [memo, setMemo] = useState(deal.memo ?? '');
 
+  const toAmount = (value: string) => (value ? Number(value) : null);
   const mutation = useMutation({
     mutationFn: () =>
-      api.deals.updateStage(deal.id, {
-        stage: deal.stage,
-        agreedPrice: price ? Number(price) : undefined,
-        agreedDeposit: deposit ? Number(deposit) : undefined,
-        agreedMonthlyRent: monthlyRent ? Number(monthlyRent) : undefined,
-        memo: memo || undefined,
+      api.deals.update(deal.id, {
+        ...(isMonthly
+          ? { agreedDeposit: toAmount(deposit), agreedMonthlyRent: toAmount(monthlyRent) }
+          : { agreedPrice: toAmount(price) }),
+        agreedMoveInDate: moveInDate || null,
+        sellerContactId: seller?.id ?? null,
+        buyerContactId: buyer?.id ?? null,
+        isJointBrokerage: isJoint,
+        ourSide: isJoint ? ourSide : 'both',
+        partnerBrokerId: isJoint ? partnerBrokerId || null : null,
+        specialTerms: specialTerms.trim() || null,
+        memo: memo.trim() || null,
       }),
-    onSuccess: () => {
+    onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['deals'] });
       void queryClient.invalidateQueries({ queryKey: ['commission-payments'] });
-      toast.success('합의 조건이 저장되었습니다.');
+      if (result.commissionNotice === 'kept') {
+        toast.success('거래 조건을 저장했습니다.', {
+          description: '수수료는 따로 정한 금액이 있어 그대로 두었습니다. 수수료 탭에서 확인하세요.',
+        });
+      } else if (result.commissionNotice === 'synced') {
+        toast.success('거래 조건을 저장했습니다.', {
+          description: '수수료 청구 금액도 새 조건에 맞췄습니다.',
+        });
+      } else {
+        toast.success('거래 조건을 저장했습니다.');
+      }
       onOpenChange(false);
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getErrorMessage(error, '거래 조건을 저장하지 못했습니다. 다시 시도해 주세요.')),
   });
 
-  const showPrice = transactionType !== 'monthly';
-  const showDeposit = transactionType === 'monthly';
-  const showMonthlyRent = transactionType === 'monthly';
-  const priceLabel =
-    transactionType === 'sale'
-      ? '매매가 (만원)'
-      : transactionType === 'jeonse'
-        ? '전세금 (만원)'
-        : '합의 가격 (만원)';
+  const priceLabel = transactionType === 'jeonse' ? '전세금' : '매매가';
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+    <Dialog open onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>합의 조건 수정</DialogTitle>
+          <DialogTitle>거래 조건 수정</DialogTitle>
           <DialogDescription>
-            금액은 만원 단위입니다. 당사자·특약 변경은 거래 수정 API가 준비되면 지원됩니다.
+            금액이나 공동중개를 바꾸면 수수료 청구도 새 조건에 맞춰집니다.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3">
-          {showPrice ? (
-            <div className="grid gap-1.5">
-              <Label>{priceLabel}</Label>
-              <Input type="number" min={0} value={price} onChange={(event) => setPrice(event.target.value)} />
-              {Number(price) > 0 ? (
-                <p className="text-xs text-muted-foreground">= {formatMoney(Number(price))}</p>
-              ) : null}
+        <div className="grid gap-4">
+          {isMonthly ? (
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="deal-terms-deposit">보증금</Label>
+                <ManwonInput id="deal-terms-deposit" value={deposit} onChange={setDeposit} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="deal-terms-rent">월세</Label>
+                <ManwonInput id="deal-terms-rent" value={monthlyRent} onChange={setMonthlyRent} />
+              </div>
             </div>
-          ) : null}
-          {showDeposit ? (
+          ) : (
             <div className="grid gap-1.5">
-              <Label>보증금 (만원)</Label>
-              <Input type="number" min={0} value={deposit} onChange={(event) => setDeposit(event.target.value)} />
+              <Label htmlFor="deal-terms-price">{priceLabel}</Label>
+              <ManwonInput id="deal-terms-price" value={price} onChange={setPrice} />
             </div>
-          ) : null}
-          {showMonthlyRent ? (
-            <div className="grid gap-1.5">
-              <Label>월세 (만원)</Label>
-              <Input
-                type="number"
-                min={0}
-                value={monthlyRent}
-                onChange={(event) => setMonthlyRent(event.target.value)}
-              />
-            </div>
-          ) : null}
+          )}
+
           <div className="grid gap-1.5">
-            <Label>메모</Label>
-            <Textarea rows={3} value={memo} onChange={(event) => setMemo(event.target.value)} />
+            <Label htmlFor="deal-terms-move-in">입주 예정일</Label>
+            <DateQuickInput id="deal-terms-move-in" value={moveInDate} onChange={setMoveInDate} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="grid min-w-0 gap-1.5">
+              <Label>{isMonthly || transactionType === 'jeonse' ? '임대인' : '매도인'}</Label>
+              <ContactPicker value={seller} onChange={setSeller} />
+            </div>
+            <div className="grid min-w-0 gap-1.5">
+              <Label>{isMonthly || transactionType === 'jeonse' ? '임차인' : '매수인'}</Label>
+              <ContactPicker value={buyer} onChange={setBuyer} />
+            </div>
+          </div>
+
+          <div className="grid gap-2 border-t pt-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={isJoint} onCheckedChange={(checked) => setIsJoint(checked === true)} />
+              공동중개 거래
+            </label>
+            {isJoint ? (
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">우리 담당 측</Label>
+                  <Select value={ourSide} onValueChange={(value) => setOurSide(value as typeof ourSide)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(['seller', 'buyer', 'both'] as const).map((side) => (
+                        <SelectItem key={side} value={side}>
+                          {getOurSideLabel(side, transactionType)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">상대 중개사</Label>
+                  <PartnerBrokerSelect value={partnerBrokerId} onChange={setPartnerBrokerId} />
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="deal-terms-special">특약사항</Label>
+            <Textarea
+              id="deal-terms-special"
+              rows={3}
+              value={specialTerms}
+              onChange={(event) => setSpecialTerms(event.target.value)}
+              placeholder="예: 에어컨 2대 포함, 잔금일 협의 가능"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="deal-terms-memo">메모</Label>
+            <Textarea id="deal-terms-memo" rows={2} value={memo} onChange={(event) => setMemo(event.target.value)} />
           </div>
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" disabled={mutation.isPending} onClick={() => onOpenChange(false)}>
             닫기
           </Button>
           <Button type="button" disabled={mutation.isPending} onClick={() => mutation.mutate()}>
@@ -873,29 +1196,42 @@ function EditTermsDialog({
   );
 }
 
-/** 본계약 단계의 Deal 컨텍스트에서 계약서를 바로 생성한다. */
-function CreateContractDialog({
+/** 본계약 단계의 Deal 컨텍스트에서 계약서를 바로 생성한다. 단계 메뉴(-deal-actions)도 같은 창을 쓴다. */
+export function CreateContractDialog({
   deal,
   open,
   onOpenChange,
+  advanceToStage = null,
 }: {
   deal: Deal;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** 계약서를 만든 뒤 넘길 단계 (아래 막대의 "다음"에서 열었을 때) */
+  advanceToStage?: string | null;
 }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const transactionType = getDealTransactionType(deal);
-  const [contractDate, setContractDate] = useState(todayInput());
+  // 계약일: 대금 일정에 계약금 날짜를 넣어 두었으면 그날(보통 계약하는 날)을, 없으면 오늘을 넣어 둔다.
+  // 예전에는 늘 오늘이라, 계약금 날짜와 다른 계약일이 저장되고 캘린더·대시보드의 계약일과 어긋났다.
+  const [contractDate, setContractDate] = useState(() => {
+    const planned = (deal.payments ?? []).find(
+      (payment) => payment.kind === 'contract' && payment.status !== 'cancelled' && payment.scheduledDate,
+    );
+    return planned ? isoToDateInput(planned.scheduledDate) || todayInput() : todayInput();
+  });
+  const isMonthly = transactionType === 'monthly';
+  const isLease = isMonthly || transactionType === 'jeonse';
   const [totalPrice, setTotalPrice] = useState(() => {
-    const initial = deal.agreedPrice ?? deal.agreedDeposit;
+    const initial = isMonthly ? deal.agreedDeposit : (deal.agreedPrice ?? deal.agreedDeposit);
     return initial != null ? String(initial) : '';
   });
   const [buyer, setBuyer] = useState<Contact | null>(deal.buyerContact ?? null);
   const [seller, setSeller] = useState<Contact | null>(deal.sellerContact ?? null);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      api.contracts.create({
+    mutationFn: async () => {
+      const created = await api.contracts.create({
         dealId: deal.id,
         transactionType: transactionType ?? undefined,
         buyerContactId: buyer?.id,
@@ -903,17 +1239,52 @@ function CreateContractDialog({
         totalPrice: totalPrice ? Number(totalPrice) : undefined,
         monthlyRent: deal.agreedMonthlyRent ?? undefined,
         contractDate: contractDate || undefined,
-      }),
-    onSuccess: () => {
+      });
+      const contractId = created?.id ?? null;
+      if (advanceToStage) {
+        try {
+          await api.deals.updateStage(deal.id, { stage: advanceToStage });
+          return { advanced: true, advanceError: null, contractId };
+        } catch (error) {
+          return { advanced: false, advanceError: getErrorMessage(error, '단계를 바꾸지 못했습니다.'), contractId };
+        }
+      }
+      return { advanced: false, advanceError: null, contractId };
+    },
+    onSuccess: ({ advanced, advanceError, contractId }) => {
+      // 특약·당사자는 계약서에서 이어서 적는다: 만든 계약서를 바로 열 수 있게 한다
+      const openContract = contractId
+        ? {
+            action: {
+              label: '계약서 열기',
+              onClick: () => void navigate({ to: '/contracts', search: { editorContractId: contractId } }),
+            },
+          }
+        : undefined;
       void queryClient.invalidateQueries({ queryKey: ['contracts'] });
       void queryClient.invalidateQueries({ queryKey: ['deals'] });
-      toast.success('계약서가 생성되었습니다. 이제 중도금/잔금 단계로 진행할 수 있습니다.');
+      if (advanced) {
+        invalidateListingDerivedCaches(queryClient);
+        toast.success(
+          `계약서를 만들고 '${getStatusMeta('dealStage', advanceToStage!).label}' 단계로 넘겼습니다.`,
+          openContract,
+        );
+      } else if (advanceError) {
+        toast.error(`계약서는 만들었지만 단계를 넘기지 못했습니다: ${advanceError}`, openContract);
+      } else {
+        toast.success('계약서를 만들었습니다. 이제 중도금/잔금 단계로 넘길 수 있습니다.', openContract);
+      }
       onOpenChange(false);
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getErrorMessage(error, '계약서를 만들지 못했습니다. 다시 시도해 주세요.')),
   });
 
-  const valid = Boolean(buyer && seller && Number(totalPrice) > 0);
+  const missing = [
+    !seller ? (isLease ? '임대인' : '매도인') : null,
+    !buyer ? (isLease ? '임차인' : '매수인') : null,
+    !(Number(totalPrice) > 0) ? (isMonthly ? '보증금' : '거래금액') : null,
+  ].filter(Boolean);
+  const valid = missing.length === 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -921,41 +1292,57 @@ function CreateContractDialog({
         <DialogHeader>
           <DialogTitle>계약서 작성</DialogTitle>
           <DialogDescription>
-            기본 정보로 계약서를 생성합니다. 대금 일정·특약 등 상세는 계약 관리 화면에서 이어서 작성하세요.
+            {advanceToStage
+              ? `'${getStatusMeta('dealStage', advanceToStage).label}' 단계로 넘기려면 계약서가 있어야 합니다. 기본 정보로 계약서를 만들고 바로 넘깁니다.`
+              : '기본 정보로 계약서를 만듭니다.'}{' '}
+            특약·당사자 상세는 계약서 관리에서 이어서 적습니다.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label>매도인 (임대인) *</Label>
+            <Label>{isLease ? '임대인' : '매도인'} *</Label>
             <ContactPicker value={seller} onChange={setSeller} />
           </div>
           <div className="grid gap-1.5">
-            <Label>매수인 (임차인) *</Label>
+            <Label>{isLease ? '임차인' : '매수인'} *</Label>
             <ContactPicker value={buyer} onChange={setBuyer} />
           </div>
           <div className="grid gap-1.5">
-            <Label>총 거래금액 (만원) *</Label>
-            <Input
-              type="number"
-              min={1}
-              value={totalPrice}
-              onChange={(event) => setTotalPrice(event.target.value)}
-            />
-            {Number(totalPrice) > 0 ? (
-              <p className="text-xs text-muted-foreground">= {formatMoney(Number(totalPrice))}</p>
+            <Label htmlFor="deal-contract-total">
+              {isMonthly ? '보증금' : transactionType === 'jeonse' ? '전세금' : '매매가'} *
+            </Label>
+            <ManwonInput id="deal-contract-total" value={totalPrice} onChange={setTotalPrice} />
+            {isMonthly && deal.agreedMonthlyRent ? (
+              <p className="text-xs text-muted-foreground">
+                월세 {formatMoney(deal.agreedMonthlyRent)}은 거래의 합의 조건에서 가져옵니다.
+              </p>
             ) : null}
           </div>
           <div className="grid gap-1.5">
-            <Label>계약일</Label>
-            <Input type="date" value={contractDate} onChange={(event) => setContractDate(event.target.value)} />
+            <Label htmlFor="deal-contract-date">계약일</Label>
+            <DateQuickInput id="deal-contract-date" value={contractDate} onChange={setContractDate} />
           </div>
+          {!valid ? (
+            <p className="text-xs text-muted-foreground">채워야 할 칸: {missing.join(', ')}</p>
+          ) : null}
+          {isUnconfirmedContactName(seller?.name) || isUnconfirmedContactName(buyer?.name) ? (
+            <p className="text-xs text-warning">
+              {UNCONFIRMED_CONTACT_MESSAGE} 초안은 만들 수 있지만, 계약서를 서명완료 이후로 바꾸려면 이름이 있어야 합니다.
+            </p>
+          ) : null}
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             닫기
           </Button>
-          <Button type="button" disabled={!valid || mutation.isPending} onClick={() => mutation.mutate()}>
-            계약서 생성
+          <Button
+            type="button"
+            disabled={!valid || mutation.isPending}
+            onClick={() => {
+              if (!mutation.isPending) mutation.mutate();
+            }}
+          >
+            {advanceToStage ? '계약서 만들고 넘기기' : '계약서 만들기'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -963,24 +1350,245 @@ function CreateContractDialog({
   );
 }
 
-function getNextActions(stage: string) {
-  if (stage === 'cancelled') {
-    return ['취소 사유 기록 확인', '수수료 청구 취소/조정 확인', '관련 일정 정리'];
+/**
+ * "지금 할 일" — 단계만 보고 늘 같은 말을 하지 않고, 거래의 실제 상태(계약서·대금 일정·수수료)를 보고 정한다.
+ */
+/** "지금 할 일" 한 줄. go가 있으면 누르면 그 일을 하는 자리(탭·창)로 바로 간다. */
+type NextAction = {
+  label: string;
+  go?: 'payments' | 'addPayment' | 'contract' | 'openContract' | 'commission' | 'terms' | 'people';
+  /** go가 addPayment일 때 추가 창에 미리 고를 대금 종류 */
+  kind?: string;
+};
+
+function getNextActions(
+  deal: Deal,
+  contract: Contract | null,
+  nextPayment: ReturnType<typeof getNextDealPaymentSummary>,
+): NextAction[] {
+  const keep = (items: Array<NextAction | null>) => items.filter((item): item is NextAction => item !== null);
+  if (deal.isCancelled) {
+    return [
+      { label: '취소 사유 기록 확인' },
+      { label: '받은 돈이 있으면 돌려줌·위약금 처리 메모 확인', go: 'payments' },
+      { label: '관련 업무·일정 정리' },
+    ];
   }
-  if (normalizeDealStage(stage) === 'preparing') {
-    return ['최종 합의 조건 확인', '계약 당사자·필요 서류 확인', '가계약 여부와 본계약 일정 결정'];
+  const stage = normalizeDealStage(deal.stage);
+  const payments = (deal.payments ?? []).filter((payment) => payment.status !== 'cancelled');
+  const has = (kind: string) => payments.some((payment) => payment.kind === kind);
+  const unpaid = (kind: string) =>
+    payments.some((payment) => payment.kind === kind && payment.status !== 'paid');
+  const summary = deal.commissionSummary;
+  const commissionLeft = summary ? Math.max(0, summary.billed - summary.collected) : 0;
+  const nextPaymentText =
+    nextPayment?.payment.scheduledDate
+      ? `${nextPayment.label} 받기 (${formatShortDate(nextPayment.payment.scheduledDate)} · ${formatDaysLabel(nextPayment.daysUntil)})`
+      : null;
+
+  if (stage === 'preparing') {
+    return [
+      { label: '최종 합의 조건 확인', go: 'terms' },
+      { label: '계약 당사자·필요 서류 확인', go: 'people' },
+      { label: '가계약 여부와 본계약 일정 결정' },
+    ];
   }
   if (stage === 'preContract') {
-    return ['가계약금 입금 확인', '본계약 일정 확정', '계약 필요 서류 안내'];
+    return keep([
+      has('pre_contract')
+        ? unpaid('pre_contract')
+          ? { label: '가계약금 입금 확인', go: 'payments' }
+          : null
+        : { label: '가계약금 일정 넣기', go: 'addPayment', kind: 'pre_contract' },
+      has('contract')
+        ? { label: '본계약 일정 확정', go: 'payments' }
+        : { label: '본계약 일정 확정', go: 'addPayment', kind: 'contract' },
+      { label: '계약 필요 서류 안내' },
+    ]);
   }
   if (stage === 'contracted') {
-    return ['계약서 서명·날인', '계약금 입금 확인', '중도금 일정 캘린더 등록', '확인설명서 교부'];
+    return keep([
+      contract ? null : { label: '계약서 작성', go: 'contract' },
+      unpaid('contract')
+        ? { label: '계약금 입금 확인', go: 'payments' }
+        : has('contract')
+          ? null
+          : { label: '계약금 일정 넣기', go: 'addPayment', kind: 'contract' },
+      has('balance') ? null : { label: '중도금·잔금 일정 넣기', go: 'addPayment', kind: 'balance' },
+      { label: '확인설명서 교부' },
+    ]);
   }
   if (stage === 'settling') {
-    return ['잔금 일정 재확인', '등기·인도 준비 상태 점검', '수수료 청구 상태 확인'];
+    return keep([
+      nextPaymentText
+        ? { label: nextPaymentText, go: 'payments' }
+        : has('balance')
+          ? null
+          : { label: '잔금 일정 넣기', go: 'addPayment', kind: 'balance' },
+      { label: '등기·인도 준비 상태 점검' },
+      commissionLeft > 0 ? { label: `수수료 ${formatMoney(commissionLeft)} 받을 준비`, go: 'commission' } : null,
+    ]);
   }
   if (stage === 'completed') {
-    return ['수수료 수금 확인', '직원 배분 정산', '거래 자료 보관'];
+    return keep([
+      contract && isContractStillDrafting(contract)
+        ? { label: '계약서가 아직 작성 중입니다 · 계약서 열기', go: 'openContract' }
+        : null,
+      commissionLeft > 0 ? { label: `남은 수수료 ${formatMoney(commissionLeft)} 받기`, go: 'commission' } : null,
+      { label: '직원 배분 정산 확인', go: 'commission' },
+      commissionLeft > 0 ? null : { label: '정산 종료로 넘기기' },
+    ]);
   }
-  return ['거래 상태 확인', '후속 업무 정리'];
+  return keep([
+    contract && isContractStillDrafting(contract)
+      ? { label: '계약서가 아직 작성 중입니다 · 계약서 열기', go: 'openContract' }
+      : null,
+    { label: '끝난 거래입니다. 계약서·자료를 보관하세요.' },
+  ]);
+}
+
+function DealPropertyTransitionSection({ dealId }: { dealId: string }) {
+  const queryClient = useQueryClient();
+  const [archiveExistingOwners, setArchiveExistingOwners] = useState(true);
+  const [registerNewOwners, setRegisterNewOwners] = useState(true);
+  const [markBuyersResident, setMarkBuyersResident] = useState(false);
+  const [closeExistingLeases, setCloseExistingLeases] = useState(true);
+  const [createNewLease, setCreateNewLease] = useState(true);
+
+  const previewQuery = useQuery({
+    queryKey: ['deals', dealId, 'property-transition-preview'],
+    queryFn: () => api.deals.getPropertyTransitionPreview(dealId),
+  });
+
+  const applyMutation = useMutation({
+    mutationFn: () => {
+      const preview = previewQuery.data;
+      if (!preview || !preview.eligible) {
+        throw new Error('반영할 변경 사항이 없습니다.');
+      }
+      if (preview.kind === 'sale') {
+        return api.deals.applyPropertyTransition(dealId, {
+          archiveExistingOwners,
+          registerNewOwners,
+          markBuyersResident,
+        });
+      }
+      return api.deals.applyPropertyTransition(dealId, {
+        closeExistingLeases,
+        createNewLease,
+      });
+    },
+    onSuccess: async () => {
+      toast.success('매물 소유·임대차 정보를 반영했습니다.');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['deals'] }),
+        queryClient.invalidateQueries({ queryKey: ['properties'] }),
+        queryClient.invalidateQueries({ queryKey: ['sites'] }),
+        queryClient.invalidateQueries({ queryKey: ['contacts'] }),
+      ]);
+    },
+    onError: (caught) => {
+      toast.error(apiErrorMessage(caught, '매물 정보 반영에 실패했습니다.'));
+    },
+  });
+
+  const preview = previewQuery.data;
+  if (!preview || !preview.eligible) return null;
+
+  return (
+    <section>
+      <InspectorSectionTitle>소유 · 임대차 변경 반영</InspectorSectionTitle>
+      <div className="space-y-3 rounded-md border border-[#e9e9e7] bg-[#f7f6f3]/60 p-3 text-[13px]">
+        <p className="text-[12.5px] text-muted-foreground">
+          {preview.kind === 'sale'
+            ? '거래가 끝나 매물의 소유권을 새 매수인에게 넘길 수 있습니다.'
+            : '거래가 끝나 매물의 임대차 계약과 세입자 정보를 갱신할 수 있습니다.'}
+        </p>
+
+        {preview.kind === 'sale' ? (
+          <div className="space-y-2">
+            {preview.currentOwners.length > 0 && (
+              <label className="flex items-start gap-2">
+                <Checkbox
+                  checked={archiveExistingOwners}
+                  onCheckedChange={(checked) => setArchiveExistingOwners(checked === true)}
+                />
+                <span>
+                  {`기존 소유자 이전 처리 (${preview.currentOwners.map((owner) => owner.name).join(', ')})`}
+                </span>
+              </label>
+            )}
+            {preview.proposedBuyers.length > 0 && (
+              <>
+                <label className="flex items-start gap-2">
+                  <Checkbox
+                    checked={registerNewOwners}
+                    onCheckedChange={(checked) => setRegisterNewOwners(checked === true)}
+                  />
+                  <span>
+                    {`새 소유자 등록 (${preview.proposedBuyers.map((buyer) => buyer.name).join(', ')})`}
+                  </span>
+                </label>
+                {registerNewOwners && (
+                  <label className="ml-5 flex items-start gap-2 text-[12.5px] text-muted-foreground">
+                    <Checkbox
+                      checked={markBuyersResident}
+                      onCheckedChange={(checked) => setMarkBuyersResident(checked === true)}
+                    />
+                    <span>직접 입주(거주 중)로 표시</span>
+                  </label>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {preview.currentLeases.length > 0 && (
+              <label className="flex items-start gap-2">
+                <Checkbox
+                  checked={closeExistingLeases}
+                  onCheckedChange={(checked) => setCloseExistingLeases(checked === true)}
+                />
+                <span>
+                  {`기존 임대차 퇴거 처리 (${preview.currentLeases
+                    .map((lease) => lease.tenants.map((tenant) => tenant.name).join(', ') || '세입자')
+                    .join(' · ')})`}
+                </span>
+              </label>
+            )}
+            {preview.proposedBuyers.length > 0 && (
+              <label className="flex items-start gap-2">
+                <Checkbox
+                  checked={createNewLease}
+                  onCheckedChange={(checked) => setCreateNewLease(checked === true)}
+                />
+                <span>
+                  {`새 임대차·세입자 등록 (${preview.proposedBuyers.map((buyer) => buyer.name).join(', ')})`}
+                </span>
+              </label>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            disabled={applyMutation.isPending}
+            onClick={() => applyMutation.mutate()}
+          >
+            {applyMutation.isPending ? '반영 중...' : '매물에 반영'}
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 계약서 상태는 사람이 바꾸는 값이라 거래가 끝나도 저절로 바꾸지 않는다. 다만 거래가 잔금 완료·정산 종료인데
+ * 계약서가 아직 작성 중이면 알려서 계약서를 열어 상태를 정리하게 한다.
+ */
+function isContractStillDrafting(contract: Contract) {
+  return contract.status === 'draft';
 }

@@ -20,7 +20,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookMarked, Printer } from 'lucide-react';
+import { BookMarked, Handshake, Printer } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import type {
   Contract,
@@ -32,6 +33,7 @@ import {
   appendContractRichText,
   contractRichTextToPlainText,
   formatContractAmountWithWon,
+  formatPlaceLabel,
   formatPrice,
   validateResidentialSaleAgreement,
   type ResidentialSaleAgreementDraft,
@@ -72,6 +74,7 @@ import {
 import { FormRegistrationMenu } from './-form-registration-menu';
 import type { FormRegistrationSpec } from './-form-registration-catalog';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { CONTRACT_RICH_TEXT_VIEW_CLASS, sanitizeContractHtml } from '@/lib/contract-rich-text';
 import { RichTextEditor } from '@/components/rich-text-editor';
@@ -199,6 +202,9 @@ export function toDocumentEditorForm(
       engineFields = { ...draft.fields, ...converted };
     }
   }
+  engineFields = withPlaceInPropertyAddress(engineFields, contract);
+  // 새 조항형 문서: 개업공인중개사 칸을 우리 사무소 정보(설정)로 채워 둔다. 저장된 문서는 적힌 값을 그대로 둔다.
+  if (clauseLayout && !document?.id) engineFields = withOfficeBrokerFields(engineFields, contract);
 
   return {
     documentId: document?.id,
@@ -234,6 +240,55 @@ export function toDocumentEditorForm(
     parties: contract.parties ?? [],
     transactionType: contract.transactionType,
   };
+}
+
+/**
+ * 소재지 칸이 동네 주소("서울시 강동구 고덕동")만 있으면 거래 매물의 단지·동·호를 붙인다.
+ * 고덕그라시움처럼 동이 100개가 넘는 단지는 동네 주소만으로 어느 집인지 알 수 없다.
+ * 사람이 고쳐 적은 소재지(동네 주소와 다른 글)는 그대로 둔다.
+ */
+function withPlaceInPropertyAddress(
+  fields: ContractDocumentEngineFields,
+  contract: Contract,
+): ContractDocumentEngineFields {
+  const property = contract.deal?.property ?? contract.deal?.listing?.property ?? null;
+  if (!property) return fields;
+  const place = formatPlaceLabel({
+    siteName: property.site?.name,
+    dongName: property.unit?.dong?.name,
+    dongIsPlaceholder: property.unit?.dong?.isPlaceholder,
+    unit: property.unit,
+  });
+  if (!place) return fields;
+  const current = (fields.propertyAddress ?? '').trim();
+  if (current.includes(place)) return fields;
+  const neighborhood = [property.site?.roadAddress, property.site?.jibunAddress]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  const isAutoDefault = !current || current === '-' || neighborhood.includes(current);
+  if (!isAutoDefault) return fields;
+  const base = current && current !== '-' ? current : (neighborhood[0] ?? '');
+  return { ...fields, propertyAddress: [base, place].filter(Boolean).join(' ') };
+}
+
+function withOfficeBrokerFields(
+  fields: ContractDocumentEngineFields,
+  contract: Contract,
+): ContractDocumentEngineFields {
+  const office = contract.office;
+  if (!office) return fields;
+  const next: ContractDocumentEngineFields = { ...fields };
+  const fill = (key: string, value: string | null | undefined) => {
+    const current = (next as Record<string, unknown>)[key];
+    if (value?.trim() && !(typeof current === 'string' && current.trim())) {
+      (next as Record<string, unknown>)[key] = value.trim();
+    }
+  };
+  fill('brokerOfficeName', office.name);
+  fill('brokerOfficeRegNo', office.licenseNo);
+  fill('brokerCeoName', office.ceoName);
+  fill('brokerOfficeAddress', office.address);
+  return next;
 }
 
 function emptyDocumentEngineWorkflow(): ContractDocumentEngineWorkflow {
@@ -380,7 +435,10 @@ export function DocumentEditorWorkspace({
   onAddForm,
   onSave,
   onSaveAsNew,
+  dealId = null,
 }: {
+  /** 이 계약의 거래. 있으면 위 줄에 "거래 보기"를 둔다(계약서를 쓰다가 대금·수수료를 보러 가는 길) */
+  dealId?: string | null;
   form: DocumentEditorForm;
   documents: ContractDocument[];
   error: string | null;
@@ -612,6 +670,25 @@ export function DocumentEditorWorkspace({
                   ) : null}
                 </TabsList>
               </div>
+              {dealId ? (
+                <Link
+                  to="/deals"
+                  search={{ dealId }}
+                  className="inline-flex h-7 shrink-0 items-center gap-1 rounded px-2 text-[12px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  onClick={(event) => {
+                    // 저장하지 않은 채 떠나면 고친 내용이 사라진다. 닫기와 같은 확인을 거친다.
+                    if (
+                      isDirty &&
+                      !window.confirm('저장하지 않은 변경사항이 있습니다. 저장 없이 거래로 이동할까요?')
+                    ) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  <Handshake className="size-3.5" />
+                  거래 보기
+                </Link>
+              ) : null}
               <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
                 {documentTabs.length + (hasPersistedActiveTab ? 0 : 1)}개
               </span>
@@ -774,7 +851,7 @@ export function DocumentEditorWorkspace({
           <div className="border-b px-6 py-5">
             <DialogHeader>
               <DialogTitle>{form.workflow.previewTitle}</DialogTitle>
-              <DialogDescription>{form.workflow.reportName}</DialogDescription>
+              <DialogDescription>인쇄하면 이 모양 그대로 종이에 찍힙니다.</DialogDescription>
             </DialogHeader>
           </div>
           <ScrollArea className="min-h-0 flex-1 bg-muted/40">
@@ -888,7 +965,7 @@ function ContractMatterTemplateToolsSection({
     },
     onError: (error) => {
       toast.error(
-        error instanceof Error ? error.message : '계약사항 템플릿을 저장하지 못했습니다.',
+        apiErrorMessage(error, '계약사항 템플릿을 저장하지 못했습니다. 다시 시도해 주세요.'),
       );
     },
   });
@@ -1018,7 +1095,7 @@ function ClauseTemplateToolsSection({
       });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '특약 템플릿을 등록하지 못했습니다.');
+      toast.error(apiErrorMessage(error, '특약 템플릿을 등록하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -1386,7 +1463,8 @@ function ContractDocumentPage({
   return (
     <div className="mx-auto min-h-[1123px] w-full max-w-[794px] border border-slate-200 bg-white px-14 py-12 text-slate-950 shadow-sm print:shadow-none">
       <div className="flex items-start justify-between gap-4 text-[11px] text-slate-500">
-        <span>{templateCode || 'contract-document'}</span>
+        {/* 내부 양식 이름(영문)은 종이에 찍히지 않게 둔다 */}
+        <span data-report-name={templateCode || undefined} />
         <span>{status}</span>
       </div>
 

@@ -13,6 +13,7 @@ import type {
   UpdateContractDocumentDto,
 } from '@estate-erp/api-client';
 import { mergeResidentialSaleAgreementMetadata } from '@estate-erp/shared';
+import { ApiError } from '@estate-erp/api-client';
 import {
   applyEngineFieldsToResidentialSaleAgreement,
   getContractClauseLayout,
@@ -47,12 +48,14 @@ import {
   NumberField,
   getContractPropertyLabel,
   hasContractFile,
+  isUnconfirmedContactName,
   resolveDocumentTemplate,
   sortContractDocuments,
   stringifyOptionalNumber,
   toContractTransactionType,
   toOptionalNumber,
   todayInput,
+  UNCONFIRMED_CONTACT_MESSAGE,
 } from './-contract-shared';
 import {
   DocumentEditorWorkspace,
@@ -62,6 +65,7 @@ import {
 } from './-document-editor';
 import type { ContractDocumentEngineFields } from './-document-engine';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { tabResourceKeys } from '@/features/tabs/lib/tabResource';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
@@ -118,6 +122,10 @@ export const Route = createFileRoute('/_authenticated/contracts/')({
 
 function ContractsPage() {
   const queryClient = useQueryClient();
+  const navigateContracts = Route.useNavigate();
+  // 편집기를 여는 함수(useCallback)가 매번 새로 만들어지지 않게 ref로 읽는다
+  const navigateContractsRef = useRef(navigateContracts);
+  navigateContractsRef.current = navigateContracts;
   const { editorContractId, editorDocumentId } = Route.useSearch();
   const isEditorTab = Boolean(editorContractId);
   const activeTabId = useTabStore((state) => state.activeTabId);
@@ -134,7 +142,7 @@ function ContractsPage() {
   const [layout, setLayout] = useState<ContractsLayout>('list');
   /** 레거시 showCust — 목록에 연락처 표시 */
   const [showPhones, setShowPhones] = useState(true);
-  /** 보기 탭 (레거시 State_Type): 전체 / 진행중 / 완료 */
+  /** 보기 탭 (레거시 State_Type): 전체 / 진행 중 / 완료 */
   const [statePreset, setStatePreset] = useState<DocStatePreset>('all');
   /** 옆 상세 패널에 열린 계약. 부속 서식 등록의 대상이기도 하다 */
   const [focusedContractId, setFocusedContractId] = useState<string | null>(null);
@@ -189,10 +197,10 @@ function ContractsPage() {
       priceMin: debouncedPriceMin,
       priceMax: debouncedPriceMax,
     };
-    // 진행중/완료 프리셋이 있으면 단일 status 필터를 덮어쓴다
+    // 진행 중/완료 프리셋이 있으면 단일 status 필터를 덮어쓴다
     // (서버 status 쿼리는 단건 — 클라이언트 페이지 내 2차 필터로 보완)
     if (statePreset !== 'all' && !filters.status) {
-      // status 단일값 API 한계: 진행중은 draft 우선 조회 후 클라 필터, 완료는 registered
+      // status 단일값 API 한계: 진행 중은 draft 우선 조회 후 클라 필터, 완료는 registered
       if (statePreset === 'done') {
         next.status = 'registered';
       }
@@ -276,7 +284,7 @@ function ContractsPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isEditorTab]);
 
-  // 문서 준비 + 진행중 프리셋 — 서버 단건 status 한계를 페이지 내 필터로 보완
+  // 문서 준비 + 진행 중 프리셋 — 서버 단건 status 한계를 페이지 내 필터로 보완
   const visibleContracts = useMemo(() => {
     return pageContracts.filter((contract) => {
       if (docFilter === 'missing' && (contract.missingDocumentCount ?? 0) === 0) {
@@ -413,7 +421,7 @@ function ContractsPage() {
       );
     },
     onError: (error, { contractId }) => {
-      toast.error(error instanceof Error ? error.message : '선택한 양식 문서를 만들지 못했습니다.');
+      toast.error(apiErrorMessage(error, '선택한 양식 문서를 만들지 못했습니다. 다시 시도해 주세요.'));
       setSelectedContractId(contractId);
     },
   });
@@ -431,9 +439,9 @@ function ContractsPage() {
       toast.success(
         formSpec
           ? variables.dealId
-            ? `계약을 생성했습니다. 「${formSpec.title}」 양식을 적용합니다.`
-            : `독립 문서 묶음을 만들었습니다. 「${formSpec.title}」 양식을 적용합니다.`
-          : '계약을 생성했습니다.',
+            ? `계약서를 등록했습니다. 「${formSpec.title}」 양식을 엽니다.`
+            : `독립 문서 묶음을 만들었습니다. 「${formSpec.title}」 양식을 엽니다.`
+          : '계약서를 등록했습니다.',
       );
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
       setSelectedContractId(created.id);
@@ -454,7 +462,7 @@ function ContractsPage() {
       });
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '계약을 생성하지 못했습니다.');
+      toast.error(apiErrorMessage(error, '계약서를 등록하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -485,7 +493,17 @@ function ContractsPage() {
     },
     onSuccess: (savedDocument, { saveAsNew }) => {
       toast.success(saveAsNew ? '문서 사본을 새 탭으로 저장했습니다.' : '문서를 저장했습니다.');
+      // 계약서 문서의 금액·날짜는 서버가 계약서 요약(목록·패널의 잔금일 등)에 옮긴다.
+      // 읽지 못한 칸은 요약을 그대로 두었으니 알려 준다.
+      const unreadable = savedDocument.summarySync?.unreadable ?? [];
+      if (unreadable.length > 0) {
+        toast.warning(`${unreadable.join(', ')} 칸을 읽지 못해 계약서 요약에는 반영하지 않았습니다.`, {
+          description: '금액은 숫자로, 날짜는 연·월·일을 모두 적어 주세요.',
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      // 계약서 요약이 바뀌면 거래 대금 탭의 "계약서와 다릅니다" 표시도 다시 계산한다
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
 
       if (selectedContractId && contractDetail) {
         const nextDocuments = [
@@ -533,7 +551,7 @@ function ContractsPage() {
       });
     },
     onError: (error) => {
-      const message = error instanceof Error ? error.message : '문서를 저장하지 못했습니다.';
+      const message = apiErrorMessage(error, '문서를 저장하지 못했습니다. 다시 시도해 주세요.');
       setDocumentFormError(message);
       toast.error(message);
     },
@@ -543,7 +561,7 @@ function ContractsPage() {
   const deleteContractMutation = useMutation({
     mutationFn: (contractId: string) => api.contracts.remove(contractId),
     onSuccess: (_result, contractId) => {
-      toast.success('계약을 삭제했습니다.');
+      toast.success('계약서를 삭제했습니다.');
       setDeleteContractTarget(null);
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
       queryClient.removeQueries({ queryKey: ['contract', contractId] });
@@ -557,7 +575,7 @@ function ContractsPage() {
       }
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '계약을 삭제하지 못했습니다.');
+      toast.error(apiErrorMessage(error, '계약서를 삭제하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -572,13 +590,14 @@ function ContractsPage() {
       openContractEditorTab(copied.id);
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '사본을 만들지 못했습니다.');
+      toast.error(apiErrorMessage(error, '사본을 만들지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
   const availableDeals = useMemo(() => {
     const contractedDealIds = new Set(allContracts.map((contract) => contract.dealId));
-    return deals.filter((deal) => !contractedDealIds.has(deal.id));
+    // 취소한 거래에는 계약서를 새로 만들지 않는다
+    return deals.filter((deal) => !contractedDealIds.has(deal.id) && !deal.isCancelled);
   }, [allContracts, deals]);
 
   const selectedCreateDeal = useMemo(
@@ -684,8 +703,15 @@ function ContractsPage() {
       setIsDocumentEditorOpen(true);
     } catch (error) {
       if (requestId !== editorOpenRequestRef.current) return;
+      // 없는 계약서(404)·형식이 틀린 id(400): 거래관리 바로 가기와 같게 한 번 알리고 주소에서 지워 목록을 보인다
+      if (error instanceof ApiError && (error.statusCode === 404 || error.statusCode === 400)) {
+        setDocumentFormError(null);
+        toast.error('계약서를 찾을 수 없습니다. 지워졌을 수 있습니다.');
+        void navigateContractsRef.current({ search: {}, replace: true });
+        return;
+      }
       const message =
-        error instanceof Error ? error.message : '문서 편집기를 열지 못했습니다.';
+        apiErrorMessage(error, '문서 편집기를 열지 못했습니다. 다시 시도해 주세요.');
       setDocumentFormError(message);
       toast.error(message);
     }
@@ -934,6 +960,7 @@ function ContractsPage() {
 
     return (
       <DocumentEditorWorkspace
+        dealId={contractDetail?.dealId ?? null}
         form={documentEditorForm}
         documents={contractDetail?.documents ?? []}
         error={documentFormError}
@@ -963,7 +990,7 @@ function ContractsPage() {
 
   const changeStatePreset = (key: DocStatePreset) => {
     setStatePreset(key);
-    // 완료 탭은 서버의 상태 조건으로 거른다 (진행중은 여러 상태라 이 페이지 안에서 거른다)
+    // 완료 탭은 서버의 상태 조건으로 거른다 (진행 중은 여러 상태라 이 페이지 안에서 거른다)
     if (key === 'done') setFilters((prev) => ({ ...prev, status: 'registered' }));
     else if (filters.status === 'registered') setFilters((prev) => ({ ...prev, status: '' }));
   };
@@ -1158,7 +1185,7 @@ function ContractsPage() {
       >
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{pendingFormSpec ? pendingFormSpec.title : '계약 생성'}</DialogTitle>
+            <DialogTitle>{pendingFormSpec ? pendingFormSpec.title : '계약서 등록'}</DialogTitle>
             <DialogDescription>
               {pendingFormSpec
                 ? `선택한 양식 「${pendingFormSpec.groupLabel} · ${pendingFormSpec.tradeLabel}」을 거래에 연결한 뒤 바로 적용합니다.`
@@ -1170,8 +1197,7 @@ function ContractsPage() {
             <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
               <p className="font-medium text-foreground">{pendingFormSpec.title}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                서식 {pendingFormSpec.templateCode} · 종별 {pendingFormSpec.groupLabel} · 거래{' '}
-                {pendingFormSpec.tradeLabel} (Cntr_Clsf {pendingFormSpec.cntrClsf})
+                종별 {pendingFormSpec.groupLabel} · 거래 {pendingFormSpec.tradeLabel}
               </p>
             </div>
           ) : null}
@@ -1291,9 +1317,21 @@ function ContractsPage() {
                   : '거래를 선택하면 당사자와 매물 정보를 미리 확인할 수 있습니다.'}
               </p>
               {selectedCreateDeal &&
+              (isUnconfirmedContactName(selectedCreateDeal.buyerContact?.name) ||
+                isUnconfirmedContactName(selectedCreateDeal.sellerContact?.name)) ? (
+                <p className="mt-1 text-sm text-warning">{UNCONFIRMED_CONTACT_MESSAGE}</p>
+              ) : null}
+              {selectedCreateDeal &&
               (!selectedCreateDeal.buyerContactId || !selectedCreateDeal.sellerContactId) ? (
                 <p className="mt-1 text-sm text-destructive">
-                  거래에 매수인/매도인이 모두 연결돼 있어야 계약을 생성할 수 있습니다.
+                  거래에 매도인·매수인이 모두 있어야 계약서를 등록할 수 있습니다.{' '}
+                  <Link
+                    to="/deals"
+                    search={{ dealId: selectedCreateDeal.id }}
+                    className="underline underline-offset-2"
+                  >
+                    거래에서 당사자 넣기
+                  </Link>
                 </p>
               ) : null}
             </div>
@@ -1327,7 +1365,7 @@ function ContractsPage() {
                   !createForm.monthlyRent)
               }
             >
-              {pendingFormSpec ? '생성 후 양식 열기' : '생성'}
+              {pendingFormSpec ? '등록하고 양식 열기' : '등록'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1338,8 +1376,8 @@ function ContractsPage() {
         onOpenChange={(nextOpen) => {
           if (!nextOpen) setDeleteContractTarget(null);
         }}
-        title="계약 삭제"
-        description="계약과 소속 문서·당사자·리비전 정보가 모두 영구 삭제되며 복구할 수 없습니다."
+        title="계약서 삭제"
+        description="계약서와 그 안의 문서·당사자 정보가 모두 지워지며 되돌릴 수 없습니다. 거래는 남습니다."
         confirmLabel="삭제"
         destructive
         loading={deleteContractMutation.isPending}

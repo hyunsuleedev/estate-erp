@@ -147,7 +147,7 @@ describe("my ads Task-based workflow", () => {
     // 하나만 고르는 필터 여섯 개가 각자 옵션·값·갱신 필드에 맞게 연결된다
     for (const [label, options, field] of [
       ["거래", "transactionFilterOptions", "transactionType"],
-      ["CP사", "channelFilterOptions", "channel"],
+      ["CP사", "channelOptions", "channel"],
       ["경쟁 대비", "comparisonFilterOptions", "comparison"],
       ["검증방식", "verificationFilterOptions", "verification"],
       ["층수노출", "floorExposureFilterOptions", "floorExposure"],
@@ -206,23 +206,24 @@ describe("my ads Task-based workflow", () => {
     const source = readMyAdsSource();
     const page = readFileSync(desktopPath, "utf8");
 
-    // 평소에는 읽기 전용이고, 위쪽 버튼으로 들어와야 고칠 수 있다
-    assert.match(page, /data-my-ads-mode-button="edit"[\s\S]*?기록 수정/);
-    assert.match(page, /data-my-ads-mode-button="request"[\s\S]*?변경 요청/);
+    // 평소에는 읽기 전용이고, 위쪽 두 버튼으로 들어가거나 요청한다
+    assert.match(page, /data-my-ads-mode-button="edit"[\s\S]*?기록 수정·추가/);
+    assert.match(page, /data-my-ads-mode-button="request"[\s\S]*?광고 요청/);
+    assert.match(page, /data-my-ads-bottom-add/);
     assert.match(page, /data-my-ads-mode-bar=\{mode\}/);
-    // 화면이 업무를 직접 만들지 않는다. 요청은 서버의 변경 요청(업무 하나와 짝)이다
+    // 화면이 업무를 직접 만들지 않는다. 요청은 서버의 통합 변경 요청(N:1 묶음 업무)이다
     assert.doesNotMatch(source, /api\.tasks\.create\(/);
-    assert.match(page, /api\.listingAdvertisements\.createChangeRequest\(advertisement\.id, request\)/);
+    assert.match(page, /api\.listingAdvertisements\.createChangeRequestsBatch\(/);
     // 기록 수정: 칸에서 바로 저장하고, 화면이 보고 있던 값을 함께 보낸다(그 사이 바뀌었으면 서버가 거절)
     assert.match(page, /api\.listingAdvertisements\.update\(\s*advertisement\.id,\s*buildRecordEdit\(advertisement, field, value\),\s*\)/);
     assert.match(source, /expected: \{ \[key\]: advertisement\[key\] \}/);
     // 저장에 실패하면 입력칸을 닫지 않는다
-    assert.match(page, /catch \(error\) \{\s*\/\/ 입력칸을 닫지 않는다[^\n]*\n\s*return getErrorMessage\(error\);/);
+    assert.match(page, /catch \(error\) \{\s*\/\/ 입력칸을 닫지 않는다[^\n]*\n\s*return getErrorMessage\(error, "[^"]+"\);/);
     // 변경 요청: 값은 그대로 두고 초안에 적는다. 그 줄이 펼쳐지며 요청 탭이 열린다
     assert.match(page, /withDraftValue\(advertisement, all\[advertisement\.id\], field, value\)/);
     assert.match(page, /setPanelTab\("requests"\)/);
-    // 가격과 월세는 "가격 변경" 한 건으로 묶인다
-    assert.match(source, /requests\.push\(\{ kind: "price", toValue: price, \.\.\.shared \}\)/);
+    // 가격·월세·층 노출이 한 건의 변경 요청으로 합쳐진다
+    assert.match(source, /return \[\{\s*\.\.\.baseIds,\s*action,\s*targetValue\s*\}\]/);
     // 모드를 바꾸기 전에 고치던 칸을 먼저 확정하고, 작성한 요청이 있으면 묻는다
     assert.match(page, /if \(!\(await flushEditor\(\)\)\) return;\s*if \(\s*modeRef\.current === "request" &&\s*Object\.keys\(draftsRef\.current\)\.length > 0\s*\) \{\s*setIsConfirmingDiscard\(true\);/);
     // 칸을 그릴 때, 값을 받을 때, 보낼 때 모두 같은 함수로 막는다
@@ -240,9 +241,6 @@ describe("my ads Task-based workflow", () => {
     // 검색어를 바꿔 그 광고가 받은 목록에서 빠져도 작성한 요청은 남는다
     assert.match(page, /if \(!advertisement\) \{\s*next\[id\] = draft;\s*continue;\s*\}/);
     assert.match(page, /draftedAdvertisementCache/);
-    // 일부 종류만 만들어지고 끊기면 만들어진 종류만 초안에서 뺀다 (가려진 광고도 다시 보낼 수 있게)
-    assert.match(page, /if \(created\.length > 0\) partial\[advertisement\.id\] = created;/);
-    assert.match(page, /withoutSentKinds\(rest\[id\], kinds\)/);
     // 요청을 거둘 수 있다
     assert.match(source, /api\.listingAdvertisements\s*\.cancelChangeRequest\(request\.id\)/);
   });
@@ -306,7 +304,9 @@ describe("my ads Task-based workflow", () => {
     assert.match(page, /useDebouncedValue\(search\.trim\(\), SEARCH_DEBOUNCE_MS\)/);
     assert.match(page, /placeholderData: keepPreviousData/);
     // 필터·검색·탭 중 하나라도 걸려 있으면 "조건에 맞는 광고가 없습니다."
-    assert.match(page, /hasNarrowingConditions\s*\?\s*"조건에 맞는 광고가 없습니다\."/);
+    assert.match(page, /hasNarrowingConditions \? \(\s*"조건에 맞는 광고가 없습니다\."/);
+    // 광고가 하나도 없으면 표의 빈 줄에 들어오는 길과 등록 단추를 둔다(공용 표 빈 화면)
+    assert.match(page, /아직 저장된 광고가 없습니다\.[\s\S]{0,600}openManualAdDialog\(\{ mode: "create" \}\)/);
     // 빈 <> 래퍼 없이 툴바가 바로 온다
     assert.match(page, /className="relative -m-4 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white"\s*>\s*<MyAdsToolbar/);
   });

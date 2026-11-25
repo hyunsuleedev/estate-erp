@@ -384,7 +384,9 @@ export function VisitSection({
           <div className="border-t border-[#e9e9e7] px-3.5 pb-2.5 pt-2">
             <div className="text-[13px] font-semibold text-[#37352f]/65">다가오는 임장 {viewings.length}</div>
             {viewings.length === 0 ? (
-              <div className="py-1.5 text-[13px] text-[#37352f]/45">잡힌 임장이 없습니다</div>
+              <div className="py-1.5 text-[13px] text-[#37352f]/45">
+                {onBook ? '잡힌 임장이 없습니다' : '잡힌 임장이 없습니다. 임장은 아래 "손님 · 거래"에서 손님을 매칭한 뒤 잡습니다.'}
+              </div>
             ) : (
               <ul>
                 {viewings.map((viewing) => (
@@ -432,7 +434,9 @@ function VisitRow({ label, children, action }: { label: string; children: ReactN
 export function CopyPhone({ phone, className }: { phone: string; className?: string }) {
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(phone);
+      // 보이는 모양 그대로(010-0000-0000) 복사한다 — 목록의 번호 복사와 같게
+      const formatted = formatPhoneNumber(phone);
+      await navigator.clipboard.writeText(formatted === '-' ? phone : formatted);
       toast.success('전화번호를 복사했습니다.');
     } catch {
       toast.error('복사하지 못했습니다.');

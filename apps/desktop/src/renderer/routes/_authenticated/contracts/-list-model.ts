@@ -111,13 +111,13 @@ export function toContractsFilter(filters: ContractListFilterState): ContractsPa
   };
 }
 
-// ── 보기 탭 (전체 · 진행중 · 완료) ─────────────────────────────────
+// ── 보기 탭 (전체 · 진행 중 · 완료) ─────────────────────────────────
 
 /** 보기 탭 → Contract.status 값 */
 export const DOC_STATE_PRESETS = {
   all: { label: '전체', statuses: [] as string[] },
   active: {
-    label: '진행중',
+    label: '진행 중',
     statuses: ['draft', 'signed', 'depositPaid', 'balancePaid'],
   },
   done: {
@@ -151,18 +151,30 @@ export function getContractDateTone(
   return 'future';
 }
 
-/** 잔금을 아직 치르지 않은 계약 (잔금일이 지나면 경고하고, 남은 날을 센다) */
-export function isBalanceOutstanding(status: string): boolean {
+/**
+ * 잔금을 아직 치르지 않은 계약 (잔금일이 지나면 경고하고, 남은 날을 센다).
+ * 계약서 상태를 따로 바꾸지 않아도, 연결된 거래가 잔금 완료·정산 종료이거나 취소됐으면 치른(끝난) 것으로 본다.
+ * 예전에는 거래가 끝났는데도 계약서 목록에 "D-94"가 남았다.
+ */
+export function isBalanceOutstanding(
+  status: string,
+  deal?: { stage?: string | null; isCancelled?: boolean | null } | null,
+): boolean {
+  if (deal && (deal.isCancelled || deal.stage === 'completed' || deal.stage === 'closed')) return false;
   return !['balancePaid', 'registered', 'cancelled'].includes(status);
 }
 
 /** 잔금일이 지났는데 아직 잔금을 치르지 않았다 */
 export function isBalanceOverdue(
-  contract: { status: string; statedBalanceDate: string | null },
+  contract: {
+    status: string;
+    statedBalanceDate: string | null;
+    deal?: { stage?: string | null; isCancelled?: boolean | null } | null;
+  },
   now: Date = new Date(),
 ): boolean {
   return (
-    isBalanceOutstanding(contract.status) &&
+    isBalanceOutstanding(contract.status, contract.deal) &&
     getContractDateTone(contract.statedBalanceDate, now) === 'past'
   );
 }

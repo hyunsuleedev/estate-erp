@@ -3,7 +3,6 @@ import {
   Bell,
   ChevronsUpDown,
   LogOut,
-  Sparkles,
 } from "lucide-react"
 import { Link } from "@tanstack/react-router"
 
@@ -27,10 +26,18 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 
+/** 이름의 첫 글자(한글·영문·숫자). "[대표] 홍길동"처럼 기호로 시작해도 글자를 고른다. */
+function initialOf(name: string | undefined): string {
+  const match = name?.match(/[\p{L}\p{N}]/u)
+  return match ? match[0].toUpperCase() : "U"
+}
+
 export function NavUser({
   user,
   onLogout,
   onMenuOpenChange,
+  unreadCount = 0,
+  onOpenNotifications,
 }: {
   user: {
     name: string
@@ -38,8 +45,14 @@ export function NavUser({
   }
   onLogout: () => void
   onMenuOpenChange?: (open: boolean) => void
+  /** 안 읽은 알림 수. 사용자 단추에 점과 숫자로 보인다. */
+  unreadCount?: number
+  /** 메뉴의 '알림'을 눌렀을 때. 없으면 알림 항목을 보이지 않는다. */
+  onOpenNotifications?: () => void
 }) {
   const { isMobile } = useSidebar()
+  const initial = initialOf(user.name)
+  const unreadLabel = unreadCount > 99 ? "99+" : String(unreadCount)
 
   return (
     <SidebarMenu>
@@ -48,13 +61,29 @@ export function NavUser({
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
               size="lg"
+              aria-label={
+                unreadCount > 0
+                  ? `${user.name} 메뉴 (안 읽은 알림 ${unreadCount}건)`
+                  : `${user.name} 메뉴`
+              }
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarFallback className="rounded-lg">
-                  {user.name?.charAt(0) ?? 'U'}
-                </AvatarFallback>
-              </Avatar>
+              <span className="relative shrink-0">
+                <Avatar className="h-8 w-8 rounded-lg">
+                  <AvatarFallback className="rounded-lg">
+                    {initial}
+                  </AvatarFallback>
+                </Avatar>
+                {unreadCount > 0 && (
+                  <span
+                    aria-hidden
+                    data-slot="nav-user-unread"
+                    className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-medium text-white tabular-nums ring-2 ring-sidebar"
+                  >
+                    {unreadLabel}
+                  </span>
+                )}
+              </span>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{user.name}</span>
                 <span className="truncate text-xs">{user.email}</span>
@@ -72,7 +101,7 @@ export function NavUser({
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
                   <AvatarFallback className="rounded-lg">
-                    {user.name?.charAt(0) ?? 'U'}
+                    {initial}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
@@ -83,30 +112,35 @@ export function NavUser({
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <Sparkles />
-                업그레이드
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
+              {onOpenNotifications ? (
+                <DropdownMenuItem onSelect={() => onOpenNotifications()}>
+                  <Bell />
+                  알림
+                  {unreadCount > 0 && (
+                    <span className="ml-auto text-xs font-medium text-info tabular-nums">
+                      안 읽음 {unreadLabel}
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem asChild>
                 <Link
                   to="/settings"
-                  onClick={() =>
-                    localStorage.setItem(
-                      "estate-erp:settings:v1:last-section",
-                      "account",
-                    )
-                  }
+                  search={{ section: "account" }}
+                  onClick={() => {
+                    try {
+                      localStorage.setItem(
+                        "estate-erp:settings:v1:last-section",
+                        "account",
+                      )
+                    } catch {
+                      // 저장소를 못 써도 주소의 항목으로 열린다
+                    }
+                  }}
                 >
                   <BadgeCheck />
                   계정 설정
                 </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Bell />
-                알림
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

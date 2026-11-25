@@ -68,6 +68,7 @@ import {
   type ConsultationSaveRequest,
   type LedgerListingGroup,
 } from "./-ledger-model";
+import { useInspectorOutsideClose } from "@/hooks/use-inspector-outside-close";
 
 /**
  * 고객 원장 상세 패널 — 표의 줄에서 "열기"를 누르면 오른쪽에 열린다.
@@ -179,6 +180,10 @@ export function CustomerInspector({
     );
     return () => window.clearTimeout(timer);
   }, [closing, animate, onExited]);
+
+  // 패널 밖을 누르면 닫는다 (떠 있는 창 · 줄의 열기 단추는 밖이 아니다)
+  // 상담을 적는 중에는 닫지 않는다: 닫으면 적던 글을 잃는다
+  useInspectorOutsideClose(() => onClose(), !composing);
 
   // Esc는 안쪽부터 닫는다: 떠 있는 창·메뉴 → 상담 적는 칸 → 패널
   useEffect(() => {
@@ -731,7 +736,15 @@ function ProjectPlanSummary({ projectId, title }: { projectId: string; title: st
     <div className="mb-1 border-b border-[#f1f0ec] pb-2.5">
       <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-[#2f2e2a]">
         <Link2 className="size-3.5 shrink-0 text-[#8e8b86]" />
-        <span className="truncate">{title?.trim() || "프로젝트"}</span>
+        {/* 프로젝트 화면(상세)으로 간다. 코멘트 · 단계마다 담긴 내용은 거기서 본다. */}
+        <Link
+          to="/projects/$id"
+          params={{ id: projectId }}
+          className="truncate underline-offset-2 hover:underline"
+          title="프로젝트 화면에서 보기"
+        >
+          {title?.trim() || "프로젝트"}
+        </Link>
         <span className="shrink-0 text-[12px] font-normal text-[#a9a7a1]">순서는 직접 정함</span>
       </div>
       {planQuery.isPending ? (

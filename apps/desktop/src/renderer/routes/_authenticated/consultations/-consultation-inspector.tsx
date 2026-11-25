@@ -28,7 +28,8 @@ import {
 import type { Consultation } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { formatDateTime, formatPhone } from '@/lib/format';
+import { formatPhone } from '@/lib/format';
+import { ConsultationContent } from './-consultation-badges';
 import { useInspectorFocus } from '@/hooks/use-inspector-focus';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog, EntityChip } from '@/components/domain';
@@ -50,6 +51,7 @@ import {
   hasOwnNote,
   type ConsultationChannelKind,
 } from './-consultation-list-model';
+import { useInspectorOutsideClose } from '@/hooks/use-inspector-outside-close';
 
 export const CONSULTATION_INSPECTOR_ID = 'consultation-inspector';
 export const CONSULTATION_INSPECTOR_WIDTH = 584;
@@ -192,6 +194,9 @@ export function ConsultationPanelShell({
     return () => window.clearTimeout(timer);
   }, [closing, animate, onExited]);
 
+  // 패널 밖을 누르면 닫는다 (떠 있는 창 · 줄의 열기 단추는 밖이 아니다)
+  useInspectorOutsideClose(() => onClose());
+
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -282,8 +287,10 @@ function InspectorContent({
   const deleteMutation = useMutation({
     mutationFn: () => api.consultations.remove(consultation.id),
     onSuccess: () => {
-      toast.success('상담 기록이 삭제되었습니다');
+      toast.success('상담 기록을 지웠습니다.');
       void queryClient.invalidateQueries({ queryKey: ['consultations'] });
+      // 연락처 상세와 목록의 최근 상담에서도 빠져야 한다
+      void queryClient.invalidateQueries({ queryKey: ['contacts'] });
       setDeleteOpen(false);
       onDeleted();
     },
@@ -301,7 +308,7 @@ function InspectorContent({
             {channel.label}
           </span>
           <span aria-hidden>·</span>
-          <span className="tabular-nums">{formatDateTime(consultation.createdAt)}</span>
+          <span className="tabular-nums">{formatConsultationWhen(consultation.createdAt)}</span>
           {consultation.createdBy?.name && (
             <>
               <span aria-hidden>·</span>
@@ -407,7 +414,7 @@ function InspectorContent({
         {(ownNote || !hasRecording) && (
           <Section title={hasRecording ? '직접 적은 내용' : '상담 내용'} data-consultation-note>
             {/* 사람이 적은 글은 진하게 */}
-            <p className="whitespace-pre-wrap text-[14px] leading-6 text-foreground">{consultation.content}</p>
+            <ConsultationContent content={consultation.content} className="text-[14px] leading-6 text-foreground" />
           </Section>
         )}
 
@@ -470,7 +477,7 @@ function InspectorContent({
               ))}
             </ul>
           ) : (
-            <p className="text-[13px] text-muted-foreground">연결된 매물·의뢰·희망조건이 없습니다.</p>
+            <p className="text-[13px] text-muted-foreground">연결된 매물·의뢰·희망 조건이 없습니다.</p>
           )}
         </Section>
 
@@ -484,7 +491,7 @@ function InspectorContent({
 
       <div className="flex shrink-0 items-center gap-1 border-t border-[#ecebe8] px-6 py-3">
         <button type="button" className={barButtonClassName} onClick={() => setTaskOpen(true)}>
-          <ClipboardList className="size-3.5" />할 일 만들기
+          <ClipboardList className="size-3.5" />업무 추가
         </button>
         <button type="button" className={barButtonClassName} onClick={onEdit}>
           <Pencil className="size-3.5" />수정

@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
+import { ApiError } from '@estate-erp/api-client';
 import { RotateCcw } from 'lucide-react';
 import { api } from '@/lib/api';
+import { formatRelativeDay } from '@/lib/format';
+import { useTabTitle } from '@/hooks/use-tab-title';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConsultationDetailSheet } from './-consultation-detail-sheet';
@@ -28,8 +31,17 @@ function ConsultationDetailPage() {
     queryKey: ['consultation', id],
     queryFn: () => api.consultations.findOne(id),
     refetchOnWindowFocus: true,
+    // 없는 상담(404)과 형식이 틀린 주소(400)는 다시 물어도 같다
+    retry: (failureCount, error) => !isMissing(error) && failureCount < 2,
   });
   const consultation = query.data ?? null;
+  const notFound = isMissing(query.error);
+  // 탭 제목: "김민준 · 11.19 (목) 상담"
+  useTabTitle(
+    consultation
+      ? `${consultation.contact?.name ?? '고객'} · ${formatRelativeDay(consultation.createdAt)} 상담`
+      : null,
+  );
   const goToList = () => void navigate({ to: '/consultations' });
 
   return (
@@ -41,13 +53,22 @@ function ConsultationDetailPage() {
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-36 w-full" />
         </div>
+      ) : notFound ? (
+        // 지워진 상담 · 잘못된 주소: "다시 시도"로는 풀리지 않으므로 상담분석으로만 보낸다
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+          <p className="text-sm font-medium">상담 기록을 찾을 수 없습니다</p>
+          <p className="text-sm text-muted-foreground">지워졌거나 잘못된 주소입니다.</p>
+          <Button type="button" variant="outline" size="sm" onClick={goToList}>
+            상담분석으로
+          </Button>
+        </div>
       ) : query.isError ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <p className="text-sm text-muted-foreground">상담을 불러오지 못했습니다.</p>
           <div className="flex gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => void query.refetch()}>
               <RotateCcw className="size-4" />
-              재시도
+              다시 시도
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={goToList}>
               상담분석으로
@@ -85,4 +106,9 @@ function ConsultationDetailPage() {
       />
     </div>
   );
+}
+
+/** 없는 상담(404)이거나 형식이 틀린 주소(400)인지 */
+function isMissing(error: unknown) {
+  return error instanceof ApiError && (error.statusCode === 404 || error.statusCode === 400);
 }

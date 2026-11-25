@@ -626,7 +626,8 @@ export function BaseContractClausePreview({
   return (
     <div className="mx-auto min-h-[1123px] w-full max-w-[794px] border border-slate-200 bg-white px-12 py-10 text-slate-950 shadow-sm print:border-0 print:shadow-none">
       <div className="flex items-start justify-between gap-4 text-[10px] text-slate-500">
-        <span>{reportName || 'contract-document'}</span>
+        {/* 내부 양식 이름(영문)은 종이에 찍히지 않게 둔다 */}
+        <span data-report-name={reportName || undefined} />
         <span>{status}</span>
       </div>
 

@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, Loader2, Plus, Search } from 'lucide-react';
-import type { BuyerRequirement, Match } from '@estate-erp/api-client';
+import type { BuyerRequirement, Listing, Match } from '@estate-erp/api-client';
 import { MatchStage, normalizeMatchStage, formatFloorRange } from '@estate-erp/shared';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -17,6 +17,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { getMatchStageLabel } from '../../wanted-properties/-match-view-utils';
+import {
+  computeListingFit,
+  describeFit,
+  scoreListingFit,
+} from '../../wanted-properties/-listing-fit';
 import type {
   ListingSummary,
   PropertyListingGroup,
@@ -26,6 +31,7 @@ import {
   formatBuyerArea,
   formatBuyerBudget,
 } from './property-match-format';
+import { propertyErrorMessage } from '../-error-message';
 
 // 매물관리 > 연결 구매고객 > "고객 연결".
 // 매물은 이미 정해져 있으므로 묻지 않는다. 희망매물에 등록된 진행 중인 구매고객을
@@ -34,7 +40,23 @@ import {
 const ROW_GRID =
   'grid grid-cols-[minmax(110px,1.1fr)_112px_52px_minmax(150px,1.3fr)_92px_84px_76px] items-center gap-x-3';
 
-function formatListingPrice(listing: ListingSummary) {
+/** 연결할 매물: 목록의 줄(PropertyListingGroup)이든, 옆 패널·상세의 매물이든 이만큼만 있으면 된다 */
+type ConnectListing = Pick<ListingSummary, 'id' | 'transactionType' | 'price' | 'deposit' | 'monthlyRent'>;
+type ConnectTarget = {
+  property?: PropertyListingGroup['property'] | {
+    siteId?: string;
+    site?: { name?: string | null; type?: string | null; wardCode?: string | null } | null;
+    unit?: Parameters<typeof formatFloorRange>[0] & {
+      name?: string | null;
+      supplyAreaM2?: number | string | null;
+      siteUnitType?: { supplyAreaM2?: number | string | null } | null;
+      dong?: { name: string; isPlaceholder?: boolean } | null;
+    } | null;
+  };
+  listings: ConnectListing[];
+};
+
+function formatListingPrice(listing: ConnectListing) {
   if (listing.transactionType === 'monthly') {
     const deposit = listing.deposit != null ? formatMoney(listing.deposit) : '-';
     const rent =
@@ -57,7 +79,7 @@ export function PropertyMatchConnectDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  group: PropertyListingGroup;
+  group: ConnectTarget;
   /** 이 매물에 이미 연결된 매칭 — 같은 고객을 두 번 연결하지 않게 표시한다 */
   matches: Match[];
 }) {
@@ -65,8 +87,8 @@ export function PropertyMatchConnectDialog({
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query.trim());
   const [listingId, setListingId] = useState(group.listings[0]?.id ?? '');
-  // 기본은 이 매물과 거래유형이 같은 고객만. 끄면 진행 중인 고객 전부.
-  const [sameTypeOnly, setSameTypeOnly] = useState(true);
+  // 기본은 이 매물 조건(거래유형·예산·평형·지역)에 맞는 고객만. "전체"를 누르면 진행 중인 고객 전부.
+  const [fitOnly, setFitOnly] = useState(true);
   const [connectedIds, setConnectedIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -78,25 +100,20 @@ export function PropertyMatchConnectDialog({
   useEffect(() => {
     if (!open) {
       setQuery('');
-      setSameTypeOnly(true);
+      setFitOnly(true);
       setConnectedIds(new Set());
       setListingId(group.listings[0]?.id ?? '');
     }
   }, [group.listings, open]);
 
+  // 진행 중인 희망 조건만(완료·보류는 서버에서 뺀다). 맞는지 아닌지는 받아 와서 견준다.
   const buyers = useQuery({
-    queryKey: [
-      'buyer-requirements',
-      'property-match-connect',
-      deferredQuery,
-      sameTypeOnly ? listing?.transactionType : 'all',
-    ],
+    queryKey: ['buyer-requirements', 'property-match-connect', deferredQuery],
     queryFn: () =>
       api.buyerRequirements.findAll({
         search: deferredQuery || undefined,
         status: 'active',
-        transactionType: sameTypeOnly ? listing?.transactionType : undefined,
-        limit: 50,
+        limit: 100,
       }),
     enabled: open && Boolean(listing),
   });
@@ -111,32 +128,37 @@ export function PropertyMatchConnectDialog({
   }, [listing?.id, matches]);
 
   const siteId = group.property?.siteId;
-  const rows = useMemo(() => {
+  const allRows = useMemo(() => {
     const items = buyers.data?.items ?? [];
-    const rank = (buyer: BuyerRequirement) => {
-      const fit = computeBudgetFit(listing, buyer);
-      const wantsSite =
-        siteId != null &&
-        (buyer.preferredSites ?? []).some((site) => site.siteId === siteId);
-      // 희망 단지 > 예산 안 > 판정 불가 > 예산 초과
-      return (wantsSite ? 0 : 10) + (fit ? (fit.over ? 2 : 0) : 1);
-    };
+    // 희망매물의 "매물 연결"과 같은 판정(wanted-properties/-listing-fit). 매물 쪽 값이 없으면 "정보 없음".
+    const listingLike = listing
+      ? ({ ...listing, property: group.property } as unknown as Listing)
+      : null;
     return items
-      .map((buyer) => ({
-        buyer,
-        fit: computeBudgetFit(listing, buyer),
-        wantsSite:
+      .map((buyer) => {
+        const checks = listingLike ? computeListingFit(listingLike, buyer) : [];
+        const wantsSite =
           siteId != null &&
-          (buyer.preferredSites ?? []).some((site) => site.siteId === siteId),
-        order: rank(buyer),
-      }))
+          (buyer.preferredSites ?? []).some((site) => site.siteId === siteId);
+        return {
+          buyer,
+          fit: computeBudgetFit(listing, buyer),
+          checks,
+          fits: checks.every((check) => check.ok !== false),
+          wantsSite,
+          // 희망 단지 > 맞는 조건이 많은 순
+          order: (wantsSite ? 0 : 100) - scoreListingFit(checks),
+        };
+      })
       // 이미 이 거래 조건에 연결된 고객은 맨 아래로 내린다.
       .sort(
         (a, b) =>
           Number(matchByBuyerReqId.has(a.buyer.id)) -
             Number(matchByBuyerReqId.has(b.buyer.id)) || a.order - b.order,
       );
-  }, [buyers.data?.items, listing, matchByBuyerReqId, siteId]);
+  }, [buyers.data?.items, group.property, listing, matchByBuyerReqId, siteId]);
+  const fittingCount = allRows.filter((row) => row.fits).length;
+  const rows = fitOnly ? allRows.filter((row) => row.fits) : allRows;
 
   const connect = useMutation({
     mutationFn: (buyer: BuyerRequirement) => {
@@ -156,11 +178,11 @@ export function PropertyMatchConnectDialog({
       queryClient.invalidateQueries({ queryKey: ['buyer-requirements'] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       toast.success(
-        `${buyer.contact?.name ?? '구매고객'} 고객을 연결했습니다. 내부 후보로 시작합니다.`,
+        `${buyer.contact?.name ?? '고객'}님을 연결했습니다. 내부 후보로 시작합니다.`,
       );
     },
     onError: (error: Error) => {
-      toast.error(`고객 연결에 실패했습니다: ${error.message}`);
+      toast.error(propertyErrorMessage(error, '고객을 연결하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -186,7 +208,7 @@ export function PropertyMatchConnectDialog({
             고객 연결
           </DialogTitle>
           <DialogDescription className="mt-1 text-[13px] text-muted-foreground">
-            {location || '이 매물'}에 연결할 구매고객을 고르세요. 연결하면 내부
+            {location || '이 매물'}에 연결할 고객을 고르세요. 연결하면 내부
             후보 단계로 시작합니다.
           </DialogDescription>
 
@@ -239,34 +261,34 @@ export function PropertyMatchConnectDialog({
             autoFocus
             value={query}
             placeholder="고객 이름, 연락처로 검색"
-            aria-label="구매고객 검색"
+            aria-label="고객 검색"
             className="h-10 min-w-0 flex-1 bg-transparent text-[14px] text-foreground outline-none placeholder:text-muted-foreground/60"
             onChange={(event) => setQuery(event.target.value)}
           />
           {buyers.isFetching && (
             <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground/70" />
           )}
-          <button
-            type="button"
-            aria-pressed={sameTypeOnly}
-            title={
-              sameTypeOnly
-                ? '거래유형과 관계없이 모든 고객 보기'
-                : '이 매물과 거래유형이 같은 고객만 보기'
-            }
-            className={cn(
-              'inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs transition-colors',
-              sameTypeOnly
-                ? 'bg-foreground/[0.07] font-medium text-foreground'
-                : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground',
-            )}
-            onClick={() => setSameTypeOnly((value) => !value)}
-          >
-            {sameTypeOnly && <Check className="size-3" />}
-            {listing
-              ? `${getStatusMeta('transactionType', listing.transactionType).label} 고객만`
-              : '거래유형 일치'}
-          </button>
+          {([
+            [true, `조건에 맞는 고객 ${fittingCount}`],
+            [false, `전체 ${allRows.length}`],
+          ] as const).map(([value, label]) => (
+            <button
+              key={String(value)}
+              type="button"
+              aria-pressed={fitOnly === value}
+              title={value ? '거래유형·예산·평형·지역이 이 매물과 맞는 고객' : '진행 중인 희망 조건 전부'}
+              className={cn(
+                'inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs tabular-nums transition-colors',
+                fitOnly === value
+                  ? 'bg-foreground/[0.07] font-medium text-foreground'
+                  : 'text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground',
+              )}
+              onClick={() => setFitOnly(value)}
+            >
+              {fitOnly === value && <Check className="size-3" />}
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="min-h-[220px] flex-1 overflow-y-auto px-5 pb-2">
@@ -288,11 +310,11 @@ export function PropertyMatchConnectDialog({
           {buyers.isLoading ? (
             <div className="flex h-32 items-center justify-center text-[13px] text-muted-foreground">
               <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-              구매고객을 불러오는 중...
+              고객을 불러오는 중...
             </div>
           ) : buyers.isError ? (
             <div className="flex h-32 flex-col items-center justify-center gap-2 text-[13px] text-destructive">
-              구매고객을 불러오지 못했습니다.
+              고객을 불러오지 못했습니다.
               <button
                 type="button"
                 className="h-7 rounded px-2 text-xs text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
@@ -304,20 +326,22 @@ export function PropertyMatchConnectDialog({
           ) : rows.length === 0 ? (
             <div className="flex h-32 flex-col items-center justify-center gap-2 text-[13px] text-muted-foreground">
               {deferredQuery
-                ? `"${deferredQuery}"에 맞는 진행 중인 구매고객이 없습니다.`
-                : '조건에 맞는 진행 중인 구매고객이 없습니다.'}
-              {sameTypeOnly && (
+                ? `"${deferredQuery}"에 맞는 진행 중인 고객이 없습니다.`
+                : fitOnly
+                  ? '이 매물 조건에 맞는 진행 중인 고객이 없습니다.'
+                  : '진행 중인 희망 조건이 없습니다.'}
+              {fitOnly && allRows.length > 0 && (
                 <button
                   type="button"
                   className="h-7 rounded px-2 text-xs text-foreground hover:bg-foreground/[0.06]"
-                  onClick={() => setSameTypeOnly(false)}
+                  onClick={() => setFitOnly(false)}
                 >
-                  거래유형과 관계없이 보기
+                  전체 {allRows.length}명 보기
                 </button>
               )}
             </div>
           ) : (
-            rows.map(({ buyer, fit, wantsSite }) => {
+            rows.map(({ buyer, fit, checks, fits, wantsSite }) => {
               const existing = matchByBuyerReqId.get(buyer.id);
               const justConnected =
                 listing != null &&
@@ -342,6 +366,8 @@ export function PropertyMatchConnectDialog({
                     existing || justConnected
                       ? 'text-muted-foreground/70'
                       : 'hover:bg-foreground/[0.04]',
+                    // "전체"에서 보이는 조건이 다른 고객은 흐리게
+                    !fits && !(existing || justConnected) && 'text-muted-foreground',
                   )}
                 >
                   <div className="flex min-w-0 items-center gap-1.5">
@@ -388,19 +414,34 @@ export function PropertyMatchConnectDialog({
                     <span className="min-w-0 truncate">
                       {formatBuyerBudget(buyer)}
                     </span>
-                    {fit && (
+                    {checks.length > 0 ? (
+                      <span
+                        className="min-w-0 shrink-[999] truncate text-[11.5px]"
+                        title={[describeFit(checks).map((item) => item.text).join(' · '), fit?.label]
+                          .filter(Boolean)
+                          .join(' — ')}
+                      >
+                        {describeFit(checks).map((item, index) => (
+                          <span
+                            key={item.key}
+                            className={item.ok === false ? 'text-destructive' : 'text-muted-foreground/70'}
+                          >
+                            {index > 0 ? ' · ' : ''}
+                            {item.text}
+                          </span>
+                        ))}
+                      </span>
+                    ) : fit ? (
                       <span
                         className={cn(
                           'min-w-0 shrink-[999] truncate text-[11.5px]',
-                          fit.over
-                            ? 'text-destructive'
-                            : 'text-muted-foreground/70',
+                          fit.over ? 'text-destructive' : 'text-muted-foreground/70',
                         )}
                         title={fit.label}
                       >
                         {fit.label}
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   <div className="truncate tabular-nums text-muted-foreground">
                     {area ?? '-'}
@@ -445,8 +486,8 @@ export function PropertyMatchConnectDialog({
         </div>
 
         <div className="border-t border-border px-5 py-2.5 text-[11.5px] text-muted-foreground/80">
-          희망매물에 등록된 진행 중인 구매조건만 보입니다. 예산 판정은 이 매물
-          가격과 고객 예산 상한을 비교한 값입니다.
+          희망매물에 등록된 진행 중인 희망 조건만 보입니다(완료·보류는 빠집니다). 맞음·다름은 이 매물의
+          거래유형·가격·평형·지역을 고객 조건과 견준 값입니다.
         </div>
       </DialogContent>
     </Dialog>

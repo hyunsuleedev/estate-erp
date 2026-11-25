@@ -11,9 +11,10 @@ import {
   PanelRightOpen,
   Text,
   Trash2,
+  UserRound,
   X,
 } from "lucide-react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type {
   CalendarEvent,
@@ -24,6 +25,7 @@ import type {
 import type { CalendarDraftPreview } from "./-event-draft-preview";
 
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
 import { useAuth } from "@/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +62,8 @@ type EventForm = {
   end: string;
   color: string;
   links: EventLinks;
+  /** 담당 직원. 빈 값이면 만드는 사람(나) */
+  ownerId: string;
 };
 
 export interface EventDraftPreset {
@@ -87,6 +91,9 @@ function createDefaultForm(
   const start = new Date(draft?.start ?? date);
   if (!draft?.start && start.getHours() === 0 && start.getMinutes() === 0)
     start.setHours(10, 0, 0, 0);
+  else if (!draft?.start && (start.getMinutes() % 30 !== 0 || start.getSeconds() !== 0))
+    // '새 일정'을 지금 시각(12:48)으로 열지 않고 다음 30분 단위(13:00)로 연다
+    start.setMinutes(Math.ceil((start.getMinutes() + start.getSeconds() / 60) / 30) * 30, 0, 0);
   const end = new Date(start);
   end.setHours(start.getHours() + 1, start.getMinutes(), 0, 0);
   if (draft?.end) end.setTime(new Date(draft.end).getTime());
@@ -105,6 +112,7 @@ function createDefaultForm(
       : toDateTimeLocalInput(end.toISOString()),
     color: (EVENT_TYPE_META[type] ?? EVENT_TYPE_META.general).color,
     links: { ...EMPTY_EVENT_LINKS, ...draft?.links },
+    ownerId: "",
   };
 }
 
@@ -126,6 +134,7 @@ function formFromEvent(event: CalendarEvent): EventForm {
       event.color ??
       (EVENT_TYPE_META[event.type] ?? EVENT_TYPE_META.general).color,
     links: linksFromEvent(event),
+    ownerId: event.userId,
   };
 }
 
@@ -169,6 +178,20 @@ export function EventEditor({
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const editorSession = useRef<string | null>(null);
+  /**
+   * 저장을 두 번 누르거나(더블클릭) Ctrl+Enter를 연달아 쳐도 한 건만 보낸다.
+   * isPending은 다음 그리기에야 바뀌어 그 사이의 두 번째 누름을 막지 못한다 (같은 일정이 두 개 생겼다).
+   */
+  const savingRef = useRef(false);
+  const { data: employees = [] } = useQuery({
+    queryKey: ["employees"],
+    queryFn: () => api.employees.findAll(),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const staffOptions = employees.filter(
+    (employee) => employee.isActive || employee.id === form.ownerId,
+  );
   const rememberedTimes = useRef({ start: "10:00", end: "11:00" });
 
   useEffect(() => {
@@ -247,9 +270,12 @@ export function EventEditor({
       onOpenChange(false);
     },
     onError: (error: Error) =>
-      toast.error(`일정 추가에 실패했습니다: ${error.message}`, {
+      toast.error(apiErrorMessage(error, "일정을 추가하지 못했습니다. 다시 시도해 주세요."), {
         position: "top-center",
       }),
+    onSettled: () => {
+      savingRef.current = false;
+    },
   });
 
   const updateMutation = useMutation({
@@ -265,9 +291,12 @@ export function EventEditor({
       onOpenChange(false);
     },
     onError: (error: Error) =>
-      toast.error(`일정 수정에 실패했습니다: ${error.message}`, {
+      toast.error(apiErrorMessage(error, "일정을 수정하지 못했습니다. 다시 시도해 주세요."), {
         position: "top-center",
       }),
+    onSettled: () => {
+      savingRef.current = false;
+    },
   });
 
   const deleteMutation = useMutation({
@@ -283,7 +312,7 @@ export function EventEditor({
       onOpenChange(false);
     },
     onError: (error: Error) =>
-      toast.error(`일정 삭제에 실패했습니다: ${error.message}`, {
+      toast.error(apiErrorMessage(error, "일정을 삭제하지 못했습니다. 다시 시도해 주세요."), {
         position: "top-center",
       }),
   });
@@ -294,6 +323,13 @@ export function EventEditor({
     (user?.role === "owner" ||
       user?.role === "manager" ||
       event.userId === user?.id);
+
+  // 남의 일정의 담당은 대표·매니저만 바꾼다 (서버도 같은 규칙). 자기 일정을 남에게 넘기는 것은 된다.
+  const canReassign =
+    !event ||
+    user?.role === "owner" ||
+    user?.role === "manager" ||
+    event.userId === user?.id;
 
   const handleTypeChange = (value: string) => {
     setForm((prev) => ({
@@ -329,7 +365,7 @@ export function EventEditor({
   };
 
   const handleSubmit = () => {
-    if (isSaving || deleteMutation.isPending) return;
+    if (savingRef.current || isSaving || deleteMutation.isPending) return;
     setFormError("");
     if (!form.title.trim()) {
       setFormError("일정 제목을 입력해 주세요.");
@@ -369,9 +405,16 @@ export function EventEditor({
       color: form.color,
     };
 
+    savingRef.current = true;
     if (event) {
       updateMutation.mutate({
         ...base,
+        // 담당을 바꿨을 때만 보낸다
+        ...(form.ownerId && form.ownerId !== event.userId
+          ? { userId: form.ownerId }
+          : {}),
+        // 지운 설명은 빈 글로 보내야 지워진다
+        description: form.description.trim(),
         // 빈 값은 null로 보내 기존 종료 시간을 제거한다 (undefined는 서버가 무시)
         end: endDate ? endDate.toISOString() : null,
         contactId: form.links.contact?.id ?? null,
@@ -385,6 +428,9 @@ export function EventEditor({
 
     createMutation.mutate({
       ...base,
+      ...(form.ownerId && form.ownerId !== user?.id
+        ? { userId: form.ownerId }
+        : {}),
       end: endDate ? endDate.toISOString() : undefined,
       contactId: form.links.contact?.id,
       propertyId: form.links.property?.id,
@@ -771,6 +817,43 @@ export function EventEditor({
                     </SelectContent>
                   </Select>
                 </div>
+                {staffOptions.length > 1 && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="flex size-6 shrink-0 items-center justify-center">
+                      <UserRound
+                        aria-hidden="true"
+                        className="size-4 text-muted-foreground"
+                      />
+                    </span>
+                    <Select
+                      value={form.ownerId || user?.id || ""}
+                      disabled={!canReassign}
+                      onValueChange={(value) =>
+                        setForm((previous) => ({ ...previous, ownerId: value }))
+                      }
+                    >
+                      <SelectTrigger
+                        aria-label="담당 직원"
+                        title={
+                          canReassign
+                            ? undefined
+                            : "다른 직원의 일정 담당은 대표·매니저만 바꿀 수 있습니다"
+                        }
+                        className="h-8 flex-1 border-0 px-2 shadow-none hover:bg-muted/60"
+                      >
+                        <SelectValue placeholder="담당 직원" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {staffOptions.map((employee) => (
+                          <SelectItem key={employee.id} value={employee.id}>
+                            {employee.name}
+                            {employee.id === user?.id ? " (나)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <button
                   type="button"
                   aria-expanded={linksExpanded}

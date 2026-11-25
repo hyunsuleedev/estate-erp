@@ -11,6 +11,7 @@ import { Building2, Check, Loader2, Plus, RotateCcw, Search, X } from 'lucide-re
 import { toast } from 'sonner';
 import type { OfficeSite, Site } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { Button } from '@/components/ui/button';
 import {
@@ -96,7 +97,7 @@ function AddSiteDialogBody({
       setAddedSites((current) => [...current, officeSite]);
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '단지 추가에 실패했습니다');
+      toast.error(apiErrorMessage(error, '단지를 추가하지 못했습니다. 다시 시도해 주세요.'));
     },
     onSettled: () => {
       // 버튼이 사라지거나 비활성화돼 초점을 잃으므로 검색창으로 돌아온다. 바로 입력하면 검색어가 바뀐다
@@ -146,7 +147,13 @@ function AddSiteDialogBody({
         <EmptyState
           icon={Search}
           title={trimmedQuery ? '2글자 이상 입력하세요' : '단지명, 동네, 구 이름으로 찾아보세요'}
-          description="예: 그라시움, 고덕동, 강동구"
+          description="예: 그라시움, 고덕동, 강동구. 검색에 없는 빌라·상가·주택·토지는 주소로 직접 등록합니다."
+          action={
+            <Button variant="outline" size="sm" onClick={() => setRegisterName(trimmedQuery)}>
+              <Plus className="size-3.5" />
+              직접 등록
+            </Button>
+          }
           className="py-16"
         />
       );

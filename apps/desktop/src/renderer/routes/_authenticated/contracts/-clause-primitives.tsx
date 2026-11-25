@@ -37,10 +37,11 @@ import {
 // 공통 헬퍼 — 금액 단위 해석 (저장은 항상 만원 Int 문자열)
 // ---------------------------------------------------------------------------
 
+// 계약서 조항의 접미("만원정은")에 끼워 넣는 단위다. 계약서 글이라 화면 언어와 상관없이 한글로 둔다.
 const AMOUNT_UNIT_LABELS: Record<ContractDocumentEngineAmountUnit, string> = {
-  manwon: '만원',
-  chun: '천원',
-  won: '원',
+  manwon: '만원', // i18n-ignore
+  chun: '천원', // i18n-ignore
+  won: '원', // i18n-ignore
 };
 
 /** 만원 → 선택 단위 배수 (만원=1, 천원=10, 원=10000) */
@@ -211,7 +212,7 @@ export function ClauseRowFrame({
 }
 
 // ---------------------------------------------------------------------------
-// 2. ClauseAmountInput — "金 [입력] 만원정" 인라인 금액 + 실시간 한글 병기
+// 2. ClauseAmountInput — "[입력] 만원정" 인라인 금액 + 실시간 한글 병기 (앞의 "金"은 서식 글자)
 // ---------------------------------------------------------------------------
 
 export function ClauseAmountInput({
@@ -252,7 +253,7 @@ export function ClauseAmountInput({
     // 프리뷰는 저장 단위(만원) 기준으로 인쇄한다 — amountUnit 은 입력 편의 전용
     return (
       <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
-        <span>金</span>
+        {/* "金"은 서식(contract-clause-layouts)의 앞 글자가 찍는다. 여기서 또 찍으면 "金 金"이 된다 */}
         {manwon !== null && manwon > 0 ? (
           <span className="font-medium tabular-nums">{groupThousands(String(manwon))}</span>
         ) : (
@@ -283,7 +284,6 @@ export function ClauseAmountInput({
 
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-      <span>金</span>
       <Input
         inputMode="numeric"
         value={displayValue}

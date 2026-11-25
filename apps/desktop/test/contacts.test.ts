@@ -328,7 +328,7 @@ describe('desktop contacts pages', () => {
       'utf8',
     );
 
-    assert.match(source, /useTabScopedState\('contact-new:form:v2'/);
+    assert.match(source, /useTabScopedState\('contact-new:form:v3'/);
     assert.match(source, /replaceTabResource\(ownerTabIdRef\.current/);
     assert.match(source, /tabResourceKeys\.entity\('contact', created\.id\)/);
   });

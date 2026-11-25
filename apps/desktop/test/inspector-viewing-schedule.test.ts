@@ -50,7 +50,7 @@ describe('inspector viewing schedule', () => {
         moveStage,
       }),
       (error: unknown) =>
-        error instanceof ViewingStageMoveError && /방문 일정은 저장했지만/.test(error.message),
+        error instanceof ViewingStageMoveError && /임장 일정은 저장했지만/.test(error.message),
     );
 
     // 2차: 이전 조회 응답이 캐시를 덮어써 매칭에 일정이 없다(upcomingEventId: null).

@@ -593,6 +593,13 @@ export class WindowManager {
             route: '/dashboard',
             createdAt: Date.now(),
           }),
+          // 예비 화면은 사이드바를 미리 그려 둔다. 탭을 맡기 직전에 그 창의 접힘 상태를 맞춘다.
+          beforeAssign: (hostId, send) => {
+            const state: NativeSidebarState = {
+              open: this.tabRegistry.getSidebarOpen(hostId),
+            };
+            send('tabs:sidebarState', state);
+          },
         },
         onCleanupError: (error) => {
           console.warn('[native-tabs] cleanup failed', error);
@@ -618,6 +625,8 @@ export class WindowManager {
       publishSidebar: (windowId, open) => {
         const state: NativeSidebarState = { open };
         this.nativeTabs.sendToHost(windowId, 'tabs:sidebarState', state);
+        // 미리 그려 둔 예비 화면의 사이드바도 방금 바뀐 창을 따르게 한다(다음 새 탭은 대개 그 창에서 열린다).
+        this.nativeTabs.sendToSpare('tabs:sidebarState', state);
       },
       showToast: (windowId, toast) => this.deliverWindowToast(windowId, toast),
       showMenu: (windowId, items) => {

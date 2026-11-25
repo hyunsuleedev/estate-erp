@@ -1,6 +1,6 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { createFileRoute, Navigate, useNavigate } from '@tanstack/react-router';
-import { ApiError, type OfficePostalAddress } from '@estate-erp/api-client';
+import type { OfficePostalAddress } from '@estate-erp/api-client';
 import {
   ArrowRight,
   AlertCircle,
@@ -13,6 +13,7 @@ import { SplashScreen } from '@/components/layout/splash-screen';
 import { AuthWindowFrame } from '@/components/layout/auth-window-frame';
 import { OfficeAddressField } from '@/components/office-address-field';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +33,11 @@ function OfficeOnboardingPage() {
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [ceoName, setCeoName] = useState(user?.name ?? '');
+  // 로그인 정보가 늦게 오면(바로 이 주소로 열 때) 대표자명을 그때 채운다. 사용자가 고쳤으면 두지 않는다.
+  const ceoNameTouched = useRef(false);
+  useEffect(() => {
+    if (!ceoNameTouched.current && user?.name) setCeoName((current) => current || user.name);
+  }, [user?.name]);
   const [licenseNo, setLicenseNo] = useState('');
   const [phone, setPhone] = useState('');
   const [postalAddress, setPostalAddress] = useState<OfficePostalAddress | null>(null);
@@ -73,7 +79,7 @@ function OfficeOnboardingPage() {
       await refresh();
       await navigate({ to: '/dashboard' });
     } catch (error) {
-      setError(error instanceof ApiError ? error.message : '사무소를 생성하지 못했습니다.');
+      setError(apiErrorMessage(error, '사무소를 만들지 못했습니다. 잠시 뒤 다시 해 주세요.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -162,7 +168,10 @@ function OfficeOnboardingPage() {
                         autoComplete="name"
                         className="h-10 shadow-none"
                         value={ceoName}
-                        onChange={(event) => setCeoName(event.target.value)}
+                        onChange={(event) => {
+                          ceoNameTouched.current = true;
+                          setCeoName(event.target.value);
+                        }}
                         placeholder="대표자 이름"
                       />
                     </div>

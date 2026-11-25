@@ -19,7 +19,8 @@ export function formatBuyerBudget(buyer?: BuyerRequirement) {
     const deposit = buyer.depositMax ?? buyer.depositMin;
     const parts = [
       deposit ? formatMoney(deposit) : null,
-      buyer.monthlyRentMax ? `월 ${formatMoney(buyer.monthlyRentMax)}` : null,
+      // 보증금 / 월세 — 둘 다 단위를 붙인다("1억 / 300만", STANDARDS)
+      buyer.monthlyRentMax ? formatMoney(buyer.monthlyRentMax) : null,
     ].filter(Boolean);
     return parts.length > 0 ? parts.join(' / ') : '-';
   }

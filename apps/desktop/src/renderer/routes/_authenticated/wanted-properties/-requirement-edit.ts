@@ -5,6 +5,7 @@ import type {
 } from '@estate-erp/api-client';
 import { pyeongToSqm, sqmToPyeong } from '@estate-erp/shared';
 import { parseCellNumber } from '@/components/data-table/cell-edit-state';
+import { parseManwon } from '@/lib/manwon';
 import { normalizeBuyerStatus } from '@/lib/status-config';
 import { toDateInputValue } from '../buyer-requirements/-buyer-utils';
 import { siteTypeLabel } from './-match-view-utils';
@@ -100,19 +101,22 @@ export interface RangeDraft {
 }
 
 const EMPTY_RANGE = { min: null, max: null };
-const MONEY_ERROR = '금액은 0 이상의 만원 단위 정수로 입력해 주세요.';
+const MONEY_ERROR = "금액을 읽을 수 없습니다. '8억'·'8억 5천'·'85000'처럼 입력해 주세요.";
 
 /**
  * 빈 칸과 0은 "제한 없음"(null)이다. 0을 그대로 저장하면 화면에는 값이 없는 것처럼 보이는데
  * 필터에서는 "0 이하"로 읽혀 목록에서 빠진다.
  */
 function readAmount(raw: string, kind: 'money' | 'area'): number | null {
-  const parsed = parseCellNumber(raw, 0);
-  if (!parsed.valid) throw new Error(kind === 'money' ? MONEY_ERROR : parsed.error);
-  if (parsed.value === null || parsed.value === 0) return null;
-  if (kind === 'money' && !Number.isSafeInteger(parsed.value)) {
-    throw new Error(MONEY_ERROR);
+  if (kind === 'money') {
+    // 금액은 앱 공용 규칙으로 읽는다: "8억" · "8억 5천" · "85,000" 모두 받는다 (lib/manwon.ts)
+    const money = parseManwon(raw);
+    if (!money.valid) throw new Error(MONEY_ERROR);
+    return money.value === null || money.value === 0 ? null : money.value;
   }
+  const parsed = parseCellNumber(raw, 0);
+  if (!parsed.valid) throw new Error(parsed.error);
+  if (parsed.value === null || parsed.value === 0) return null;
   return parsed.value;
 }
 
@@ -305,15 +309,14 @@ function isDateInput(value: string): boolean {
 
 /**
  * value는 날짜 입력칸의 값(yyyy-MM-dd). 조건 등록 화면과 같은 모양으로 보낸다.
- * 서버가 입주 희망일을 비우는 요청을 받지 않으므로(null을 보내도 그대로 둔다)
- * 빈 칸은 "고치지 않음"으로 읽는다. 비우기 버튼을 두지 않는 이유이기도 하다.
+ * 빈 칸은 "입주 희망일 없음"이다: 저장된 날짜가 있으면 비운다(null). 손님이 "아직 몰라요"로 바꾸는 일이 흔하다.
  */
 export function buildMoveInDateChange(
   requirement: Pick<BuyerRequirement, 'moveInDate'>,
   value: string,
 ): RequirementChange | null {
   const date = value.trim();
-  if (!date) return null;
+  if (!date) return requirement.moveInDate ? toUpdate({ moveInDate: null }) : null;
   if (!isDateInput(date)) throw new Error('올바른 날짜를 입력해 주세요.');
   if (date === toDateInputValue(requirement.moveInDate)) return null;
   return toUpdate({ moveInDate: date });

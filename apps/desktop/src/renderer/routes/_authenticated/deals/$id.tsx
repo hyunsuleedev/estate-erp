@@ -1,13 +1,15 @@
 import { useMemo } from 'react';
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, SearchX } from 'lucide-react';
+import { ApiError } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDealActions } from './-deal-actions';
 import { DealDetailPanel } from './-deal-detail';
-import type { DealRowActions } from './-deal-view-utils';
+import { getDealTabTitle, type DealRowActions } from './-deal-view-utils';
+import { useTabTitle } from '@/hooks/use-tab-title';
 
 export const Route = createFileRoute('/_authenticated/deals/$id')({
   component: DealDetailPage,
@@ -31,6 +33,8 @@ function DealDetailPage() {
     queryFn: () => api.contracts.findAll(),
   });
   const deal = dealsQuery.data ?? null;
+  // 탭 제목: "고덕그라시움 102동 2203호 매매" (매물 없는 거래는 당사자 이름)
+  useTabTitle(deal ? getDealTabTitle(deal) : null);
   const contractByDealId = useMemo(
     () =>
       new Map(
@@ -58,6 +62,18 @@ function DealDetailPage() {
           <Skeleton className="h-4 w-56" />
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-36 w-full" />
+        </div>
+      ) : dealsQuery.isError &&
+        dealsQuery.error instanceof ApiError &&
+        (dealsQuery.error.statusCode === 404 || dealsQuery.error.statusCode === 400) ? (
+        // 지워졌거나 없는 거래(형식이 틀린 주소 포함): 다시 시도해도 소용없으니 거래관리로 보낸다
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+          <SearchX className="size-8 text-muted-foreground" aria-hidden="true" />
+          <p className="text-sm font-medium">거래를 찾을 수 없습니다</p>
+          <p className="text-sm text-muted-foreground">지워졌거나 없는 거래입니다.</p>
+          <Button type="button" variant="outline" size="sm" asChild>
+            <Link to="/deals">거래관리로 돌아가기</Link>
+          </Button>
         </div>
       ) : dealsQuery.isError ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">

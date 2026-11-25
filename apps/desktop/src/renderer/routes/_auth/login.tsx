@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/providers/auth-provider';
+import { translateServerMessage } from '@/i18n/auto';
 
 export const Route = createFileRoute('/_auth/login')({
   component: LoginPage,
@@ -163,7 +164,7 @@ function PasswordResetForm({ onSubmit }: { onSubmit: (email: string) => Promise<
           placeholder="name@example.com"
         />
         <p className="text-xs text-muted-foreground">
-          직원 계정은 사무소 대표가 직원관리에서 비밀번호를 다시 설정합니다.
+          직원 계정은 사무소 대표나 매니저가 설정 › 직원 및 권한에서 비밀번호를 다시 정해 줍니다.
         </p>
       </div>
       {error && (
@@ -190,7 +191,8 @@ function AuthError({ message }: { message: string }) {
   return (
     <div id="auth-error" role="alert" className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
       <AlertCircle className="mt-0.5 size-4 shrink-0" />
-      <p>{message}</p>
+      {/* 로그인 오류는 화면 밖(Electron 쪽·서버)에서 한글로 온다. 영어 화면에서는 사전으로 바꿔 보여 준다. */}
+      <p>{translateServerMessage(message)}</p>
     </div>
   );
 }

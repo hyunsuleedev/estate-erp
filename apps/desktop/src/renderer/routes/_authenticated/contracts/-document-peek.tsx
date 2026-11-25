@@ -9,7 +9,10 @@
  */
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { Copy, FileText, Trash2 } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
+import { ChevronDown, Copy, ExternalLink, FilePlus2, FileText, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Contract } from '@estate-erp/api-client';
 import {
   ContractTransactionTypeBadge,
@@ -20,9 +23,65 @@ import {
 import { getContractTitle, selectTagClassName, statusPillClassName } from './-document-list-table';
 import { getContactPhone, isBalanceOutstanding, isBalanceOverdue } from './-list-model';
 import { PropertyInspectorToolbar } from '../properties/-components/property-inspector-view';
+import { ContractPaymentMismatch } from '../deals/-deal-payments';
+import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { formatDate, formatDateTime, formatDday, formatMoney, formatPhone } from '@/lib/format';
+import { getStatusMeta } from '@/lib/status-config';
 import { StatusBadge } from '@/components/domain';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useInspectorOutsideClose } from '@/hooks/use-inspector-outside-close';
+
+/** 계약서가 지나가는 상태 순서. 화면에서 손으로 고른다 (서명·입금·등기는 프로그램이 알 수 없다). */
+const CONTRACT_STATUS_ORDER = ['draft', 'signed', 'depositPaid', 'balancePaid', 'registered', 'cancelled'] as const;
+
+/** 계약서 상태 고르기. 바꾸면 바로 저장한다. */
+function ContractStatusPicker({ contract }: { contract: Contract }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: (status: string) => api.contracts.update(contract.id, { status }),
+    onSuccess: (_, status) => {
+      void queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      void queryClient.invalidateQueries({ queryKey: ['contract', contract.id] });
+      void queryClient.invalidateQueries({ queryKey: ['deals'] });
+      toast.success(`계약서 상태를 '${getStatusMeta('contractStatus', status).label}'(으)로 바꿨습니다.`);
+    },
+    onError: (error) =>
+      toast.error(apiErrorMessage(error, '계약서 상태를 바꾸지 못했습니다. 다시 시도해 주세요.')),
+  });
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={mutation.isPending}
+          aria-label="계약서 상태 바꾸기"
+          className="inline-flex items-center gap-0.5 rounded-full hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        >
+          <StatusBadge kind="contractStatus" status={contract.status} className={statusPillClassName} />
+          <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-40">
+        {CONTRACT_STATUS_ORDER.map((status) => (
+          <DropdownMenuItem
+            key={status}
+            disabled={status === contract.status || mutation.isPending}
+            onSelect={() => mutation.mutate(status)}
+          >
+            <StatusBadge kind="contractStatus" status={status} className={statusPillClassName} />
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 /** 매물관리 · 거래관리 패널의 Esc 규칙과 같다: 떠 있는 창 · 메뉴가 있으면 그쪽이 먼저 닫힌다 */
 const OVERLAY_SELECTOR =
@@ -117,6 +176,12 @@ export function ContractPeek({
   const missing = contract.missingDocuments ?? [];
   const missingCount = contract.missingDocumentCount ?? missing.length;
   const overdue = isBalanceOverdue(contract);
+  // 계약서 요약과 거래 대금 일정이 다른지 보려고 거래를 읽는다 (거래 상세 패널과 같은 캐시)
+  const dealQuery = useQuery({
+    queryKey: ['deals', 'detail', contract.dealId],
+    queryFn: () => api.deals.findOne(contract.dealId as string),
+    enabled: Boolean(contract.dealId) && contract.status !== 'cancelled',
+  });
 
   // 매물관리 패널과 같다: 전체 화면(문서 편집 탭)을 열고 패널은 닫는다.
   const expand = (documentId?: string) => {
@@ -133,6 +198,9 @@ export function ContractPeek({
     );
     return () => window.clearTimeout(timer);
   }, [closing, animate, onExited]);
+
+  // 패널 밖을 누르면 닫는다 (떠 있는 창 · 줄의 열기 단추는 밖이 아니다)
+  useInspectorOutsideClose(() => onClose());
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
@@ -183,8 +251,8 @@ export function ContractPeek({
               className={cn(iconButtonClassName, 'hover:text-destructive')}
               disabled={isDeleting}
               onClick={() => onDelete(contract)}
-              aria-label="계약 삭제"
-              title="계약 삭제"
+              aria-label="계약서 삭제"
+              title="계약서 삭제"
             >
               <Trash2 />
             </button>
@@ -197,13 +265,23 @@ export function ContractPeek({
 
         <dl className="mt-4">
           <Property label="상태">
-            <StatusBadge kind="contractStatus" status={contract.status} className={statusPillClassName} />
+            <ContractStatusPicker contract={contract} />
           </Property>
           <Property label="거래">
             <ContractTransactionTypeBadge type={contract.transactionType} className={selectTagClassName} />
             <span className={cn(selectTagClassName, contract.deal?.isJointBrokerage ? 'bg-info-soft text-info-strong' : 'bg-neutral-soft text-muted-foreground')}>
               {contract.deal?.isJointBrokerage ? '공동중개' : '단독중개'}
             </span>
+            {contract.dealId ? (
+              <Link
+                to="/deals"
+                search={{ dealId: contract.dealId }}
+                className="inline-flex items-center gap-1 text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                거래 열기
+                <ExternalLink className="size-3" />
+              </Link>
+            ) : null}
           </Property>
           <Property label={isRent ? '보증금 / 차임' : '거래금액'}>
             <span className="font-medium tabular-nums">
@@ -228,7 +306,7 @@ export function ContractPeek({
           </Property>
           <Property label="잔금">
             <PaymentValue amount={contract.statedBalance} iso={contract.statedBalanceDate} />
-            {contract.statedBalanceDate && isBalanceOutstanding(contract.status) && (
+            {contract.statedBalanceDate && isBalanceOutstanding(contract.status, contract.deal) && (
               <span className={cn('text-[13px] tabular-nums', overdue ? 'font-medium text-destructive-strong' : 'text-muted-foreground')}>
                 {formatDday(contract.statedBalanceDate)}
               </span>
@@ -252,13 +330,27 @@ export function ContractPeek({
           </Property>
         </dl>
 
+        {dealQuery.data ? (
+          <ContractPaymentMismatch deal={dealQuery.data} contract={contract} className="mt-3" />
+        ) : null}
+
         <section className="mt-5 border-t border-border pt-4">
           <h3 className="flex items-center gap-1.5 text-[14px] font-semibold text-foreground">
             문서
             <span className="font-normal tabular-nums text-muted-foreground">{documents.length}</span>
           </h3>
           {documents.length === 0 ? (
-            <p className="mt-1.5 text-[14px] text-muted-foreground">작성한 문서가 없습니다.</p>
+            <div className="mt-1.5 flex items-center justify-between gap-2">
+              <p className="text-[14px] text-muted-foreground">작성한 문서가 없습니다.</p>
+              <button
+                type="button"
+                onClick={() => expand()}
+                className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[13px] text-foreground transition-colors hover:bg-[rgba(33,27,23,0.05)]"
+              >
+                <FilePlus2 className="size-3.5" />
+                계약서 쓰기
+              </button>
+            </div>
           ) : (
             <ul className="-mx-1.5 mt-1">
               {documents.map((document) => {

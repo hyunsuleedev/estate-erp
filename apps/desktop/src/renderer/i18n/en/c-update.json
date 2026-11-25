@@ -1,0 +1,18 @@
+{
+  "strings": {
+    "{0} 버전을 백그라운드에서 준비하고 있습니다.": "Downloading {0} in the background.",
+    "{0} 버전을 적용하려면 앱을 재시작하세요.": "Restart the app to apply {0}.",
+    "나중에": "Later",
+    "네트워크 상태를 확인한 뒤 다시 시도하세요. {0}": "Check your network connection and try again. {0}",
+    "다시 확인": "Check again",
+    "다운로드 중": "Downloading",
+    "새": "the new version",
+    "업데이트 다운로드 중": "Downloading update",
+    "업데이트 알림 닫기": "Dismiss update notice",
+    "업데이트 준비 완료": "Update ready",
+    "업데이트 확인 실패": "Couldn't check for updates",
+    "지금 재시작": "Restart now",
+    "최신 버전입니다": "You're up to date",
+    "현재 {0} 버전을 사용 중입니다.": "You're on version {0}."
+  }
+}

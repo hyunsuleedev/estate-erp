@@ -13,8 +13,9 @@
 export class ViewingStageMoveError extends Error {
   constructor(cause: unknown) {
     super(
-      `방문 일정은 저장했지만 임장 단계로 바꾸지 못했습니다${
-        cause instanceof Error && cause.message ? `: ${cause.message}` : ""
+      `임장 일정은 저장했지만 임장 단계로 바꾸지 못했습니다${
+        // 서버가 준 한국어 이유만 덧붙인다(영어 검사 문구·"Failed to fetch"는 빼고)
+        cause instanceof Error && /[가-힣]/.test(cause.message) ? `: ${cause.message}` : ""
       }`,
     );
     this.name = "ViewingStageMoveError";

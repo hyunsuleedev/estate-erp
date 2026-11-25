@@ -14,13 +14,13 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  ApiError,
   type CreateTaskDto,
   type Task,
   type TaskContact,
   type UpdateTaskDto,
 } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
@@ -56,9 +56,31 @@ import {
 import { LoadingSkeleton, StatusView, TaskGroupedList, type TaskCreatePreset } from './-task-table';
 import { BoardView } from './-task-board';
 import { TaskToolbar } from './-task-toolbar';
-import { TaskFormModal } from './-task-form';
+import { TaskFormModal, type TaskPresetLinks } from './-task-form';
+
+type TasksSearch = {
+  /** 이 업무의 수정 창을 바로 연다 (대시보드·알림에서 들어올 때) */
+  task?: string;
+  /** 새 업무 창을 바로 연다 (빠른 등록에서 들어올 때) */
+  new?: boolean;
+  /** new와 함께: 새 업무에 미리 연결할 것 (연락처·매물·거래 화면의 '업무 추가') */
+  contactId?: string;
+  propertyId?: string;
+  dealId?: string;
+  listingId?: string;
+};
+
+const searchId = (value: unknown) => (typeof value === 'string' && value.trim() ? value : undefined);
 
 export const Route = createFileRoute('/_authenticated/tasks/')({
+  validateSearch: (search: Record<string, unknown>): TasksSearch => ({
+    task: typeof search.task === 'string' && search.task.trim() ? search.task : undefined,
+    new: search.new === true || search.new === 'true' || search.new === 1 || search.new === '1' ? true : undefined,
+    contactId: searchId(search.contactId),
+    propertyId: searchId(search.propertyId),
+    dealId: searchId(search.dealId),
+    listingId: searchId(search.listingId),
+  }),
   component: TasksPage,
 });
 
@@ -89,11 +111,6 @@ function writeStorage(key: string, value: string) {
 const readStoredDisplay = (): TaskDisplay =>
   parseTaskDisplay(readStorage(DISPLAY_STORAGE_KEY), readStorage(LEGACY_VIEW_MODE_STORAGE_KEY));
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError && error.message) return error.message;
-  if (error instanceof Error && error.message) return error.message;
-  return '요청을 처리하지 못했습니다';
-}
 
 type CreatePreset = TaskCreatePreset;
 type StatusChangeVars = {
@@ -117,6 +134,17 @@ const TASK_WRITE_SCOPE = { id: 'tasks-write' };
 function TasksPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const {
+    task: taskIdFromUrl,
+    new: createFromUrl,
+    contactId: presetContactId,
+    propertyId: presetPropertyId,
+    dealId: presetDealId,
+    listingId: presetListingId,
+  } = Route.useSearch();
+  /** 다른 화면에서 맥락과 함께 열었을 때 새 업무 창에 미리 채울 연결 */
+  const [createLinks, setCreateLinks] = useState<TaskPresetLinks | null>(null);
+  const navigate = Route.useNavigate();
   const role = user?.role ?? 'agent';
   const canBulkDelete = role === 'owner' || role === 'manager';
 
@@ -202,18 +230,40 @@ function TasksPage() {
     if (snapshot && isLastTaskWrite()) queryClient.setQueryData(['tasks'], snapshot);
   };
 
+  /**
+   * 추가 단추를 두 번 누르거나 엔터를 연달아 쳐도 한 건만 만든다.
+   * isPending은 다음 그리기 때에야 바뀌어 그 사이의 두 번째 누름을 막지 못한다.
+   */
+  const creatingRef = useRef(false);
   const createMutation = useMutation({
     mutationKey: TASK_WRITE_KEY,
     scope: TASK_WRITE_SCOPE,
     mutationFn: (dto: CreateTaskDto) => api.tasks.create(dto),
-    onSuccess: () => {
-      toast.success('업무가 등록되었습니다');
+    onSuccess: (created) => {
+      const mine = !created.assignedToId || created.assignedToId === user?.id;
+      setCreateLinks(null);
+      toast.success(
+        '업무가 등록되었습니다',
+        // 남에게 맡긴 업무는 '내 담당'에 나오지 않는다 — 어디서 보는지 알려 준다
+        !mine && created.assignedTo?.name
+          ? { description: `${created.assignedTo.name}님에게 맡겼습니다. '내가 요청'에서 볼 수 있습니다.` }
+          : undefined,
+      );
       setIsCreateModalOpen(false);
       setCreatePreset(null);
     },
-    onError: (e) => toast.error(getErrorMessage(e)),
-    onSettled: settleTaskWrite,
+    onError: (e) => toast.error(apiErrorMessage(e, '업무를 추가하지 못했습니다. 다시 시도해 주세요.')),
+    onSettled: () => {
+      creatingRef.current = false;
+      settleTaskWrite();
+    },
   });
+
+  const submitCreate = (dto: CreateTaskDto) => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    createMutation.mutate(dto);
+  };
 
   // 모달 저장 (전체 필드)
   const updateMutation = useMutation({
@@ -226,7 +276,7 @@ function TasksPage() {
     },
     onError: (e, { snapshot }) => {
       rollbackTaskWrite(snapshot);
-      toast.error(getErrorMessage(e));
+      toast.error(apiErrorMessage(e, '업무를 수정하지 못했습니다. 다시 시도해 주세요.'));
     },
     onSettled: settleTaskWrite,
   });
@@ -238,7 +288,7 @@ function TasksPage() {
     mutationFn: ({ id, dto }: InlineUpdateVars) => api.tasks.update(id, dto),
     onError: (e, { snapshot }) => {
       rollbackTaskWrite(snapshot);
-      toast.error(getErrorMessage(e));
+      toast.error(apiErrorMessage(e, '업무를 바꾸지 못했습니다. 다시 시도해 주세요.'));
     },
     onSettled: settleTaskWrite,
   });
@@ -269,7 +319,7 @@ function TasksPage() {
     },
     onError: (e, { snapshot }) => {
       rollbackTaskWrite(snapshot);
-      toast.error(getErrorMessage(e));
+      toast.error(apiErrorMessage(e, '상태를 바꾸지 못했습니다. 다시 시도해 주세요.'));
     },
     onSettled: settleTaskWrite,
   });
@@ -299,7 +349,7 @@ function TasksPage() {
     updateStatusMutation.mutate({ id, status, prevStatus: current.status, isUndo: options.isUndo, snapshot });
   }
 
-  /** 행 앞 체크: 대기 → 진행중 → 완료 → 대기. 캐시의 최신 상태에서 다음 단계를 계산한다. */
+  /** 행 앞 체크: 대기 → 진행 중 → 완료 → 대기. 캐시의 최신 상태에서 다음 단계를 계산한다. */
   const handleCycleCheck = (id: string) => {
     const current = readCachedTask(id);
     if (!current || current.status === 'cancelled') return;
@@ -307,8 +357,34 @@ function TasksPage() {
   };
 
   const handleInlineUpdate = (id: string, dto: TaskUpdatePatch) => {
+    const before = readCachedTask(id);
     const snapshot = applyOptimisticTask(id, (t) => applyTaskUpdate(t, dto, { employees: activeEmployees }));
-    inlineUpdateMutation.mutate({ id, dto, snapshot });
+    inlineUpdateMutation.mutate(
+      { id, dto, snapshot },
+      {
+        onSuccess: () => {
+          // '내 담당'에서 남에게 맡기면 줄이 말없이 사라져 지워진 것처럼 보였다. 어디로 갔는지 알리고 되돌릴 길을 준다.
+          if (
+            scope !== 'mine' ||
+            !before ||
+            !('assignedToId' in dto) ||
+            dto.assignedToId === before.assignedToId ||
+            dto.assignedToId === user?.id
+          )
+            return;
+          const name = activeEmployees.find((employee) => employee.id === dto.assignedToId)?.name;
+          // '내가 요청'은 내가 만든 업무만 모은다. 남이 만든 업무를 넘겼으면 '사무소 전체'에서 보인다.
+          const where = name && before.createdById === user?.id ? "'내가 요청'" : "'사무소 전체'";
+          toast.success(name ? `${name}님에게 맡겼습니다` : '담당을 비웠습니다', {
+            description: `${before.title} · ${where}에서 볼 수 있습니다.`,
+            action: {
+              label: '되돌리기',
+              onClick: () => handleInlineUpdate(id, { assignedToId: before.assignedToId ?? null }),
+            },
+          });
+        },
+      },
+    );
   };
 
   /** 수정 창 저장 — 즉시 캐시에 반영해 이어지는 편집(재열기 포함)이 저장한 값에서 시작하게 한다 */
@@ -320,14 +396,68 @@ function TasksPage() {
   };
 
   /** 수정 창은 렌더 시점 객체가 아니라 캐시의 최신 업무로 연다 */
-  const openEdit = (task: Task) => setEditingTask(readCachedTask(task.id) ?? task);
+  /** 서랍에 저장하지 않은 변경이 있는지 (서랍이 달아 두는 "저장 전" 표시를 읽는다) */
+  const drawerHasUnsavedEdits = () =>
+    Boolean(document.querySelector('[data-task-drawer] [data-native-tab-dirty="true"]'));
+  /** 서랍에서 고치던 것이 있으면 알리고 true. 서랍의 내용을 바꾸거나 닫는 일은 모두 이것을 먼저 본다. */
+  const blockedByUnsavedEdits = (then: string) => {
+    // 상태(editingTask)가 아니라 화면의 표시를 본다. 단축키처럼 처음 그릴 때의 함수를 붙들고 있는 곳에서 불려도
+    // 지금 서랍의 상태를 알 수 있어야 한다(상태를 보면 "열린 서랍 없음"으로 읽어 그대로 닫아 버린다).
+    if (!drawerHasUnsavedEdits()) return false;
+    toast.info('저장하지 않은 변경이 있습니다', { description: `저장하거나 변경을 버린 뒤 ${then}` });
+    return true;
+  };
+  const openEdit = (task: Task) => {
+    // 이미 열려 있는 업무를 다시 누른 것이면 그대로 둔다. 다시 열면 폼이 처음 값으로 돌아가 고치던 글이 사라진다.
+    if (editingTask?.id === task.id) return;
+    // 다른 업무를 열면 서랍의 내용이 그 업무로 바뀐다. 고치던 것이 있으면 넘어가지 않고 알린다.
+    if (blockedByUnsavedEdits('다른 업무를 열어 주세요.')) return;
+    setEditingTask(readCachedTask(task.id) ?? task);
+  };
+
+  // 대시보드·알림에서 특정 업무를 눌러 들어오면 그 업무를 바로 연다. 연 뒤에는 주소에서 지워
+  // 새로 고침·뒤로 가기 때 창이 다시 뜨지 않게 한다.
+  useEffect(() => {
+    if (!taskIdFromUrl || isLoading) return;
+    const target = tasks.find((task) => task.id === taskIdFromUrl);
+    if (target) {
+      // 서랍에서 고치던 것이 있으면 그 업무를 지키고, 주소로 온 업무는 열지 않는다
+      if (!blockedByUnsavedEdits('다시 열어 주세요.')) {
+        setIsCreateModalOpen(false);
+        setEditingTask(target);
+      }
+    } else if (!isError) {
+      toast.error('업무를 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
+    }
+    void navigate({ search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskIdFromUrl, isLoading]);
+
+  // 빠른 등록·연락처·매물·거래 화면의 '업무 추가'로 들어오면 새 업무 창을 연결이 채워진 채 연다
+  useEffect(() => {
+    if (!createFromUrl) return;
+    // 서랍에서 고치던 것이 있어 새 업무 창이 열리지 않았으면 연결도 넣지 않는다.
+    // 넣어 두면 나중에 연 다른 새 업무에 이 연락처 · 매물 · 거래가 붙는다. 주소의 값은 지워서 다시 들어오지 않게 한다.
+    if (!openCreate()) {
+      void navigate({ search: {}, replace: true });
+      return;
+    }
+    setCreateLinks({
+      contactId: presetContactId,
+      propertyId: presetPropertyId,
+      dealId: presetDealId,
+      listingId: presetListingId,
+    });
+    void navigate({ search: {}, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createFromUrl]);
 
   const reorderMutation = useMutation({
     mutationKey: TASK_WRITE_KEY,
     scope: TASK_WRITE_SCOPE,
     mutationFn: (orderedIds: string[]) => api.tasks.reorder(orderedIds),
     onError: (e) => {
-      toast.error(getErrorMessage(e));
+      toast.error(apiErrorMessage(e, '순서를 바꾸지 못했습니다. 다시 시도해 주세요.'));
       setDndResetKey((k) => k + 1);
     },
     onSettled: settleTaskWrite,
@@ -341,7 +471,7 @@ function TasksPage() {
       toast.success('업무가 삭제되었습니다');
       setDeleteTarget(null);
     },
-    onError: (e) => toast.error(getErrorMessage(e)),
+    onError: (e) => toast.error(apiErrorMessage(e, '업무를 삭제하지 못했습니다. 다시 시도해 주세요.')),
     onSettled: settleTaskWrite,
   });
 
@@ -354,7 +484,7 @@ function TasksPage() {
     },
     onError: (e, { snapshot }) => {
       rollbackTaskWrite(snapshot);
-      toast.error(getErrorMessage(e));
+      toast.error(apiErrorMessage(e, '상태를 바꾸지 못했습니다. 다시 시도해 주세요.'));
     },
     onSettled: settleTaskWrite,
   });
@@ -382,7 +512,7 @@ function TasksPage() {
       setSelectedTasks(new Set());
       setBulkDeleteOpen(false);
     },
-    onError: (e) => toast.error(getErrorMessage(e)),
+    onError: (e) => toast.error(apiErrorMessage(e, '업무를 삭제하지 못했습니다. 다시 시도해 주세요.')),
     onSettled: settleTaskWrite,
   });
 
@@ -466,16 +596,23 @@ function TasksPage() {
 
   // ─── 핸들러 ──────────────────────────────────────────────
 
-  const openCreate = (preset?: CreatePreset) => {
+  /** 새 업무 창을 연다. 열었으면 true, 서랍에서 고치던 것이 있어 열지 않았으면 false. */
+  const openCreate = (preset?: CreatePreset): boolean => {
+    // 새 업무 창을 열면 서랍이 닫힌다. 고치던 것이 있으면 열지 않는다 (단축키 N · 묶음 머리의 + 포함).
+    if (blockedByUnsavedEdits('새 업무를 추가해 주세요.')) return false;
+    // 앞서 다른 화면에서 넘어오며 넣어 둔 연결이 남아 있으면 지운다 — 이번 새 업무는 그 연결과 상관없다.
+    // (다른 화면에서 넘어온 경우는 이 뒤에 그 연결을 다시 넣는다.)
+    setCreateLinks(null);
     setEditingTask(null);
     setCreatePreset(preset ?? null);
     setIsCreateModalOpen(true);
+    return true;
   };
 
   /** 단건 삭제 요청 — agent는 시스템/AI 생성 업무 삭제 불가 */
   const requestDelete = (task: Task) => {
     if (task.source !== 'manual' && role === 'agent') {
-      toast.error('시스템/AI 생성 업무는 매니저 이상만 삭제할 수 있습니다');
+      toast.error('시스템·AI가 만든 업무는 대표·매니저만 지울 수 있습니다');
       return;
     }
     setDeleteTarget(task);
@@ -539,10 +676,30 @@ function TasksPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 서랍은 표를 덮지 않아서, 서랍을 연 채 표에서 그 업무의 담당 · 마감 · 우선순위 · 상태를 바로 고칠 수 있다.
+  // 고치던 것이 없으면 서랍도 새 값으로 따라간다(지워진 업무면 닫는다). 고치던 것이 있으면 그대로 둔다 —
+  // 서랍은 자기가 고친 칸만 저장하므로, 따라가지 않은 칸이 표에서 고친 값을 덮지 않는다.
+  useEffect(() => {
+    if (!editingTask || isLoading) return;
+    if (drawerHasUnsavedEdits()) return;
+    const latest = tasks.find((task) => task.id === editingTask.id);
+    if (!latest) {
+      if (!isError) setEditingTask(null);
+      return;
+    }
+    if (latest !== editingTask) setEditingTask(latest);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, isLoading]);
+
   // ─── 본문 콘텐츠 ─────────────────────────────────────────
 
   const rowHandlers = {
     onRowClick: openEdit,
+    openTaskId: editingTask?.id ?? null,
+    onCloseTask: () => {
+      if (blockedByUnsavedEdits('닫아 주세요.')) return;
+      setEditingTask(null);
+    },
     onStatusChange: handleStatusChange,
     onCycleCheck: handleCycleCheck,
     onDelete: requestDelete,
@@ -568,7 +725,7 @@ function TasksPage() {
         <EmptyState
           icon={AlertCircle}
           title="업무 목록을 불러오지 못했습니다"
-          description={getErrorMessage(error)}
+          description={apiErrorMessage(error, '잠시 뒤 다시 시도해 주세요.')}
           action={
             <Button variant="outline" size="sm" onClick={() => void refetch()}>
               다시 시도
@@ -585,7 +742,7 @@ function TasksPage() {
         <EmptyState
           icon={ClipboardList}
           title="등록된 업무가 없습니다"
-          description="첫 업무를 추가해 후속 작업 누락을 방지하세요"
+          description="첫 업무를 추가해 두면 놓치는 일이 없습니다"
           action={
             <Button size="sm" onClick={() => openCreate()}>
               <Plus className="size-4" />
@@ -722,7 +879,7 @@ function TasksPage() {
             disabled={bulkStatusMutation.isPending}
             onClick={() => runBulkStatus('in_progress')}
           >
-            <Clock className="size-3" /> 진행중
+            <Clock className="size-3" /> 진행 중
           </Button>
           <Button
             variant="ghost"
@@ -759,21 +916,26 @@ function TasksPage() {
 
       {/* 생성/수정 다이얼로그 */}
       <TaskFormModal
+        // 있는 업무는 옆 패널(서랍)에서 고친다. 새 업무는 대화창 그대로다.
+        editIn="drawer"
         isOpen={isCreateModalOpen || !!editingTask}
         onClose={() => {
           setIsCreateModalOpen(false);
           setCreatePreset(null);
+          setCreateLinks(null);
           setEditingTask(null);
         }}
+        presetLinks={editingTask ? null : createLinks}
         task={editingTask}
         presetStatus={createPreset?.status ?? null}
         presetCategory={createPreset?.category ?? null}
         employeeOptions={activeEmployees}
+        currentUserId={userId}
         onSubmit={(data, meta) => {
           if (editingTask) {
             submitTaskEdit(editingTask.id, data as UpdateTaskDto, meta?.contact);
           } else {
-            createMutation.mutate(data as CreateTaskDto);
+            submitCreate(data as CreateTaskDto);
           }
         }}
         isLoading={createMutation.isPending || updateMutation.isPending}

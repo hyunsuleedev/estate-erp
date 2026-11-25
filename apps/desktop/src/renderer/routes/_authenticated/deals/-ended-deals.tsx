@@ -1,11 +1,13 @@
-import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { formatDate } from '@/lib/format';
+import { Input } from '@/components/ui/input';
 import { ToolbarPillSearch, ToolbarPillTabs } from '../properties/-components/property-toolbar';
-import { formatDealAmount, getDealTitle } from './-deal-view-utils';
+import { formatCancelledBy, formatDealAmount, getDealTitle } from './-deal-view-utils';
 
-export function EndedDeals({ onOpen }: { onOpen: (id: string) => void }) {
+/** trailing: 툴바 오른쪽 끝에 놓는 것 (거래관리의 진행/종료 전환·보기 전환·새 거래) */
+export function EndedDeals({ onOpen, trailing }: { onOpen: (id: string) => void; trailing?: ReactNode }) {
   const [kind, setKind] = useState<'closed' | 'cancelled'>('closed');
   const [text, setText] = useState('');
   const [since, setSince] = useState('');
@@ -29,20 +31,32 @@ export function EndedDeals({ onOpen }: { onOpen: (id: string) => void }) {
   const rows = query.data?.pages.flatMap((page) => page.items) ?? [];
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+      {/* 진행 목록의 1행과 같은 치수 — 진행/종료를 오갈 때 줄 높이와 오른쪽 단추 자리가 그대로다 */}
+      <div className="shrink-0 border-b border-border bg-white px-3 py-2.5">
+      <div className="@container flex min-w-0 items-center gap-2">
         <ToolbarPillTabs shape="muted" ariaLabel="종료 구분" value={kind} onChange={setKind}
           options={[{ value: 'closed', label: '정산 종료' }, { value: 'cancelled', label: '거래 취소' }]} />
-        <ToolbarPillSearch value={text} onChange={setText} placeholder="단지명, 고객명" ariaLabel="종료 거래 검색" />
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex min-w-0 max-w-[360px] flex-1">
+          <ToolbarPillSearch value={text} onChange={setText} placeholder="단지명, 고객명" ariaLabel="종료 거래 검색" />
+        </div>
+        <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-muted-foreground">
           종료일 기준
-          <input type="date" aria-label="조회 시작일" value={since} onChange={(e) => setSince(e.target.value)} />
+          <Input
+            type="date"
+            aria-label="조회 시작일"
+            className="h-8 w-auto"
+            value={since}
+            onChange={(e) => setSince(e.target.value)}
+          />
           이후
         </label>
+        {trailing ? <div className="ml-auto flex shrink-0 items-center gap-2">{trailing}</div> : null}
+      </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-3">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 bg-background text-xs text-muted-foreground">
-            <tr>{['종료일', '매물', '매도·임대인', '매수·임차인', '거래금액'].map((label) => <th key={label} className="border-b px-2 py-2 font-normal">{label}</th>)}</tr>
+            <tr>{['종료일', '매물', '매도·임대인', '매수·임차인', '거래금액', ...(kind === 'cancelled' ? ['취소 사유'] : [])].map((label) => <th key={label} className="border-b px-2 py-2 font-normal">{label}</th>)}</tr>
           </thead>
           <tbody>{rows.map((deal) => (
             <tr key={deal.id} className="cursor-pointer border-b hover:bg-muted/50" onClick={() => onOpen(deal.id)}>
@@ -51,6 +65,11 @@ export function EndedDeals({ onOpen }: { onOpen: (id: string) => void }) {
               <td className="px-2">{deal.sellerContact?.name ?? '—'}</td>
               <td className="px-2">{deal.buyerContact?.name ?? '—'}</td>
               <td className="px-2">{formatDealAmount(deal)}</td>
+              {kind === 'cancelled' ? (
+                <td className="max-w-[260px] truncate px-2 text-muted-foreground" title={deal.cancelReason ?? undefined}>
+                  {[formatCancelledBy(deal.cancelledBy, deal.transactionType), deal.cancelReason].filter(Boolean).join(' · ')}
+                </td>
+              ) : null}
             </tr>
           ))}</tbody>
         </table>

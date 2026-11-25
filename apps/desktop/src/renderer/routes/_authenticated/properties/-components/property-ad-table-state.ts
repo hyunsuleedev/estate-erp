@@ -1,5 +1,11 @@
 import type { ListingAdvertisement } from '@estate-erp/api-client';
 import { getAdChannelLabel } from '../../../../lib/advertisement-channels';
+import type { AdListing } from './property-ad-actions-state';
+import type {
+  PropertyAdPanelMode,
+  PropertyAdPublishDraft,
+  PropertyAdRequestDrafts,
+} from './property-ad-request-drafts';
 export { getAdChannelLabel } from '../../../../lib/advertisement-channels';
 
 export const adTableColumns = [
@@ -23,6 +29,27 @@ export interface AdTableControls {
     onChange: (id: string, selected: boolean) => void;
     onSelectAll: (selected: boolean) => void;
   };
+  mode?: PropertyAdPanelMode;
+  editMode?: boolean;
+  requestDrafts?: PropertyAdRequestDrafts;
+  publishDrafts?: readonly PropertyAdPublishDraft[];
+  onChangeRequestAmount?: (
+    listing: AdListing,
+    advertisement: ListingAdvertisement,
+    field: 'primary' | 'monthlyRent',
+    value: number | null,
+  ) => void;
+  onToggleRequestFlag?: (
+    advertisementId: string,
+    flag: 'readvertise' | 'takedown',
+  ) => void;
+  onClearRequestFlag?: (advertisementId: string) => void;
+  onUpdatePublishDraft?: (
+    tempId: string,
+    patch: Partial<PropertyAdPublishDraft>,
+  ) => void;
+  onRemovePublishDraft?: (tempId: string) => void;
+  onAddManualAd?: () => void;
   onSort: (sort: AdTableSort) => void;
   onPreviewResize: (widths: AdColumnWidths | null) => void;
   onCommitResize: (widths: AdColumnWidths) => void;

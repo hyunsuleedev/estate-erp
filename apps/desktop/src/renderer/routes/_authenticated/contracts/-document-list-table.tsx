@@ -324,7 +324,7 @@ export function DocumentListTable({
                       iso={contract.statedBalanceDate}
                       overdue={overdue}
                       suffix={
-                        contract.statedBalanceDate && isBalanceOutstanding(contract.status)
+                        contract.statedBalanceDate && isBalanceOutstanding(contract.status, contract.deal)
                           ? formatDday(contract.statedBalanceDate)
                           : null
                       }
@@ -373,7 +373,7 @@ export function DocumentListTable({
                         <Copy />
                       </RowButton>
                       <RowButton
-                        label="계약 삭제"
+                        label="계약서 삭제"
                         disabled={isDeleting}
                         danger
                         onClick={() => onDelete(contract)}

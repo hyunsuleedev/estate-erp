@@ -9,6 +9,7 @@ import {
   ListOrdered,
   Loader2,
   Plus,
+  Search,
   Trash2,
 } from "lucide-react";
 import type {
@@ -17,13 +18,22 @@ import type {
   ProjectStep,
 } from "@estate-erp/api-client";
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
+import { useAuth } from "@/providers/auth-provider";
 import { announceProjectChange } from "@/lib/project-sync";
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatPhone } from "@/lib/format";
 import { getStatusMeta } from "@/lib/status-config";
 import { ConfirmDialog, StatusBadge } from "@/components/domain";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -44,7 +54,14 @@ import {
   planStepOrder,
   toggleWithPrevious,
 } from "./-project-plan-order";
-import { decideTextCommit } from "../projects/-project-model";
+import {
+  canRemoveProject,
+  decideTextCommit,
+  describeProjectRemoval,
+  getProjectTitle,
+} from "../projects/-project-model";
+import { isProjectRemoved, markProjectRemoved } from "../projects/-project-hooks";
+import { ProjectNewIntakeButtons } from "../projects/-project-new-intake";
 import {
   closeProjectPlan,
   openProjectPlan,
@@ -60,8 +77,9 @@ const STEP_KIND_LABEL: Record<ProjectStep["kind"], string> = {
   manual: "직접 추가",
 };
 
+/** 토스트 · 오류 줄의 문구. 서버가 준 사람용 문구가 없으면 fallback (공용 apiErrorMessage). */
 function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
+  return apiErrorMessage(error, fallback);
 }
 
 /**
@@ -101,6 +119,9 @@ export function ProjectPlanHost() {
       <DialogContent
         className="flex max-h-[min(86vh,820px)] flex-col gap-0 p-0 sm:max-w-2xl"
         onClick={(event) => event.stopPropagation()}
+        // 창이 열릴 때 첫 칸(프로젝트 이름)에 들어가 글 전체가 선택되면, 무심코 친 글자가 이름을 덮어쓴다.
+        // 어느 칸에도 들어가지 않은 채로 연다.
+        onOpenAutoFocus={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => {
           // 글을 고치는 중의 Esc는 그 칸만 되돌린다. 창까지 닫으면 다른 칸에 쓰던
           // 글도 함께 사라진다.
@@ -207,10 +228,7 @@ export function ProjectListButton({ className }: { className?: string }) {
                   }}
                 >
                   <span className="min-w-0 flex-1 truncate">
-                    {item.title ??
-                      (item.customerName
-                        ? `${item.customerName}님 프로젝트`
-                        : (item.firstStepTitle ?? "이름 없는 프로젝트"))}
+                    {getProjectTitle(item)}
                   </span>
                   <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                     {item.stepCount}단계
@@ -266,6 +284,8 @@ function BundlePrompt({
     contextLabel: buyerLabels.get(id) ?? "구매 의뢰",
   }));
   const intakeCount = listingIntakes.length + buyerIntakes.length;
+  // 두 번 눌러도 한 번만 연다(isPending은 다음 그리기에야 바뀐다).
+  const submitting = useRef(false);
 
   const create = useMutation({
     mutationFn: () =>
@@ -281,6 +301,9 @@ function BundlePrompt({
     },
     onError: (error) =>
       toast.error(errorMessage(error, "프로젝트를 열지 못했습니다.")),
+    onSettled: () => {
+      submitting.current = false;
+    },
   });
 
   return (
@@ -289,7 +312,7 @@ function BundlePrompt({
         <DialogTitle>프로젝트 열기</DialogTitle>
         <DialogDescription>
           {customerName}님의 의뢰 {intakeCount}개를 프로젝트에 담고 진행 순서를
-          정합니다. 의뢰와 거래는 그대로이고, 언제든 다시 풀 수 있습니다.
+          정합니다. 의뢰와 거래는 그대로 남습니다.
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-4 overflow-y-auto px-6 py-4">
@@ -340,11 +363,15 @@ function BundlePrompt({
         </Button>
         <Button
           type="button"
-          onClick={() => create.mutate()}
+          onClick={() => {
+            if (submitting.current) return;
+            submitting.current = true;
+            create.mutate();
+          }}
           disabled={create.isPending || intakeCount === 0}
         >
           {create.isPending && <Loader2 className="size-4 animate-spin" />}
-          묶기
+          프로젝트 열기
         </Button>
       </DialogFooter>
     </>
@@ -363,16 +390,23 @@ function PlanView({
   onRemoved: () => void;
 }) {
   const queryClient = useQueryClient();
+  const mayRemove = canRemoveProject(useAuth().user?.role);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [newStepTitle, setNewStepTitle] = useState("");
 
+  // 이 탭에서 푼 프로젝트는 창이 닫히는 동안 다시 읽지 않는다.
+  const removed = isProjectRemoved(projectId);
   const planQuery = useQuery({
     queryKey: planQueryKey(projectId),
     queryFn: () => api.projects.findOne(projectId),
+    enabled: !removed,
   });
   const candidatesQuery = useQuery({
     queryKey: [...planQueryKey(projectId), "candidates"],
     queryFn: () => api.projects.candidates(projectId),
+    enabled: !removed,
+    // 다른 탭에서 새 의뢰를 등록하고 돌아와 창을 다시 열면 그 의뢰가 바로 보이게 늘 새로 읽는다.
+    staleTime: 0,
   });
 
   const applyPlan = (plan: ProjectPlan) => {
@@ -398,14 +432,16 @@ function PlanView({
   const remove = useMutation({
     mutationFn: () => api.projects.remove(projectId),
     onSuccess: () => {
+      markProjectRemoved(projectId);
       queryClient.removeQueries({ queryKey: planQueryKey(projectId) });
-      toast.success("묶음을 풀었습니다. 의뢰와 거래는 그대로 있습니다.");
+      queryClient.removeQueries({ queryKey: ["projects", "comments", projectId] });
+      toast.success("프로젝트를 풀었습니다. 의뢰와 거래는 그대로 있습니다.");
       // 다른 탭에 열려 있는 이 프로젝트의 상세 · 목록도 알게 한다.
       announceProjectChange("removed", projectId);
       onRemoved();
     },
     onError: (error) =>
-      toast.error(errorMessage(error, "묶음을 풀지 못했습니다.")),
+      toast.error(errorMessage(error, "프로젝트를 풀지 못했습니다.")),
   });
 
   const plan = planQuery.data;
@@ -519,7 +555,8 @@ function PlanView({
               })}
               {plan.steps.length === 0 && (
                 <li className="px-6 py-6 text-sm text-muted-foreground">
-                  아직 단계가 없습니다. 아래에서 단계를 추가하세요.
+                  아직 단계가 없습니다. 아래에서 이 손님의 의뢰를 담거나, 할 일을 단계로
+                  적으세요(예: 대출 상담, 이사).
                 </li>
               )}
             </ol>
@@ -562,45 +599,39 @@ function PlanView({
               </Button>
             </form>
 
-            {hasCandidates && candidates && (
-              <section
-                aria-label="프로젝트에 담을 수 있는 것"
-                className="border-t px-6 py-3"
-              >
+            <section
+              aria-label="프로젝트에 담을 수 있는 것"
+              className="border-t px-6 py-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xs font-medium text-muted-foreground">
-                  같은 고객의 다른 의뢰·거래
+                  담을 수 있는 의뢰·거래 (이 프로젝트 고객의 것)
                 </h3>
+                {/* 처음 받은 의뢰는 여기서 등록하러 간다. 만든 의뢰는 돌아와 아래 목록 맨 위에서 담는다. */}
+                <ProjectNewIntakeButtons
+                  projectId={projectId}
+                  primaryContactId={plan.primaryContact?.id ?? null}
+                  variant="line"
+                  className="[&_button]:h-7 [&_button]:text-[12.5px]"
+                  onOpen={onClose}
+                />
+              </div>
+              {hasCandidates && candidates ? (
                 <ul className="mt-1 divide-y text-sm">
-                  {candidates.listingIntakes.map((item) => (
+                  {orderCandidateIntakes(candidates).map((item) => (
                     <CandidateRow
-                      key={`listing-${item.id}`}
-                      kind="매물 의뢰"
+                      key={`${item.kind}-${item.id}`}
+                      kind={item.kind === "listing" ? "매물 의뢰" : "구매 의뢰"}
                       label={
-                        item.lifecycleStatus === "closed"
-                          ? `${item.label} (종료된 의뢰)`
-                          : item.label
+                        (item.kind === "listing" ? item.label : `${item.label} 구매 의뢰`) +
+                        (item.lifecycleStatus === "closed" ? " (종료된 의뢰)" : "")
                       }
+                      fresh={isFreshCandidate(item.createdAt)}
                       disabled={busy}
                       onAdd={() =>
                         change.mutate(() =>
                           api.projects.addIntake(projectId, {
-                            kind: "listing",
-                            intakeId: item.id,
-                          }),
-                        )
-                      }
-                    />
-                  ))}
-                  {candidates.buyerIntakes.map((item) => (
-                    <CandidateRow
-                      key={`buyer-${item.id}`}
-                      kind="구매 의뢰"
-                      label={`${item.label} 구매 의뢰${item.lifecycleStatus === "closed" ? " (종료된 의뢰)" : ""}`}
-                      disabled={busy}
-                      onAdd={() =>
-                        change.mutate(() =>
-                          api.projects.addIntake(projectId, {
-                            kind: "buyer",
+                            kind: item.kind,
                             intakeId: item.id,
                           }),
                         )
@@ -630,22 +661,44 @@ function PlanView({
                     />
                   ))}
                 </ul>
-              </section>
-            )}
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {candidatesQuery.isPending
+                    ? "불러오는 중"
+                    : "이 프로젝트 고객에게 더 담을 의뢰가 없습니다. 새로 받은 의뢰면 오른쪽 단추로 등록한 뒤 돌아와 여기서 담으세요."}
+                </p>
+              )}
+            </section>
+
+            <OtherCustomerCandidates
+              projectId={projectId}
+              disabled={busy}
+              onAddIntake={(kind, intakeId) =>
+                change.mutate(() => api.projects.addIntake(projectId, { kind, intakeId }))
+              }
+              onAddDeal={(dealId) =>
+                change.mutate(() => api.projects.createStep(projectId, { dealId }))
+              }
+            />
           </>
         )}
       </div>
 
       <DialogFooter className="border-t px-6 py-3 sm:justify-between">
-        <Button
-          type="button"
-          variant="ghost"
-          className="text-muted-foreground hover:text-destructive"
-          onClick={() => setConfirmRemove(true)}
-          disabled={busy || !plan}
-        >
-          묶음 풀기
-        </Button>
+        {/* 풀기는 대표 · 매니저만(남이 적은 코멘트까지 지워진다). 중개사에게는 두지 않는다. */}
+        {mayRemove ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => setConfirmRemove(true)}
+            disabled={busy || !plan}
+          >
+            프로젝트 풀기
+          </Button>
+        ) : (
+          <span />
+        )}
         <Button type="button" variant="outline" onClick={onClose}>
           닫기
         </Button>
@@ -654,9 +707,9 @@ function PlanView({
       <ConfirmDialog
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
-        title="묶음을 풀까요?"
-        description="프로젝트와 진행 계획, 프로젝트에 적은 코멘트가 지워집니다. 담겨 있던 의뢰와 거래는 그대로 남습니다."
-        confirmLabel="묶음 풀기"
+        title="프로젝트를 풀까요?"
+        description={describeProjectRemoval(plan?.commentCount ?? 0)}
+        confirmLabel="풀기"
         destructive
         loading={remove.isPending}
         onConfirm={() => remove.mutate()}
@@ -917,23 +970,192 @@ export function StepFlow({ step }: { step: ProjectStep }) {
   );
 }
 
-function CandidateRow({
+/**
+ * 이 프로젝트 사람이 아닌 손님의 의뢰를 찾아 담는다. 갈아타기에서 파는 집은 남편 명의, 사는 쪽은
+ * 아내 이름으로 의뢰가 들어온 경우처럼 명의가 다른 의뢰도 한 프로젝트에 담을 수 있어야 한다.
+ * 손님을 고르면 그 사람의 담을 수 있는 의뢰·거래를 보여 주고, 담는 것은 사용자가 한다.
+ */
+export function OtherCustomerCandidates({
+  projectId,
+  disabled,
+  onAddIntake,
+  onAddDeal,
+}: {
+  projectId: string;
+  disabled: boolean;
+  onAddIntake: (kind: "listing" | "buyer", intakeId: string) => void;
+  onAddDeal: (dealId: string) => void;
+}) {
+  const [contact, setContact] = useState<{ id: string; name: string } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const contactsQuery = useQuery({
+    queryKey: ["contacts", { search, limit: 8 }],
+    queryFn: () => api.contacts.findAll({ search: search || undefined, limit: 8 }),
+    enabled: pickerOpen,
+  });
+  const candidatesQuery = useQuery({
+    queryKey: [...planQueryKey(projectId), "candidates", contact?.id ?? null],
+    queryFn: () => api.projects.candidates(projectId, { contactId: contact!.id }),
+    enabled: contact !== null,
+  });
+  const candidates = candidatesQuery.data;
+  const count = candidates
+    ? candidates.listingIntakes.length + candidates.buyerIntakes.length + candidates.deals.length
+    : 0;
+
+  return (
+    <section aria-label="다른 고객의 의뢰 담기" className="border-t px-6 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-xs font-medium text-muted-foreground">
+          다른 고객 명의의 의뢰 담기
+        </h3>
+        <Popover
+          open={pickerOpen}
+          onOpenChange={(next) => {
+            setPickerOpen(next);
+            if (!next) setSearch("");
+          }}
+        >
+          <PopoverTrigger asChild>
+            <Button type="button" size="xs" variant="outline" aria-label="의뢰를 찾을 고객 고르기">
+              <Search className="size-3" />
+              {contact ? contact.name : "고객 찾기"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[280px] p-0">
+            <Command shouldFilter={false}>
+              <CommandInput
+                value={search}
+                onValueChange={setSearch}
+                placeholder="이름·전화번호 검색"
+              />
+              <CommandList>
+                <CommandEmpty>
+                  {contactsQuery.isLoading ? "찾는 중..." : "찾는 고객이 없습니다."}
+                </CommandEmpty>
+                {(contactsQuery.data?.items ?? []).map((item) => (
+                  <CommandItem
+                    key={item.id}
+                    value={item.id}
+                    onSelect={() => {
+                      setContact({ id: item.id, name: item.name });
+                      setPickerOpen(false);
+                    }}
+                  >
+                    <span className="truncate">{item.name}</span>
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {formatPhone(item.phone)}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      </div>
+      {!contact ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          배우자 · 공동명의처럼 이 프로젝트에 없는 사람 이름으로 들어온 의뢰를 찾아 담습니다.
+        </p>
+      ) : candidatesQuery.isPending ? (
+        <p className="mt-1 text-xs text-muted-foreground">찾는 중</p>
+      ) : candidatesQuery.isError ? (
+        <p className="mt-1 text-xs text-destructive" role="alert">
+          {errorMessage(candidatesQuery.error, "의뢰를 불러오지 못했습니다.")}
+        </p>
+      ) : count === 0 ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {contact.name}님에게 담을 수 있는 의뢰나 거래가 없습니다. 이미 다른 진행 중 프로젝트에
+          담긴 의뢰는 그 프로젝트에서 먼저 빼야 합니다.
+        </p>
+      ) : (
+        candidates && (
+          <ul className="mt-1 divide-y text-sm">
+            {candidates.listingIntakes.map((item) => (
+              <CandidateRow
+                key={`listing-${item.id}`}
+                kind="매물 의뢰"
+                label={
+                  item.lifecycleStatus === "closed" ? `${item.label} (종료된 의뢰)` : item.label
+                }
+                disabled={disabled}
+                onAdd={() => onAddIntake("listing", item.id)}
+              />
+            ))}
+            {candidates.buyerIntakes.map((item) => (
+              <CandidateRow
+                key={`buyer-${item.id}`}
+                kind="구매 의뢰"
+                label={`${item.label} 구매 의뢰${item.lifecycleStatus === "closed" ? " (종료된 의뢰)" : ""}`}
+                disabled={disabled}
+                onAdd={() => onAddIntake("buyer", item.id)}
+              />
+            ))}
+            {candidates.deals.map((deal) => (
+              <CandidateRow
+                key={`deal-${deal.id}`}
+                kind="거래"
+                label={
+                  [deal.propertyLabel, getStatusMeta("dealStage", deal.stage).label]
+                    .filter(Boolean)
+                    .join(" · ") || "거래"
+                }
+                disabled={disabled}
+                onAdd={() => onAddDeal(deal.id)}
+              />
+            ))}
+          </ul>
+        )
+      )}
+    </section>
+  );
+}
+
+/** 방금(1시간 안에) 등록한 의뢰. 프로젝트에서 등록하러 갔다 돌아왔을 때 맨 위에 표시한다. */
+const FRESH_CANDIDATE_MS = 60 * 60 * 1000;
+export function isFreshCandidate(createdAt: string | undefined, now: number = Date.now()) {
+  if (!createdAt) return false;
+  const at = new Date(createdAt).getTime();
+  return Number.isFinite(at) && now - at >= 0 && now - at < FRESH_CANDIDATE_MS;
+}
+
+/** 담을 후보 의뢰를 매물 · 구매 구분 없이 최근에 등록한 것부터 한 줄로. */
+export function orderCandidateIntakes(candidates: {
+  listingIntakes: Array<{ id: string; label: string; lifecycleStatus: string; createdAt?: string }>;
+  buyerIntakes: Array<{ id: string; label: string; lifecycleStatus: string; createdAt?: string }>;
+}) {
+  return [
+    ...candidates.listingIntakes.map((item) => ({ ...item, kind: "listing" as const })),
+    ...candidates.buyerIntakes.map((item) => ({ ...item, kind: "buyer" as const })),
+  ].sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""));
+}
+
+export function CandidateRow({
   kind,
   label,
+  fresh = false,
   disabled,
   onAdd,
 }: {
   kind: string;
   label: string;
+  /** 방금 등록한 의뢰 */
+  fresh?: boolean;
   disabled: boolean;
   onAdd: () => void;
 }) {
   return (
-    <li className="flex items-center gap-2 py-1.5">
+    <li className="flex items-center gap-2 py-1.5" data-fresh-candidate={fresh || undefined}>
       <span className="w-16 shrink-0 text-xs text-muted-foreground">
         {kind}
       </span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {fresh && (
+        <span className="shrink-0 rounded-sm bg-muted px-1.5 py-px text-[11px] text-muted-foreground">
+          방금 등록
+        </span>
+      )}
       <Button
         type="button"
         size="xs"
@@ -952,7 +1174,7 @@ function CandidateRow({
  * 입력을 마쳤을 때(포커스가 나가거나 Enter) 값이 바뀌었으면 저장한다.
  * 다른 저장이 진행 중이어도 입력을 막지 않는다(막으면 치던 글자를 잃는다).
  */
-function SavedInput({
+export function SavedInput({
   value,
   onSave,
   ariaLabel,

@@ -92,7 +92,7 @@ describe('property match detail', () => {
     // 정해진 방문이 없으면 비워 둔다 — 고르지 않은 날짜를 미리 넣어 두지 않는다
     assert.doesNotMatch(panelSource, /getDefaultViewingStartDate/);
     assert.match(panelSource, /upcomingViewing \? toDateTimeLocalInputValue\(new Date\(upcomingViewing\.start\)\) : ''/);
-    assert.match(panelSource, /title=\{!viewingStart \? '방문 일시를 먼저 정해 주세요' : undefined\}/);
+    assert.match(panelSource, /title=\{!viewingStart \? '임장 일시를 먼저 정해 주세요' : undefined\}/);
     // 브라우저 기본 날짜 입력칸이 아니라 앱의 달력 팝오버로 고른다
     assert.doesNotMatch(panelSource, /type="datetime-local"/);
     assert.match(panelSource, /<Calendar\s+mode="single"/);
@@ -105,7 +105,8 @@ describe('property match detail', () => {
 
   it('separates the visit from the buyer weighing several homes afterwards', () => {
     // 임장은 다녀오면 끝나고, 고객의 반응은 다음 단계(고객 검토)에서 받는다
-    assert.match(utilsSource, /\[MatchStage\.VIEWING\]: \{[\s\S]*?confirmLabel: '방문 완료',[\s\S]*?closeLabel: '방문 취소 · 종료'/);
+    // 집을 보러 가는 것은 "임장"이다 (화면 낱말 기준 2026-11-22. "방문"은 손님이 사무소에 온 상담 방식)
+    assert.match(utilsSource, /\[MatchStage\.VIEWING\]: \{[\s\S]*?confirmLabel: '임장 완료',[\s\S]*?closeLabel: '임장 취소 · 종료'/);
     assert.match(utilsSource, /\[MatchStage\.BUYER_REVIEWING\]: \{[\s\S]*?confirmLabel: '검토 후 관심 있음 · 협상으로',[\s\S]*?closeLabel: '검토 후 관심 없음 · 종료'/);
     // 임장 다음, 협상 앞
     const order = [...MATCH_STAGE_ORDER];

@@ -1,5 +1,5 @@
-import { formatUnitName } from "@estate-erp/shared";
 import { useDeferredValue, useState } from "react";
+import { formatPlaceLabel } from "@estate-erp/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { Loader2, Plus, Search, X } from "lucide-react";
@@ -64,7 +64,10 @@ export function linksFromEvent(event: CalendarEvent): EventLinks {
         }
       : null,
     property: event.propertyId
-      ? { id: event.propertyId, label: event.property?.site?.name ?? "매물" }
+      ? {
+          id: event.propertyId,
+          label: event.property ? propertyLabel(event.property) : "매물",
+        }
       : null,
     listing: event.listingId
       ? {
@@ -101,8 +104,9 @@ export function linksFromEvent(event: CalendarEvent): EventLinks {
   };
 }
 
-function propertyLabel(property: {
-  site?: { name: string } | null;
+/** "고덕그라시움 101동 3501호" — 같은 단지의 여러 호실을 구분할 수 있게 동·호까지 */
+export function propertyLabel(property: {
+  site?: { name: string | null } | null;
   unit?: {
     name: string | null;
     floor?: number | null;
@@ -111,13 +115,14 @@ function propertyLabel(property: {
     dong?: { name: string; isPlaceholder?: boolean } | null;
   } | null;
 }) {
-  const dongName =
-    property.unit?.dong && !property.unit.dong.isPlaceholder
-      ? property.unit.dong.name
-      : null;
-  return [property.site?.name ?? "매물", dongName, formatUnitName(property.unit)]
-    .filter(Boolean)
-    .join(" ");
+  return (
+    formatPlaceLabel({
+      siteName: property.site?.name,
+      dongName: property.unit?.dong?.name,
+      dongIsPlaceholder: property.unit?.dong?.isPlaceholder,
+      unit: property.unit,
+    }) || "매물"
+  );
 }
 
 function matchesNeedle(
@@ -192,7 +197,7 @@ async function searchEntities(
         id: match.id,
         label: `${match.property?.site?.name ?? "매칭"} · ${getStatusMeta("matchStage", match.stage).label}`,
         sublabel: match.buyerRequirement?.contact?.name
-          ? `구매고객 ${match.buyerRequirement.contact.name}`
+          ? `희망매물 · ${match.buyerRequirement.contact.name}`
           : null,
       }));
   }
@@ -252,7 +257,12 @@ export function EventLinkRow({
           {kind === "match" ? (
             <button
               type="button"
-              onClick={() => void navigate({ to: "/wanted-properties" })}
+              onClick={() =>
+                void navigate({
+                  to: "/wanted-properties",
+                  search: { matchId: value.id },
+                })
+              }
               className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-background py-0.5 pr-2.5 pl-2.5 text-xs transition-colors hover:bg-accent"
             >
               <span className="truncate font-medium text-foreground">

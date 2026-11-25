@@ -80,7 +80,13 @@ describe('notice read state', () => {
     stray.close();
     announceNotice({ type: 'confirmed', noticeId: 'a' });
     announceNotice({ type: 'read', noticeId: 'a', readAt: '2026-11-19T01:00:00.000Z' });
-    await new Promise((done) => setTimeout(done, 50));
+    // 전달은 비동기다. 고정된 시간만 기다리면 전체 테스트를 한꺼번에 돌릴 때(부하가 클 때) 가끔 늦게 온다.
+    // 두 신호가 올 때까지 기다리되 2초를 넘기지 않는다. 그 뒤 잠깐 더 기다려 버려야 할 신호가 섞이지 않았는지 본다.
+    const deadline = Date.now() + 2000;
+    while (received.length < 2 && Date.now() < deadline) {
+      await new Promise((done) => setTimeout(done, 10));
+    }
+    await new Promise((done) => setTimeout(done, 30));
     stop();
     assert.deepEqual(received, [
       { type: 'confirmed', noticeId: 'a' },

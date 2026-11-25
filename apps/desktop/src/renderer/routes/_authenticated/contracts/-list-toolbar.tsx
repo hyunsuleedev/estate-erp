@@ -416,7 +416,7 @@ export function ContractsFilterRow({
   /** 처음 상태가 아니면 초기화가 보인다 */
   canReset: boolean;
   onChange: Dispatch<SetStateAction<ContractListFilterState>>;
-  /** 상태 필터는 보기 탭(진행중 · 완료)과 겹치므로 따로 알린다 */
+  /** 상태 필터는 보기 탭(진행 중 · 완료)과 겹치므로 따로 알린다 */
   onStatusChange: (value: string) => void;
   onDocFilterChange: (value: string) => void;
   onReset: () => void;

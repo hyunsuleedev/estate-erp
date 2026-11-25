@@ -14,8 +14,10 @@ import {
   type MatchRowActions,
 } from './-match-view-utils';
 import { MatchProgressTrack } from './-match-board';
+import { parseManwonText } from './-money-text';
 import { api } from '@/lib/api';
-import { formatDate, formatDateTime, formatPhone } from '@/lib/format';
+import { apiErrorMessage } from '@/lib/api-error';
+import { formatDate, formatDateTime, formatMoney, formatPhone } from '@/lib/format';
 import { getIntakeConfirmationState } from '@/lib/listing-status';
 import { getStatusMeta } from '@/lib/status-config';
 import { DetailField, EntityChip, StatusBadge } from '@/components/domain';
@@ -36,7 +38,7 @@ import { Textarea } from '@/components/ui/textarea';
 const CONSULTATION_TYPE_OPTIONS = [
   { value: 'phone', label: '전화' },
   { value: 'visit', label: '방문' },
-  { value: 'online', label: '온라인' },
+  { value: 'online', label: '문자·온라인' },
 ];
 
 export function MatchDetailDialog({
@@ -82,14 +84,20 @@ export function MatchDetailDialog({
       toast.success('메모를 저장했습니다');
     },
     onError: (error: Error) => {
-      toast.error(`메모 저장에 실패했습니다: ${error.message}`);
+      toast.error(apiErrorMessage(error, '메모를 저장하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="grid max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-5xl">
-        {!match ? null : (
+        {!match ? (
+          // 바로 가기(?matchId=)로 열면 목록이 오기 전에 창이 먼저 뜬다
+          <DialogHeader className="px-6 py-4 pr-12">
+            <DialogTitle>매칭 상세</DialogTitle>
+            <p className="text-sm text-muted-foreground">불러오는 중…</p>
+          </DialogHeader>
+        ) : (
           <>
             <DialogHeader className="border-b border-border/60 px-6 py-4 pr-12">
               <DialogTitle className="flex items-center gap-3">
@@ -113,7 +121,7 @@ export function MatchDetailDialog({
                           size="xs"
                           onClick={() => actions.onStageChange(match.id, 'dealCreated')}
                         >
-                          거래 생성
+                          거래 전환
                         </Button>
                       </div>
                     </AlertDescription>
@@ -125,7 +133,7 @@ export function MatchDetailDialog({
                     <div>
                       <h3 className="text-sm font-semibold">진행 단계</h3>
                       <p className="text-xs text-muted-foreground">
-                        현재 단계에서 다음 단계 이동 또는 종료를 처리할 수 있습니다.
+                        단계를 눌러 다음 단계로 넘기거나, 건너뛰거나, 종료합니다.
                       </p>
                     </div>
                   </div>
@@ -138,7 +146,7 @@ export function MatchDetailDialog({
                 <div className="grid gap-4 lg:grid-cols-2">
                   <section className="rounded-lg border border-border/60 bg-background p-4">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-sm font-semibold">구매자 정보</h3>
+                      <h3 className="text-sm font-semibold">고객</h3>
                       {match.buyerRequirement?.contactId && (
                         <EntityChip
                           kind="contact"
@@ -164,13 +172,13 @@ export function MatchDetailDialog({
                             : '조건 미정'
                         }
                       />
-                      <DetailField label="요건 메모" value={match.buyerRequirement?.memo ?? undefined} />
+                      <DetailField label="고객 메모" value={match.buyerRequirement?.memo ?? undefined} />
                     </div>
                   </section>
 
                   <section className="rounded-lg border border-border/60 bg-background p-4">
                     <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-sm font-semibold">매물 정보</h3>
+                      <h3 className="text-sm font-semibold">매물</h3>
                       <EntityChip
                         kind="listing"
                         id={match.listingId}
@@ -194,7 +202,7 @@ export function MatchDetailDialog({
                           '—'
                         )}
                       </DetailField>
-                      <DetailField label="확인상태">
+                      <DetailField label="확인 상태">
                         {listingConfirmationState ? (
                           <StatusBadge
                             kind="confirmationState"
@@ -206,10 +214,12 @@ export function MatchDetailDialog({
                         )}
                       </DetailField>
                       <DetailField label="소유자" value={getPrimaryOwnerText(match.listing)} />
-                      <DetailField label="등록일" value={formatDate(match.createdAt)} />
+                      <DetailField label="연결한 날" value={formatDate(match.createdAt)} />
                     </div>
                   </section>
                 </div>
+
+                <AgreedTermsSection match={match} />
 
                 {activeDeal && (
                   <section className="rounded-lg border border-border/60 bg-background p-4">
@@ -252,7 +262,7 @@ export function MatchDetailDialog({
                     <div>
                       <h3 className="text-sm font-semibold">매칭 메모</h3>
                       <p className="text-xs text-muted-foreground">
-                        현재 모델에서는 공용 메모 한 개만 저장됩니다.
+                        이 매물과 고객 사이의 진행 메모입니다.
                       </p>
                     </div>
 
@@ -333,6 +343,153 @@ export function MatchDetailDialog({
   );
 }
 
+// ── 합의 조건 섹션 ───────────────────────────────────────────────────────────
+// 협상하며 손님 · 집주인과 맞춘 금액과 입주일을 적어 둔다. 협상은 여러 날 걸리고 담당자가 바뀔 수 있다.
+// 거래로 전환할 때 이 값이 거래의 합의 조건으로 넘어가고, 그 뒤에는 거래관리에서 고친다(서버도 막는다).
+
+function toAmountText(value: number | null | undefined) {
+  return value == null ? '' : String(value);
+}
+
+function AgreedTermsSection({ match }: { match: Match }) {
+  const queryClient = useQueryClient();
+  const isMonthly = match.listing?.transactionType === 'monthly';
+  const isConverted = normalizeMatchStage(match.stage) === MatchStage.DEAL_CREATED;
+  const savedMoveIn = match.agreedMoveInDate ? match.agreedMoveInDate.slice(0, 10) : '';
+  const [price, setPrice] = useState(toAmountText(match.agreedPrice));
+  const [deposit, setDeposit] = useState(toAmountText(match.agreedDeposit));
+  const [rent, setRent] = useState(toAmountText(match.agreedMonthlyRent));
+  const [moveIn, setMoveIn] = useState(savedMoveIn);
+
+  // 다른 매칭을 열거나 저장한 값이 오면 입력을 저장된 값으로 맞춘다
+  useEffect(() => {
+    setPrice(toAmountText(match.agreedPrice));
+    setDeposit(toAmountText(match.agreedDeposit));
+    setRent(toAmountText(match.agreedMonthlyRent));
+    setMoveIn(match.agreedMoveInDate ? match.agreedMoveInDate.slice(0, 10) : '');
+  }, [match.id, match.agreedPrice, match.agreedDeposit, match.agreedMonthlyRent, match.agreedMoveInDate]);
+
+  const fields = isMonthly
+    ? ([
+        ['agreedDeposit', '합의 보증금', deposit, setDeposit, match.agreedDeposit],
+        ['agreedMonthlyRent', '합의 월세', rent, setRent, match.agreedMonthlyRent],
+      ] as const)
+    : ([['agreedPrice', '합의 가격', price, setPrice, match.agreedPrice]] as const);
+  const parsed = fields.map(([key, , text, , saved]) => ({
+    key,
+    value: parseManwonText(text),
+    saved,
+  }));
+  const invalid = parsed.some((field) => Number.isNaN(field.value ?? 0));
+  const dirty =
+    parsed.some((field) => (field.value ?? null) !== (field.saved ?? null)) ||
+    moveIn !== savedMoveIn;
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      api.matches.updateAgreedTerms(match.id, {
+        ...Object.fromEntries(parsed.map((field) => [field.key, field.value])),
+        agreedMoveInDate: moveIn || null,
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<Match[]>(['matches'], (current) =>
+        current?.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      toast.success('합의 조건을 저장했습니다');
+    },
+    onError: (error: Error) => {
+      toast.error(apiErrorMessage(error, '합의 조건을 저장하지 못했습니다. 다시 시도해 주세요.'));
+    },
+  });
+
+  if (isConverted) {
+    const summary = isMonthly
+      ? [
+          match.agreedDeposit != null ? `보증금 ${formatMoney(match.agreedDeposit)}` : null,
+          match.agreedMonthlyRent != null ? `월세 ${formatMoney(match.agreedMonthlyRent)}` : null,
+        ]
+      : [match.agreedPrice != null ? formatMoney(match.agreedPrice) : null];
+    const text = [...summary, savedMoveIn ? `입주 ${formatDate(match.agreedMoveInDate)}` : null]
+      .filter(Boolean)
+      .join(' · ');
+    return (
+      <section className="rounded-lg border border-border/60 bg-background p-4">
+        <h3 className="text-sm font-semibold">합의 조건</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          거래로 전환한 뒤에는 거래관리에서 고칩니다. 아래는 전환할 때의 값입니다.
+        </p>
+        <p className="mt-3 text-sm tabular-nums">{text || '적어 둔 합의 조건이 없습니다.'}</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-lg border border-border/60 bg-background p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">합의 조건</h3>
+          <p className="text-xs text-muted-foreground">
+            협상하며 맞춘 금액과 입주일을 적어 둡니다. 거래로 전환할 때 그대로 넘어갑니다.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="xs"
+          onClick={() => saveMutation.mutate()}
+          disabled={!dirty || invalid || saveMutation.isPending}
+        >
+          {saveMutation.isPending ? '저장 중…' : '저장'}
+        </Button>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {fields.map(([key, label, text, setText]) => {
+          const value = parseManwonText(text);
+          return (
+            <label key={key} className="space-y-1 text-xs text-muted-foreground">
+              <span>{label}</span>
+              <div className="relative">
+                <Input
+                  value={text}
+                  placeholder="예: 9억 5000"
+                  aria-invalid={Number.isNaN(value ?? 0) || undefined}
+                  onChange={(event) => setText(event.target.value)}
+                  className="h-8 pr-10 text-sm tabular-nums text-foreground"
+                />
+                <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-xs">
+                  만원
+                </span>
+              </div>
+              <span
+                className={
+                  value !== null && Number.isNaN(value)
+                    ? 'block text-[11px] text-destructive'
+                    : 'block h-4 text-[11px] tabular-nums text-info'
+                }
+              >
+                {value === null
+                  ? ''
+                  : Number.isNaN(value)
+                    ? '금액을 읽을 수 없습니다. 예: 9억 5000 또는 95000'
+                    : formatMoney(value)}
+              </span>
+            </label>
+          );
+        })}
+        <label className="space-y-1 text-xs text-muted-foreground">
+          <span>합의 입주일</span>
+          <Input
+            type="date"
+            value={moveIn}
+            onChange={(event) => setMoveIn(event.target.value)}
+            className="h-8 text-sm tabular-nums text-foreground"
+          />
+        </label>
+      </div>
+    </section>
+  );
+}
+
 // ── 상담 기록 섹션 ───────────────────────────────────────────────────────────
 
 function MatchConsultationSection({
@@ -372,7 +529,7 @@ function MatchConsultationSection({
       toast.success('상담 기록을 등록했습니다');
     },
     onError: (error: Error) => {
-      toast.error(`상담 기록 등록에 실패했습니다: ${error.message}`);
+      toast.error(apiErrorMessage(error, '상담을 저장하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -391,10 +548,10 @@ function MatchConsultationSection({
           variant="outline"
           onClick={onToggleForm}
           disabled={!contactId}
-          title={!contactId ? '구매자 연락처가 없어 상담을 기록할 수 없습니다' : undefined}
+          title={!contactId ? '고객 연락처가 없어 상담을 기록할 수 없습니다' : undefined}
         >
           <MessageSquarePlus className="size-3.5" />
-          상담 기록 추가
+          상담 적기
         </Button>
       </div>
 
@@ -414,7 +571,7 @@ function MatchConsultationSection({
               </SelectContent>
             </Select>
             <span className="text-xs text-muted-foreground">
-              {match.buyerRequirement?.contact?.name ?? '구매자'}와의 상담으로 기록됩니다
+              {match.buyerRequirement?.contact?.name ?? '고객'}님과의 상담으로 기록됩니다
             </span>
           </div>
           <Textarea
@@ -449,7 +606,7 @@ function MatchConsultationSection({
           <div className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             <span>상담 기록을 불러오지 못했습니다.</span>
             <Button type="button" size="xs" variant="outline" onClick={() => consultationsQuery.refetch()}>
-              재시도
+              다시 시도
             </Button>
           </div>
         ) : consultations.length === 0 ? (
@@ -508,10 +665,10 @@ function MatchTaskForm({
       setTitle('');
       setDueDate('');
       onToggleForm();
-      toast.success('후속 태스크를 생성했습니다');
+      toast.success('업무를 추가했습니다');
     },
     onError: (error: Error) => {
-      toast.error(`태스크 생성에 실패했습니다: ${error.message}`);
+      toast.error(apiErrorMessage(error, '업무를 만들지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -519,14 +676,14 @@ function MatchTaskForm({
     <section className="rounded-lg border border-border/60 bg-background p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold">후속 태스크</h3>
+          <h3 className="text-sm font-semibold">다음 업무</h3>
           <p className="text-xs text-muted-foreground">
-            방문 확인, 서류 준비 등 후속 업무를 태스크로 남깁니다.
+            임장 확인, 서류 준비처럼 이어서 할 일을 업무로 남깁니다.
           </p>
         </div>
         <Button type="button" size="xs" variant="outline" onClick={onToggleForm}>
           <CalendarPlus className="size-3.5" />
-          태스크 추가
+          업무 추가
         </Button>
       </div>
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError } from '@estate-erp/api-client';
+import { apiErrorMessage } from '@/lib/api-error';
 import type { ContactCategoryKey } from '@estate-erp/shared';
 import {
   AlarmClock,
@@ -410,7 +410,7 @@ function GroupNameInput({
       await onSubmit(name);
       settled.current = true;
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : '저장하지 못했습니다.');
+      setError(apiErrorMessage(caught, '저장하지 못했습니다. 다시 시도해 주세요.'));
       setSaving(false);
       inputRef.current?.focus();
     }

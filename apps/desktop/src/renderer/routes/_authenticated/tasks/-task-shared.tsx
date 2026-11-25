@@ -10,6 +10,8 @@ import {
   ClipboardList,
   FileSignature,
   FileText,
+  FolderKanban,
+  Handshake,
   HelpCircle,
   Link2,
   MapPin,
@@ -29,7 +31,7 @@ import { EntityChip } from '@/components/domain';
 import { getPropertyLabel } from './-task-property-label';
 
 export { getPropertyLabel } from './-task-property-label';
-import { describeDue, type DueTone } from './-task-filters';
+import { describeDue, taskEndedTags, type DueTone } from './-task-filters';
 export {
   ASSIGNEE_UNASSIGNED,
   isTaskOverdue as isOverdue,
@@ -75,7 +77,7 @@ export const taskStatusLabel = (status: string | null | undefined) =>
 
 /*
  * 표시 원칙: 행마다 반복되는 속성(상태·우선순위·카테고리)은 배경 있는 배지를 쓰지 않는다.
- * 아이콘 + 텍스트로 두고, 색은 주의가 필요한 값(긴급·높음·진행중·지연)에만 쓴다.
+ * 아이콘 + 텍스트로 두고, 색은 주의가 필요한 값(긴급·높음·진행 중·지연)에만 쓴다.
  */
 
 const STATUS_ICON_COLOR: Record<TaskStatus, string> = {
@@ -92,7 +94,7 @@ const STATUS_TEXT_CLASS: Record<TaskStatus, string> = {
   cancelled: 'text-muted-foreground',
 };
 
-/** 상태 아이콘 — 빈 원(대기) / 반원(진행중) / 체크(완료) / X(취소). 완료 체크 토글과 같은 모양 언어. */
+/** 상태 아이콘 — 빈 원(대기) / 반원(진행 중) / 체크(완료) / X(취소). 완료 체크 토글과 같은 모양 언어. */
 export function TaskStatusIcon({ status, className }: { status: string; className?: string }) {
   const key = (status in STATUS_ICON_COLOR ? status : 'pending') as TaskStatus;
   const color = STATUS_ICON_COLOR[key];
@@ -206,12 +208,12 @@ export function TaskPriorityLabel({
  */
 export const categoryConfig: Record<TaskCategory, { label: string; icon: ReactNode; dot: string }> = {
   property: { label: '매물', icon: <Building2 className="size-3" />, dot: '#9f6b53' },
-  buyer: { label: '구매고객', icon: <Search className="size-3" />, dot: '#4f7fd1' },
+  buyer: { label: '희망매물', icon: <Search className="size-3" />, dot: '#4f7fd1' },
   match: { label: '매칭', icon: <Link2 className="size-3" />, dot: '#448361' },
   deal: { label: '거래', icon: <FileText className="size-3" />, dot: '#c14c8a' },
   contract: { label: '계약', icon: <FileSignature className="size-3" />, dot: '#9065b0' },
   consultation: { label: '상담', icon: <MessageSquare className="size-3" />, dot: '#cb912f' },
-  viewing: { label: '방문', icon: <MapPin className="size-3" />, dot: '#337ea9' },
+  viewing: { label: '임장', icon: <MapPin className="size-3" />, dot: '#337ea9' },
   admin: { label: '관리', icon: <Settings className="size-3" />, dot: '#b4b2ad' },
   other: { label: '기타', icon: <HelpCircle className="size-3" />, dot: '#d3d1cb' },
   advertisement: { label: '광고작업', icon: <Megaphone className="size-3" />, dot: '#d9730d' },
@@ -312,25 +314,54 @@ export const consultationTypeLabels: Record<string, string> = {
 export const taskPillClassName =
   'inline-flex h-6 max-w-[180px] shrink-0 items-center gap-1.5 rounded-full border border-border bg-background pr-2.5 pl-2 text-xs text-foreground/80 transition-colors';
 
-/** EntityChip이 지원하지 않는 엔터티(매칭/구매요건/상담)용 — EntityChip과 같은 모양, 관련 목록으로 점프 */
+/** 칩을 눌렀을 때 갈 곳 — 목록이 아니라 그 건이 열린 화면 */
+type ListLinkTarget =
+  | { kind: 'buyerRequirement'; id: string }
+  | { kind: 'match'; id: string }
+  | { kind: 'project'; id: string }
+  | { kind: 'consultation'; id: string }
+  | { kind: 'deal'; id: string }
+  | { kind: 'contract'; id: string };
+
+/**
+ * EntityChip이 그 건으로 가지 못하는 엔터티(매칭/구매요건/상담/프로젝트, 거래·계약)용 — EntityChip과 같은 모양, 그 건으로 점프.
+ * 거래·계약은 EntityChip이 목록(/deals, /contracts)으로만 보내 거기서 다시 찾아야 했다. 여기서는 그 거래·계약을 열어 둔다.
+ */
 function ListLinkChip({
   icon: Icon,
   label,
-  to,
+  sublabel,
+  target,
   pill = false,
   className,
 }: {
   icon: LucideIcon;
   label: string;
-  to: '/wanted-properties' | '/customers-table' | '/consultations';
+  sublabel?: string;
+  target: ListLinkTarget;
   pill?: boolean;
   className?: string;
 }) {
   const navigate = useNavigate();
+  const open = () => {
+    if (target.kind === 'buyerRequirement') {
+      void navigate({ to: '/buyer-requirements/$id', params: { id: target.id } });
+    } else if (target.kind === 'match') {
+      void navigate({ to: '/wanted-properties', search: { matchId: target.id } });
+    } else if (target.kind === 'project') {
+      void navigate({ to: '/projects/$id', params: { id: target.id } });
+    } else if (target.kind === 'deal') {
+      void navigate({ to: '/deals', search: { dealId: target.id } });
+    } else if (target.kind === 'contract') {
+      void navigate({ to: '/contracts', search: { editorContractId: target.id } });
+    } else {
+      void navigate({ to: '/consultations', search: { consultationId: target.id } });
+    }
+  };
   return (
     <button
       type="button"
-      onClick={() => void navigate({ to })}
+      onClick={open}
       className={cn(
         pill
           ? cn(taskPillClassName, 'group/entity hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40')
@@ -346,11 +377,15 @@ function ListLinkChip({
         aria-hidden="true"
       />
       <span className={cn('truncate', !pill && 'underline-offset-2 group-hover/entity:underline')}>{label}</span>
+      {sublabel && <span className="truncate text-muted-foreground">{sublabel}</span>}
     </button>
   );
 }
 
 type ContextChip = { key: string; label: string; node: ReactNode };
+
+/** 표의 칸 안에 놓인 칩: 칸이 좁으면 줄어들며 말줄임하되, 아이콘만 남지 않게 최소 폭을 지킨다 */
+const FIT_CHIP_CLASS = 'min-w-[44px] shrink';
 
 /**
  * Task 연결 문맥 — 클릭 시 관련 엔터티 화면으로 점프.
@@ -364,12 +399,18 @@ export function TaskContextChips({
   compact = false,
   variant = 'inline',
   limit = 2,
+  fit = false,
 }: {
   task: Task;
   className?: string;
   compact?: boolean;
   variant?: 'inline' | 'pill';
   limit?: number;
+  /**
+   * 표의 칸 안에 놓일 때 (pill일 때만). 칩이 칸 밖으로 잘려 사라지지 않게, 칸이 좁으면 칩이 줄어들며 말줄임하고
+   * "+N"은 늘 보인다. 목록 폭에 따라 칩을 숨기던 규칙(@max-4xl/tasklist)은 쓰지 않는다 — 칸 너비가 정해져 있다.
+   */
+  fit?: boolean;
 }) {
   const pill = variant === 'pill';
   const chips: ContextChip[] = [];
@@ -378,7 +419,11 @@ export function TaskContextChips({
   const showSublabel = !compact && !pill;
   const entityVariant = pill ? 'chip' : 'inline';
   /** EntityChip(chip)은 라벨이 굵게 나오므로 목록 칩에서는 보통 굵기로 맞춘다 */
-  const entityPillClass = pill ? 'h-6 max-w-[180px] shrink-0 gap-1.5 pl-2 text-foreground/80 [&_span]:font-normal' : undefined;
+  const entityPillClass = pill
+    ? cn('h-6 max-w-[180px] shrink-0 gap-1.5 pl-2 text-foreground/80 [&_span]:font-normal', fit && FIT_CHIP_CLASS)
+    : undefined;
+  /** 칸 안의 링크 칩도 줄어들 수 있게 한다 */
+  const fitClass = fit && pill ? FIT_CHIP_CLASS : undefined;
 
   if (task.contactId || task.contact) {
     const label = task.contact?.name ?? '연락처';
@@ -398,6 +443,24 @@ export function TaskContextChips({
     });
   }
 
+  // 프로젝트에서 적은 업무는 어느 프로젝트의 일인지 보여 준다(이름 없는 프로젝트는 "제목 없음").
+  if (task.projectId || task.project) {
+    const label = `프로젝트 · ${task.project?.title?.trim() || '제목 없음'}`;
+    chips.push({
+      key: 'project',
+      label,
+      node: (
+        <ListLinkChip
+          icon={FolderKanban}
+          target={{ kind: 'project', id: task.projectId ?? task.project?.id ?? '' }}
+          label={label}
+          pill={pill}
+          className={cn(longWidth, fitClass)}
+        />
+      ),
+    });
+  }
+
   if (task.propertyId || task.property) {
     const label = getPropertyLabel(task);
     const address = task.property?.site?.roadAddress ?? task.property?.site?.jibunAddress;
@@ -405,7 +468,8 @@ export function TaskContextChips({
       key: 'property',
       label,
       node: (
-        <span title={address ?? undefined} className="inline-flex min-w-0 max-w-full shrink-0">
+        // 칸 안(fit)에서는 이 감싸개도 줄어들어야 한다. 안 그러면 매물 칩만 제 폭을 지키고 옆 칩이 아이콘만 남게 찌그러진다.
+        <span title={address ?? undefined} className={cn('inline-flex max-w-full', fit && pill ? FIT_CHIP_CLASS : 'min-w-0 shrink-0')}>
           <EntityChip
             variant={entityVariant}
             kind="property"
@@ -443,12 +507,20 @@ export function TaskContextChips({
 
   if (task.buyerReqId || task.buyerRequirement) {
     const label = task.buyerRequirement?.contact?.name
-      ? `구매고객 ${task.buyerRequirement.contact.name}`
-      : '구매고객';
+      ? `희망 조건 · ${task.buyerRequirement.contact.name}`
+      : '희망 조건';
     chips.push({
       key: 'buyerRequirement',
       label,
-      node: <ListLinkChip icon={Search} to="/customers-table" label={label} pill={pill} className={shortWidth} />,
+      node: (
+        <ListLinkChip
+          icon={Search}
+          target={{ kind: 'buyerRequirement', id: task.buyerReqId ?? task.buyerRequirement?.id ?? '' }}
+          label={label}
+          pill={pill}
+          className={cn(shortWidth, fitClass)}
+        />
+      ),
     });
   }
 
@@ -457,7 +529,15 @@ export function TaskContextChips({
     chips.push({
       key: 'match',
       label,
-      node: <ListLinkChip icon={Link2} to="/wanted-properties" label={label} pill={pill} className={shortWidth} />,
+      node: (
+        <ListLinkChip
+          icon={Link2}
+          target={{ kind: 'match', id: task.matchId ?? task.match?.id ?? '' }}
+          label={label}
+          pill={pill}
+          className={cn(shortWidth, fitClass)}
+        />
+      ),
     });
   }
 
@@ -467,17 +547,17 @@ export function TaskContextChips({
       key: 'deal',
       label,
       node: (
-        <EntityChip
-          variant={entityVariant}
-          kind="deal"
-          id={task.dealId ?? task.deal?.id ?? ''}
+        <ListLinkChip
+          icon={Handshake}
+          target={{ kind: 'deal', id: task.dealId ?? task.deal?.id ?? '' }}
           label={label}
           sublabel={
             showSublabel && task.deal?.transactionType
               ? getStatusMeta('transactionType', task.deal.transactionType).label
               : undefined
           }
-          className={cn(shortWidth, entityPillClass)}
+          pill={pill}
+          className={cn(shortWidth, fitClass)}
         />
       ),
     });
@@ -491,13 +571,13 @@ export function TaskContextChips({
       key: 'contract',
       label,
       node: (
-        <EntityChip
-          variant={entityVariant}
-          kind="contract"
-          id={task.contractId ?? task.contract?.id ?? ''}
+        <ListLinkChip
+          icon={FileText}
+          target={{ kind: 'contract', id: task.contractId ?? task.contract?.id ?? '' }}
           label={label}
           sublabel={showSublabel && task.contract?.contractDate ? formatDate(task.contract.contractDate) : undefined}
-          className={cn(shortWidth, entityPillClass)}
+          pill={pill}
+          className={cn(shortWidth, fitClass)}
         />
       ),
     });
@@ -510,11 +590,29 @@ export function TaskContextChips({
     chips.push({
       key: 'consultation',
       label,
-      node: <ListLinkChip icon={MessageSquare} to="/consultations" label={label} pill={pill} className={shortWidth} />,
+      node: (
+        <ListLinkChip
+          icon={MessageSquare}
+          target={{ kind: 'consultation', id: task.consultationId ?? task.consultation?.id ?? '' }}
+          label={label}
+          pill={pill}
+          className={cn(shortWidth, fitClass)}
+        />
+      ),
     });
   }
 
   if (chips.length === 0) return null;
+  const endedTags = taskEndedTags(task);
+  const ended =
+    endedTags.length > 0 ? (
+      <span
+        className="shrink-0 text-[11px] whitespace-nowrap text-muted-foreground/80"
+        title="연결된 일이 끝났습니다. 이 업무가 아직 필요한지 확인하고 정리하세요."
+      >
+        {endedTags.join(' · ')}
+      </span>
+    ) : null;
 
   if (!pill) {
     return (
@@ -527,6 +625,7 @@ export function TaskContextChips({
             {chip.node}
           </span>
         ))}
+        {ended}
       </div>
     );
   }
@@ -534,8 +633,42 @@ export function TaskContextChips({
   const shown = chips.slice(0, limit);
   const hiddenWide = chips.slice(limit);
   const hiddenNarrow = chips.slice(1);
+  if (fit) {
+    // 칸 안에서는 아무것도 통째로 사라지지 않게 자리를 나눈다:
+    // - "연결된 일이 끝났다"는 문구가 있으면 그것이 한 자리를 쓴다(칩을 하나 덜 보이고 나머지는 "+N"으로 넘긴다)
+    // - 문구와 칩은 줄어들며 말줄임하되 최소 폭(48px · 44px)을 지키고, "+N"은 줄어들지 않는다
+    // 가장 좁은 칸(안쪽 160px)에서도 문구 48 + 칩 44 + "+N" 32 + 간격 12 = 136px이라 모두 보인다.
+    const fitShown = chips.slice(0, endedTags.length > 0 ? Math.max(1, limit - 1) : limit);
+    const fitHidden = chips.slice(fitShown.length);
+    return (
+      <div className={cn('flex min-w-0 flex-1 items-center gap-1.5', className)} onClick={(e) => e.stopPropagation()}>
+        {endedTags.length > 0 && (
+          <span
+            className="min-w-[48px] shrink truncate text-[11px] text-muted-foreground/80"
+            title={`${endedTags.join(' · ')} — 연결된 일이 끝났습니다. 이 업무가 아직 필요한지 확인하고 정리하세요.`}
+          >
+            {endedTags.join(' · ')}
+          </span>
+        )}
+        {fitShown.map((chip) => (
+          <span key={chip.key} className="contents">
+            {chip.node}
+          </span>
+        ))}
+        {fitHidden.length > 0 && (
+          <span
+            className={cn(taskPillClassName, 'px-2 text-muted-foreground')}
+            title={fitHidden.map((chip) => chip.label).join(', ')}
+          >
+            +{fitHidden.length}
+          </span>
+        )}
+      </div>
+    );
+  }
   return (
     <div className={cn('flex shrink-0 items-center gap-1.5', className)} onClick={(e) => e.stopPropagation()}>
+      {ended}
       {shown.map((chip, index) => (
         <span key={chip.key} className={cn('contents', index > 0 && '@max-4xl/tasklist:hidden')}>
           {chip.node}

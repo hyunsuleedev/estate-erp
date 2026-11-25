@@ -8,6 +8,7 @@ import { MatchStage } from "@estate-erp/shared";
 import { ConfirmDialog } from "@/components/domain";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
 import { MatchCreateDialog } from "./-match-create-dialog";
 import { MatchConvertDialog } from "./-match-convert-dialog";
 import { BuyerMatchBranchList } from "./-match-groups";
@@ -104,7 +105,7 @@ export function LedgerMatchPanel({
       invalidateRelatedQueries();
     },
     onError: (error: Error) =>
-      toast.error(error.message || "단계 변경에 실패했습니다."),
+      toast.error(apiErrorMessage(error, "단계를 바꾸지 못했습니다. 다시 시도해 주세요.")),
   });
 
   const memoMutation = useMutation({
@@ -118,7 +119,7 @@ export function LedgerMatchPanel({
       toast.success("매칭 메모를 저장했습니다.");
     },
     onError: (error: Error) =>
-      toast.error(error.message || "매칭 메모 저장에 실패했습니다."),
+      toast.error(apiErrorMessage(error, "메모를 저장하지 못했습니다. 다시 시도해 주세요.")),
   });
 
   const viewingScheduleMutation = useMutation({
@@ -151,10 +152,10 @@ export function LedgerMatchPanel({
     onSuccess: () => {
       invalidateRelatedQueries();
       void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
-      toast.success("방문 일정을 저장했습니다.");
+      toast.success("임장 일정을 저장했습니다.");
     },
     onError: (error: Error) =>
-      toast.error(`방문 일정 저장에 실패했습니다: ${error.message}`),
+      toast.error(apiErrorMessage(error, "임장 일정을 저장하지 못했습니다. 다시 시도해 주세요.")),
   });
 
   const deleteMutation = useMutation({
@@ -165,7 +166,7 @@ export function LedgerMatchPanel({
       toast.success("매칭을 삭제했습니다.");
     },
     onError: (error: Error) =>
-      toast.error(error.message || "매칭 삭제에 실패했습니다."),
+      toast.error(apiErrorMessage(error, "매칭을 삭제하지 못했습니다. 다시 시도해 주세요.")),
   });
 
   const handleStageChange = (id: string, stage: string) => {
@@ -335,7 +336,7 @@ export function LedgerMatchPanel({
         title="매칭을 삭제하시겠습니까?"
         description={
           deleteMatch
-            ? `${deleteMatch.buyerRequirement?.contact?.name ?? "구매고객"} · ${getMatchTitle(deleteMatch)} 매칭이 삭제됩니다. 진행 이력이 함께 사라지므로 종료 처리를 권장합니다.`
+            ? `${deleteMatch.buyerRequirement?.contact?.name ?? "고객"} · ${getMatchTitle(deleteMatch)} 매칭이 삭제됩니다. 진행 이력이 함께 사라지므로 종료 처리를 권장합니다.`
             : undefined
         }
         confirmLabel="삭제"

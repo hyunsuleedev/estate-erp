@@ -72,11 +72,12 @@ export function EntityChip({
           void navigate({ to: '/properties' });
         }
         break;
+      // 목록이 아니라 그 거래·계약서를 연다 (목록으로만 가면 다시 찾아야 한다)
       case 'deal':
-        void navigate({ to: '/deals' });
+        void navigate({ to: '/deals', search: { dealId: id } });
         break;
       case 'contract':
-        void navigate({ to: '/contracts' });
+        void navigate({ to: '/contracts', search: { editorContractId: id } });
         break;
       case 'site':
         void navigate({ to: '/sites' });

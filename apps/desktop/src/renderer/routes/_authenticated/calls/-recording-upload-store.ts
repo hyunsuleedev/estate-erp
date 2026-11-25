@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { QueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 
 /**
  * 올리는 중인 녹음.
@@ -40,7 +41,7 @@ interface RecordingUploadState {
 }
 
 function errorText(error: unknown) {
-  return error instanceof Error && error.message ? error.message : '녹음을 올리지 못했습니다';
+  return apiErrorMessage(error, '녹음을 올리지 못했습니다. 다시 올려 주세요.');
 }
 
 async function send(upload: RecordingUpload) {

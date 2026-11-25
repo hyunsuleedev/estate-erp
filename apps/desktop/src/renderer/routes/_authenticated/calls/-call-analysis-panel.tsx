@@ -34,6 +34,7 @@ import {
 } from './-call-utils';
 import { CallSuggestionList } from './-call-suggestions';
 import { EvidenceChips, useTranscriptNavigator } from './-call-evidence';
+import { apiErrorMessage } from '@/lib/api-error';
 
 /**
  * 통화 분석 본문: 녹음 · AI 요약(확인할 점·핵심 정보·숫자) · AI 제안 · 대화 기록.
@@ -45,7 +46,7 @@ const TALK_SHARE_COLORS = ['bg-violet', 'bg-info', 'bg-warning', 'bg-success'];
 const consultationTypeLabel: Record<string, string> = {
   phone: '전화',
   visit: '방문',
-  online: '온라인',
+  online: '문자·온라인',
 };
 
 /** 통화 상세 조회 — 받아쓰기·분석 대기·처리 중이면 5초마다 다시 불러오고, 끝나면 멈춘다 */
@@ -147,7 +148,7 @@ export function CallAnalysisPanel({
       void queryClient.invalidateQueries({ queryKey: ['call-recordings'] });
     },
     onError: (error) =>
-      toast.error(error instanceof Error && error.message ? error.message : '다시 분석하지 못했습니다'),
+      toast.error(apiErrorMessage(error, '다시 분석하지 못했습니다. 잠시 뒤 다시 시도해 주세요.')),
   });
 
   // 화자 전환 (나 ↔ 고객)

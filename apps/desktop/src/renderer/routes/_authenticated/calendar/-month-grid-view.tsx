@@ -29,6 +29,7 @@ import {
   formatDayTitle,
   formatEventTimeRange,
   getEventColor,
+  getEventSuperseded,
   withAlpha,
 } from "./-event-meta";
 import { OVERLAY_META, type OverlayItem } from "./-calendar-overlay";
@@ -41,6 +42,7 @@ import {
   shiftEventDays,
 } from "./-month-grid-layout";
 import type { EventTiming } from "./-use-event-timing";
+import { EventTitle, eventTitleText } from "./-event-title";
 
 const BUFFER = 8;
 const WEEKS = 22;
@@ -687,6 +689,9 @@ export function MonthCalendarView(props: Props) {
                       "group/event absolute z-10 h-[21px] rounded-[4px]",
                       moving && "ring-1 ring-current shadow-sm",
                       props.pendingId === event?.id && "opacity-50",
+                      // 받은 대금·정산 끝난 거래의 날짜, 매칭이 임장을 지난 앞날 임장은 기록으로만 흐리게 남긴다
+                      overlay?.done && "opacity-50",
+                      event && getEventSuperseded(event) && "opacity-50",
                     )}
                     style={{
                       top: HEADER + p.lane * LANE,
@@ -705,14 +710,14 @@ export function MonthCalendarView(props: Props) {
                       data-month-finance={overlay?.id}
                       aria-label={
                         event
-                          ? `${event.title} · ${formatEventTimeRange(event)}`
+                          ? `${eventTitleText(event)} · ${formatEventTimeRange(event)}`
                           : overlay?.title
                       }
                       aria-busy={props.pendingId === event?.id}
                       title={
                         event
-                          ? `${event.title}\n${formatEventTimeRange(event)}\n드래그: 날짜 이동 · Alt+방향키: 하루/한 주 이동`
-                          : `${overlay?.title} · 원본에서 날짜 변경`
+                          ? `${eventTitleText(event)}\n${formatEventTimeRange(event)}\n드래그: 날짜 이동 · Alt+방향키: 하루/한 주 이동`
+                          : `${overlay?.title}${overlay?.done ? " · 지난 일(받음·정산 끝)" : ""} · 원본에서 날짜 변경`
                       }
                       className={cn(
                         "flex size-full touch-none items-center gap-1 overflow-hidden px-1.5 text-left text-[11px] focus-visible:ring-2 focus-visible:ring-ring",
@@ -768,7 +773,7 @@ export function MonthCalendarView(props: Props) {
                       )}
                       <span className="truncate font-medium text-foreground">
                         {p.continuesBefore ? "↤ " : ""}
-                        {event?.title ?? overlay?.title}
+                        {event ? <EventTitle event={event} /> : overlay?.title}
                         {p.continuesAfter ? " ↦" : ""}
                       </span>
                     </button>

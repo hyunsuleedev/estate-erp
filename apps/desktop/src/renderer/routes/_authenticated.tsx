@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Tab } from '@estate-erp/shared';
+import type { NativeTabAction } from '../../common/nativeTabActions';
 import { SplashScreen } from '@/components/layout/splash-screen';
 import { useAuth } from '@/providers/auth-provider';
 import { AppSidebar } from '@/components/layout/app-sidebar';
@@ -29,7 +30,10 @@ import {
 import { getPreviewTabBarPort } from '@/features/tabs/previewTabBarPort';
 import { TabBarProvider } from '@/features/tabs/TabBar/tabBarContext';
 import { CtiProvider } from '@/features/cti/cti-provider';
-import { NativeTabRetentionReporter } from '@/features/tabs/native/NativeTabRetentionReporter';
+import {
+  NativeTabRetentionReporter,
+  blankTabRetentionUpdate,
+} from '@/features/tabs/native/NativeTabRetentionReporter';
 import { getRendererSurface } from '@/features/tabs/native/rendererSurface';
 import { installNativeTabStoreBridge } from '@/features/tabs/native/nativeTabStoreBridge';
 import { NativeTabRouterBridge } from '@/features/tabs/native/NativeTabRouterBridge';
@@ -132,7 +136,11 @@ function WindowAuthenticatedLayout() {
 }
 
 interface NativeTabBootstrap {
-  tabId: string;
+  /**
+   * 이 화면이 맡은 탭. 미리 띄워 둔 예비 화면은 탭을 맡기 전까지 null이다 —
+   * 그동안에는 사이드바와 화면 틀만 그려 두고, 탭에 묶인 것(주소 알림, 입력 보호, 본문)은 달지 않는다.
+   */
+  tabId: string | null;
   sidebarOpen: boolean;
 }
 
@@ -167,9 +175,31 @@ function useNativeTabBootstrap(): NativeTabBootstrap | null {
         })
       : (bridge.getNativeTabSnapshot?.() ?? Promise.resolve(null));
 
+    if (isSpare) {
+      // 예비 화면은 탭을 맡기 전에 사이드바와 화면 틀을 먼저 그려 둔다(Notion의 빈 탭과 같은 방식).
+      // 새 탭을 열면 main이 이 화면을 곧바로 보여 주고, 본문만 그 뒤에 그려진다.
+      // 본문(Outlet)은 탭을 맡은 뒤에만 그리므로, 아무도 열지 않은 화면이 서버를 부르지 않는다.
+      void (bridge.getSidebarState?.() ?? Promise.resolve({ open: true }))
+        .catch(() => ({ open: true }))
+        .then((sidebar) => {
+          if (cancelled) return;
+          setBootstrap((current) => current ?? { tabId: null, sidebarOpen: sidebar.open });
+        });
+    }
+
+    const sendAction = (action: NativeTabAction) => bridge.sendTabAction?.(action);
+
     void ownTab.then(async (snapshot) => {
       if (cancelled) return;
+      // 본문이 비어 있는 지금 "저장 안 한 것 없음"을 알린다. 알리기 전에는 main이 이 탭을
+      // 저장 전 작업이 있는 탭으로 보고, 사이드바 메뉴를 누르면 새 탭으로 연다.
+      const cleanReport = snapshot ? blankTabRetentionUpdate(snapshot) : null;
+      if (cleanReport) bridge.setRetention?.(cleanReport);
       if (isSpare && snapshot) {
+        // 예비 화면은 탭을 맡는 순간 이미 사이드바가 보이고 눌린다. 그래서 탭 사본을 기다림
+        // 없이 지금 건다 — 본문이 붙기 전에 누른 메뉴도 이 탭의 이동으로 main에 간다
+        // (main이 돌려보내는 이동 명령은 받는 쪽이 붙을 때까지 preload가 들고 있다).
+        uninstall = installNativeTabStoreBridge(snapshot, sendAction);
         // 맡은 탭의 주소로 화면 안에서 옮긴다. 앱을 다시 띄우지 않는다.
         await router.navigate({ href: snapshot.route, replace: true });
       }
@@ -186,9 +216,7 @@ function useNativeTabBootstrap(): NativeTabBootstrap | null {
         resourceKey: resolveTabResourceKey(route, surface.tabId),
         createdAt: Date.now(),
       };
-      uninstall = installNativeTabStoreBridge(tab, (action) =>
-        bridge.sendTabAction?.(action),
-      );
+      uninstall ??= installNativeTabStoreBridge(tab, sendAction);
       setBootstrap({ tabId: tab.id, sidebarOpen: sidebar.open });
     });
     return () => {
@@ -219,31 +247,44 @@ function NativeTabShell({
   tabId,
   initialSidebarOpen,
 }: {
-  tabId: string;
+  /** 맡은 탭. 예비 화면이 탭을 맡기 전에는 null이고, 그때는 틀만 그린다. */
+  tabId: string | null;
   initialSidebarOpen: boolean;
 }) {
+  // 사이드바 상태는 창의 것이다. 틀을 먼저 그린 예비 화면도 main이 보내는 값을 계속 따른다
+  // (탭을 맡기 직전에 그 창의 값을 한 번 더 보낸다).
   const [sidebarOpen, setSidebarOpen] = useNativeSidebarState(initialSidebarOpen);
   useEffect(() => {
+    // 사이드바와 틀을 그렸다는 신호. 예비 화면은 탭을 맡기 전에 이미 보내 두므로,
+    // 새 탭을 열면 main이 기다리지 않고 바로 보여 준다.
     window.electronBridge?.tabs?.notifyReady?.();
   }, []);
+  const assigned = tabId !== null;
   return (
     <SidebarProvider
       open={sidebarOpen}
       onOpenChange={setSidebarOpen}
       className="h-svh"
     >
+      {/* 링크·마우스 옆 단추 처리는 탭에 묶이지 않는다. 틀이 보이는 순간부터 걸어 둔다. */}
       <NativeTabNavigationBridge />
-      <NativeTabRouterBridge tabId={tabId} />
-      <NativeTabRetentionReporter />
-      {/* 안 읽은 필독 공지는 앱을 열 때 팝업으로 띄운다. 탭 화면마다 뜨고, 한 곳에서 확인하면 함께 닫힌다. */}
-      <RequiredNoticePopup />
+      {assigned ? (
+        <>
+          <NativeTabRouterBridge tabId={tabId} />
+          <NativeTabRetentionReporter />
+          {/* 안 읽은 필독 공지는 앱을 열 때 팝업으로 띄운다. 탭 화면마다 뜨고, 한 곳에서 확인하면 함께 닫힌다. */}
+          <RequiredNoticePopup />
+        </>
+      ) : null}
       <AppSidebar />
       <SidebarInset className="min-h-0 min-w-0 flex-1">
         <main
           data-window-shell="native-tab"
+          data-tab-assigned={assigned ? "" : undefined}
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto [overflow-anchor:none] bg-background p-4"
         >
-          <Outlet />
+          {/* 본문은 탭을 맡은 뒤에만 그린다. 그 전의 예비 화면은 빈 본문으로 기다린다. */}
+          {assigned ? <Outlet /> : null}
         </main>
       </SidebarInset>
     </SidebarProvider>

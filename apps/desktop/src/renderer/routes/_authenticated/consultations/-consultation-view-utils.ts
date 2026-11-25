@@ -1,4 +1,4 @@
-import { formatFloorRange } from '@estate-erp/shared';
+import { formatPlaceLabel } from '@estate-erp/shared';
 import type { Consultation, ListingIntakeState } from '@estate-erp/api-client';
 import { formatDate, formatMoney } from '@/lib/format';
 import { getIntakeConfirmationState, getListingAvailability } from '@/lib/listing-status';
@@ -77,7 +77,6 @@ export interface ConsultationFilterChip {
 }
 
 type ConsultationProperty = NonNullable<ConsultationListItem['property']>;
-type ConsultationPropertyUnit = NonNullable<ConsultationProperty['unit']>;
 
 // ----------------------------------------------------------------
 // purpose (상담 목적)
@@ -172,7 +171,7 @@ export function getConsultationOutcomeLabel(consultation: ConsultationListItem) 
 
 export function getConsultationActionLabel(consultation: ConsultationListItem) {
   if (consultation.purpose === 'listing_confirm') return '매물 확인 상태 업데이트';
-  if (consultation.purpose === 'buyer_consult') return '구매요건 업데이트';
+  if (consultation.purpose === 'buyer_consult') return '희망 조건 업데이트';
   if (consultation.purpose === 'deal_followup') return '거래 단계·입금 상태 확인';
 
   const signal = getConsultationSignal(consultation).key;
@@ -182,7 +181,7 @@ export function getConsultationActionLabel(consultation: ConsultationListItem) {
   if (signal === 'schedule') return '캘린더 일정 확인';
   if (signal === 'price') return '매칭·거래 조건 업데이트';
   if (signal === 'contract') return '거래 단계·입금 상태 확인';
-  if (signal === 'requirement') return '구매요건 업데이트';
+  if (signal === 'requirement') return '희망 조건 업데이트';
   return '고객 타임라인 확인';
 }
 
@@ -201,7 +200,7 @@ export function getConsultationContextLabels(consultation: ConsultationListItem)
   } else if (consultation.listingId) labels.push('매물 연결');
 
   if (consultation.matchId) labels.push('매칭 연결');
-  if (consultation.buyerReqId) labels.push('구매요건 연결');
+  if (consultation.buyerReqId) labels.push('희망 조건 연결');
 
   return labels;
 }
@@ -290,11 +289,11 @@ export function getConsultationContextCards(consultation: ConsultationListItem):
     const transactionType = consultation.buyerRequirement?.transactionType;
     cards.push({
       key: 'buyerRequirement',
-      label: '구매요건',
-      title: '구매요건 연결',
+      label: '희망 조건',
+      title: '희망 조건 연결',
       description: transactionType
         ? `${transactionTypeLabels[transactionType] ?? transactionType} · ${buyerReqStatusLabels[consultation.buyerRequirement?.status ?? ''] ?? consultation.buyerRequirement?.status ?? '상태 미지정'}`
-        : `ID ${shortId(consultation.buyerReqId)}`,
+        : '거래유형을 정하지 않은 희망 조건',
       to: '/buyer-requirements/$id',
       params: { id: consultation.buyerReqId },
     });
@@ -413,11 +412,24 @@ export function buildConsultationApiParams({
   if (filters.unit?.id) params.unitId = filters.unit.id;
   if (filters.type) params.type = filters.type;
   if (filters.createdBy?.id) params.createdById = filters.createdBy.id;
-  if (filters.dateFrom) params.dateFrom = filters.dateFrom;
-  // dateTo는 해당 날짜 끝까지 포함 (서버는 lte 비교)
-  if (filters.dateTo) params.dateTo = `${filters.dateTo}T23:59:59.999`;
+  // 날짜는 이 컴퓨터의 하루(0시~23:59)로 바꿔 시각까지 보낸다.
+  // "2026-11-22"만 보내면 서버가 UTC 0시(한국 오전 9시)로 읽어 아침 상담이 빠진다.
+  if (filters.dateFrom) params.dateFrom = localDayStart(filters.dateFrom);
+  if (filters.dateTo) params.dateTo = localDayEnd(filters.dateTo);
 
   return params;
+}
+
+/** "2026-11-22" → 이 컴퓨터 시간 그날 0시의 ISO */
+export function localDayStart(ymd: string): string {
+  const date = new Date(`${ymd}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? ymd : date.toISOString();
+}
+
+/** "2026-11-22" → 이 컴퓨터 시간 그날 23:59:59.999의 ISO */
+export function localDayEnd(ymd: string): string {
+  const date = new Date(`${ymd}T23:59:59.999`);
+  return Number.isNaN(date.getTime()) ? ymd : date.toISOString();
 }
 
 export function getConsultationFilterChips(filters: ConsultationEntityFilters): ConsultationFilterChip[] {
@@ -428,7 +440,7 @@ export function getConsultationFilterChips(filters: ConsultationEntityFilters): 
   if (filters.quickFilter === 'actionRequired') chips.push({ key: 'quickFilter', label: '후속 필요' });
   if (filters.quickFilter === 'property') chips.push({ key: 'quickFilter', label: '매물 연결' });
   if (filters.quickFilter === 'listingIntake') chips.push({ key: 'quickFilter', label: '의뢰 연결' });
-  if (filters.quickFilter === 'buyerRequirement') chips.push({ key: 'quickFilter', label: '구매요건' });
+  if (filters.quickFilter === 'buyerRequirement') chips.push({ key: 'quickFilter', label: '희망 조건' });
   if (filters.quickFilter === 'unlinked') chips.push({ key: 'quickFilter', label: '미연결' });
   if (filters.contact) chips.push({ key: 'contact', label: `고객 ${filters.contact.label}` });
 
@@ -472,7 +484,7 @@ export const matchStageLabels: Record<string, string> = {
   viewing: '임장',
   buyerReviewing: '고객 검토',
   negotiating: '협상',
-  dealCreated: '거래전환',
+  dealCreated: '거래 전환',
   closed: '종료',
   buyerContacted: '고객 관심',
   ownerContacted: '임장 조율',
@@ -481,7 +493,7 @@ export const matchStageLabels: Record<string, string> = {
 const consultationTypeLabels: Record<string, string> = {
   phone: '전화',
   visit: '방문',
-  online: '온라인',
+  online: '문자·온라인',
 };
 
 function typeLabel(type: string) {
@@ -497,12 +509,16 @@ function formatPropertyContextTitle(
   property: ConsultationListItem['property'] | null | undefined,
   propertyId: string | null | undefined,
 ) {
-  const siteName = property?.site?.name?.trim();
-  const unitLabel = formatPropertyUnitLabel(property?.unit);
-
-  if (siteName && unitLabel) return `${siteName} ${unitLabel}`;
-  if (siteName) return siteName;
-  if (unitLabel) return unitLabel;
+  // "고덕그라시움 102동 2203호" — 공용 규칙(formatPlaceLabel)으로 잇는다
+  const label = property
+    ? formatPlaceLabel({
+        siteName: property.site?.name,
+        dongName: property.unit?.dong?.name,
+        dongIsPlaceholder: property.unit?.dong?.isPlaceholder,
+        unit: property.unit,
+      })
+    : '';
+  if (label) return label;
   if (propertyId) return '매물 연결';
   return null;
 }
@@ -515,29 +531,7 @@ function formatPropertyContextDescription(property: ConsultationListItem['proper
 
   return details.length > 0
     ? details.join(' · ')
-    : '매물 상세에서 소유주·임차인·상담 이력을 확인합니다.';
-}
-
-function formatPropertyUnitLabel(unit: ConsultationPropertyUnit | null | undefined) {
-  if (!unit) return null;
-
-  const dongName = unit.dong?.name?.trim();
-  const shouldShowDong = dongName && dongName !== '-' && !unit.dong?.isPlaceholder;
-  const dongLabel = shouldShowDong ? withSuffix(dongName, '동') : null;
-
-  const unitName = unit.name?.trim();
-  const unitLabel =
-    unitName && unitName !== '-' ? withSuffix(unitName, '호') : formatFloorRange(unit) || null;
-
-  return [dongLabel, unitLabel].filter(Boolean).join(' ') || null;
-}
-
-function withSuffix(value: string, suffix: string) {
-  return value.endsWith(suffix) ? value : `${value}${suffix}`;
-}
-
-function shortId(id: string) {
-  return id.slice(0, 8);
+    : '매물 상세에서 소유자·임차인·상담 이력을 확인합니다.';
 }
 
 function formatFullDate(value: string) {

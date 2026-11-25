@@ -27,7 +27,7 @@ import {
   Headset,
 } from 'lucide-react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
-import type { CallRecordingListItem, Consultation } from '@estate-erp/api-client';
+import { ApiError, type CallRecordingListItem, type Consultation } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { getRouteMeta } from '@/features/tabs/lib/routeMeta';
 import { useTabStore } from '@/features/tabs/store/useTabStore';
@@ -104,22 +104,44 @@ interface ConsultationsSearch {
   consultationId?: string;
   /** 연결 대기 녹음(아직 상담이 아닌 통화) 상세 */
   callId?: string;
+  /** 연락처 화면의 "상담분석에서 보기"로 왔을 때: 그 사람의 상담만 거른다 */
+  contactId?: string;
 }
 
 export const Route = createFileRoute('/_authenticated/consultations/')({
   validateSearch: (search: Record<string, unknown>): ConsultationsSearch => ({
     consultationId: typeof search.consultationId === 'string' ? search.consultationId : undefined,
     callId: typeof search.callId === 'string' ? search.callId : undefined,
+    contactId: typeof search.contactId === 'string' ? search.contactId : undefined,
   }),
   component: ConsultationsPage,
 });
 
 function ConsultationsPage() {
   const navigate = useNavigate({ from: Route.fullPath });
-  const { consultationId, callId } = Route.useSearch();
+  const { consultationId, callId, contactId: contactIdFromUrl } = Route.useSearch();
 
   const [view, setView] = useState<ConsultationView>('all');
-  const [filters, setFilters] = useState<ConsultationEntityFilters>(initialFilters);
+  const [filters, setFilters] = useState<ConsultationEntityFilters>(() =>
+    contactIdFromUrl
+      ? { ...initialFilters, contact: { id: contactIdFromUrl, label: '선택한 고객' } }
+      : initialFilters,
+  );
+
+  // 연락처에서 넘어왔으면 그 사람의 상담만 보인다. 이름은 연락처를 읽어 고객 필터에 붙인다.
+  const contactFromUrl = useQuery({
+    queryKey: ['contacts', contactIdFromUrl],
+    queryFn: () => api.contacts.findOne(contactIdFromUrl!),
+    enabled: Boolean(contactIdFromUrl),
+  });
+  const contactNameFromUrl = contactFromUrl.data?.name;
+  useEffect(() => {
+    if (!contactIdFromUrl) return;
+    setFilters((current) => ({
+      ...current,
+      contact: { id: contactIdFromUrl, label: contactNameFromUrl ?? '선택한 고객' },
+    }));
+  }, [contactIdFromUrl, contactNameFromUrl]);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
@@ -287,14 +309,39 @@ function ConsultationsPage() {
     () => consultations.find((item) => item.id === consultationId) ?? null,
     [consultations, consultationId],
   );
-  const { data: selectedFetched, isLoading: isSelectedLoading } = useQuery({
+  const {
+    data: selectedFetched,
+    isLoading: isSelectedLoading,
+    error: selectedError,
+  } = useQuery({
     queryKey: ['consultation', consultationId],
     queryFn: () => api.consultations.findOne(consultationId!),
     enabled: Boolean(consultationId) && !selectedFromList,
+    // 없는 상담(404) · 형식이 틀린 주소(400)는 다시 묻지 않는다
+    retry: (failureCount, error) =>
+      !(error instanceof ApiError && (error.statusCode === 404 || error.statusCode === 400)) &&
+      failureCount < 2,
     // 목록 밖의 상담(주소로 열었거나 필터에 걸러진 것)도 받아쓰기·분석이 끝날 때까지 다시 읽는다
     refetchInterval: (query) =>
       query.state.data && getConsultationRecordingState(query.state.data).tone === 'busy' ? 8000 : false,
   });
+  // 주소로 연 상담이 없으면(지워졌거나 잘못된 주소) 빈 패널을 두지 않고 한 번 알린 뒤 주소에서 지운다
+  useEffect(() => {
+    if (!consultationId || !selectedError) return;
+    if (
+      !(selectedError instanceof ApiError) ||
+      (selectedError.statusCode !== 404 && selectedError.statusCode !== 400)
+    ) {
+      return;
+    }
+    toast.error('상담 기록을 찾을 수 없습니다. 지워졌거나 잘못된 주소입니다.', {
+      id: `consultation-missing-${consultationId}`,
+    });
+    void navigate({
+      search: (current) => ({ ...current, consultationId: undefined }),
+      replace: true,
+    });
+  }, [consultationId, selectedError, navigate]);
   const selectedConsultation =
     selectedFromList ??
     (consultationId != null && selectedFetched?.id === consultationId ? (selectedFetched ?? null) : null);
@@ -460,7 +507,8 @@ function ConsultationsPage() {
       {
         id: 'channel',
         header: () => <HeaderLabel icon={<Waypoints />} label="방식" />,
-        size: 112,
+        // "문자·온라인"이 잘리지 않는 너비
+        size: 128,
         minSize: 88,
         enableSorting: false,
         cell: ({ row }) => {
@@ -663,7 +711,7 @@ function ConsultationsPage() {
               녹음 올리기
             </button>
             <Button size="sm" className="ml-1 h-[30px] shrink-0 rounded-[8px] px-3" onClick={openCreate}>
-              <Plus className="size-3.5" />새 상담
+              <Plus className="size-3.5" />상담 적기
             </Button>
           </div>
         </div>
@@ -771,7 +819,7 @@ function ConsultationsPage() {
                     ? '처리할 것이 남은 상담이 없습니다.'
                     : hasConditions
                   ? '조건에 맞는 상담이 없습니다.'
-                  : '상담 기록이 없습니다. 새 상담을 적거나 녹음을 올려 보세요.'
+                  : '상담 기록이 없습니다. 상담을 적거나 녹음을 올려 보세요.'
               }
               onRowClick={(row) =>
                 // 올리는 중인 줄은 아직 열 것이 없다
@@ -903,6 +951,7 @@ function ConsultationBulkActions({
         queryClient.invalidateQueries({ queryKey: ['consultations'] }),
         queryClient.invalidateQueries({ queryKey: ['consultation'] }),
         queryClient.invalidateQueries({ queryKey: ['call-recordings'] }),
+        queryClient.invalidateQueries({ queryKey: ['contacts'] }),
       ]);
       setConfirmOpen(false);
       if (failed > 0) {

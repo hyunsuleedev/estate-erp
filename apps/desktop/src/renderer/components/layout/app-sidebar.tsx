@@ -1,13 +1,26 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Pin } from 'lucide-react'
 import { useAuth } from '@/providers/auth-provider'
 import { NavMain } from '@/components/nav-main'
 import { NavUser } from '@/components/nav-user'
 import { getNavGroups } from '@/components/layout/nav-config'
+import { GlobalSearch } from '@/components/layout/global-search'
+import {
+  NotificationList,
+  useUnreadNotificationCount,
+} from '@/components/layout/notification-bell'
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from '@/components/ui/popover'
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar'
 
@@ -16,6 +29,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const groups = getNavGroups(user?.role)
   const { preview, setOpen, showPreview, hidePreview, keepPreview, leavePreview } = useSidebar()
   const userMenuOpen = useRef(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const unreadCount = useUnreadNotificationCount()
 
   useEffect(() => window.electronBridge?.tabs?.onSidebarPreview?.((command) => {
     if (command === 'show') showPreview()
@@ -56,7 +71,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar data-app-sidebar collapsible="offcanvas"
       onPointerEnter={keepPreview}
-      onPointerLeave={() => { if (!userMenuOpen.current) leavePreview() }}
+      onPointerLeave={() => { if (!userMenuOpen.current && !notificationsOpen) leavePreview() }}
       onClick={(event) => {
         if (event.target instanceof Element && event.target.closest('a[href]')) hidePreview()
       }}
@@ -72,23 +87,54 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
       )}
       <SidebarContent data-app-sidebar-scroll>
+        {/* 전체 검색: 손님 이름·전화번호 뒷자리·단지·동호로 바로 찾아 간다 (⌘K / Ctrl+K) */}
+        <SidebarGroup className="pt-2 pb-0">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <GlobalSearch variant="sidebar" />
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
         {groups.map((group) => (
           <NavMain key={group.key} label={group.label} items={group.items} />
         ))}
       </SidebarContent>
       <SidebarFooter>
-        <NavUser
-          user={{
-            name: user?.name ?? '',
-            email: user?.email ?? '',
-          }}
-          onLogout={logout}
-          onMenuOpenChange={(open) => {
-            userMenuOpen.current = open
-            if (open) keepPreview()
-            else if (!document.querySelector('[data-app-sidebar]:hover')) leavePreview()
-          }}
-        />
+        <Popover open={notificationsOpen} onOpenChange={setNotificationsOpen}>
+          <PopoverAnchor asChild>
+            <div>
+              <NavUser
+                user={{
+                  name: user?.name ?? '',
+                  email: user?.email ?? '',
+                }}
+                onLogout={logout}
+                unreadCount={unreadCount}
+                onOpenNotifications={() => setNotificationsOpen(true)}
+                onMenuOpenChange={(open) => {
+                  userMenuOpen.current = open
+                  if (open) keepPreview()
+                  else if (!document.querySelector('[data-app-sidebar]:hover')) leavePreview()
+                }}
+              />
+            </div>
+          </PopoverAnchor>
+          <PopoverContent
+            side="right"
+            align="end"
+            sideOffset={8}
+            className="w-80 p-0"
+            aria-label="알림"
+            // 메뉴가 닫히며 초점을 사용자 단추로 돌려도 알림 목록이 바로 닫히지 않게 한다
+            onFocusOutside={(event) => event.preventDefault()}
+          >
+            <NotificationList
+              open={notificationsOpen}
+              unreadCount={unreadCount}
+              onNavigate={() => setNotificationsOpen(false)}
+            />
+          </PopoverContent>
+        </Popover>
       </SidebarFooter>
     </Sidebar>
   )

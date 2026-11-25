@@ -6,16 +6,16 @@ import {
   advertisementRawLocationLabel,
   advertisementTransactionType,
   changeRequestSummary,
+  failedChangeRequests,
   pendingChangeRequests,
 } from "./my-ads-link";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent, MouseEvent, ReactNode, SVGProps } from "react";
-import { ExternalLink, RotateCcw, X } from "lucide-react";
+import { ArrowUpRight, RotateCcw, X } from "lucide-react";
 import type { ListingAdvertisementWithListing } from "@estate-erp/api-client";
-import { analyzeOfficeAdvertisementComparison } from "@estate-erp/api-client";
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import {
   PROPERTY_TABLE_PILL_TONES,
@@ -27,12 +27,14 @@ import {
 import {
   advertisementMonthlyRentLabel,
   advertisementPrimaryAmountLabel,
+  advertisementSyncState,
   compactAdvertisementDate,
   cpChannelLabel,
+  getCachedComparison,
+  resolvedNaverUrl,
   verificationMethodPresentation,
 } from "./my-ads-format";
 import {
-  isManualAdvertisement,
   myAdsAnalysisSignal,
 } from "./my-ads-manual-ad-state";
 import { advertisementExposureElapsedDays } from "./my-ads-filters";
@@ -45,6 +47,7 @@ import {
   fieldLabel,
   isDraftEmpty,
   isValueAsked,
+  requestedCellDisplay,
 } from "./my-ads-modes";
 
 /** 매물관리 표 머리와 같은 13px/400 글자, 16px 아이콘(#8e8b86). 색은 머리 칸(정렬·hover)을 따른다. */
@@ -113,7 +116,7 @@ export function EmptyCellValue() {
 }
 
 /**
- * 매물 칸. 광고가 우리 매물과 이어졌는지, 아니면 어디서 끊겼는지를 말한다.
+ * 연결 칸. 광고가 우리 매물과 이어졌는지, 아니면 어디서 끊겼는지를 말한다.
  * 이어진 광고는 매물로 가고, 끊긴 광고는 눌러서 연결 창을 연다.
  */
 export function LinkStatusCell({
@@ -127,22 +130,52 @@ export function LinkStatusCell({
   const place = advertisementPlace(advertisement);
 
   if (level === "listing") {
+    const intakeClosed =
+      advertisement.status === "active" &&
+      advertisement.listing?.intake?.lifecycleStatus === "closed";
+    const listingPaused =
+      advertisement.status === "active" &&
+      Boolean(advertisement.listing?.isPaused);
+    const intakeHold =
+      advertisement.status === "active" &&
+      advertisement.listing?.intake?.lifecycleStatus === "hold";
+    const hasActiveDeal =
+      advertisement.status === "active" &&
+      (advertisement.listing?.deals?.length ?? 0) > 0;
+    const statusPillLabel = intakeClosed
+      ? "의뢰 종료"
+      : hasActiveDeal
+        ? "거래 중"
+        : intakeHold
+          ? "의뢰 보류"
+          : listingPaused
+            ? "옵션 중단"
+            : label;
+    const statusPillTone = intakeClosed
+      ? PROPERTY_TABLE_PILL_TONES.danger
+      : hasActiveDeal || intakeHold || listingPaused
+        ? PROPERTY_TABLE_PILL_TONES.warning
+        : PROPERTY_TABLE_PILL_TONES.success;
+    const pillTitle = intakeClosed
+      ? "의뢰가 끝난 매물입니다. 광고를 내리세요. (눌러서 매물 열기)"
+      : hasActiveDeal
+        ? "거래가 진행 중인 매물입니다. 광고 유지 여부를 확인하세요. (눌러서 매물 열기)"
+        : intakeHold
+          ? "의뢰가 보류 상태인 매물입니다. (눌러서 매물 열기)"
+          : listingPaused
+            ? "거래 옵션이 중단된 매물입니다. (눌러서 매물 열기)"
+            : "매물 열기";
     const pill = (
-      <span
-        className={cn(
-          PROPERTY_TABLE_STATUS_PILL_CLASS_NAME,
-          PROPERTY_TABLE_PILL_TONES.success,
-        )}
-      >
+      <span className={cn(PROPERTY_TABLE_STATUS_PILL_CLASS_NAME, statusPillTone)}>
         <span className={PROPERTY_TABLE_STATUS_DOT_CLASS_NAME} />
-        {label}
+        {statusPillLabel}
       </span>
     );
     return place ? (
       <Link
         to="/properties/$id"
         params={{ id: place.id }}
-        title="매물 열기"
+        title={pillTitle}
         onClick={(event) => event.stopPropagation()}
         className="inline-flex max-w-full rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/35"
       >
@@ -188,28 +221,55 @@ export function ChangeRequestCell({
 }: {
   advertisement: ListingAdvertisementWithListing;
 }) {
-  const { drafts } = useMyAdsTableState();
+  const { drafts, expandedIds, onToggleExpanded, onPanelTabChange } =
+    useMyAdsTableState();
   const requests = pendingChangeRequests(advertisement);
+  const failed = failedChangeRequests(advertisement);
   const isDrafting = !isDraftEmpty(drafts[advertisement.id]);
-  if (!isDrafting && requests.length === 0) return <EmptyCellValue />;
+  if (!isDrafting && requests.length === 0 && failed.length === 0) {
+    return <EmptyCellValue />;
+  }
+  const marker = isDrafting ? "draft" : requests.length > 0 ? "pending" : "failed";
+  const label = isDrafting
+    ? "작성 중"
+    : requests.length > 0
+      ? `요청 중${requests.length > 1 ? ` ${requests.length}` : ""}`
+      : "요청 실패";
+  const title =
+    requests.length > 0
+      ? requests.map((request) => changeRequestSummary(request)).join("\n")
+      : isDrafting
+        ? "아직 보내지 않은 요청이 있습니다. 눌러서 확인하세요."
+        : failed[0]?.failureReason
+          ? `요청 실패: ${failed[0].failureReason}`
+          : "실패한 요청이 있습니다. 눌러서 확인하세요.";
   return (
-    <span
-      data-my-ads-request-marker={isDrafting ? "draft" : "pending"}
-      title={
-        requests.length > 0
-          ? requests.map((request) => changeRequestSummary(request)).join("\n")
-          : "아직 보내지 않은 요청이 있습니다."
-      }
+    <button
+      type="button"
+      data-my-ads-request-marker={marker}
+      title={title}
+      aria-label={`${advertisementLocationLabel(advertisement)} ${label}, 요청 탭 열기`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPanelTabChange("requests");
+        if (!expandedIds.has(advertisement.id)) {
+          onToggleExpanded(advertisement.id, event.currentTarget);
+        }
+      }}
+      onDoubleClick={(event) => event.stopPropagation()}
       className={cn(
         PROPERTY_TABLE_STATUS_PILL_CLASS_NAME,
-        isDrafting
+        "transition-opacity hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/35",
+        marker === "draft"
           ? PROPERTY_TABLE_PILL_TONES.neutralStrong
-          : PROPERTY_TABLE_PILL_TONES.info,
+          : marker === "failed"
+            ? PROPERTY_TABLE_PILL_TONES.danger
+            : PROPERTY_TABLE_PILL_TONES.info,
       )}
     >
       <span aria-hidden="true" className={PROPERTY_TABLE_STATUS_DOT_CLASS_NAME} />
-      {isDrafting ? "작성 중" : `요청 중${requests.length > 1 ? ` ${requests.length}` : ""}`}
-    </span>
+      {label}
+    </button>
   );
 }
 
@@ -237,22 +297,35 @@ export function CpAdvertisementCell({
   advertisement: ListingAdvertisementWithListing;
 }) {
   const provider = cpChannelLabel(advertisement.channel);
-  // 직접 입력한 광고인지 CP에서 읽어 온 광고인지는 여기에 표시하지 않는다. 줄마다 붙는 "수동" 태그는
-  // 이 칸의 질문(어느 CP사인가)과 상관없는 소음이었다. 출처는 옆 상세 패널의 "출처" 줄에서 본다.
+  const syncState = advertisementSyncState(advertisement);
+  const accountLabel =
+    advertisement.cpAccount?.accountName || advertisement.cpAccount?.accountKey;
+  const tooltip = [
+    provider,
+    accountLabel,
+    advertisement.externalAdId,
+    syncState === "manual_override" ? "직접 수정됨" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <span
-      title={
-        advertisement.externalAdId
-          ? `${provider} · ${advertisement.externalAdId}`
-          : provider
-      }
-      className={cn(
-        PROPERTY_TABLE_TAG_CLASS_NAME,
-        "min-w-0",
-        PROPERTY_TABLE_PILL_TONES.neutralStrong,
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1 whitespace-nowrap">
+      <span
+        title={tooltip}
+        className={cn(
+          PROPERTY_TABLE_TAG_CLASS_NAME,
+          "min-w-0",
+          PROPERTY_TABLE_PILL_TONES.neutralStrong,
+        )}
+      >
+        <span className="truncate">{provider}</span>
+      </span>
+      {syncState === "manual_override" && (
+        <span
+          title="최근 동기화 이후 직접 수정됨"
+          className="size-1.5 shrink-0 rounded-full bg-warning"
+        />
       )}
-    >
-      <span className="truncate">{provider}</span>
     </span>
   );
 }
@@ -262,33 +335,38 @@ export function NaverAdvertisementCell({
 }: {
   advertisement: ListingAdvertisementWithListing;
 }) {
-  if (!advertisement.naverArticleNo || !advertisement.naverUrl) {
+  const url = resolvedNaverUrl(advertisement);
+  if (!advertisement.naverArticleNo || !url) {
     return <EmptyCellValue />;
   }
 
   const isActive =
-    advertisement.comparison?.mainAdvertisement?.isActive ?? true;
+    advertisement.comparison?.ownAdvertisement?.isActive ?? true;
   const exposure = isActive ? "게재 중" : "미노출";
 
   return (
     <a
-      href={advertisement.naverUrl}
+      href={url}
       target="_blank"
       rel="noopener noreferrer"
       title={`네이버 광고 ${advertisement.naverArticleNo} (${exposure}) 새 창에서 열기`}
       aria-label={`${advertisementLocationLabel(advertisement)} 네이버 광고 ${exposure}, 새 창에서 열기`}
       onClick={(event) => event.stopPropagation()}
-      className="inline-flex h-5 max-w-full items-center gap-1 whitespace-nowrap rounded-[4px] border border-border px-1.5 text-[13px] font-normal leading-none text-foreground transition-colors hover:border-info/40 hover:bg-info-soft hover:text-info focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/35"
+      // 상자·점 없이 글 링크로 둔다(Notion의 URL 칸처럼 옅은 밑줄 + 나가는 화살표).
+      // 게재 여부는 노출 칸이 말하므로 여기서는 미노출일 때 글만 흐리게 한다.
+      className={cn(
+        "group/naver -mx-1 inline-flex h-6 max-w-full items-center gap-0.5 whitespace-nowrap rounded-[4px] px-1 text-[14px] font-[450] leading-5 transition-colors hover:bg-[rgba(55,53,47,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2383e2]/35",
+        isActive ? "text-foreground" : "text-muted-foreground",
+      )}
     >
-      <span
+      <span className="underline decoration-[rgba(55,53,47,0.22)] underline-offset-[3px] group-hover/naver:decoration-[rgba(55,53,47,0.5)]">
+        네이버
+      </span>
+      <ArrowUpRight
         aria-hidden="true"
-        className={cn(
-          "size-1.5 shrink-0 rounded-full",
-          isActive ? "bg-success" : "bg-muted-foreground/50",
-        )}
+        className="size-3.5 shrink-0 text-muted-foreground/70 group-hover/naver:text-foreground"
+        strokeWidth={1.75}
       />
-      네이버
-      <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
     </a>
   );
 }
@@ -299,7 +377,7 @@ export function VerificationMethodCell({
   advertisement: ListingAdvertisementWithListing;
 }) {
   const code =
-    advertisement.comparison?.mainAdvertisement
+    advertisement.comparison?.ownAdvertisement
       ?.verificationTypeCode;
   if (!code) return <EmptyCellValue />;
 
@@ -357,10 +435,14 @@ export function FloorExposureCell({
 }: {
   advertisement: ListingAdvertisementWithListing;
 }) {
-  const main =
-    advertisement.comparison?.mainAdvertisement ?? null;
-  const comparison = analyzeOfficeAdvertisementComparison(advertisement);
-  const exposureMode = main ? comparison.ownFloorExposureMode : "unknown";
+  const own =
+    advertisement.comparison?.ownAdvertisement ?? null;
+  const comparison = getCachedComparison(advertisement);
+  const exposureMode = own
+    ? comparison.ownFloorExposureMode
+    : advertisement.floorExposure === "exact" || advertisement.floorExposure === "band"
+      ? advertisement.floorExposure
+      : "unknown";
   const exposureLabel =
     exposureMode === "exact"
       ? "노출"
@@ -383,14 +465,38 @@ export function FloorExposureCell({
         : "층 노출 방식 미확인";
 
   const { mode, drafts, onToggleFloorRequest } = useMyAdsTableState();
-  const asked = isValueAsked(advertisement, drafts[advertisement.id], "floorExposure");
-  const content = (
+  const requested = requestedCellDisplay(advertisement, drafts[advertisement.id], "floorExposure");
+  const asked = Boolean(requested) || isValueAsked(advertisement, drafts[advertisement.id], "floorExposure");
+  const baseTooltip = `${exposureDescription}${
+    disadvantage
+      ? ` · 정확한 층을 공개한 경쟁 광고 ${comparison.exactFloorCompetitorCount}건`
+      : ""
+  }${requested ? ` · 요청: ${requested.text}` : ""}`;
+  const content = requested ? (
+    <span title={baseTooltip} className="flex min-w-0 flex-col justify-center leading-none">
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 truncate text-[11px] leading-[14px]",
+          askedValueClassName,
+        )}
+      >
+        {exposureLabel}
+        {disadvantage ? " · 불리" : ""}
+      </span>
+      <span
+        data-my-ads-requested-value="floorExposure"
+        data-request-origin={requested.kind}
+        className={cn(
+          "truncate text-[11px] font-medium leading-[14px]",
+          requested.kind === "draft" ? "text-info" : "text-primary",
+        )}
+      >
+        → {requested.text}
+      </span>
+    </span>
+  ) : (
     <span
-      title={`${exposureDescription}${
-        disadvantage
-          ? ` · 정확한 층을 공개한 경쟁 광고 ${comparison.exactFloorCompetitorCount}건`
-          : ""
-      }${asked ? " · 변경 요청이 있습니다. 펼쳐서 요청 탭을 보세요." : ""}`}
+      title={baseTooltip}
       // 칸이 좁으면 "불리"는 남기고 알약 글자를 말줄임한다(칸 밖으로 넘치지 않는다).
       className="inline-flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden whitespace-nowrap"
     >
@@ -412,7 +518,7 @@ export function FloorExposureCell({
     </span>
   );
   // 변경 요청 모드에서만 누를 수 있다. 기록 수정으로는 고치지 않는다(읽어 온 값이다).
-  if (mode !== "request") return asked ? <span className={askedValueClassName}>{content}</span> : content;
+  if (mode !== "request") return asked && !requested ? <span className={askedValueClassName}>{content}</span> : content;
   const blocked = editBlockReason(advertisement, "floorExposure", "request");
   if (blocked) {
     return (
@@ -432,7 +538,7 @@ export function FloorExposureCell({
         onToggleFloorRequest(advertisement);
       }}
       onDoubleClick={(event) => event.stopPropagation()}
-      className={cn(editableCellButtonClassName, asked && askedValueClassName)}
+      className={cn(editableCellButtonClassName, requested && "h-[33px] py-0.5")}
     >
       {content}
     </button>
@@ -480,28 +586,58 @@ function MoneyCell({
   advertisement,
   field,
   label,
+  displayLabel,
+  mismatch = false,
 }: {
   advertisement: ListingAdvertisementWithListing;
   field: "primary" | "monthlyRent";
   label: string;
+  displayLabel?: string;
+  mismatch?: boolean;
 }) {
   const { mode, editingCell, drafts, onStartEdit } = useMyAdsTableState();
-  const asked = isValueAsked(advertisement, drafts[advertisement.id], field);
+  const requested = requestedCellDisplay(advertisement, drafts[advertisement.id], field);
+  const asked = Boolean(requested) || isValueAsked(advertisement, drafts[advertisement.id], field);
   const isEditing =
     editingCell?.id === advertisement.id && editingCell.field === field;
 
   if (isEditing) {
     return <MoneyCellEditor advertisement={advertisement} field={field} />;
   }
-  const text = (
+  const text = requested ? (
+    <span
+      title={`${label} · 요청: ${requested.text}`}
+      className="flex min-w-0 flex-col justify-center tabular-nums"
+    >
+      <span
+        className={cn(
+          "min-w-0 truncate whitespace-nowrap text-[11px] leading-[14px]",
+          askedValueClassName,
+        )}
+      >
+        {displayLabel ?? label}
+      </span>
+      <span
+        data-my-ads-requested-value={field}
+        data-request-origin={requested.kind}
+        className={cn(
+          "min-w-0 truncate whitespace-nowrap text-[12px] font-medium leading-[15px]",
+          requested.kind === "draft" ? "text-info" : "text-primary",
+        )}
+      >
+        → {requested.text}
+      </span>
+    </span>
+  ) : (
     <span
       title={asked ? `${label} · 변경 요청이 있습니다. 펼쳐서 요청 탭을 보세요.` : label}
       className={cn(
         "min-w-0 truncate whitespace-nowrap tabular-nums",
         asked && askedValueClassName,
+        !asked && mismatch && "text-warning",
       )}
     >
-      {label}
+      {displayLabel ?? label}
     </span>
   );
   if (!mode) return text;
@@ -525,11 +661,31 @@ function MoneyCell({
         onStartEdit(advertisement, field);
       }}
       onDoubleClick={(event) => event.stopPropagation()}
-      className={editableCellButtonClassName}
+      className={cn(editableCellButtonClassName, requested && "h-[33px] py-0.5")}
     >
       {text}
     </button>
   );
+}
+
+function ledgerMismatchHint(
+  advertisement: ListingAdvertisementWithListing,
+  field: "primary" | "monthlyRent",
+): string | null {
+  const listing = advertisement.listing;
+  if (!listing) return null;
+  const adValue = currentAmount(advertisement, field);
+  if (adValue == null) return null;
+  const ledgerValue =
+    field === "monthlyRent"
+      ? listing.monthlyRent
+      : listing.transactionType === "sale"
+        ? listing.price
+        : listing.transactionType === "jeonse"
+          ? (listing.price ?? listing.deposit)
+          : listing.deposit;
+  if (ledgerValue == null || adValue === ledgerValue) return null;
+  return `원장가(${formatMoney(ledgerValue)})와 다름`;
 }
 
 export function InlinePriceCell({
@@ -537,11 +693,15 @@ export function InlinePriceCell({
 }: {
   advertisement: ListingAdvertisementWithListing;
 }) {
+  const mismatch = ledgerMismatchHint(advertisement, "primary");
+  const label = advertisementPrimaryAmountLabel(advertisement);
   return (
     <MoneyCell
       advertisement={advertisement}
       field="primary"
-      label={advertisementPrimaryAmountLabel(advertisement)}
+      label={mismatch ? `${label} · ${mismatch}` : label}
+      displayLabel={label}
+      mismatch={Boolean(mismatch)}
     />
   );
 }
@@ -554,11 +714,15 @@ export function InlineMonthlyRentCell({
   if (advertisementTransactionType(advertisement) !== "monthly") {
     return <EmptyCellValue />;
   }
+  const mismatch = ledgerMismatchHint(advertisement, "monthlyRent");
+  const label = advertisementMonthlyRentLabel(advertisement);
   return (
     <MoneyCell
       advertisement={advertisement}
       field="monthlyRent"
-      label={advertisementMonthlyRentLabel(advertisement)}
+      label={mismatch ? `${label} · ${mismatch}` : label}
+      displayLabel={label}
+      mismatch={Boolean(mismatch)}
     />
   );
 }
@@ -633,17 +797,22 @@ function MoneyCellEditor({
   const [problem, setProblem] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
+  const committedRef = useRef(false);
   const textRef = useRef(text);
   textRef.current = text;
 
   const commit = useCallback(async (): Promise<boolean> => {
-    if (savingRef.current) return false;
+    if (savingRef.current || committedRef.current) return true;
     savingRef.current = true;
     setIsSaving(true);
     try {
       const reason = await onCommitEdit(advertisement, field, textRef.current);
-      if (reason) setProblem(reason);
-      return reason === null;
+      if (reason) {
+        setProblem(reason);
+        return false;
+      }
+      committedRef.current = true;
+      return true;
     } finally {
       savingRef.current = false;
       setIsSaving(false);

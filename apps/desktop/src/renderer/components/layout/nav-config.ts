@@ -11,7 +11,6 @@ import {
   Map,
   Megaphone,
   MessageSquare,
-  Network,
   Settings,
   Users,
   Wallet,
@@ -68,12 +67,11 @@ export const NAV_GROUPS: {
 
 /**
  * 개발 실행에서만 사이드바에 보이는 항목. 배포 빌드에는 들어가지 않는다.
- * 네트워크는 2차 업데이트 대상이라 메뉴에서 빼 두었고, 지금은 확인용으로 여기에만 올려 두었다.
- * 확인이 끝나면 이 목록을 비운다.
+ * 네트워크(/network)는 2차 업데이트 대상이라 메뉴에서 뺐다(2026-11-22에 확인용 노출도 내렸다).
+ * 화면 코드와 주소는 남아 있다. 다시 확인할 때만 여기에
+ * { path: "/network", label: "네트워크", icon: Network, group: "operations" }를 올린다.
  */
-const DEV_PREVIEW_ITEMS: NavItem[] = import.meta.env?.DEV
-  ? [{ path: "/network", label: "네트워크", icon: Network, group: "operations" }]
-  : [];
+const DEV_PREVIEW_ITEMS: NavItem[] = [];
 
 export const NAV_ITEMS: NavItem[] = [
   // ── 시작
@@ -145,14 +143,14 @@ export const NAV_ITEMS: NavItem[] = [
       {
         path: "/cashflow/employee-settlements",
         label: "직원 정산",
-        roles: ["owner", "manager"],
+        // 직원별 지급액이 나오는 화면이라 대표만 연다(화면·서버 모두 대표만 허용)
+        roles: ["owner"],
       },
       { path: "/cashflow/my-settlement", label: "내 수수료" },
-      {
-        path: "/cashflow/expenses",
-        label: "고정비 설정",
-        roles: ["owner", "manager"],
-      },
+      // 고정비 설정(/cashflow/expenses)은 2026-11-22에 메뉴에서 뺐다. 이 영역의 목적은 직원 정산 계산이고,
+      // 고정비는 정산에 쓰이지 않고 캐시플로우의 순이익 칸에만 쓰였다(그 칸도 함께 내렸다).
+      // 화면 코드와 서버 API·표는 남아 있고, 주소로 들어오면 캐시플로우로 보낸다. 다시 켤 때는 여기에
+      // { path: "/cashflow/expenses", label: "고정비 설정", roles: ["owner", "manager"] }를 되돌린다.
     ],
   },
 
@@ -173,7 +171,14 @@ export const NAV_ITEMS: NavItem[] = [
   },
   // 네트워크·협력업체 찾기·자료실은 현재 사이드바에서 제외 — 기존 라우트와 데이터는 유지한다.
   ...DEV_PREVIEW_ITEMS,
-  { path: "/settings", label: "설정", icon: Settings, group: "operations" },
+  // 파트너 중개사 전체 화면(/partner-brokers)은 설정 › 공동중개 파트너에서 연다.
+  {
+    path: "/settings",
+    label: "설정",
+    icon: Settings,
+    group: "operations",
+    alsoActivePaths: ["/partner-brokers"],
+  },
 ];
 
 /** active 하이라이트 prefix 충돌 제거용 — 모든 네비 경로 (item + children) */
@@ -234,8 +239,12 @@ export const ROUTE_LABELS: Record<string, string> = {
   "/_authenticated/contacts/new": "연락처 추가",
   "/_authenticated/consultations/": "상담분석",
   "/_authenticated/calls/": "상담분석",
+  "/_authenticated/calls/logs": "통화 이력",
   // 거래
   "/_authenticated/wanted-properties/": "희망매물",
+  "/_authenticated/buyer-requirements/new": "희망매물 생성",
+  "/_authenticated/buyer-requirements/$id": "희망 조건",
+  "/_authenticated/buyer-requirements/$id_/edit": "희망 조건 수정",
   "/_authenticated/deals/": "거래관리",
   "/_authenticated/contracts/": "계약서 관리",
   "/_authenticated/cashflow/": "수수료/정산",

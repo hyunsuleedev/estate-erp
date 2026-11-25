@@ -140,7 +140,8 @@ function LinkDialogBody({
       toast.success("광고를 매물에 연결했습니다.");
       if (isCurrentRef.current) onDone();
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) =>
+      toast.error(getErrorMessage(error, "광고를 매물에 연결하지 못했습니다. 다시 시도해 주세요.")),
     onSettled: () => {
       if (isCurrentRef.current) setLinkingId(null);
     },
@@ -273,9 +274,35 @@ function LinkDialogBody({
         </div>
       </div>
 
-      <p className="border-t px-5 py-2.5 text-xs text-muted-foreground">
-        연결해도 광고 값은 바뀌지 않습니다.
-      </p>
+      <div className="flex items-center justify-between gap-2 border-t px-5 py-2.5">
+        <p className="text-xs text-muted-foreground">
+          연결해도 광고 값은 바뀌지 않습니다.
+        </p>
+        {level !== "none" && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 shrink-0 px-2.5 text-xs text-muted-foreground hover:text-destructive"
+            disabled={linkMutation.isPending}
+            onClick={() =>
+              api.listingAdvertisements
+                .link(advertisement.id, { listingId: null, propertyId: null, siteId: null })
+                .then(() => {
+                  void queryClient.invalidateQueries({ queryKey: ["listing-advertisements"] });
+                  void queryClient.invalidateQueries({ queryKey: ["listings"] });
+                  toast.success("매물 연결을 해제했습니다.");
+                  if (isCurrentRef.current) onDone();
+                })
+                .catch((error) =>
+                  toast.error(getErrorMessage(error, "연결을 해제하지 못했습니다. 다시 시도해 주세요.")),
+                )
+            }
+          >
+            연결 해제
+          </Button>
+        )}
+      </div>
     </>
   );
 }

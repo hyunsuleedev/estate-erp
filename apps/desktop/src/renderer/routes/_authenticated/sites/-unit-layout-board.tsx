@@ -161,8 +161,8 @@ export function UnitLayoutBoard({
               </button>
             );
           })}
-          <span className="ml-1 text-[10px] text-muted-foreground">
-            내부 CRM 데이터 기준 · 신호가 없으면 미확인
+          <span className="ml-1 text-[12px] text-muted-foreground">
+            적어 둔 세입자·소유자 실거주 기준 · 기록이 없으면 미확인
           </span>
         </div>
       )}

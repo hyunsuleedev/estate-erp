@@ -59,6 +59,7 @@ import { Route as AuthenticatedCashflowEmployeeSettlementsRouteImport } from './
 import { Route as AuthenticatedCallsLogsRouteImport } from './routes/_authenticated/calls/logs'
 import { Route as AuthenticatedBuyerRequirementsNewRouteImport } from './routes/_authenticated/buyer-requirements/new'
 import { Route as AuthenticatedBuyerRequirementsIdRouteImport } from './routes/_authenticated/buyer-requirements/$id'
+import { Route as AuthenticatedPropertiesUnitUnitIdRouteImport } from './routes/_authenticated/properties/unit.$unitId'
 import { Route as AuthenticatedBuyerRequirementsIdEditRouteImport } from './routes/_authenticated/buyer-requirements/$id_.edit'
 
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
@@ -343,6 +344,12 @@ const AuthenticatedBuyerRequirementsIdRoute =
     path: '/buyer-requirements/$id',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedPropertiesUnitUnitIdRoute =
+  AuthenticatedPropertiesUnitUnitIdRouteImport.update({
+    id: '/properties/unit/$unitId',
+    path: '/properties/unit/$unitId',
+    getParentRoute: () => AuthenticatedRoute,
+  } as any)
 const AuthenticatedBuyerRequirementsIdEditRoute =
   AuthenticatedBuyerRequirementsIdEditRouteImport.update({
     id: '/buyer-requirements/$id_/edit',
@@ -400,6 +407,7 @@ export interface FileRoutesByFullPath {
   '/tasks/': typeof AuthenticatedTasksIndexRoute
   '/wanted-properties/': typeof AuthenticatedWantedPropertiesIndexRoute
   '/buyer-requirements/$id/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
+  '/properties/unit/$unitId': typeof AuthenticatedPropertiesUnitUnitIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -451,6 +459,7 @@ export interface FileRoutesByTo {
   '/tasks': typeof AuthenticatedTasksIndexRoute
   '/wanted-properties': typeof AuthenticatedWantedPropertiesIndexRoute
   '/buyer-requirements/$id/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
+  '/properties/unit/$unitId': typeof AuthenticatedPropertiesUnitUnitIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -505,6 +514,7 @@ export interface FileRoutesById {
   '/_authenticated/tasks/': typeof AuthenticatedTasksIndexRoute
   '/_authenticated/wanted-properties/': typeof AuthenticatedWantedPropertiesIndexRoute
   '/_authenticated/buyer-requirements/$id_/edit': typeof AuthenticatedBuyerRequirementsIdEditRoute
+  '/_authenticated/properties/unit/$unitId': typeof AuthenticatedPropertiesUnitUnitIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -558,6 +568,7 @@ export interface FileRouteTypes {
     | '/tasks/'
     | '/wanted-properties/'
     | '/buyer-requirements/$id/edit'
+    | '/properties/unit/$unitId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -609,6 +620,7 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/wanted-properties'
     | '/buyer-requirements/$id/edit'
+    | '/properties/unit/$unitId'
   id:
     | '__root__'
     | '/'
@@ -662,6 +674,7 @@ export interface FileRouteTypes {
     | '/_authenticated/tasks/'
     | '/_authenticated/wanted-properties/'
     | '/_authenticated/buyer-requirements/$id_/edit'
+    | '/_authenticated/properties/unit/$unitId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1024,6 +1037,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBuyerRequirementsIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/properties/unit/$unitId': {
+      id: '/_authenticated/properties/unit/$unitId'
+      path: '/properties/unit/$unitId'
+      fullPath: '/properties/unit/$unitId'
+      preLoaderRoute: typeof AuthenticatedPropertiesUnitUnitIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/buyer-requirements/$id_/edit': {
       id: '/_authenticated/buyer-requirements/$id_/edit'
       path: '/buyer-requirements/$id/edit'
@@ -1091,6 +1111,7 @@ interface AuthenticatedRouteChildren {
   AuthenticatedTasksIndexRoute: typeof AuthenticatedTasksIndexRoute
   AuthenticatedWantedPropertiesIndexRoute: typeof AuthenticatedWantedPropertiesIndexRoute
   AuthenticatedBuyerRequirementsIdEditRoute: typeof AuthenticatedBuyerRequirementsIdEditRoute
+  AuthenticatedPropertiesUnitUnitIdRoute: typeof AuthenticatedPropertiesUnitUnitIdRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -1149,6 +1170,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
     AuthenticatedWantedPropertiesIndexRoute,
   AuthenticatedBuyerRequirementsIdEditRoute:
     AuthenticatedBuyerRequirementsIdEditRoute,
+  AuthenticatedPropertiesUnitUnitIdRoute:
+    AuthenticatedPropertiesUnitUnitIdRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

@@ -14,7 +14,8 @@ import {
   type ReactNode,
 } from 'react';
 import type { ColumnDef, SortingState } from '@tanstack/react-table';
-import { ApiError, type Contact } from '@estate-erp/api-client';
+import type { Contact } from '@estate-erp/api-client';
+import { apiErrorMessage } from '@/lib/api-error';
 import {
   Activity,
   AlertCircle,
@@ -51,13 +52,10 @@ import {
   formatUnitName,
 } from '@estate-erp/shared';
 import { api } from '@/lib/api';
-import { formatDateShortYear, formatPhone } from '@/lib/format';
+import { formatPhone } from '@/lib/format';
+import { consultationDisplayText, formatConsultationDay } from '../consultations/-consultation-list-model';
 import { ContactNameBadge, EmptyState, RowOpenButton, StatusBadge } from '@/components/domain';
-import {
-  CONSULTATION_TYPE_LABELS,
-  formatAreaRange,
-  formatBudget,
-} from '../buyer-requirements/-buyer-utils';
+import { formatAreaRange, formatBudget } from '../buyer-requirements/-buyer-utils';
 import {
   ALL_CONTACTS_CATEGORY,
   CONTACT_CATEGORY_SECTIONS,
@@ -73,7 +71,7 @@ import {
   storeCategoriesPanelOpen,
 } from './-contact-categories-panel';
 import { ContactGroupNameDialog } from './-contact-group-dialog';
-import { ContactTagsCell } from './-contact-tag-picker';
+import { ContactTagsCell, contactTagsQuery } from './-contact-tag-picker';
 import {
   CONTACT_OPTIONAL_COLUMNS,
   isContactColumnVisible,
@@ -82,8 +80,9 @@ import {
   storeContactColumns,
   type ContactColumnOverrides,
 } from './-contact-columns';
-import { propertyRoleLabels } from './-detail-cards';
+import { consultationTypeLabels, placeLabelOf, propertyRoleLabels } from './-detail-cards';
 import { ContactInspector } from './-quick-sheet';
+import { ContactNameFill, isPlaceholderContactName } from './-contact-name';
 import {
   ToolbarFilterChip,
   ToolbarPillSearch,
@@ -148,11 +147,14 @@ interface ContactFilterState {
   /** CONTACT_CATEGORY_SECTIONS와 같은 순서. 묶음마다 고른 분류 하나 */
   keys: ReadonlyArray<ContactCategoryKey | null>;
   group: string | null;
+  /** 태그 하나 ("VIP", "학군") */
+  tag: string | null;
 }
 
 const EMPTY_CONTACT_FILTERS: ContactFilterState = {
   keys: CONTACT_CATEGORY_SECTIONS.map(() => null),
   group: null,
+  tag: null,
 };
 
 /** 필터 칩 아이콘 — CONTACT_CATEGORY_SECTIONS와 같은 순서 (고객 구분 · 진행 상황 · 정리) */
@@ -219,12 +221,14 @@ function ContactsPage() {
     () => contactFilters.keys.filter((key): key is ContactCategoryKey => key !== null),
     [contactFilters.keys],
   );
-  const activeFilterCount = activeCategoryKeys.length + (contactFilters.group ? 1 : 0);
+  const activeFilterCount =
+    activeCategoryKeys.length + (contactFilters.group ? 1 : 0) + (contactFilters.tag ? 1 : 0);
   // 사이드바는 조건이 하나일 때만 그 분류를 고른 것으로 보인다. 여러 개면 아무것도 고르지 않은 상태다.
+  // 태그는 사이드바에 없으므로 태그만 걸려 있어도 사이드바는 아무것도 고르지 않은 상태다.
   const categoryId =
     activeFilterCount === 0
       ? ALL_CONTACTS_CATEGORY.id
-      : activeFilterCount > 1
+      : activeFilterCount > 1 || contactFilters.tag
         ? ''
         : contactFilters.group
           ? contactGroupCategory(contactFilters.group).id
@@ -239,9 +243,17 @@ function ContactsPage() {
             | undefined) ?? null,
       ),
       group: contactGroupNameOf(id),
+      tag: null,
     });
   }, []);
   const categorySummary = useQuery(contactCategorySummaryQuery);
+  const tagSummary = useQuery(contactTagsQuery);
+  const tagOptions = useMemo(() => {
+    const tags = (tagSummary.data ?? []).filter((tag) => tag.count > 0);
+    return contactFilters.tag && !tags.some((tag) => tag.name === contactFilters.tag)
+      ? [{ name: contactFilters.tag, count: 0 }, ...tags]
+      : tags;
+  }, [tagSummary.data, contactFilters.tag]);
   const groupOptions = useMemo(() => {
     const names = (categorySummary.data?.groups ?? [])
       .map(({ name }) => name);
@@ -308,11 +320,12 @@ function ContactsPage() {
         | ContactCategoryKey
         | undefined,
       group: contactFilters.group ?? undefined,
+      tags: contactFilters.tag ?? undefined,
       search: deferredSearch.trim() || undefined,
       sortBy: activeSorts[0]?.field as 'name' | 'createdAt' | 'updatedAt' | undefined,
       sortOrder: activeSorts[0]?.direction ?? 'desc',
     };
-  }, [activeCategoryKeys, activeSorts, contactFilters.group, deferredSearch]);
+  }, [activeCategoryKeys, activeSorts, contactFilters.group, contactFilters.tag, deferredSearch]);
 
   useEffect(() => {
     setSelectedContactIds([]);
@@ -408,9 +421,19 @@ function ContactsPage() {
             <>
               {/* 관리단지 소유자명 칸과 같은 이름 배지. 여기서는 줄이 곧 그 사람이라 배지를 눌러 갈 곳이 없다 —
                   누르는 기능 없이 모양만 쓰고, 여는 것은 옆의 "열기" 버튼이 맡는다. */}
-              <span className="flex min-w-0 text-[14px] leading-[21px] text-foreground">
-                <ContactNameBadge name={contact.name} />
-              </span>
+              {isPlaceholderContactName(contact.name) ? (
+                // 이름을 모르는 손님: 임시 이름은 흐리게, 바로 옆에서 이름을 넣는다
+                <span className="flex min-w-0 items-center gap-1 text-[14px] leading-[21px]">
+                  <span className="truncate text-muted-foreground" title="이름을 모르는 손님 (번호 끝 네 자리)">
+                    {contact.name}
+                  </span>
+                  <ContactNameFill contactId={contact.id} size="xs" />
+                </span>
+              ) : (
+                <span className="flex min-w-0 text-[14px] leading-[21px] text-foreground">
+                  <ContactNameBadge name={contact.name} />
+                </span>
+              )}
               <RowOpenButton
                 label={contact.name}
                 current={isCurrent}
@@ -478,7 +501,7 @@ function ContactsPage() {
         cell: ({ row }) => (
           <ExpandableCountChip
             count={row.original._count?.buyerRequirements ?? 0}
-            label="매수 희망조건"
+            label="희망 조건"
             expanded={expandedPanels.get(row.original.id) === 'buyerRequirements'}
             panelId={getContactExpandedPanelId(row.original.id)}
             onToggle={() => toggleExpandedPanel(row.original.id, 'buyerRequirements')}
@@ -494,7 +517,7 @@ function ContactsPage() {
         cell: ({ row }) => (
           <ExpandableCountChip
             count={row.original._count?.propertyContacts ?? 0}
-            label="연결 물건"
+            label="연결 매물"
             expanded={expandedPanels.get(row.original.id) === 'propertyContacts'}
             panelId={getContactExpandedPanelId(row.original.id)}
             onToggle={() => toggleExpandedPanel(row.original.id, 'propertyContacts')}
@@ -558,8 +581,10 @@ function ContactsPage() {
   const handleSortChange = useCallback((field: string) => {
     const definition = sortDefinitions.find((item) => item.field === field);
     if (!definition) return;
-    setActiveSorts([{ ...definition, direction: 'desc' }]);
-    setSorting([{ id: field, desc: true }]);
+    // 이름은 가나다순(ㄱ→ㅎ), 날짜는 최근 것부터
+    const direction = field === 'name' ? 'asc' : 'desc';
+    setActiveSorts([{ ...definition, direction }]);
+    setSorting([{ id: field, desc: direction === 'desc' }]);
   }, []);
 
   const handleEndReached = useCallback(() => {
@@ -574,13 +599,27 @@ function ContactsPage() {
     activeSorts[0]?.direction !== 'desc';
 
   const currentGroupName = contactFilters.group;
-  const emptyMessage = deferredSearch.trim()
+  const emptyMessage = deferredSearch.trim() || activeFilterCount > 1 || contactFilters.tag
     ? '조건에 맞는 연락처가 없습니다.'
     : currentGroupName
       ? '이 그룹에 아직 연락처가 없습니다. 전체 연락처에서 선택해 넣어 보세요.'
       : categoryId !== ALL_CONTACTS_CATEGORY.id
         ? '이 분류에 해당하는 연락처가 없습니다.'
-        : '등록된 연락처가 없습니다.';
+        : (
+          // 사무소에 연락처가 하나도 없을 때: 무엇을 하면 되는지와 바로 하는 단추
+          <span className="flex flex-col items-center gap-2 py-2 text-center">
+            <span className="text-[14px] text-foreground">등록된 연락처가 없습니다.</span>
+            <span className="text-[13px]">
+              전화 온 손님이나 집주인을 이름과 번호로 등록해 두면 상담·매물·희망매물에서 바로 찾을 수 있습니다.
+            </span>
+            <Button size="sm" asChild className="mt-1 h-[30px] rounded-[8px] px-3">
+              <Link to="/contacts/new">
+                <Plus className="size-3.5" />
+                연락처 추가
+              </Link>
+            </Button>
+          </span>
+        );
 
   return (
     <div data-contacts-page className="relative -m-4 flex min-h-0 flex-1 bg-white">
@@ -603,7 +642,9 @@ function ContactsPage() {
             label={
               activeFilterCount > 1
                 ? `조건 ${activeFilterCount}개`
-                : resolveContactCategory(categoryId).label
+                : contactFilters.tag
+                  ? `태그 ${contactFilters.tag}`
+                  : resolveContactCategory(categoryId).label
             }
             onToggle={toggleCategoriesPanel}
           />
@@ -687,6 +728,32 @@ function ContactsPage() {
                     selected={contactFilters.group}
                     onSelect={(value) => {
                       setContactFilters((prev) => ({ ...prev, group: value }));
+                      close();
+                    }}
+                  />
+                )}
+              </ToolbarFilterChip>
+            )}
+            {tagOptions.length > 0 && (
+              <ToolbarFilterChip
+                shape="soft"
+                icon={<Tag />}
+                label="태그"
+                summary={contactFilters.tag}
+                onClear={() => setContactFilters((prev) => ({ ...prev, tag: null }))}
+                contentClassName="w-[220px] p-1"
+              >
+                {(close) => (
+                  <ContactFilterOptionList
+                    ariaLabel="태그 필터"
+                    options={tagOptions.map((tag) => ({
+                      value: tag.name,
+                      label: tag.name,
+                      count: tag.count,
+                    }))}
+                    selected={contactFilters.tag}
+                    onSelect={(value) => {
+                      setContactFilters((prev) => ({ ...prev, tag: value }));
                       close();
                     }}
                   />
@@ -817,7 +884,7 @@ function ContactsPage() {
                         ? '불러오는 중'
                         : focusedRow
                           ? `${focusedRow.name}${focusedPhone ? ` · ${formatPhone(focusedPhone)}` : ''}`
-                          : `${activeFilterCount === 0 ? '연락처' : activeFilterCount > 1 ? `조건 ${activeFilterCount}개` : resolveContactCategory(categoryId).label} ${contacts.length.toLocaleString()} / ${totalCount.toLocaleString()}건`}
+                          : `${activeFilterCount === 0 ? '연락처' : activeFilterCount > 1 ? `조건 ${activeFilterCount}개` : contactFilters.tag ? `태그 ${contactFilters.tag}` : resolveContactCategory(categoryId).label} ${contacts.length.toLocaleString()} / ${totalCount.toLocaleString()}건`}
                       {!isLoading && activeSorts[0] ? ` · ${activeSorts[0].label}순` : ''}
                       {!isLoading && hasNextPage && !isFetchingNextPage
                         ? ' · 아래로 스크롤하면 더 불러옵니다'
@@ -847,12 +914,9 @@ function ContactsPage() {
   );
 }
 
-/** 고객 원장과 같은 표기: 올해는 "11.04", 다른 해는 "25.12.28" */
+/** 상담분석과 같은 표기: "오늘" · "어제" · "11.4" · 다른 해는 "25.12.28" (좁은 칸이라 요일은 뺀다) */
 function formatConsultDate(value: string) {
-  const short = formatDateShortYear(value);
-  return new Date(value).getFullYear() === new Date().getFullYear()
-    ? short.slice(3)
-    : short;
+  return formatConsultationDay(value, new Date(), { withWeekday: false });
 }
 
 /** 계산된 특징과 속한 그룹을 한 줄 글자로 합친다. 태그는 태그 열이 따로 보여 준다. */
@@ -945,7 +1009,7 @@ function ContactConsultationCell({
     <button
       type="button"
       aria-label={`${contact.name} 최근 상담 열기`}
-      title={consultation.content}
+      title={consultationDisplayText(consultation.content)}
       onClick={(event) => {
         event.stopPropagation();
         onOpenConsultation(contact);
@@ -955,10 +1019,10 @@ function ContactConsultationCell({
     >
       <span className="shrink-0 tabular-nums text-muted-foreground">
         {formatConsultDate(consultation.createdAt)}{' '}
-        {CONSULTATION_TYPE_LABELS[consultation.type] ?? consultation.type}
+        {consultationTypeLabels[consultation.type] ?? consultation.type}
       </span>
       <span className="min-w-0 truncate text-foreground underline-offset-2 group-hover/consult:underline">
-        {consultation.content.replace(/\s+/g, ' ')}
+        {consultationDisplayText(consultation.content).replace(/\s+/g, ' ')}
       </span>
     </button>
   );
@@ -1024,7 +1088,7 @@ function ContactRowActions({
 }
 
 function groupErrorMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
+  return apiErrorMessage(error, fallback);
 }
 
 function ContactBulkActions({
@@ -1326,7 +1390,7 @@ function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
   return (
     <div
       role="region"
-      aria-label={`${contact.name} 매수 희망조건`}
+      aria-label={`${contact.name} 희망 조건`}
       className="border-b border-border bg-[#fbfbfa] py-3 pl-4 pr-4"
     >
       <div className="max-w-[1320px]">
@@ -1335,7 +1399,7 @@ function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
             <Target className="size-3.5" aria-hidden="true" />
           </span>
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs tabular-nums">
-            <span className="text-[12.5px] font-semibold text-foreground">매수 희망조건</span>
+            <span className="text-[12.5px] font-semibold text-foreground">희망 조건</span>
             <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10.5px] font-semibold text-muted-foreground">
               {total}
             </span>
@@ -1363,21 +1427,21 @@ function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
               className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none"
               aria-hidden="true"
             />
-            희망조건을 불러오는 중...
+            희망 조건을 불러오는 중...
           </div>
         ) : isError ? (
           <div
             role="alert"
             className="ml-8 flex h-20 items-center justify-between rounded-lg border border-destructive/20 bg-white px-3.5"
           >
-            <span className="text-xs text-destructive">희망조건을 불러오지 못했습니다.</span>
+            <span className="text-xs text-destructive">희망 조건을 불러오지 못했습니다.</span>
             <Button type="button" variant="outline" size="xs" onClick={() => void refetch()}>
               다시 시도
             </Button>
           </div>
         ) : items.length === 0 ? (
           <div className="ml-8 flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
-            등록된 희망조건이 없습니다.
+            등록된 희망 조건이 없습니다.
           </div>
         ) : (
           <div className="mb-0 ml-8 mr-0 mt-1.5 flex flex-col gap-1.5">
@@ -1458,7 +1522,7 @@ function PropertyContactsExpandedPanel({ contact }: { contact: Contact }) {
   return (
     <div
       role="region"
-      aria-label={`${contact.name} 연결 물건`}
+      aria-label={`${contact.name} 연결 매물`}
       className="border-b border-border bg-[#fbfbfa] py-3 pl-4 pr-4"
     >
       <div className="max-w-[1320px]">
@@ -1467,7 +1531,7 @@ function PropertyContactsExpandedPanel({ contact }: { contact: Contact }) {
             <Building2 className="size-3.5" aria-hidden="true" />
           </span>
           <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs tabular-nums">
-            <span className="text-[12.5px] font-semibold text-foreground">연결 물건</span>
+            <span className="text-[12.5px] font-semibold text-foreground">연결 매물</span>
             <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1.5 text-[10.5px] font-semibold text-muted-foreground">
               {items.length}
             </span>
@@ -1490,28 +1554,26 @@ function PropertyContactsExpandedPanel({ contact }: { contact: Contact }) {
               className="mr-1.5 size-3.5 animate-spin motion-reduce:animate-none"
               aria-hidden="true"
             />
-            연결 물건을 불러오는 중...
+            연결 매물을 불러오는 중...
           </div>
         ) : isError ? (
           <div
             role="alert"
             className="ml-8 flex h-20 items-center justify-between rounded-lg border border-destructive/20 bg-white px-3.5"
           >
-            <span className="text-xs text-destructive">연결 물건을 불러오지 못했습니다.</span>
+            <span className="text-xs text-destructive">연결 매물을 불러오지 못했습니다.</span>
             <Button type="button" variant="outline" size="xs" onClick={() => void refetch()}>
               다시 시도
             </Button>
           </div>
         ) : items.length === 0 ? (
           <div className="ml-8 flex h-20 items-center justify-center rounded-lg border border-dashed border-border bg-white/70 text-xs text-muted-foreground">
-            연결된 물건이 없습니다.
+            연결된 매물이 없습니다.
           </div>
         ) : (
           <div className="mb-0 ml-8 mr-0 mt-1.5 flex flex-col gap-1.5">
             {items.map((propertyContact) => {
-              const siteName = propertyContact.property?.site?.name?.trim() || '이름 없는 물건';
-              const unitName = formatUnitName(propertyContact.property?.unit);
-              const title = unitName ? `${siteName} · ${unitName}` : siteName;
+              const title = placeLabelOf(propertyContact.property) || '이름 없는 매물';
               const address =
                 propertyContact.property?.site?.roadAddress ??
                 propertyContact.property?.site?.jibunAddress ??

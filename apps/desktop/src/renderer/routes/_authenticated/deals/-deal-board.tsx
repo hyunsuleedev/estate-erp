@@ -33,6 +33,7 @@ import {
   summarizeDealGroup,
   type DealDisplayGroup,
   type DealRowActions,
+  getPartyLabels,
 } from './-deal-view-utils';
 
 const dealBoardCollisionDetection: CollisionDetection = (args) => {
@@ -180,10 +181,10 @@ function DealColumn({
   onCreate?: () => void;
 }) {
   const summary = summarizeDealGroup(deals, group.key);
-  const commissionTotal = deals.reduce(
-    (sum, deal) => sum + getDealCommissionValue(deal),
-    0,
-  );
+  // 수수료를 볼 수 없는 거래(담당이 아닌 중개사)가 섞이면 합계가 틀려 보이므로 내지 않는다
+  const commissionTotal = deals.some((deal) => deal.commissionHidden)
+    ? 0
+    : deals.reduce((sum, deal) => sum + getDealCommissionValue(deal), 0);
   const { setNodeRef, isOver } = useDroppable({ id: group.key });
   const tone = DEAL_GROUP_TONE[group.key];
 
@@ -351,9 +352,11 @@ const DealCard = memo(function DealCard({
   const nextPayment = getNextDealPaymentSummary(deal, referenceDate);
   const health = getDealPipelineHealth(deal, referenceDate);
   const urgent = health.state === 'overdue' || nextPayment?.isUrgent;
+  // 전세·월세는 임대/임차로 부른다
+  const parties = getPartyLabels(transactionType);
   const partyParts = [
-    deal.sellerContact?.name ? `매도 ${deal.sellerContact.name}` : null,
-    deal.buyerContact?.name ? `매수 ${deal.buyerContact.name}` : null,
+    deal.sellerContact?.name ? `${parties.sellerShort} ${deal.sellerContact.name}` : null,
+    deal.buyerContact?.name ? `${parties.buyerShort} ${deal.buyerContact.name}` : null,
   ].filter(Boolean);
 
   return (
@@ -441,7 +444,7 @@ const DealCard = memo(function DealCard({
       >
         <CalendarClock className="size-3 shrink-0" aria-hidden="true" />
         <span className="min-w-0 truncate">
-          {formatNextPaymentLabel(nextPayment)}
+          {formatNextPaymentLabel(nextPayment, deal)}
         </span>
         <span aria-hidden="true" className="text-black/20">
           ·

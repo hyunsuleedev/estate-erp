@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { CalendarEvent } from "@estate-erp/api-client";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
 
 export type EventTiming = Pick<CalendarEvent, "start" | "end">;
 const sameTiming = (a: EventTiming, b: EventTiming) =>
@@ -57,7 +58,7 @@ export function useEventTiming() {
     } catch (error) {
       if (optimistic) updateCache(event.id, previous);
       toast.error(
-        `시간 변경에 실패했습니다. ${error instanceof Error ? error.message : "다시 시도해 주세요."}`,
+        apiErrorMessage(error, "일정 시간을 바꾸지 못했습니다. 다시 시도해 주세요."),
       );
     } finally {
       await queryClient.invalidateQueries({ queryKey: ["calendar-events"] });

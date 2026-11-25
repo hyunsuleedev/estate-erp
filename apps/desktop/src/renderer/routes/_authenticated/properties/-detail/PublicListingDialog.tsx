@@ -15,6 +15,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { propertyErrorMessage } from '../-error-message';
 
 /** 고객 공개 매물(소비자 사이트) 설정. 거래 조건 행의 메뉴에서 연다. */
 export function PublicListingDialog({
@@ -150,7 +151,7 @@ function Editor({
       </p>
       {mutation.isError && (
         <p role="alert" className="text-sm text-destructive">
-          {mutation.error.message}
+          {propertyErrorMessage(mutation.error, '공개 설정을 저장하지 못했습니다. 다시 시도해 주세요.')}
         </p>
       )}
       <p role="status" className="text-sm">

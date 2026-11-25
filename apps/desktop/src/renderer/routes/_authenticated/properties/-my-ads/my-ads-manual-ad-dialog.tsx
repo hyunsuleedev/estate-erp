@@ -24,6 +24,7 @@ import type {
 } from "@estate-erp/api-client";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { formatMoney } from "@/lib/format";
 import { isNaverCpChannel } from "@/lib/advertisement-channels";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { Button } from "@/components/ui/button";
@@ -37,9 +38,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { todayInput, type AdTerms } from "../-components/property-ad-actions-state";
+import { canChangeAdChannel } from "../-components/property-ad-cell-state";
+import { adTradeLabels, todayInput, type AdListing, type AdTerms } from "../-components/property-ad-actions-state";
 import { PropertyTableTransactionBadge } from "./my-ads-cells";
 import { cpChannelLabel } from "./my-ads-format";
+import { advertisementTransactionType } from "./my-ads-link";
+import { advertisementLocationLabel } from "./my-ads-location";
 import { PROPERTY_TABLE_PILL_TONES, PROPERTY_TABLE_TAG_CLASS_NAME } from "./my-ads-pill";
 import {
   activeAdChannelValues,
@@ -142,6 +146,19 @@ export function MyAdsManualAdDialog({
   );
 }
 
+function makeEditingListingFallback(
+  editing: ListingAdvertisementWithListing,
+): AdListing {
+  return {
+    id: editing.listingId ?? "",
+    transactionType: advertisementTransactionType(editing) ?? "sale",
+    price: editing.advertisedPrice,
+    deposit: editing.advertisedDeposit,
+    monthlyRent: editing.advertisedMonthlyRent,
+    activeAdvertisements: [editing],
+  };
+}
+
 function ManualAdDialogContent({
   target,
   closeGuardRef,
@@ -162,13 +179,21 @@ function ManualAdDialogContent({
   const [listing, setListing] = useState<Listing | null>(
     editing?.listing ?? null,
   );
+  const activeAdListing: AdListing | null =
+    listing ?? (editing ? makeEditingListingFallback(editing) : null);
   // 매물을 고른 순간(수정이면 연 순간)의 입력값. 이것과 달라졌을 때만 닫기 전에 묻는다.
   const [baseline, setBaseline] = useState<MyAdsManualAdDraft | null>(() =>
-    editing?.listing ? initialMyAdsManualAdDraft(editing.listing, editing) : null,
+    editing
+      ? initialMyAdsManualAdDraft(
+          editing.listing ?? makeEditingListingFallback(editing),
+          editing,
+        )
+      : null,
   );
   const [draft, setDraft] = useState<MyAdsManualAdDraft | null>(baseline);
   const [error, setError] = useState<FormError | null>(null);
   const [isConfirmingDiscard, setIsConfirmingDiscard] = useState(false);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   // "다시 고르기"로 돌아와도 검색어가 남도록 고르기 단계 밖에 둔다.
   const [listingQuery, setListingQuery] = useState("");
   const submitting = useRef(false);
@@ -179,6 +204,27 @@ function ManualAdDialogContent({
   const keepEditingRef = useRef<HTMLButtonElement>(null);
   const discardReturnFocusRef = useRef<HTMLElement | null>(null);
   const errorId = `${id}-error`;
+
+  const cpAccountsQuery = useQuery({
+    queryKey: ["cp-accounts"],
+    queryFn: () => api.listingAdvertisements.findCpAccounts(),
+    staleTime: 60_000,
+  });
+  const cpAccounts = cpAccountsQuery.data ?? [];
+
+  const deleteMutation = useMutation({
+    mutationFn: (advertisementId: string) =>
+      api.listingAdvertisements.remove(advertisementId),
+    onSuccess: () => {
+      for (const key of INVALIDATED_QUERY_KEYS) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      }
+      leftListRef.current = true;
+      toast.success("광고 기록을 삭제했습니다.");
+      onClose();
+    },
+    onError: (err) => showError(manualAdErrorMessage(err)),
+  });
 
   const mutation = useMutation({
     mutationFn: async (submission: Submission) => {
@@ -215,7 +261,7 @@ function ManualAdDialogContent({
       submitting.current = false;
     },
   });
-  const isPending = mutation.isPending;
+  const isPending = mutation.isPending || deleteMutation.isPending;
   const isDirty =
     baseline != null && draft != null && isManualAdDraftChanged(baseline, draft);
 
@@ -323,12 +369,12 @@ function ManualAdDialogContent({
   };
 
   function submit() {
-    if (!listing || !draft || submitting.current) return;
+    if (!activeAdListing || !draft || submitting.current) return;
     setError(null);
     try {
       let submission: Submission;
       if (editing) {
-        const payload = buildMyAdsManualAdPayload(listing, draft, editing);
+        const payload = buildMyAdsManualAdPayload(activeAdListing, draft, editing);
         submission = {
           mode: "edit",
           advertisementId: editing.id,
@@ -336,7 +382,7 @@ function ManualAdDialogContent({
           verifyExternalAdId: externalAdIdToVerify(payload, editing),
         };
       } else {
-        const payload = buildMyAdsManualAdPayload(listing, draft);
+        const payload = buildMyAdsManualAdPayload(activeAdListing, draft);
         submission = {
           mode: "create",
           payload,
@@ -350,9 +396,9 @@ function ManualAdDialogContent({
     }
   }
 
-  const title = editing ? "수동 광고 수정" : "광고 수동 추가";
+  const title = editing ? "광고 기록 수정" : "광고 기록 추가";
   const description = editing
-    ? "직접 입력한 광고라 업무 요청 없이 바로 저장합니다. 광고 채널의 실제 게재 내용은 변경되지 않습니다."
+    ? "앱의 광고 기록을 수정합니다. 광고 채널의 실제 게재 내용은 변경되지 않습니다."
     : "앱에 광고 정보를 기록합니다. 광고 채널의 실제 게재 내용은 변경되지 않습니다.";
 
   return (
@@ -394,18 +440,7 @@ function ManualAdDialogContent({
         </div>
       </DialogHeader>
 
-      {editing && !editing.listing ? (
-        <>
-          <p role="alert" className="px-6 py-5 text-[13px] text-destructive">
-            광고의 매물 정보를 불러오지 못했습니다. 목록을 다시 불러온 뒤 시도해 주세요.
-          </p>
-          <DialogFooter className="border-t px-6 py-4">
-            <Button type="button" variant="outline" size="sm" onClick={onClose}>
-              닫기
-            </Button>
-          </DialogFooter>
-        </>
-      ) : !listing || !draft ? (
+      {!activeAdListing || !draft ? (
         <>
           <ListingPicker
             id={id}
@@ -467,11 +502,25 @@ function ManualAdDialogContent({
               disabled={isPending}
               className="min-w-0 space-y-4 disabled:opacity-60"
             >
-              <SelectedListingSummary
-                listing={listing}
-                showActiveChannels={!editing}
-                onChange={editing ? undefined : clearListing}
-              />
+              {listing ? (
+                <SelectedListingSummary
+                  listing={listing}
+                  showActiveChannels={!editing}
+                  onChange={editing ? undefined : clearListing}
+                />
+              ) : editing ? (
+                <div className="rounded-md border bg-muted/40 px-3 py-2.5 text-[13px]">
+                  <div className="flex items-center gap-1.5 font-medium text-foreground">
+                    <span className="truncate">{advertisementLocationLabel(editing)}</span>
+                    {activeAdListing.transactionType && (
+                      <PropertyTableTransactionBadge transactionType={activeAdListing.transactionType} />
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {`아직 매물과 연결되지 않은 광고입니다 (${adTradeLabels[activeAdListing.transactionType] ?? activeAdListing.transactionType}).`}
+                  </p>
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-3">
                 <Field label="광고 채널" id={`${id}-channel`}>
                   <select
@@ -479,11 +528,11 @@ function ManualAdDialogContent({
                     id={`${id}-channel`}
                     className={selectClass}
                     value={draft.channel}
-                    disabled={Boolean(editing)}
-                    onChange={(event) => patchDraft({ channel: event.target.value })}
+                    disabled={Boolean(editing && !canChangeAdChannel(editing))}
+                    onChange={(event) => patchDraft({ channel: event.target.value, cpAccountId: "" })}
                     {...invalidProps("channel")}
                   >
-                    {editing ? (
+                    {editing && !canChangeAdChannel(editing) ? (
                       <option value={draft.channel}>
                         {cpChannelLabel(draft.channel)}
                       </option>
@@ -494,11 +543,11 @@ function ManualAdDialogContent({
                             {cpChannelLabel(draft.channel)}
                           </option>
                         )}
-                        {manualAdChannelOptions(listing, draft.status).map((option) => (
+                        {manualAdChannelOptions(activeAdListing).map((option) => (
                           <option
                             key={option.value}
                             value={option.value}
-                            disabled={option.disabled}
+                            disabled={option.disabled && option.value !== editing?.channel}
                           >
                             {option.label}
                           </option>
@@ -527,9 +576,37 @@ function ManualAdDialogContent({
                   </select>
                 </Field>
               </div>
+              {(() => {
+                const channelAccounts = cpAccounts.filter(
+                  (account) =>
+                    account.channel === draft.channel && account.isActive !== false,
+                );
+                if (channelAccounts.length === 0) return null;
+                return (
+                  <Field label="CP 계정" id={`${id}-cpAccount`}>
+                    <select
+                      id={`${id}-cpAccount`}
+                      className={selectClass}
+                      value={draft.cpAccountId}
+                      onChange={(event) =>
+                        patchDraft({ cpAccountId: event.target.value })
+                      }
+                    >
+                      <option value="">지정 안 함</option>
+                      {channelAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.accountName
+                            ? `${account.accountName} (${account.accountKey})`
+                            : account.accountKey}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                );
+              })()}
               <MoneyFields
                 id={id}
-                trade={listing.transactionType}
+                trade={activeAdListing.transactionType}
                 value={draft}
                 onChange={patchDraft}
                 invalidProps={invalidProps}
@@ -647,21 +724,64 @@ function ManualAdDialogContent({
                 </Button>
               </div>
             </DialogFooter>
+          ) : isConfirmingDelete && editing ? (
+            <DialogFooter className="shrink-0 items-center border-t px-6 py-4 sm:justify-between">
+              <p className="text-[13px] text-destructive">
+                이 광고 기록을 삭제할까요?
+              </p>
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={() => setIsConfirmingDelete(false)}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={() => deleteMutation.mutate(editing.id)}
+                >
+                  {deleteMutation.isPending && <Loader2 className="size-3.5 animate-spin" />}
+                  삭제
+                </Button>
+              </div>
+            </DialogFooter>
           ) : (
-            <DialogFooter className="shrink-0 border-t px-6 py-4">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={isPending}
-                onClick={requestClose}
-              >
-                취소
-              </Button>
-              <Button type="submit" size="sm" disabled={isPending}>
-                {isPending && <Loader2 className="size-3.5 animate-spin" />}
-                {isPending ? "저장 중…" : editing ? "변경 저장" : "광고 추가"}
-              </Button>
+            <DialogFooter className="shrink-0 items-center border-t px-6 py-4 sm:justify-between">
+              <div>
+                {editing && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => setIsConfirmingDelete(true)}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    삭제
+                  </Button>
+                )}
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={requestClose}
+                >
+                  취소
+                </Button>
+                <Button type="submit" size="sm" disabled={isPending}>
+                  {isPending && <Loader2 className="size-3.5 animate-spin" />}
+                  {isPending ? "저장 중…" : editing ? "변경 저장" : "광고 기록 추가"}
+                </Button>
+              </div>
             </DialogFooter>
           )}
         </form>
@@ -1065,17 +1185,31 @@ function MoneyFields({
     >
       {fields.map(({ key, label }) => (
         <Field key={key} id={`${id}-${key}`} label={`${label} · 만원`}>
-          <Input
-            id={`${id}-${key}`}
-            type="text"
-            inputMode="numeric"
-            placeholder="미입력"
-            value={value[key]}
-            onChange={(event) => onChange({ [key]: event.target.value })}
-            {...invalidProps(key)}
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              id={`${id}-${key}`}
+              type="text"
+              inputMode="numeric"
+              placeholder="미입력"
+              value={value[key]}
+              onChange={(event) => onChange({ [key]: event.target.value })}
+              {...invalidProps(key)}
+            />
+            {/* 만원 단위를 잘못 적는 일(7900을 79로)이 없게 읽은 금액을 옆에 보여 준다 */}
+            <MoneyPreview raw={value[key]} />
+          </div>
         </Field>
       ))}
     </div>
+  );
+}
+
+function MoneyPreview({ raw }: { raw: string }) {
+  const digits = raw.replace(/,/g, "").trim();
+  if (!/^\d+$/.test(digits) || Number(digits) === 0) return null;
+  return (
+    <span className="shrink-0 whitespace-nowrap text-[12px] tabular-nums text-muted-foreground">
+      {formatMoney(Number(digits))}
+    </span>
   );
 }

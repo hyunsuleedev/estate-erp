@@ -100,11 +100,10 @@ import {
   formatBuyerArea,
   formatBuyerBudget,
   formatDateOnly,
-  formatEokInput,
-  parseEokInput,
-  parseManwonInput,
   toDateInputValue,
 } from './property-match-format';
+import { formatManwonEcho, parseManwon } from '@/lib/manwon';
+import { formatPrice } from '@estate-erp/shared';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { PropertyMatchConnectDialog } from './property-match-connect-dialog';
 import {
@@ -119,6 +118,15 @@ import { useAdTablePreferences } from './use-ad-table-preferences';
 import { AdTableSortControl } from './property-ad-table-controls';
 import { PropertyAdActions } from './property-ad-actions';
 import { getAdTableLayout, type AdColumnWidths, type AdTableControls, type AdTableSort } from './property-ad-table-state';
+import {
+  createInitialPublishDraft,
+  setPropertyAdDraftAmount,
+  togglePropertyAdDraftFlag,
+  type PropertyAdPanelMode,
+  type PropertyAdPublishDraft,
+  type PropertyAdRequestDrafts,
+} from './property-ad-request-drafts';
+import { propertyErrorMessage } from '../-error-message';
 
 // 매물관리 표에서 한 의뢰를 펼쳤을 때 나오는 "연결 구매고객" 목록.
 // 고객 한 명이 한 줄이고, 줄을 펼치면 단계 경로와 다음 작업이 나온다.
@@ -348,15 +356,15 @@ const STAGE_GUIDE: Record<string, { next: string; title: string }> = {
   },
   [MatchStage.BUYER_INTERESTED]: {
     next: '고객 답변 확인',
-    title: '고객의 방문 의사를 확인하세요',
+    title: '고객의 임장 의사를 확인하세요',
   },
   [MatchStage.VIEWING_CONFIRMED]: {
     next: '집주인 확인',
-    title: '집주인과 방문 일정을 조율하세요',
+    title: '소유자와 임장 일정을 조율하세요',
   },
   [MatchStage.VIEWING]: {
-    next: '방문 진행',
-    title: '방문을 마쳤으면 방문 완료로 넘기세요',
+    next: '임장 진행',
+    title: '임장을 마쳤으면 임장 완료로 넘기세요',
   },
   [MatchStage.BUYER_REVIEWING]: {
     next: '고객 반응 확인',
@@ -399,7 +407,7 @@ export function PropertyMatchPanel({
   activeTab: 'match' | 'ad';
   onTabChange: (groupId: string, tab: 'match' | 'ad') => void;
   /** 실제 높이를 표에 알려 가상 스크롤이 아래 행 위치를 맞추게 한다 */
-  onHeightChange?: (groupId: string, height: number) => void;
+  onHeightChange?: (groupId: string, height: number, tab: 'match' | 'ad') => void;
   /** '광고' 탭 내용 (index.tsx가 소유) */
   adPanel: (controls: AdTableControls) => ReactNode;
 }) {
@@ -412,6 +420,10 @@ export function PropertyMatchPanel({
     () => new Set(),
   );
   const [selectedAdIds, setSelectedAdIds] = useState<Set<string>>(() => new Set());
+  const [adMode, setAdMode] = useState<PropertyAdPanelMode>(null);
+  const [adRequestDrafts, setAdRequestDrafts] = useState<PropertyAdRequestDrafts>({});
+  const [adPublishDrafts, setAdPublishDrafts] = useState<PropertyAdPublishDraft[]>([]);
+  const [manualAdOpen, setManualAdOpen] = useState(false);
   const visibleAdIds = useMemo(() => group.listings.flatMap(
     listing => (listing.activeAdvertisements ?? []).map(ad => ad.id),
   ), [group.listings]);
@@ -421,6 +433,12 @@ export function PropertyMatchPanel({
       const next = new Set([...current].filter(id => visibleIds.has(id)));
       return next.size === current.size ? current : next;
     });
+    if (activeTab !== 'ad') {
+      setAdMode(null);
+      setAdRequestDrafts({});
+      setAdPublishDrafts([]);
+      setManualAdOpen(false);
+    }
   }, [activeTab, visibleAdIds]);
   const [showClosed, setShowClosed] = useState(false);
   const { user } = useAuth();
@@ -501,11 +519,10 @@ export function PropertyMatchPanel({
 
   useEffect(() => {
     const element = rootRef.current;
-    // 높이는 '연결 구매고객' 탭에서만 가변적이라 그때만 실측을 보고한다.
-    // (광고 탭은 index.tsx가 추정 높이를 쓴다)
-    if (!element || !onHeightChange || activeTab !== 'match') return;
+    // 연결 구매고객 탭과 광고 탭(인라인 요청·신규 게재 추가 포함) 모두 실측 높이를 보고한다.
+    if (!element || !onHeightChange) return;
     const report = () =>
-      onHeightChange(group.id, Math.ceil(element.getBoundingClientRect().height));
+      onHeightChange(group.id, Math.ceil(element.getBoundingClientRect().height), activeTab);
     report();
     const observer = new ResizeObserver(report);
     observer.observe(element);
@@ -525,7 +542,7 @@ export function PropertyMatchPanel({
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
     },
     onError: (error: Error) => {
-      toast.error(error.message || '매칭 단계 변경에 실패했습니다.');
+      toast.error(propertyErrorMessage(error, '매칭 단계를 바꾸지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -540,7 +557,7 @@ export function PropertyMatchPanel({
       toast.success('매칭 메모를 저장했습니다.');
     },
     onError: (error: Error) => {
-      toast.error(error.message || '매칭 메모 저장에 실패했습니다.');
+      toast.error(propertyErrorMessage(error, '매칭 메모를 저장하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -574,10 +591,10 @@ export function PropertyMatchPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
-      toast.success('방문 일정을 저장했습니다.');
+      toast.success('임장 일정을 저장했습니다.');
     },
     onError: (error: Error) => {
-      toast.error(`방문 일정 저장에 실패했습니다: ${error.message}`);
+      toast.error(propertyErrorMessage(error, '임장 일정을 저장하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -589,7 +606,7 @@ export function PropertyMatchPanel({
       queryClient.invalidateQueries({ queryKey: ['matches'] });
     },
     onError: (error: Error) => {
-      toast.error(error.message || '합의 조건 저장에 실패했습니다.');
+      toast.error(propertyErrorMessage(error, '합의 조건을 저장하지 못했습니다. 다시 시도해 주세요.'));
       // 저장되지 않은 값이 저장된 것처럼 입력칸에 남지 않도록, 서버 값을 다시 받고 입력칸을 새로 그린다.
       setAgreedTermsResetKey((key) => key + 1);
       queryClient.invalidateQueries({ queryKey: ['matches'] });
@@ -741,7 +758,7 @@ export function PropertyMatchPanel({
       data-property-match-panel
       id={`property-expand-panel-${group.id}`}
       role="region"
-      aria-label={`${group.property?.site?.name ?? '매물'} 연결 구매고객`}
+      aria-label={`${group.property?.site?.name ?? '매물'} 연결 고객`}
       className="border-b border-border bg-background py-3 pl-6 pr-4"
     >
       <div className="overflow-x-auto" style={activeTab === 'ad' ? {
@@ -760,7 +777,7 @@ export function PropertyMatchPanel({
           <div className="mb-1 flex h-7 items-center gap-1 text-[13px]">
             <PanelTab
               icon={<GitBranch />}
-              label="연결 구매고객"
+              label="연결 고객"
               count={isLoading ? getPropertyMatchCount(group) : activeCount}
               active={activeTab === 'match'}
               onClick={() => onTabChange(group.id, 'match')}
@@ -793,7 +810,36 @@ export function PropertyMatchPanel({
             )}
             <span className="flex-1" />
             {activeTab === 'ad' && (
-              <PropertyAdActions group={group} selectedIds={selectedAdIds} onClearSelection={() => setSelectedAdIds(new Set())} />
+              <PropertyAdActions
+                group={group}
+                selectedIds={selectedAdIds}
+                onClearSelection={() => setSelectedAdIds(new Set())}
+                mode={adMode}
+                isEditMode={adMode === 'edit'}
+                onToggleEditMode={() => {
+                  setAdMode((current) => (current === 'edit' ? null : 'edit'));
+                  setAdRequestDrafts({});
+                  setAdPublishDrafts([]);
+                }}
+                onToggleRequestMode={() => {
+                  setManualAdOpen(false);
+                  setAdMode('request');
+                }}
+                onCancelRequestMode={() => {
+                  setAdMode(null);
+                  setAdRequestDrafts({});
+                  setAdPublishDrafts([]);
+                }}
+                requestDrafts={adRequestDrafts}
+                publishDrafts={adPublishDrafts}
+                onRequestSubmitted={() => {
+                  setAdMode(null);
+                  setAdRequestDrafts({});
+                  setAdPublishDrafts([]);
+                }}
+                manualOpen={manualAdOpen}
+                onManualOpenChange={setManualAdOpen}
+              />
             )}
             {activeTab === 'match' && (
               <MatchTableSortControl
@@ -823,6 +869,60 @@ export function PropertyMatchPanel({
                   return next;
                 }),
                 onSelectAll: selected => setSelectedAdIds(new Set(selected ? visibleAdIds : [])),
+              },
+              mode: adMode,
+              editMode: adMode === 'edit',
+              requestDrafts: adRequestDrafts,
+              publishDrafts: adPublishDrafts,
+              onChangeRequestAmount: (listing, ad, field, value) =>
+                setAdRequestDrafts((current) =>
+                  setPropertyAdDraftAmount(current, listing, ad, field, value),
+                ),
+              onToggleRequestFlag: (advertisementId, flag) =>
+                setAdRequestDrafts((current) =>
+                  togglePropertyAdDraftFlag(current, advertisementId, flag),
+                ),
+              onClearRequestFlag: (advertisementId) =>
+                setAdRequestDrafts((current) => {
+                  const existing = current[advertisementId];
+                  if (!existing || (!existing.readvertise && !existing.takedown)) {
+                    return current;
+                  }
+                  const next = { ...existing };
+                  delete next.readvertise;
+                  delete next.takedown;
+                  const updated = { ...current };
+                  if (
+                    next.primary === undefined &&
+                    next.monthlyRent === undefined
+                  ) {
+                    delete updated[advertisementId];
+                  } else {
+                    updated[advertisementId] = next;
+                  }
+                  return updated;
+                }),
+              onUpdatePublishDraft: (tempId, patch) =>
+                setAdPublishDrafts((current) =>
+                  current.map((item) =>
+                    item.tempId === tempId ? { ...item, ...patch } : item,
+                  ),
+                ),
+              onRemovePublishDraft: (tempId) =>
+                setAdPublishDrafts((current) =>
+                  current.filter((item) => item.tempId !== tempId),
+                ),
+              onAddManualAd: () => {
+                if (adMode === 'request') {
+                  setAdPublishDrafts((current) => [
+                    ...current,
+                    createInitialPublishDraft(group.listings, current),
+                  ]);
+                } else if (adMode === 'edit') {
+                  setManualAdOpen(true);
+                } else {
+                  toast.info("수동으로 광고 기록을 추가·수정하려면 '기록 수정·추가' 모드를 켜 주세요. 에이전트에게 실제 광고 작업을 맡기려면 '광고 요청'을 이용해 주세요.");
+                }
               },
               onSort: setAdSort,
               onPreviewResize: setAdPreviewWidths,
@@ -1936,7 +2036,7 @@ function ViewingTimePicker({
         <button
           type="button"
           disabled={disabled}
-          aria-label={value ? `방문 일시 ${formatDateTime(value)}, 눌러서 변경` : '방문 일시 정하기'}
+          aria-label={value ? `임장 일시 ${formatDateTime(value)}, 눌러서 변경` : '임장 일시 정하기'}
           className={valueButtonClassName}
         >
           {value ? formatDateTime(value) : <EmptyValue />}
@@ -1952,7 +2052,7 @@ function ViewingTimePicker({
         />
         <div className="flex items-center gap-2 border-t border-border p-2">
           <Select value={time} onValueChange={setTime}>
-            <SelectTrigger size="sm" aria-label="방문 시간" className="h-8 w-[108px] tabular-nums">
+            <SelectTrigger size="sm" aria-label="임장 시간" className="h-8 w-[108px] tabular-nums">
               <SelectValue placeholder="시간" />
             </SelectTrigger>
             <SelectContent className="max-h-64">
@@ -2041,6 +2141,7 @@ function AgreedAmountField({
   onValidityChange,
 }: {
   label: string;
+  /** 자리 표시 예시를 고르는 데만 쓴다. 읽는 규칙은 앱 공통(lib/manwon) 하나다 */
   unit: '억' | '만원';
   /** 서버에 저장된 값 (만원) */
   saved: number | null;
@@ -2048,18 +2149,21 @@ function AgreedAmountField({
   onSave: (manwon: number | null) => void;
   onValidityChange: (valid: boolean) => void;
 }) {
-  const toText = (manwon: number | null) =>
-    unit === '억' ? formatEokInput(manwon) : manwon == null ? '' : String(manwon);
-  const parse = unit === '억' ? parseEokInput : parseManwonInput;
+  // "31억 5,000만"·"180만"처럼 보이는 그대로 적어 두고, 다시 읽어도 같은 값이 된다
+  const toText = (manwon: number | null) => (manwon == null ? '' : manwon === 0 ? '0' : formatPrice(manwon));
+  const readValue = (raw: string) => {
+    const result = parseManwon(raw);
+    return result.valid ? result.value : Number.NaN;
+  };
   const [text, setText] = useState(() => toText(saved));
-  const parsed = parse(text);
+  const parsed = readValue(text);
   const invalid = Number.isNaN(parsed);
   const hintId = useId();
 
   // 서버 값이 바뀌면(저장 완료·다른 사람의 수정) 입력칸을 맞춘다. 저장 실패는 칸을 새로 그려서 되돌린다.
-  // 다만 지금 고치고 있는 글이 같은 값을 뜻하면 그대로 둔다("31.50"을 "31.5"로 바꿔 치지 않는다).
+  // 다만 지금 고치고 있는 글이 같은 값을 뜻하면 그대로 둔다("31억5천"을 "31억 5,000만"으로 바꿔 치지 않는다).
   useEffect(() => {
-    setText((current) => (parse(current) === saved ? current : toText(saved)));
+    setText((current) => (readValue(current) === saved ? current : toText(saved)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved]);
 
@@ -2077,36 +2181,34 @@ function AgreedAmountField({
     <PropertyRow icon={<WonCircleIcon />} label={label}>
       <span className="-mx-1.5 mr-1 inline-flex items-center gap-1">
         <Input
-          inputMode="decimal"
           autoComplete="off"
-          placeholder="비어 있음"
-          aria-label={`${label}(${unit})`}
+          placeholder={unit === '억' ? '예: 31억 5천' : '예: 5천, 180'}
+          aria-label={`${label}(만원)`}
           aria-invalid={invalid || undefined}
           aria-describedby={hintId}
           value={text}
           disabled={disabled}
-          className={cn(quietInputClassName, 'w-[76px] placeholder:text-muted-foreground/70')}
+          className={cn(quietInputClassName, 'w-[120px] placeholder:text-muted-foreground/70')}
           onChange={(event) => setText(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.nativeEvent.isComposing) commit();
           }}
         />
-        <span className="text-muted-foreground">{unit}</span>
       </span>
-      {/* 적은 숫자를 풀어서 보여 준다 — 31.5 → 31억 5,000만 */}
+      {/* 읽은 값을 되비춘다 — "31억5천" → "= 31억 5,000만" */}
       <span
         id={hintId}
         role={invalid ? 'alert' : undefined}
         className={cn(
-          'text-xs',
+          'text-xs tabular-nums',
           invalid ? 'text-destructive-strong' : 'text-muted-foreground',
         )}
       >
         {invalid
-          ? `숫자로 적어 주세요 (예: ${unit === '억' ? '31.5' : '5000'})`
-          : parsed != null && unit === '억'
-            ? formatMoney(parsed)
+          ? `금액을 읽을 수 없습니다 (예: ${unit === '억' ? '31억 5천' : '5천'})`
+          : parsed != null && text.trim() !== toText(parsed)
+            ? formatManwonEcho(parsed)
             : ''}
       </span>
     </PropertyRow>
@@ -2282,9 +2384,9 @@ function MatchDetail({
         ? `거래관리 · ${getDealStageLabel(deal.stage)}`
         : null
       : isViewing && upcomingViewing
-        ? '방문 진행'
+        ? '임장 진행'
         : isViewing
-          ? '방문 마무리'
+          ? '임장 마무리'
           : (STAGE_GUIDE[stage]?.next ?? null);
 
   const footer = (
@@ -2314,11 +2416,11 @@ function MatchDetail({
           size="sm"
           className="h-7"
           disabled={disabled || !viewingStart || Boolean(blockReason)}
-          title={!viewingStart ? '방문 일시를 먼저 정해 주세요' : undefined}
+          title={!viewingStart ? '임장 일시를 먼저 정해 주세요' : undefined}
           onClick={() => actions.onScheduleViewing(match, viewingStart)}
         >
           <Check className="size-3.5" />
-          {actionCopy?.confirmLabel ?? '방문 일정 확정'}
+          {actionCopy?.confirmLabel ?? '임장 일정 확정'}
         </Button>
       ) : (
         nextStage && (
@@ -2391,7 +2493,7 @@ function MatchDetail({
           )}
 
           {isArrangingViewing && (
-            <PropertyRow icon={<CalendarDays />} label="방문 일시">
+            <PropertyRow icon={<CalendarDays />} label="임장 일시">
               {/* 고른 값은 아래 "방문 일정 확정"을 누를 때 저장된다 */}
               <ViewingTimePicker
                 value={viewingStart}
@@ -2402,7 +2504,7 @@ function MatchDetail({
           )}
 
           {isViewing && (
-            <PropertyRow icon={<CalendarDays />} label="방문 일시">
+            <PropertyRow icon={<CalendarDays />} label="임장 일시">
               {/* 임장 단계에서는 고르는 즉시 일정을 고친다.
                   보여 주는 값은 늘 저장된 일정이다 — 고른 값을 먼저 보여 주면 저장이 실패했을 때
                   저장된 것처럼 남고, 같은 값을 다시 고를 수 없어 재시도가 막힌다. */}

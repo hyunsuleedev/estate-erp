@@ -43,7 +43,7 @@ export function advertisementLinkLevel(
   return "none";
 }
 
-/** 표의 "매물" 칸 글. 어디서 끊겼는지를 말한다 */
+/** 표의 "연결" 칸 글. 어디서 끊겼는지를 말한다 */
 export const ADVERTISEMENT_LINK_LABELS: Record<AdvertisementLinkLevel, string> = {
   listing: "연결됨",
   property: "매물 없음",
@@ -125,14 +125,23 @@ export function advertisementLocation(
   };
 }
 
-const OPEN_TASK_STATUSES = new Set(["pending", "in_progress"]);
+const OPEN_REQUEST_STATUSES = new Set(["requested", "in_progress", "executed"]);
 
-/** 아직 처리되지 않은 변경 요청 (업무가 대기 · 진행 중) */
+/** 아직 처리·검증되지 않은 변경 요청 (요청됨 · 처리 중 · 실행됨) */
 export function pendingChangeRequests(
   advertisement: ListingAdvertisementWithListing,
 ): AdvertisementChangeRequest[] {
   return (advertisement.changeRequests ?? []).filter((request) =>
-    OPEN_TASK_STATUSES.has(request.task?.status ?? ""),
+    OPEN_REQUEST_STATUSES.has(request.status),
+  );
+}
+
+/** 최근 실패한 변경 요청 */
+export function failedChangeRequests(
+  advertisement: ListingAdvertisementWithListing,
+): AdvertisementChangeRequest[] {
+  return (advertisement.changeRequests ?? []).filter(
+    (request) => request.status === "failed",
   );
 }
 
@@ -146,11 +155,20 @@ function floorExposureLabel(value: unknown): string {
   return "미확인";
 }
 
-/** 요청 한 건을 짧게: "32억 → 31.5억", "층 미노출 → 층 노출", "재광고", "광고 내리기" */
+export const CHANGE_REQUEST_STATUS_LABELS: Record<string, string> = {
+  requested: "요청됨",
+  in_progress: "처리 중",
+  executed: "반영 확인 중",
+  verified: "반영 완료",
+  failed: "실패",
+  cancelled: "취소됨",
+};
+
+/** 요청 한 건을 짧게: "32억 → 31.5억", "층 미노출 → 층 노출", "재광고", "광고 내리기", "신규 게재" */
 export function changeRequestSummary(request: AdvertisementChangeRequest): string {
-  const from = request.fromValue ?? {};
-  const to = request.toValue ?? {};
-  if (request.kind === "price") {
+  const from = request.baseSnapshot ?? {};
+  const to = request.targetValue ?? {};
+  if (request.action === "publish") {
     const parts: string[] = [];
     for (const [key, label] of [
       ["price", ""],
@@ -158,17 +176,30 @@ export function changeRequestSummary(request: AdvertisementChangeRequest): strin
       ["monthlyRent", "월 "],
     ] as const) {
       const wanted = amountOf(to[key]);
-      if (wanted == null) continue;
-      const current = amountOf(from[key]);
-      parts.push(
-        `${label}${current == null ? "—" : formatMoney(current)} → ${formatMoney(wanted)}`,
-      );
+      if (wanted != null) parts.push(`${label}${formatMoney(wanted)}`);
     }
-    return parts.join(", ") || "가격 변경";
+    return parts.length > 0 ? `신규 게재 (${parts.join(", ")})` : "신규 게재";
   }
-  if (request.kind === "floor_exposure") {
-    return `${floorExposureLabel(from.floorExposure)} → ${floorExposureLabel(to.floorExposure)}`;
+  if (request.action === "takedown") return "광고 내리기";
+
+  const parts: string[] = [];
+  for (const [key, label] of [
+    ["price", ""],
+    ["deposit", ""],
+    ["monthlyRent", "월 "],
+  ] as const) {
+    const wanted = amountOf(to[key]);
+    if (wanted == null) continue;
+    const current = amountOf(from[key]);
+    parts.push(
+      `${label}${current == null ? "—" : formatMoney(current)} → ${formatMoney(wanted)}`,
+    );
   }
-  if (request.kind === "readvertise") return "재광고";
-  return "광고 내리기";
+  if (to.floorExposure !== undefined) {
+    parts.push(`${floorExposureLabel(from.floorExposure)} → ${floorExposureLabel(to.floorExposure)}`);
+  }
+  if (request.action === "readvertise") {
+    return parts.length > 0 ? `재광고 (${parts.join(", ")})` : "재광고";
+  }
+  return parts.join(", ") || "조건 변경";
 }

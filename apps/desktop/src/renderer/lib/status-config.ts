@@ -57,13 +57,13 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
   /** ListingIntake 확인 이력에서 파생한 상태 */
   confirmationState: {
     unverified: { label: '미확인', tone: 'gray' },
-    verified: { label: '확인완료', tone: 'success' },
+    verified: { label: '확인 완료', tone: 'success' },
     overdue: { label: '재확인 필요', tone: 'destructive' },
     no_answer: { label: '부재중', tone: 'orange' },
   },
   /** ListingIntake.lifecycleStatus — 의뢰 생명주기 */
   intakeLifecycle: {
-    open: { label: '진행중', tone: 'success' },
+    open: { label: '진행 중', tone: 'success' },
     hold: { label: '보류', tone: 'warning' },
     closed: { label: '종료', tone: 'neutral' },
   },
@@ -71,7 +71,7 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
   listingAvailability: {
     available: { label: '활성', tone: 'success' },
     paused: { label: '보류', tone: 'warning' },
-    in_contract: { label: '거래중', tone: 'info' },
+    in_contract: { label: '거래 중', tone: 'info' },
     closed: { label: '종료', tone: 'neutral' },
   },
   /** Match.stage — 매칭 파이프라인 */
@@ -82,7 +82,7 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
     viewing: { label: '임장', tone: 'violet' },
     buyerReviewing: { label: '고객 검토', tone: 'pink' },
     negotiating: { label: '협상', tone: 'warning' },
-    dealCreated: { label: '거래전환', tone: 'success' },
+    dealCreated: { label: '거래 전환', tone: 'success' },
     closed: { label: '종료', tone: 'destructive' },
     // 마이그레이션 전 데이터의 표시 호환
     buyerContacted: { label: '고객 관심', tone: 'info' },
@@ -94,15 +94,15 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
     preContract: { label: '가계약', tone: 'violet' },
     contracted: { label: '본계약', tone: 'info' },
     settling: { label: '중도금/잔금', tone: 'orange' },
-    completed: { label: '잔금완료', tone: 'success' },
-    closed: { label: '정산종료', tone: 'neutral' },
+    completed: { label: '잔금 완료', tone: 'success' },
+    closed: { label: '정산 종료', tone: 'neutral' },
     // 거래 경계 개편 전 데이터의 표시 호환
     selection: { label: '계약 준비', tone: 'gray' },
     negotiating: { label: '계약 준비', tone: 'gray' },
   },
   /** Contract.status — 계약 상태 */
   contractStatus: {
-    draft: { label: '작성중', tone: 'gray' },
+    draft: { label: '작성 중', tone: 'gray' },
     signed: { label: '서명완료', tone: 'info' },
     depositPaid: { label: '계약금 완료', tone: 'violet' },
     balancePaid: { label: '잔금 완료', tone: 'success' },
@@ -111,7 +111,7 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
   },
   /** CommissionPayment.status — 수수료 수금 상태 */
   commissionStatus: {
-    draft: { label: '작성중', tone: 'gray' },
+    draft: { label: '작성 중', tone: 'gray' },
     pending: { label: '수금대기', tone: 'warning' },
     partial: { label: '부분수금', tone: 'orange' },
     collected: { label: '수금완료', tone: 'success' },
@@ -130,14 +130,14 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
   /** Task.status — 업무 상태 */
   taskStatus: {
     pending: { label: '대기', tone: 'gray' },
-    in_progress: { label: '진행중', tone: 'info' },
+    in_progress: { label: '진행 중', tone: 'info' },
     completed: { label: '완료', tone: 'success' },
     cancelled: { label: '취소', tone: 'gray' },
   },
   /** ListingAdvertisement.status — 실제 CP 광고 생명주기 */
   adStatus: {
-    active: { label: '게재중', tone: 'success' },
-    ended: { label: '종료', tone: 'neutral' },
+    active: { label: '게재 중', tone: 'success' },
+    ended: { label: '종료', tone: 'neutral' }, // i18n: ad
   },
   /** 거래유형 — 라벨/컬러 전 페이지 통일 */
   transactionType: {

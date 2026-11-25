@@ -1,8 +1,12 @@
 /**
- * tasks 페이지 목록 — 열 제목 없는 한 줄 행 + 회색 띠 묶음 머리.
+ * tasks 페이지 목록 — Notion형 표 (2026-11-23, 사용자 요청 "업무 테이블의 row를 notion형으로").
  *
- * 행: [선택] [우선순위] [상태 체크] 제목 ··· [고객·매물 칩] [카테고리] [담당자] [마감일] [메뉴]
- * 값이 없는 정보는 칩을 그리지 않고, 담당자·마감일은 오른쪽 끝 같은 자리에 정렬한다.
+ * 매물관리 표와 같은 규격이다: 머리줄 36px(아이콘 + 13px 이름), 행 37px(36 + 선 1), 본문 14px · 굵기 450,
+ * 칸 사이 옅은 세로선, 빈 값은 흐린 "-". 칸: [선택] 업무 | 연결 | 카테고리 | 담당 | 마감 | [메뉴]
+ * 업무 칸에 우선순위 · 완료 체크 · 제목이 함께 있고, 줄에 올리면 매물관리 표와 같은 "열기" 단추가 떠 옆 패널(서랍)을 연다.
+ * 담당 · 마감은 칸 전체가 누르는 곳이다.
+ * 보이기 설정에서 끈 칸은 머리줄과 행에서 함께 빠진다(칸 너비는 TaskTableFrame이 한 번 정해 모두가 쓴다).
+ * 예전에는 열 제목 없이 칩을 오른쪽 끝에 몰아 놓은 한 줄 행이라, 줄마다 칩의 자리가 달라 세로로 훑기 어려웠다.
  * 묶기(상태·마감일·카테고리·담당자·없음)와 정렬은 표시 메뉴에서 고르며,
  * 상태별 + 직접 정렬일 때만 행을 끌어서 순서·상태를 바꾼다(StatusView).
  */
@@ -42,21 +46,26 @@ import {
   AlignLeft,
   Calendar,
   CalendarOff,
+  CalendarDays,
   CalendarRange,
   ChevronRight,
   GripVertical,
+  Link2,
+  ListTodo,
   Plus,
+  Tag,
+  UserCheck,
   Sparkles,
   Sun,
   Sunrise,
 } from 'lucide-react';
 import type { Task } from '@estate-erp/api-client';
 import { cn } from '@/lib/utils';
+import { RowOpenButton } from '@/components/domain';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  TaskCategoryPill,
   TaskContextChips,
   TaskSourceBadge,
   categoryConfig,
@@ -74,6 +83,7 @@ import {
   type TaskGroup,
 } from './-task-filters';
 import type { TaskGroupBy, TaskSortBy, TaskVisibleProps } from './-task-display';
+import { TASK_DRAWER_ID } from './-task-form';
 import {
   DueDatePickerPopover,
   PriorityPickerPopover,
@@ -114,6 +124,121 @@ function openTaskFromRow(event: ReactMouseEvent<HTMLElement>, task: Task, onRowC
   onRowClick(task);
 }
 
+// ─── 칸 너비와 머리줄 ───────────────────────────────────────
+
+/** 머리줄과 행이 함께 쓰는 칸 너비. 표의 바깥 묶음(TaskTableFrame)이 CSS 변수로 한 번 정한다. */
+const TASK_GRID = 'grid grid-cols-[var(--task-cols)]';
+/** 값 칸: 칸 사이 옅은 세로선 */
+const TASK_CELL = 'flex min-w-0 items-center border-r border-border';
+
+function taskColumnTemplate(visible: TaskVisibleProps) {
+  return [
+    '36px', // 선택
+    'minmax(260px, 1fr)', // 업무
+    visible.context && 'minmax(180px, 340px)', // 연결
+    visible.category && '128px',
+    visible.assignee && '136px',
+    visible.due && '112px',
+    '36px', // 메뉴
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/** 칸 너비의 최솟값 합. 이보다 좁으면 줄을 바꾸지 않고 표가 가로로 굴러간다. */
+function taskTableMinWidth(visible: TaskVisibleProps) {
+  return (
+    36 + 260 + (visible.context ? 180 : 0) + (visible.category ? 128 : 0) + (visible.assignee ? 136 : 0) + (visible.due ? 112 : 0) + 36
+  );
+}
+
+/** 매물관리 표 머리와 같은 모양: 16px 아이콘(#8e8b86) + 13px 보통 굵기 이름, 흐린 글자 */
+function HeaderLabel({ icon, label }: { icon: ReactNode; label: string }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-[13px] leading-[21px] font-normal text-muted-foreground">
+      <span aria-hidden="true" className="shrink-0 [&>svg]:size-4 [&>svg]:text-[#8e8b86]">
+        {icon}
+      </span>
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
+function TaskTableHeader({ visible }: { visible: TaskVisibleProps }) {
+  const cell = cn(TASK_CELL, 'px-2.5');
+  return (
+    <div
+      role="row"
+      data-task-table-header
+      // 흰 바탕 36px · 아래 선 하나. 묶음 머리는 이 줄 바로 아래에 붙는다(top-9).
+      className={cn(TASK_GRID, 'sticky top-0 z-[6] h-9 border-b border-border bg-background')}
+    >
+      <div role="columnheader" aria-label="선택" />
+      <div role="columnheader" className={cell}>
+        <HeaderLabel icon={<ListTodo />} label="업무" />
+      </div>
+      {visible.context && (
+        <div role="columnheader" className={cell}>
+          <HeaderLabel icon={<Link2 />} label="연결" />
+        </div>
+      )}
+      {visible.category && (
+        <div role="columnheader" className={cell}>
+          <HeaderLabel icon={<Tag />} label="카테고리" />
+        </div>
+      )}
+      {visible.assignee && (
+        <div role="columnheader" className={cell}>
+          <HeaderLabel icon={<UserCheck />} label="담당" />
+        </div>
+      )}
+      {visible.due && (
+        <div role="columnheader" className={cell}>
+          <HeaderLabel icon={<CalendarDays />} label="마감" />
+        </div>
+      )}
+      <div role="columnheader" aria-label="더 보기" />
+    </div>
+  );
+}
+
+/** 표의 바깥 묶음: 칸 너비를 정하고 머리줄을 그린다. 묶음 목록과 끌어 옮기는 상태별 목록이 함께 쓴다. */
+function TaskTableFrame({
+  label,
+  visible,
+  children,
+}: {
+  label: string;
+  visible: TaskVisibleProps;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="table"
+      aria-label={label}
+      className="@container/tasklist"
+      style={{ '--task-cols': taskColumnTemplate(visible), minWidth: taskTableMinWidth(visible) } as CSSProperties}
+    >
+      <TaskTableHeader visible={visible} />
+      {children}
+    </div>
+  );
+}
+
+/** 카테고리 칸의 알약: 프로젝트 · 희망매물의 점 알약과 같은 모양 (점 색은 카테고리 색) */
+function CategoryCellPill({ category }: { category: string }) {
+  const cfg = getCategoryConfig(category);
+  return (
+    <span
+      title={cfg.label}
+      className="inline-flex h-5 max-w-full items-center gap-[5px] rounded-full bg-[#f1f1ef] pl-[7px] pr-[9px] text-[14px] leading-5 font-[450] text-muted-foreground-strong"
+    >
+      <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: cfg.dot }} aria-hidden="true" />
+      <span className="truncate">{cfg.label}</span>
+    </span>
+  );
+}
+
 // ─── 행 ───────────────────────────────────────────────────
 
 type TaskLineProps = TaskRowHandlers &
@@ -140,6 +265,8 @@ function TaskLine({
   dragProps,
   dragHandle,
   onRowClick,
+  openTaskId,
+  onCloseTask,
   onStatusChange,
   onCycleCheck,
   onDelete,
@@ -149,6 +276,7 @@ function TaskLine({
   const selected = selectedIds.has(task.id);
   const selecting = selectedIds.size > 0;
   const done = !isTaskActive(task);
+  const opened = openTaskId === task.id;
 
   return (
     <div
@@ -160,12 +288,15 @@ function TaskLine({
       style={style}
       onDoubleClick={(event) => openTaskFromRow(event, task, onRowClick)}
       className={cn(
-        'group/row flex h-10 items-center pr-2 pl-1 transition-colors hover:bg-muted/40',
+        TASK_GRID,
+        // 37px = 칸 36 + 아래 선 1 (매물관리 표의 행 높이). group: 줄에 올리면 업무 칸의 "열기" 단추가 뜬다
+        'group group/row h-[37px] border-b border-border bg-background text-[14px] leading-[21px] font-[450] text-foreground transition-colors hover:bg-muted/70',
         selected && 'bg-info-soft/40 hover:bg-info-soft/50',
+        opened && !selected && 'bg-muted/70',
         isDragging && 'opacity-40',
       )}
     >
-      <div role="cell" className="flex w-7 shrink-0 justify-center">
+      <div role="cell" className="flex items-center justify-center">
         {dragHandle}
         <Checkbox
           aria-label={`${task.title} 선택`}
@@ -177,18 +308,24 @@ function TaskLine({
           )}
         />
       </div>
-      <div role="cell" className="flex w-7 shrink-0 justify-center">
-        <PriorityPickerPopover task={task} onUpdate={onUpdate} iconOnly />
-      </div>
-      <div role="cell" className="flex w-7 shrink-0 justify-center">
-        <TaskCompleteToggle task={task} onCycle={onCycleCheck} />
-      </div>
 
-      <div role="cell" className="flex min-w-0 flex-1 items-center gap-1.5 pr-3 pl-2">
+      {/* 업무 칸: 우선순위 · 완료 체크 · 제목. 이 표의 주 칸이라 제목은 굵기 500 */}
+      <div role="cell" className={cn(TASK_CELL, 'relative gap-0.5 pr-2.5 pl-1')}>
+        {/* 매물관리 표의 "열기"와 같은 단추: 줄에 올리면 칸 오른쪽에 뜨고, 누르면 옆 패널(서랍)에서 업무를 연다 */}
+        <RowOpenButton
+          label={task.title}
+          current={opened}
+          controls={TASK_DRAWER_ID}
+          onToggle={() => (opened ? onCloseTask?.() : onRowClick(task))}
+        />
+        <PriorityPickerPopover task={task} onUpdate={onUpdate} iconOnly />
+        <span className="flex w-7 shrink-0 justify-center">
+          <TaskCompleteToggle task={task} onCycle={onCycleCheck} />
+        </span>
         <button
           type="button"
           className={cn(
-            'min-w-0 truncate text-left text-[13.5px] font-medium leading-5 tracking-[-0.005em] underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none',
+            'ml-1 min-w-0 truncate text-left text-[14px] leading-[21px] font-medium underline-offset-4 hover:underline focus-visible:underline focus-visible:outline-none',
             done && 'text-muted-foreground',
           )}
           aria-label={`${task.title} 업무 열기`}
@@ -197,15 +334,15 @@ function TaskLine({
           {task.title}
         </button>
         {task.source === 'ai' && (
-          <span className="inline-flex shrink-0 text-violet" title="AI가 만든 업무 (통화 분석·외부 AI)">
+          <span className="ml-1 inline-flex shrink-0 text-violet" title="AI가 만든 업무 (통화 분석·외부 AI)">
             <Sparkles className="size-3.5" aria-hidden="true" />
             <span className="sr-only">AI가 만든 업무</span>
           </span>
         )}
-        {task.source === 'system' && <TaskSourceBadge source="system" />}
+        {task.source === 'system' && <TaskSourceBadge source="system" className="ml-1" />}
         {task.content?.trim() && (
           <span
-            className="inline-flex shrink-0 text-muted-foreground/60"
+            className="ml-1 inline-flex shrink-0 text-muted-foreground/60"
             title={task.content.length > 120 ? `${task.content.slice(0, 120)}…` : task.content}
           >
             <AlignLeft className="size-3" aria-hidden="true" />
@@ -214,21 +351,29 @@ function TaskLine({
         )}
       </div>
 
-      <div role="cell" className={cn('flex shrink-0 items-center gap-1.5', done && 'opacity-60')}>
-        {visible.context && <TaskContextChips task={task} variant="pill" limit={2} />}
-        {visible.category && <TaskCategoryPill category={task.category} />}
-      </div>
+      {visible.context && (
+        // 연결 칸: 고객 · 매물 · 거래 조건 칩. 칸이 좁으면 칩이 줄어들며 말줄임하고 "+N"은 늘 보인다
+        // (잘려서 통째로 사라지는 칩이 없게 — fit). 옆 칸은 밀지 않는다.
+        <div role="cell" className={cn(TASK_CELL, 'gap-1.5 overflow-hidden px-2.5', done && 'opacity-60')}>
+          <TaskContextChips task={task} variant="pill" limit={2} fit />
+        </div>
+      )}
+      {visible.category && (
+        <div role="cell" className={cn(TASK_CELL, 'px-2.5', done && 'opacity-60')}>
+          <CategoryCellPill category={task.category} />
+        </div>
+      )}
       {visible.assignee && (
-        <div role="cell" className="ml-1 flex w-9 shrink-0 justify-center">
-          <TaskAssigneePicker task={task} employeeOptions={employeeOptions} onUpdate={onUpdate} compact />
+        <div role="cell" className={TASK_CELL}>
+          <TaskAssigneePicker task={task} employeeOptions={employeeOptions} onUpdate={onUpdate} cell />
         </div>
       )}
       {visible.due && (
-        <div role="cell" className="flex w-[84px] shrink-0 justify-end">
-          <DueDatePickerPopover task={task} onUpdate={onUpdate} compact />
+        <div role="cell" className={TASK_CELL}>
+          <DueDatePickerPopover task={task} onUpdate={onUpdate} cell />
         </div>
       )}
-      <div role="cell" className="flex w-8 shrink-0 justify-end">
+      <div role="cell" className="flex items-center justify-center">
         <TaskRowActionsMenu
           task={task}
           onRowClick={onRowClick}
@@ -266,7 +411,8 @@ function TaskGroupHeader({
     <div
       role="row"
       className={cn(
-        'group/header sticky top-0 z-[5] flex h-9 items-center gap-1 border-y border-[#efeeec] bg-[#f7f7f5] pr-3 pl-2 dark:border-border dark:bg-muted',
+        // 회색 띠를 깔지 않는다: 흰 바탕 + 아래 선 (표 머리줄 바로 아래에 붙는다)
+        'group/header sticky top-9 z-[5] flex h-9 items-center gap-1 border-b border-border bg-background pr-3 pl-2',
         highlight && 'bg-info-soft/70',
       )}
     >
@@ -400,11 +546,11 @@ export function TaskGroupedList({
     ));
 
   return (
-    <div role="table" aria-label="업무 목록" className="@container/tasklist">
+    <TaskTableFrame label="업무 목록" visible={visible}>
       {groups.map((group) => {
         if (groupBy === 'none') {
           return (
-            <div role="rowgroup" key={group.key} className="pt-1">
+            <div role="rowgroup" key={group.key}>
               {renderRows(group.tasks)}
             </div>
           );
@@ -426,7 +572,7 @@ export function TaskGroupedList({
           </div>
         );
       })}
-    </div>
+    </TaskTableFrame>
   );
 }
 
@@ -542,7 +688,7 @@ export function StatusView({
       onDragCancel={() => setActiveId(null)}
       onDragEnd={handleDragEnd}
     >
-      <div role="table" aria-label="상태별 업무" className="@container/tasklist">
+      <TaskTableFrame label="상태별 업무" visible={visible}>
         {columns.map((status) => (
           <StatusGroup
             key={status}
@@ -557,7 +703,7 @@ export function StatusView({
             {...handlers}
           />
         ))}
-      </div>
+      </TaskTableFrame>
       <DragOverlay>
         {activeTask ? (
           <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-[13px] shadow-lg">

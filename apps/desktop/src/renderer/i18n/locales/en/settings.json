@@ -35,7 +35,7 @@
     "generating": "Generating…",
     "revoke": "Revoke Key",
     "revoking": "Revoking…",
-    "revokeConfirm": "Revoking will disconnect all AI tools using this key. Continue?",
+    "revokeConfirm": "Revoking the key disconnects automation tools that use it. AI apps connected through a connector sign-in stay connected.",
     "currentPrefix": "Current Key",
     "justGenerated": "New key issued. Copy it now and store it safely — it cannot be shown again after closing this panel.",
     "copy": "Copy",

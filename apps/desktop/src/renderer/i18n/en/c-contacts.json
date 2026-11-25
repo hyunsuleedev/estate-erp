@@ -1,0 +1,16 @@
+{
+  "strings": {
+    "{0} 태그 떼기": "Remove tag {0}",
+    "라벨 (사무실)": "Label (e.g. Office)",
+    "전화번호 삭제": "Delete phone number",
+    "전화번호 추가": "Add phone number",
+    "주": "Main",
+    "주 연락처로 지정": "Set as main number",
+    "이 연락처 본인의 추가 번호(직통·사무실·집 등)만 등록하세요. 배우자·가족이나 법인 담당자의 번호는 '세대 · 법인 소속'에서 별도 연락처로 연결해 주세요.": "Add only this contact's own numbers (direct line, office, home, etc.). Save a spouse, family member, or company representative as a separate contact under Household & Organization."
+  },
+  "files": {
+    "components/contacts/contact-phones-editor.tsx": {
+      "주 연락처": "Main number"
+    }
+  }
+}

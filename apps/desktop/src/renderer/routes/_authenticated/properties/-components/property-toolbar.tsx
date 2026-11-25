@@ -136,7 +136,14 @@ export function ToolbarPillToggle<T extends string>({
   shape = "pill",
 }: {
   value: T;
-  options: ReadonlyArray<{ value: T; label: string; icon: ReactNode }>;
+  /** disabled: 이 화면에서 고를 수 없는 쪽. 자리는 지키고 흐리게 둔다. disabledTitle은 그 이유. */
+  options: ReadonlyArray<{
+    value: T;
+    label: string;
+    icon: ReactNode;
+    disabled?: boolean;
+    disabledTitle?: string;
+  }>;
   onChange: (value: T) => void;
   ariaLabel: string;
   /**
@@ -169,7 +176,8 @@ export function ToolbarPillToggle<T extends string>({
             type="button"
             aria-pressed={selected}
             aria-label={option.label}
-            title={option.label}
+            title={option.disabled ? (option.disabledTitle ?? option.label) : option.label}
+            disabled={option.disabled}
             onClick={() => onChange(option.value)}
             className={cn(
               "inline-flex h-[26px] items-center gap-1.5 whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 [&_svg]:size-3.5",
@@ -181,7 +189,9 @@ export function ToolbarPillToggle<T extends string>({
                   : muted
                     ? "bg-white font-medium text-foreground shadow-[0_1px_2px_rgba(40,35,25,0.12)]"
                     : "bg-white font-medium text-foreground"
-                : "text-muted-foreground hover:text-foreground",
+                : option.disabled
+                  ? "cursor-not-allowed text-muted-foreground/45"
+                  : "text-muted-foreground hover:text-foreground",
             )}
           >
             {option.icon}

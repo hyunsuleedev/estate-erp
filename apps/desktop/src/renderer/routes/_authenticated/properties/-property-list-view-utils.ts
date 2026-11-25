@@ -98,7 +98,7 @@ export type IntakeRowSummary = Pick<
   | 'updatedAt'
 >;
 
-/** 그룹의 매물들이 참조하는 의뢰 중 대표 의뢰 1건 선택 (진행중 우선 → 최근 접수순). */
+/** 그룹의 매물들이 참조하는 의뢰 중 대표 의뢰 1건 선택 (진행 중 우선 → 최근 접수순). */
 export function pickPrimaryIntake(
   listings: Array<Pick<ListingSummary, 'intakeId' | 'intake'>>,
 ): IntakeRowSummary | null {
@@ -228,5 +228,7 @@ function formatDateShort(value?: string | null) {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+  // "03.01" · 다른 해는 "2027.03.01" (화면 표기 기준 — 예전 "3. 1."은 해가 빠져 내년 날짜와 섞였다)
+  const md = `${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
+  return date.getFullYear() === new Date().getFullYear() ? md : `${date.getFullYear()}.${md}`;
 }

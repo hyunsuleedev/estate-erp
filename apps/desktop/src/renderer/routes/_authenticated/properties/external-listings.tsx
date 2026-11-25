@@ -54,6 +54,7 @@ import {
 } from '@/components/data-table';
 import { useAuth } from '@/providers/auth-provider';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/domain';
 import { Button } from '@/components/ui/button';
@@ -303,7 +304,7 @@ function ExternalListingsPage() {
     },
     onError: (err: unknown) => {
       setSessionError(
-        err instanceof Error ? err.message : '스냅샷을 시작하지 못했습니다.',
+        apiErrorMessage(err, '스냅샷을 시작하지 못했습니다. 다시 시도해 주세요.'),
       );
     },
   });
@@ -329,7 +330,7 @@ function ExternalListingsPage() {
     },
     onError: (err: unknown) => {
       setSessionError(
-        err instanceof Error ? err.message : '완료 처리에 실패했습니다.',
+        apiErrorMessage(err, '완료 처리하지 못했습니다. 다시 시도해 주세요.'),
       );
       setShowCompleteConfirm(false);
     },
@@ -343,7 +344,7 @@ function ExternalListingsPage() {
     },
     onError: (err: unknown) => {
       setSessionError(
-        err instanceof Error ? err.message : '세션 취소에 실패했습니다.',
+        apiErrorMessage(err, '세션을 취소하지 못했습니다. 다시 시도해 주세요.'),
       );
       setShowCancelConfirm(false);
     },
@@ -373,9 +374,7 @@ function ExternalListingsPage() {
     onError: (err, _groupIds, ctx) => {
       if (ctx) queryClient.setQueryData(ctx.queryKey, ctx.previous);
       toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : '광고를 유지하지 못했습니다.',
+        apiErrorMessage(err, '광고를 유지하지 못했습니다. 다시 시도해 주세요.'),
       );
     },
     onSettled: () => {
@@ -421,9 +420,7 @@ function ExternalListingsPage() {
         }
       }
       toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : '저장에 실패했습니다.',
+        apiErrorMessage(err, '저장하지 못했습니다. 다시 시도해 주세요.'),
       );
     },
     onSettled: () => {
@@ -1336,7 +1333,7 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
     onError: (err: unknown) => {
       setEditing(null);
       setActionError(
-        err instanceof Error ? err.message : '광고를 저장하지 못했습니다.',
+        apiErrorMessage(err, '광고를 저장하지 못했습니다. 다시 시도해 주세요.'),
       );
     },
   });
@@ -1353,7 +1350,7 @@ function ExternalListingRankPanel({ group }: { group: ExternalListingGroup }) {
     onError: (err: unknown) => {
       setListingToRemove(null);
       setActionError(
-        err instanceof Error ? err.message : '광고를 지우지 못했습니다.',
+        apiErrorMessage(err, '광고를 지우지 못했습니다. 다시 시도해 주세요.'),
       );
     },
   });
@@ -2980,7 +2977,7 @@ function ManualEntryDialog({
     },
     onError: (err) => {
       setErrorMessage(
-        err instanceof Error ? err.message : '등록에 실패했습니다.',
+        apiErrorMessage(err, '등록하지 못했습니다. 다시 시도해 주세요.'),
       );
     },
     onSettled: () => {

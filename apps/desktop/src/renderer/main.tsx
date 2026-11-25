@@ -6,6 +6,7 @@ import {
   createRouter,
 } from '@tanstack/react-router';
 import { routeTree } from './routeTree.gen';
+import { NotFoundScreen } from './components/layout/not-found-screen';
 import './i18n';
 import { getRendererSurface } from './features/tabs/native/rendererSurface';
 import { CallOverlayRoot } from './features/cti/call-overlay';
@@ -15,6 +16,8 @@ const router = createRouter({
   routeTree,
   history:
     window.location.protocol === 'file:' ? createHashHistory() : undefined,
+  // 없는 주소: 라우터 기본값("Not Found" 한 줄) 대신 안내와 돌아갈 길을 보인다
+  defaultNotFoundComponent: NotFoundScreen,
 });
 
 declare module '@tanstack/react-router' {

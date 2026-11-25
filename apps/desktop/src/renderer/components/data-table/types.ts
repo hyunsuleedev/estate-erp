@@ -160,7 +160,8 @@ export interface DataTableProps<TData> {
   // Keyboard nav
   enableKeyboardNav?: boolean;
   // Empty state
-  emptyMessage?: string;
+  /** 빈 목록 안내. 글자뿐 아니라 단추를 넣은 요소도 받는다(보이는 폭 가운데에 놓인다). */
+  emptyMessage?: ReactNode;
   // Layout mode: 'paginated' renders fixed-height rows with pagination footer,
   // 'full-height' fills the parent and lets the tbody scroll (no pagination).
   layout?: 'paginated' | 'full-height';

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AuthRegisterError, useAuth } from '@/providers/auth-provider';
+import { translateServerMessage } from '@/i18n/auto';
 import {
   SIGNUP_EMAIL_MAX_LENGTH,
   SIGNUP_EMAIL_RULE,
@@ -265,7 +266,7 @@ function RegisterPage() {
                 <div id="register-error" role="alert" className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                   <AlertCircle className="mt-0.5 size-4 shrink-0" />
                   <p>
-                    {error}
+                    {translateServerMessage(error)}
                     {continueAtLogin && (
                       <>
                         {' '}
@@ -315,7 +316,7 @@ function Field({
       {children(describedBy)}
       {error ? (
         <p id={errorId} className="text-xs text-destructive">
-          {error}
+          {translateServerMessage(error)}
         </p>
       ) : (
         hint && (

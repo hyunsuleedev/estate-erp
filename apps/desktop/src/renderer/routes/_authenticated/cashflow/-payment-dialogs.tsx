@@ -6,6 +6,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { LedgerPayment, LedgerView } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { apiErrorMessage as sharedApiErrorMessage } from '@/lib/api-error';
+import { cn } from '@/lib/utils';
 import { formatMoney } from '@/lib/format';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
@@ -31,16 +33,22 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   adjustmentProblem,
   type AdjustmentProblem,
+  checkReceiptInput,
   checkReceivedAmount,
-  nextCollectedTotal,
+  clientSideLabel,
+  formatWon,
   ourRatioFrom,
+  parseWonInput,
   partnerRatioOf,
   paymentRemaining,
   paymentWithAdjustment,
   planDealDistribution,
-  shortDate,
+  remainingSupplyWon,
   splitAmount,
   toDayKey,
+  WON_PER_MANWON,
+  withVatWon,
+  withoutVatWon,
 } from './-cashflow-utils';
 
 export type LedgerAdjustment = LedgerView['adjustmentsPending'][number];
@@ -58,8 +66,12 @@ export function useInvalidateFinance() {
   const qc = useQueryClient();
   return () => {
     qc.invalidateQueries({ queryKey: ['finance', 'ledger'] });
+    qc.invalidateQueries({ queryKey: ['finance', 'receipts'] });
     qc.invalidateQueries({ queryKey: ['cashflow'] });
     qc.invalidateQueries({ queryKey: ['deals'] });
+    qc.invalidateQueries({ queryKey: ['commission-payments'] });
+    // 입금이 바뀌면 직원 정산의 계산도 바뀐다
+    qc.invalidateQueries({ queryKey: ['settlement'] });
   };
 }
 
@@ -69,8 +81,81 @@ function moneyHint(value: string) {
   return n > 0 ? `= ${formatMoney(n)}원` : '';
 }
 
+/**
+ * 서버가 돌려준 안내 문구. 다른 화면(거래 담당)이 이 이름으로 가져다 쓰므로 이름은 두고,
+ * 앱 공용 규칙(@/lib/api-error: 서버 문구 → 그것, 서버에 못 닿음 → 연결 안내, 그 밖 → fallback)을 그대로 부른다.
+ */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof NoticeError) return error.message;
+  return sharedApiErrorMessage(error, fallback);
+}
+
+/** 화면이 직접 만든 안내(예: "청구 2건만 바뀌고…"). 서버 오류가 아니라서 문구를 그대로 보여 준다. */
+export class NoticeError extends Error {}
+
+/** 원 단위 입력칸에 쓰는 값: 1234000 → "1,234,000" */
+const wonInputText = (won: number) => (won > 0 ? won.toLocaleString('ko-KR') : '');
+
+/**
+ * 치는 동안의 글 다듬기. 숫자만 쳤으면 "1,234,000"처럼 쉼표를 넣고, "1324만 4천"처럼 단위가 있으면 친 그대로 둔다
+ * (치는 도중에 숫자로 바꿔 끼우면 "만" 뒤를 이어 칠 수 없다). 읽은 값은 아래 "= …원"으로 되비춘다.
+ */
+const tidyWonText = (text: string) => {
+  const digits = text.replace(/[,\s]/g, '');
+  return /^\d+$/.test(digits) ? wonInputText(Number(digits)) : text;
+};
+
+const METHOD_OPTIONS = [
+  { value: 'transfer', label: '계좌이체' },
+  { value: 'cash', label: '현금' },
+  { value: 'card', label: '카드' },
+  { value: 'other', label: '기타' },
+];
+
+/** 둘 가운데 하나를 고르는 작은 단추 묶음 */
+function Choice<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="grid auto-cols-fr grid-flow-col gap-px rounded-md bg-[#f1f0ec] p-0.5"
+    >
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          className={cn(
+            'h-7 rounded-[5px] px-2 text-[13px] text-muted-foreground transition-colors',
+            value === option.value && 'bg-white font-medium text-foreground shadow-xs',
+          )}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── 수금 처리 ────────────────────────────────────────────
 
+/**
+ * 통장에 들어온 금액을 원 단위 그대로 적는다. 부가세를 포함해 받았는지 고르면
+ * 부가세를 뺀 수수료로 바꿔 청구액과 비교한다(직원 정산도 부가세를 뺀 금액으로 나눈다).
+ * 예전에는 만원 단위 정수만 받아 1,672,000원처럼 부가세가 붙은 금액을 적을 수 없었다.
+ */
 function CollectDialog({
   payment,
   label,
@@ -81,90 +166,155 @@ function CollectDialog({
   onClose: () => void;
 }) {
   const invalidate = useInvalidateFinance();
-  const remaining = paymentRemaining(payment);
-  const [amount, setAmount] = useState(String(remaining));
+  const left = remainingSupplyWon(payment);
+  const [vat, setVat] = useState<'included' | 'none'>('included');
+  const fullAmount = vat === 'included' ? withVatWon(left) : left;
+  const [amountText, setAmountText] = useState(wonInputText(withVatWon(left)));
+  const [touched, setTouched] = useState(false);
   const [method, setMethod] = useState('transfer');
   const [paidAt, setPaidAt] = useState(todayInput);
   const [note, setNote] = useState('');
 
-  const received = Number(amount);
-  const problem = checkReceivedAmount(received, remaining);
-  const isPartial = problem === null && received < remaining;
-  // 입금일은 청구마다 하나만 저장된다. 달이 바뀌면 앞선 수금액도 새 달로 집계된다.
-  const previous = payment.actualAmount ?? 0;
-  const movesMonth =
-    previous > 0 &&
-    toDayKey(payment.paidAt)?.slice(0, 7) !== paidAt.slice(0, 7);
+  const amountWon = parseWonInput(amountText);
+  const vatIncluded = vat === 'included';
+  const problem = checkReceiptInput(amountWon, vatIncluded, left);
+  const supplyWon = problem === 'empty' ? 0 : vatIncluded ? Math.min(left, withoutVatWon(amountWon)) : amountWon;
+  const leftAfter = Math.max(0, left - supplyWon);
+  // 1원 차이는 서버가 남은 금액에 맞춰 다 받음으로 닫는다
+  const closes = problem === null && leftAfter <= (vatIncluded ? 1 : 0);
+  const futureDate = paidAt > todayInput();
+  const receivedBefore = payment.receivedAmountWon ?? 0;
+
+  const changeVat = (next: 'included' | 'none') => {
+    setVat(next);
+    // 손대지 않은 금액은 고른 방식의 남은 금액으로 바꿔 준다
+    if (!touched) setAmountText(wonInputText(next === 'included' ? withVatWon(left) : left));
+  };
 
   const mutation = useMutation({
     mutationFn: () =>
-      api.finance.commissionPayments.collect(payment.id, {
-        actualAmount: nextCollectedTotal(payment, received),
+      api.finance.commissionPayments.addReceipt(payment.id, {
+        amountWon,
+        vat,
         method,
-        paidAt,
-        note: note || undefined,
+        receivedAt: paidAt,
+        memo: note.trim() || undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (updated) => {
       toast.success(
-        isPartial
-          ? `부분수금으로 기록했습니다. 남은 금액 ${formatMoney(remaining - received)}`
-          : '수금 완료로 기록했습니다.',
+        updated.status === 'collected'
+          ? '수금을 기록했습니다. 이 청구는 다 받았습니다.'
+          : `수금을 기록했습니다. 남은 수수료 ${formatWon(leftAfter)} (부가세 별도)`,
       );
       invalidate();
       onClose();
     },
-    onError: () => toast.error('수금 처리에 실패했습니다.'),
+    onError: (error) => toast.error(apiErrorMessage(error, '수금을 기록하지 못했습니다.')),
   });
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>수금 처리</DialogTitle>
-          <DialogDescription>
-            {label} · 남은 금액 {formatMoney(remaining)}
-          </DialogDescription>
+          <DialogDescription>{label}</DialogDescription>
         </DialogHeader>
+        <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-2 gap-y-1 text-[13px] [&_dd]:text-right [&_dd]:tabular-nums [&_dt]:text-muted-foreground">
+          <dt>청구 수수료</dt>
+          <dd>
+            {formatWon(payment.expectedAmount * WON_PER_MANWON)}
+            <span className="text-muted-foreground"> · 부가세 별도</span>
+          </dd>
+          {receivedBefore !== 0 && (
+            <>
+              <dt>지금까지 받은 돈</dt>
+              <dd>{formatWon(receivedBefore)}</dd>
+            </>
+          )}
+          <dt>남은 수수료</dt>
+          <dd className="font-semibold">
+            {formatWon(left)}
+            <span className="font-normal text-muted-foreground">
+              {' '}
+              · 부가세 포함 {formatWon(withVatWon(left))}
+            </span>
+          </dd>
+        </dl>
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <Label htmlFor="collect-amount">이번에 받은 금액 (만원)</Label>
+            <Label>부가세</Label>
+            <Choice
+              label="부가세"
+              value={vat}
+              onChange={changeVat}
+              options={[
+                { value: 'included', label: '부가세 포함해서 받음' },
+                { value: 'none', label: '부가세 없이 받음' },
+              ]}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <div className="flex items-baseline justify-between">
+              <Label htmlFor="collect-amount">받은 금액 (원)</Label>
+              {amountWon !== fullAmount && (
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline decoration-[#d8d6d0] underline-offset-2 hover:text-foreground"
+                  onClick={() => {
+                    setAmountText(wonInputText(fullAmount));
+                    setTouched(false);
+                  }}
+                >
+                  남은 금액 전부 {formatWon(fullAmount)}
+                </button>
+              )}
+            </div>
             <Input
               id="collect-amount"
-              type="number"
-              min={1}
-              className="tabular-nums"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              inputMode="numeric"
+              className="text-right tabular-nums"
+              value={amountText}
+              onChange={(e) => {
+                setTouched(true);
+                setAmountText(tidyWonText(e.target.value));
+              }}
+              placeholder="예: 13,244,000 또는 1324만 4천"
               autoFocus
             />
+            {Number.isFinite(amountWon) && amountWon > 0 && (
+              <p className="text-xs font-medium text-foreground tabular-nums">= {formatWon(amountWon)}</p>
+            )}
             {problem === 'over' ? (
               <p className="text-xs text-destructive-strong">
-                남은 금액 {formatMoney(remaining)}보다 많습니다.
+                남은 금액보다 많습니다. {vatIncluded ? `부가세 포함 ${formatWon(withVatWon(left))}` : formatWon(left)}
+                까지 받을 수 있습니다.
               </p>
-            ) : problem === 'fraction' ? (
+            ) : problem === 'empty' && amountText.trim() ? (
               <p className="text-xs text-destructive-strong">
-                만원 단위 정수로 입력해 주세요.
+                금액을 읽을 수 없습니다. 예: 13,244,000 또는 1324만 4천
               </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                {moneyHint(amount)}
-                {isPartial &&
-                  ` · 부분수금으로 기록되고 ${formatMoney(remaining - received)}이 남습니다`}
+            ) : problem === null ? (
+              <p className="text-xs text-muted-foreground tabular-nums">
+                {vatIncluded
+                  ? `수수료 ${formatWon(supplyWon)} + 부가세 ${formatWon(amountWon - supplyWon)}`
+                  : `수수료 ${formatWon(supplyWon)} · 부가세 없음`}
+                {closes ? ' · 다 받음' : ` · 남는 수수료 ${formatWon(leftAfter)}`}
               </p>
-            )}
+            ) : null}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label>지급 방식</Label>
+              <Label>입금 방법</Label>
               <Select value={method} onValueChange={setMethod}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="transfer">계좌이체</SelectItem>
-                  <SelectItem value="cash">현금</SelectItem>
-                  <SelectItem value="card">카드</SelectItem>
-                  <SelectItem value="other">기타</SelectItem>
+                  {METHOD_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -173,10 +323,14 @@ function CollectDialog({
               <Input
                 id="collect-date"
                 type="date"
+                max={todayInput()}
                 className="tabular-nums"
                 value={paidAt}
                 onChange={(e) => setPaidAt(e.target.value)}
               />
+              {futureDate && (
+                <p className="text-xs text-destructive-strong">오늘 이후 날짜는 적을 수 없습니다.</p>
+              )}
             </div>
           </div>
           <div className="grid gap-1.5">
@@ -188,23 +342,16 @@ function CollectDialog({
               placeholder="예) 잔여분 11월 16일 입금 약속"
             />
           </div>
-          {movesMonth && (
-            <p className="text-xs leading-normal text-warning-strong">
-              {shortDate(payment.paidAt)}에 받은 {formatMoney(previous)}도 이번
-              입금일이 속한 달의 수금으로 집계됩니다. 입금일을 청구마다 하나만
-              저장하기 때문입니다.
-            </p>
-          )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
             취소
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || problem !== null}
+            disabled={mutation.isPending || problem !== null || !paidAt || futureDate}
           >
-            수금 기록
+            {mutation.isPending ? '기록 중…' : '수금 기록'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -212,7 +359,123 @@ function CollectDialog({
   );
 }
 
-// ── 세금계산서 ───────────────────────────────────────────
+// ── 돌려준 돈 ────────────────────────────────────────────
+
+/** 받은 수수료를 손님에게 돌려줬을 때. 지난 입금은 그대로 두고 돌려준 기록을 하나 더한다. */
+function RefundDialog({
+  payment,
+  label,
+  onClose,
+}: {
+  payment: LedgerPayment;
+  label: string;
+  onClose: () => void;
+}) {
+  const invalidate = useInvalidateFinance();
+  const received = payment.receivedAmountWon ?? 0;
+  const [amountText, setAmountText] = useState('');
+  const [refundedAt, setRefundedAt] = useState(todayInput);
+  const [memo, setMemo] = useState('');
+  const amountWon = parseWonInput(amountText);
+  const over = Number.isFinite(amountWon) && amountWon > received;
+  const valid = Number.isFinite(amountWon) && amountWon > 0 && !over && memo.trim().length > 0;
+  const futureDate = refundedAt > todayInput();
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.finance.commissionPayments.refund(payment.id, {
+        amountWon,
+        refundedAt,
+        memo: memo.trim(),
+      }),
+    onSuccess: () => {
+      toast.success('돌려준 돈을 기록했습니다.', {
+        description: '이미 정산한 돈이면 다음 정산에서 직원 몫이 빠집니다.',
+      });
+      invalidate();
+      onClose();
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, '돌려준 돈을 기록하지 못했습니다.')),
+  });
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>돌려준 돈 기록</DialogTitle>
+          <DialogDescription>
+            {label} · 받은 돈 {formatWon(received)}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="refund-amount">돌려준 금액 (원)</Label>
+            <Input
+              id="refund-amount"
+              inputMode="numeric"
+              className="text-right tabular-nums"
+              value={amountText}
+              onChange={(e) => setAmountText(tidyWonText(e.target.value))}
+              placeholder="예: 1,100,000 또는 110만"
+              autoFocus
+            />
+            {Number.isFinite(amountWon) && amountWon > 0 && (
+              <p className="text-xs font-medium text-foreground tabular-nums">= {formatWon(amountWon)}</p>
+            )}
+            {over ? (
+              <p className="text-xs text-destructive-strong">
+                받은 돈 {formatWon(received)}보다 많이 돌려줄 수 없습니다.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                잘못 적은 입금이면 돌려준 돈이 아니라 입금 기록을 취소해 주세요.
+              </p>
+            )}
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="refund-date">돌려준 날</Label>
+            <Input
+              id="refund-date"
+              type="date"
+              max={todayInput()}
+              className="tabular-nums"
+              value={refundedAt}
+              onChange={(e) => setRefundedAt(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="refund-memo">사유</Label>
+            <Input
+              id="refund-memo"
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              placeholder="예) 계약 해제로 수수료 반환"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
+            취소
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !valid || !refundedAt || futureDate}
+          >
+            {mutation.isPending ? '기록 중…' : '기록'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── 현금영수증·세금계산서 ────────────────────────────────
+
+export const TAX_DOC_LABEL: Record<string, string> = {
+  issued: '세금계산서',
+  sent: '세금계산서',
+  cash_receipt: '현금영수증',
+};
 
 function TaxInvoiceDialog({
   payment,
@@ -224,39 +487,56 @@ function TaxInvoiceDialog({
   onClose: () => void;
 }) {
   const invalidate = useInvalidateFinance();
+  // 개인 손님이 대부분이라 현금영수증을 먼저 둔다
+  const [kind, setKind] = useState<'cash_receipt' | 'tax_invoice'>('cash_receipt');
   const [taxInvoiceNo, setTaxInvoiceNo] = useState('');
   const [taxInvoiceDate, setTaxInvoiceDate] = useState(todayInput);
+  const isCash = kind === 'cash_receipt';
 
   const mutation = useMutation({
     mutationFn: () =>
       api.finance.commissionPayments.issueTaxInvoice(payment.id, {
-        taxInvoiceNo,
+        kind,
+        taxInvoiceNo: taxInvoiceNo.trim(),
         taxInvoiceDate,
       }),
     onSuccess: () => {
-      toast.success('세금계산서 발행을 기록했습니다.');
+      toast.success(`${isCash ? '현금영수증' : '세금계산서'} 발행을 기록했습니다.`);
       invalidate();
       onClose();
     },
-    onError: () => toast.error('세금계산서 발행 기록에 실패했습니다.'),
+    onError: (error) => toast.error(apiErrorMessage(error, '발행 기록을 저장하지 못했습니다.')),
   });
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>세금계산서 기록</DialogTitle>
-          <DialogDescription>{label}</DialogDescription>
+          <DialogTitle>현금영수증·세금계산서 기록</DialogTitle>
+          <DialogDescription>
+            {label}
+            {(payment.receivedAmountWon ?? 0) > 0 && ` · 받은 돈 ${formatWon(payment.receivedAmountWon)}`}
+            . 발행은 홈택스 등에서 하고 여기에는 번호만 남깁니다.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
+          <Choice
+            label="발행 종류"
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: 'cash_receipt', label: '현금영수증' },
+              { value: 'tax_invoice', label: '세금계산서' },
+            ]}
+          />
           <div className="grid gap-1.5">
-            <Label htmlFor="tax-no">세금계산서 번호</Label>
+            <Label htmlFor="tax-no">{isCash ? '승인번호' : '세금계산서 번호'}</Label>
             <Input
               id="tax-no"
               className="tabular-nums"
               value={taxInvoiceNo}
               onChange={(e) => setTaxInvoiceNo(e.target.value)}
-              placeholder="예) 2026-11-00042"
+              placeholder={isCash ? '예) 123456789' : '예) 20261122-41000000-00000042'}
               autoFocus
             />
           </div>
@@ -265,6 +545,7 @@ function TaxInvoiceDialog({
             <Input
               id="tax-date"
               type="date"
+              max={todayInput()}
               className="tabular-nums"
               value={taxInvoiceDate}
               onChange={(e) => setTaxInvoiceDate(e.target.value)}
@@ -272,14 +553,19 @@ function TaxInvoiceDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
             취소
           </Button>
           <Button
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !taxInvoiceNo.trim()}
+            disabled={
+              mutation.isPending ||
+              !taxInvoiceNo.trim() ||
+              !taxInvoiceDate ||
+              taxInvoiceDate > todayInput()
+            }
           >
-            기록
+            {mutation.isPending ? '기록 중…' : '기록'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -299,27 +585,36 @@ function AdjustmentRequestDialog({
   onClose: () => void;
 }) {
   const invalidate = useInvalidateFinance();
+  const { user } = useAuth();
+  // 대표가 올리는 조정은 스스로 승인할 일이라 한 번에 반영한다
+  const isOwner = user?.role === 'owner';
   const [type, setType] = useState<'discount' | 'waive' | 'bad_debt'>('discount');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
 
   const mutation = useMutation({
-    mutationFn: () =>
-      api.finance.adjustments.request({
+    mutationFn: async () => {
+      const created = await api.finance.adjustments.request({
         paymentId: payment.id,
         type,
-        amount:
-          type === 'discount'
-            ? -Math.abs(Number(amount))
-            : -payment.expectedAmount,
-        reason,
-      }),
+        // 면제·대손은 서버가 남은 금액 전부로 정한다
+        amount: type === 'discount' ? -Math.abs(Number(amount)) : -paymentRemaining(payment),
+        reason: reason.trim(),
+      });
+      if (isOwner) await api.finance.adjustments.approve(created.id);
+      return created;
+    },
     onSuccess: () => {
-      toast.success('조정을 요청했습니다. 대표가 승인하면 반영됩니다.');
+      toast.success(
+        isOwner ? '수수료 조정을 반영했습니다.' : '조정을 요청했습니다. 대표가 승인하면 반영됩니다.',
+      );
       invalidate();
       onClose();
     },
-    onError: () => toast.error('조정 요청에 실패했습니다.'),
+    onError: (error) => {
+      invalidate();
+      toast.error(apiErrorMessage(error, isOwner ? '조정을 반영하지 못했습니다.' : '조정을 요청하지 못했습니다.'));
+    },
   });
 
   // 남은 금액보다 많이 깎으면 이미 받은 돈이 청구액을 넘는다.
@@ -329,13 +624,13 @@ function AdjustmentRequestDialog({
   const valid = reason.trim().length > 0 && discountProblem === null;
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>수수료 조정 요청</DialogTitle>
+          <DialogTitle>{isOwner ? '수수료 조정' : '수수료 조정 요청'}</DialogTitle>
           <DialogDescription>
-            {label} · 청구 {formatMoney(payment.expectedAmount)}. 대표가 승인하면
-            반영됩니다.
+            {label} · 청구 {formatMoney(payment.expectedAmount)} · 남은 수수료 {formatMoney(remaining)} (부가세 별도).{' '}
+            {isOwner ? '대표 계정이라 바로 반영됩니다.' : '대표가 승인하면 반영됩니다.'}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -351,13 +646,13 @@ function AdjustmentRequestDialog({
               <SelectContent>
                 <SelectItem value="discount">할인 합의</SelectItem>
                 <SelectItem value="waive">면제</SelectItem>
-                <SelectItem value="bad_debt">대손 처리</SelectItem>
+                <SelectItem value="bad_debt">대손 처리 (못 받음)</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          {type === 'discount' && (
+          {type === 'discount' ? (
             <div className="grid gap-1.5">
-              <Label htmlFor="adjust-amount">할인 금액 (만원)</Label>
+              <Label htmlFor="adjust-amount">할인 금액 (만원, 부가세 별도)</Label>
               <Input
                 id="adjust-amount"
                 type="number"
@@ -382,9 +677,14 @@ function AdjustmentRequestDialog({
                 </p>
               ) : null}
             </div>
+          ) : (
+            <p className="text-xs leading-normal text-muted-foreground">
+              남은 수수료 {formatMoney(remaining)}를 {type === 'waive' ? '받지 않기로' : '받지 못한 것으로'} 처리합니다.
+              이미 받은 돈은 그대로 남습니다.
+            </p>
           )}
           <div className="grid gap-1.5">
-            <Label htmlFor="adjust-reason">요청 사유</Label>
+            <Label htmlFor="adjust-reason">사유</Label>
             <Textarea
               id="adjust-reason"
               value={reason}
@@ -394,14 +694,14 @@ function AdjustmentRequestDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
             취소
           </Button>
           <Button
             onClick={() => mutation.mutate()}
             disabled={mutation.isPending || !valid}
           >
-            요청
+            {mutation.isPending ? '저장 중…' : isOwner ? '반영' : '요청'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -414,12 +714,12 @@ function AdjustmentRequestDialog({
 function adjustmentProblemText(problem: AdjustmentProblem, remaining: number) {
   return problem === 'over-remaining'
     ? `요청 뒤 수금이 들어와 남은 금액 ${formatMoney(remaining)}보다 큽니다. 승인하면 청구액이 받은 돈보다 작아지므로, 반려한 뒤 다시 요청해 주세요.`
-    : '요청 뒤 수금이 끝나 조정할 금액이 남아 있지 않습니다. 반려해 주세요.';
+    : '이 청구는 다 받았거나 면제·대손 처리되어 조정할 금액이 남아 있지 않습니다. 반려해 주세요.';
 }
 
 const ADJUSTMENT_PAYMENT_MISSING = '이 조정의 청구를 찾지 못해 승인할 수 없습니다.';
 
-class AdjustmentBlockedError extends Error {}
+class AdjustmentBlockedError extends NoticeError {}
 
 /**
  * 조정 승인. 화면에 보이는 값은 띄워 둔 사이 낡을 수 있어 누르는 순간 청구를 다시 읽어 판단한다.
@@ -460,7 +760,7 @@ export function useAdjustmentDecision() {
       toast.error(
         error instanceof AdjustmentBlockedError
           ? error.message
-          : '조정 승인에 실패했습니다.',
+          : apiErrorMessage(error, '조정을 승인하지 못했습니다.'),
       );
     },
   });
@@ -471,7 +771,10 @@ export function useAdjustmentDecision() {
       toast.success('수수료 조정을 반려했습니다.');
       invalidate();
     },
-    onError: () => toast.error('조정 반려에 실패했습니다.'),
+    onError: (error) => {
+      invalidate();
+      toast.error(apiErrorMessage(error, '조정을 반려하지 못했습니다.'));
+    },
   });
   return { approve, reject };
 }
@@ -479,10 +782,13 @@ export function useAdjustmentDecision() {
 export function AdjustmentDecisionDialog({
   adjustment,
   label,
+  transactionType,
   onClose,
 }: {
   adjustment: LedgerAdjustment;
   label?: string;
+  /** 청구의 쪽 이름(매도측 / 임대인측)을 고르는 데 쓴다 */
+  transactionType?: string;
   onClose: () => void;
 }) {
   const { user } = useAuth();
@@ -524,10 +830,31 @@ export function AdjustmentDecisionDialog({
           </DialogDescription>
         </DialogHeader>
         <dl className="grid grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-1.5 text-[13px]">
+          {payment && (
+            <>
+              <dt className="text-muted-foreground">청구</dt>
+              <dd className="tabular-nums">
+                {clientSideLabel(payment.clientSide, transactionType)} {formatMoney(payment.expectedAmount)}
+                <span className="text-muted-foreground">
+                  {' '}
+                  · 남은 금액{' '}
+                  {paymentRemaining(payment) > 0
+                    ? `${formatMoney(paymentRemaining(payment))} (부가세 별도)`
+                    : '없음'}
+                </span>
+              </dd>
+            </>
+          )}
           <dt className="text-muted-foreground">조정 금액</dt>
           <dd className="font-semibold tabular-nums">
             {formatMoney(adjustment.amount)}
           </dd>
+          {adjustment.requestedByName && (
+            <>
+              <dt className="text-muted-foreground">요청</dt>
+              <dd>{adjustment.requestedByName}</dd>
+            </>
+          )}
           <dt className="text-muted-foreground">사유</dt>
           <dd className="leading-normal whitespace-pre-wrap">
             {adjustment.reason}
@@ -630,7 +957,7 @@ function ConfirmDraftDialog({
       invalidate();
       onClose();
     },
-    onError: () => toast.error('청구 확정에 실패했습니다.'),
+    onError: (error) => toast.error(apiErrorMessage(error, '청구를 확정하지 못했습니다.')),
   });
 
   return (
@@ -749,7 +1076,7 @@ export function DistributionEditDialog({
         buildItems(),
       ),
     onSuccess: saved('수수료 분배를 저장했습니다.'),
-    onError: () => toast.error('분배 저장에 실패했습니다.'),
+    onError: (error) => toast.error(apiErrorMessage(error, '분배를 저장하지 못했습니다.')),
   });
   const saveBulk = useMutation({
     mutationFn: () => applyDealDistribution(dealId, buildItems()),
@@ -758,10 +1085,10 @@ export function DistributionEditDialog({
       invalidate();
       onOpenChange(false);
     },
-    onError: () => {
+    onError: (error) => {
       // 건별 적용이 중간에 실패하면 앞선 청구는 이미 바뀌었으므로 다시 읽는다.
       invalidate();
-      toast.error('분배 저장에 실패했습니다.');
+      toast.error(apiErrorMessage(error, '분배를 저장하지 못했습니다.'));
     },
   });
   const pending = saveSingle.isPending || saveBulk.isPending;
@@ -861,7 +1188,7 @@ export function DistributionEditDialog({
 
           {error && (
             <p className="text-xs text-destructive-strong">
-              {(error as Error).message}
+              {apiErrorMessage(error, '분배를 저장하지 못했습니다. 다시 시도해 주세요.')}
             </p>
           )}
         </div>
@@ -909,7 +1236,7 @@ export async function applyDealDistribution(
     } catch (cause) {
       // 건별 호출은 한 번에 되돌릴 수 없으니 앞선 청구가 바뀌었다는 사실을 알린다.
       if (updated.length === 0) throw cause;
-      throw new Error(
+      throw new NoticeError(
         `청구 ${updated.length}건만 바뀌고 나머지 ${targets.length - updated.length}건은 저장하지 못했습니다.`,
       );
     }
@@ -936,7 +1263,7 @@ export function reportBulkDistribution(result: {
 
 // ── 공용 진입점 ──────────────────────────────────────────
 
-export type PaymentDialogKind = 'collect' | 'tax' | 'adjust' | 'confirmDraft';
+export type PaymentDialogKind = 'collect' | 'tax' | 'adjust' | 'confirmDraft' | 'refund';
 
 export interface PaymentDialogState {
   kind: PaymentDialogKind;
@@ -959,6 +1286,7 @@ export function PaymentDialogHost({
   if (state.kind === 'collect') return <CollectDialog key={key} {...props} />;
   if (state.kind === 'tax') return <TaxInvoiceDialog key={key} {...props} />;
   if (state.kind === 'adjust') return <AdjustmentRequestDialog key={key} {...props} />;
+  if (state.kind === 'refund') return <RefundDialog key={key} {...props} />;
   return <ConfirmDraftDialog key={key} {...props} />;
 }
 
@@ -968,29 +1296,67 @@ export interface DunningTarget {
   payment: LedgerPayment;
   location: string;
   dealId: string;
+  /** 매매면 매도측·매수측, 전세·월세면 임대인측·임차인측으로 적는다 */
+  transactionType?: string;
 }
 
+const DUNNING_PREFIX = '[독촉]';
+const OPEN_TASK_STATUSES = new Set(['pending', 'in_progress']);
+
+/** 독촉 업무의 제목. 끝나지 않은 독촉 업무를 찾을 때도 이 모양(접두어 + 청구번호)으로 찾는다. */
+function dunningTitle({ payment, location }: DunningTarget) {
+  return `${DUNNING_PREFIX} ${location} · ${payment.code ?? ''} ${formatMoney(paymentRemaining(payment))} 수금`;
+}
+
+/**
+ * 끝나지 않은 독촉 업무를 청구마다 찾는다. 업무가 청구를 가리키지 않아 거래와 제목의 청구번호로 맞춘다.
+ * 같은 청구에 독촉 업무가 여러 번 쌓이지 않게, 이미 있으면 화면에서 '독촉함'으로 보여 준다.
+ */
+export function useOpenDunning() {
+  const tasks = useQuery({
+    queryKey: ['tasks', 'dunning'],
+    queryFn: () => api.tasks.findAll({ category: 'call' }),
+    staleTime: 30_000,
+  });
+  return (payment: Pick<LedgerPayment, 'code'>, dealId: string) =>
+    (tasks.data ?? [])
+      .filter(
+        (task) =>
+          task.dealId === dealId &&
+          OPEN_TASK_STATUSES.has(task.status) &&
+          task.title.startsWith(DUNNING_PREFIX) &&
+          (!payment.code || task.title.includes(payment.code)),
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null;
+}
+
+/** 독촉 업무를 만든다. 누른 사람이 담당이 되어 '내 담당' 업무에 바로 보인다 (다른 직원에게는 업무 화면에서 넘긴다). */
 export function useCreateDunningTasks() {
   const qc = useQueryClient();
+  const { user } = useAuth();
   return useMutation({
     mutationFn: (targets: DunningTarget[]) =>
       Promise.all(
-        targets.map(({ payment, location, dealId }) =>
+        targets.map((target) =>
           api.tasks.create({
-            title: `[독촉] ${location} · ${payment.code ?? ''} ${formatMoney(paymentRemaining(payment))} 수금`,
-            content: `${payment.clientSide === 'seller' ? '매도측' : '매수측'} 수수료 ${formatMoney(paymentRemaining(payment))} 독촉`,
+            title: dunningTitle(target),
+            content: `${clientSideLabel(target.payment.clientSide, target.transactionType)} 수수료 ${formatMoney(paymentRemaining(target.payment))} 독촉 (부가세 별도)`,
             category: 'call',
             priority: 'urgent',
-            source: 'system',
+            // 사람이 눌러 만든 업무라 직접 만든 업무로 둔다 (system 이면 직원이 지울 수 없다)
+            source: 'manual',
             dueDate: new Date().toISOString(),
-            dealId,
+            dealId: target.dealId,
+            assignedToId: user?.id,
           }),
         ),
       ),
     onSuccess: (_data, targets) => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
-      toast.success(`독촉 업무 ${targets.length}건을 만들었습니다.`);
+      toast.success(`독촉 업무 ${targets.length}건을 만들었습니다.`, {
+        description: '업무 › 내 담당에서 볼 수 있습니다.',
+      });
     },
-    onError: () => toast.error('독촉 업무를 만들지 못했습니다.'),
+    onError: (error) => toast.error(apiErrorMessage(error, '독촉 업무를 만들지 못했습니다.')),
   });
 }

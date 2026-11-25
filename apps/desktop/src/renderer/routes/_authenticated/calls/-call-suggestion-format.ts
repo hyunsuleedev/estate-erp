@@ -1,3 +1,4 @@
+import { formatPrice } from '@estate-erp/shared';
 import type {
   BuyerRequirementSuggestionFields,
   CallActionSuggestion,
@@ -13,11 +14,11 @@ import type {
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 export const SUGGESTION_TYPE_LABEL: Record<CallSuggestionTypeValue, string> = {
-  task: '할 일',
+  task: '업무',
   calendar_event: '일정',
   buyer_requirement_create: '고객 요청 추가',
   buyer_requirement_update: '고객 요청 변경',
-  match_create: '매칭 추가',
+  match_create: '매물 연결',
   match_stage: '매칭 진행',
   listing_confirm: '매물 확인',
 };
@@ -55,18 +56,10 @@ const CONFIRM_RESULT_LABEL: Record<string, string> = {
 
 const TRANSACTION_LABEL: Record<string, string> = { sale: '매매', jeonse: '전세', monthly: '월세' };
 
-function withCommas(value: number) {
-  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-/** 만원 → "15억 8,000만" */
+/** 만원 → "15억 8,000만" (앱 공용 표기 formatPrice) */
 export function formatManwonText(value: number | null | undefined): string {
   if (value === null || value === undefined) return '';
-  const eok = Math.floor(value / 10_000);
-  const man = value % 10_000;
-  if (eok && man) return `${eok}억 ${withCommas(man)}만`;
-  if (eok) return `${eok}억`;
-  return `${withCommas(man)}만`;
+  return formatPrice(value);
 }
 
 /** 서버 날짜 값 → 한국 시간 { date: "YYYY-MM-DD", time: "HH:mm" | null } */
@@ -151,8 +144,8 @@ export type SuggestionGroup = 'followUp' | 'requirement' | 'decision';
 export const SUGGESTION_GROUP_ORDER: SuggestionGroup[] = ['followUp', 'requirement', 'decision'];
 
 export const SUGGESTION_GROUP_LABEL: Record<SuggestionGroup, string> = {
-  followUp: '할 일 · 일정',
-  requirement: '희망조건',
+  followUp: '업무 · 일정',
+  requirement: '희망 조건',
   decision: '직접 확인할 변경',
 };
 
@@ -164,10 +157,10 @@ export function suggestionGroupOf(type: CallSuggestionTypeValue): SuggestionGrou
 
 /** 버튼에는 "반영"이 아니라 누르면 일어나는 일을 적는다 */
 export const SUGGESTION_ACTION_LABEL: Record<CallSuggestionTypeValue, string> = {
-  task: '할 일 만들기',
+  task: '업무 추가',
   calendar_event: '일정 만들기',
-  buyer_requirement_create: '희망조건 등록',
-  buyer_requirement_update: '희망조건 고치기',
+  buyer_requirement_create: '희망 조건 등록',
+  buyer_requirement_update: '희망 조건 고치기',
   match_create: '매칭 만들기',
   match_stage: '단계 바꾸기',
   listing_confirm: '확인 처리',
@@ -179,7 +172,7 @@ export function describeSuggestionEffect(
 ): string | null {
   switch (suggestion.type) {
     case 'match_create':
-      return '이 고객의 희망조건과 매물을 매칭으로 묶습니다. 희망매물 화면에 새 줄이 생깁니다.';
+      return '이 고객의 희망 조건과 매물을 매칭으로 묶습니다. 희망매물 화면에 새 줄이 생깁니다.';
     case 'match_stage': {
       const { stage } = suggestion.payload as CallSuggestionPayloadByType['match_stage'];
       return stage === 'closed'

@@ -9,6 +9,7 @@ import { ArrowLeft, Loader2, Lock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import type { OfficeSite } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { loadKakaoPostcode } from '@/lib/kakao-postcode';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -38,7 +39,6 @@ export function RegisterPrivateSiteForm({
   const [builtYear, setBuiltYear] = useState('');
   const [totalDongs, setTotalDongs] = useState('');
   const [totalUnits, setTotalUnits] = useState('');
-  const isNameEdited = useRef(false);
   const shouldFocusName = useRef(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
@@ -65,7 +65,7 @@ export function RegisterPrivateSiteForm({
     onSuccess: (officeSite) => {
       queryClient.invalidateQueries({ queryKey: ['office-sites'] });
       queryClient.invalidateQueries({ queryKey: ['office-sites-search'] });
-      toast.success('단지를 등록했습니다');
+      toast.success('단지를 등록했습니다.');
       onRegistered(officeSite);
     },
   });
@@ -81,11 +81,14 @@ export function RegisterPrivateSiteForm({
   const handleAddressSelect = (selected: SiteAddress) => {
     setAddress(selected);
     setIsPickingAddress(false);
-    // 사용자가 직접 고친 이름은 건드리지 않고, 검색어보다 정확한 건물명이 있으면 채운다
-    if (selected.buildingName && !isNameEdited.current) setName(selected.buildingName);
+    // 이름이 비어 있을 때만 주소의 건물명으로 채운다. 적어 둔 이름(검색어 포함)은 덮지 않고
+    // 아래에 건물명을 제안만 한다 — "고덕빌라"라고 적었는데 대장 이름 "경기빌딩"으로 바뀌면 찾을 수 없다
+    if (selected.buildingName && !name.trim()) setName(selected.buildingName);
     if (selected.isApartment) setType((current) => current || 'apartment');
     shouldFocusName.current = true;
   };
+  const suggestedName =
+    address?.buildingName && address.buildingName !== trimmedName ? address.buildingName : null;
 
   // 주소 검색 결과는 React 이벤트 밖에서 오므로 폼이 다시 그려진 뒤에 초점을 옮긴다
   useEffect(() => {
@@ -181,11 +184,20 @@ export function RegisterPrivateSiteForm({
             maxLength={100}
             autoComplete="off"
             placeholder="예: 고덕빌라"
-            onChange={(event) => {
-              isNameEdited.current = true;
-              setName(event.target.value);
-            }}
+            onChange={(event) => setName(event.target.value)}
           />
+          {suggestedName && (
+            <p className="text-xs text-muted-foreground">
+              주소의 건물명은 ‘{suggestedName}’입니다.{' '}
+              <button
+                type="button"
+                className="rounded-sm font-medium text-foreground underline underline-offset-2 outline-none hover:no-underline focus-visible:ring-2 focus-visible:ring-ring/70"
+                onClick={() => setName(suggestedName)}
+              >
+                이 이름으로 바꾸기
+              </button>
+            </p>
+          )}
         </div>
 
         <div className="space-y-1.5">
@@ -241,7 +253,7 @@ export function RegisterPrivateSiteForm({
 
         {register.isError && (
           <p role="alert" className="text-xs text-destructive">
-            {register.error instanceof Error ? register.error.message : '단지를 등록하지 못했습니다'}
+            {apiErrorMessage(register.error, '단지를 등록하지 못했습니다. 다시 시도해 주세요.')}
           </p>
         )}
 

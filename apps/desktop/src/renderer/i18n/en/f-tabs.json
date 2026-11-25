@@ -1,0 +1,13 @@
+{
+  "strings": {
+    "{0} — 화면을 불러오지 못했습니다. 탭을 오른쪽 클릭해 다시 불러오세요.": "{0} — Couldn't load this screen. Right-click the tab to reload.",
+    "뒤로": "Back",
+    "새 탭": "New tab",
+    "새 탭 ({0})": "New tab ({0})",
+    "앞으로": "Forward",
+    "저장하거나 입력을 취소한 뒤 다시 시도하세요.": "Save or discard your input, then try again.",
+    "저장하지 않은 입력이 있어 이동하지 않았습니다.": "Didn't leave this screen — you have unsaved input.",
+    "저장하지 않은 입력이 있어 이전 화면을 새 탭으로 열었습니다.": "You have unsaved input, so the previous screen opened in a new tab.",
+    "탭 닫기": "Close tab"
+  }
+}

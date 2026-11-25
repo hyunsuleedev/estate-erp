@@ -25,8 +25,14 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { propertyRoleLabels } from './-detail-cards';
+import { apiErrorMessage, placeLabelOf, propertyRoleLabels } from './-detail-cards';
+import { useAuth } from '@/providers/auth-provider';
+import { TaskCreateDialog } from '../tasks/-task-create-dialog';
 import { FormField } from './-detail-dialogs';
+import {
+  ConsultationTypeButtons,
+  toLocalDateTimeInput,
+} from '../consultations/-consultation-form-dialog';
 
 /**
  * 연락처 상세 — 후속 액션 다이얼로그 (상담 기록 / 할 일 / 매물 연결 / 매수요건).
@@ -35,6 +41,11 @@ import { FormField } from './-detail-dialogs';
 
 // ── 1. 상담 기록 작성 ──
 
+/**
+ * 전화를 받으며, 또는 방문 손님이 간 뒤에 바로 적는 창.
+ * 방식은 단추 하나로 고르고, 상담한 때는 지금으로 채워 두되 지난 일이면 바꾼다.
+ * "다음 할 일"을 적으면 이 상담에 이어진 할 일이 함께 생긴다 (적지 않으면 상담만 남는다).
+ */
 export function ConsultationAddDialog({
   contactId,
   contactName,
@@ -47,79 +58,169 @@ export function ConsultationAddDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [type, setType] = useState('phone');
   const [content, setContent] = useState('');
+  const [consultedAt, setConsultedAt] = useState('');
+  const [openedAt, setOpenedAt] = useState('');
+  const [nextTitle, setNextTitle] = useState('');
+  const [nextDue, setNextDue] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!open) return;
+    const now = toLocalDateTimeInput();
     setType('phone');
     setContent('');
+    setConsultedAt(now);
+    setOpenedAt(now);
+    setNextTitle('');
+    setNextDue('');
+    setError('');
   }, [open]);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      api.consultations.create({
+    mutationFn: async () => {
+      // 상담한 때를 바꿨을 때만 보낸다. 그대로면 서버가 저장하는 순간을 상담 시각으로 적는다.
+      const consultedAtIso =
+        consultedAt && consultedAt !== openedAt ? new Date(consultedAt).toISOString() : undefined;
+      const consultation = await api.consultations.create({
         contactId,
         type,
         content: content.trim(),
-      }),
-    onSuccess: async () => {
+        consultedAt: consultedAtIso,
+      });
+      if (!nextTitle.trim()) return { taskFailed: false };
+      try {
+        await api.tasks.create({
+          title: nextTitle.trim(),
+          dueDate: nextDue ? new Date(`${nextDue}T09:00:00`).toISOString() : undefined,
+          contactId,
+          consultationId: consultation.id,
+          category: 'consultation',
+          source: 'manual',
+          // 담당은 적은 사람이다 (비워 두면 '내 업무'에서 사라진 것처럼 보인다)
+          ...(user?.id ? { assignedToId: user.id } : {}),
+        });
+        return { taskFailed: false };
+      } catch {
+        // 상담은 이미 저장됐다. 할 일만 못 만든 것을 알린다.
+        return { taskFailed: true };
+      }
+    },
+    onSuccess: async ({ taskFailed }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['contacts'] }),
         queryClient.invalidateQueries({ queryKey: ['consultations'] }),
+        ...(nextTitle.trim() ? [queryClient.invalidateQueries({ queryKey: ['tasks'] })] : []),
       ]);
-      toast.success('상담 기록이 저장되었습니다.');
+      if (taskFailed) {
+        toast.warning('상담은 적었지만 다음 업무는 만들지 못했습니다. 업무 화면에서 다시 만들어 주세요.');
+      } else {
+        toast.success(nextTitle.trim() ? '상담을 적고 다음 업무를 만들었습니다.' : '상담을 적었습니다.');
+      }
       onOpenChange(false);
     },
-    onError: () => {
-      toast.error('상담 기록 저장에 실패했습니다.');
+    onError: (caught) => {
+      // 창은 열어 둔 채로 이유를 보인다. 적은 내용은 그대로 남는다.
+      setError(apiErrorMessage(caught, '상담을 기록하지 못했습니다. 잠시 뒤 다시 시도하세요.'));
     },
   });
 
+  const isFuture =
+    Boolean(consultedAt) &&
+    consultedAt !== openedAt &&
+    new Date(consultedAt).getTime() > Date.now() + 10 * 60 * 1000;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}>
+      <DialogContent
+        className="sm:max-w-md"
+        // 전화를 받으며 적다가 창 밖을 잘못 눌러도 적은 내용이 말없이 사라지지 않게 한다 (닫기는 취소 · Esc)
+        onInteractOutside={(event) => {
+          if (content.trim() || nextTitle.trim()) event.preventDefault();
+        }}
+      >
         <DialogHeader>
-          <DialogTitle>상담 기록</DialogTitle>
-          <DialogDescription>{contactName} 님과의 상담 내용을 기록합니다.</DialogDescription>
+          <DialogTitle>상담 적기</DialogTitle>
+          <DialogDescription>{contactName} 님과 나눈 이야기를 남깁니다.</DialogDescription>
         </DialogHeader>
 
         <form
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
+            if (mutation.isPending) return;
             if (!content.trim()) {
-              toast.error('상담 내용을 입력하세요.');
+              setError('상담 내용을 입력하세요.');
               return;
             }
+            if (isFuture) {
+              setError('앞으로의 날짜로는 상담을 적을 수 없습니다. 약속은 다음 업무로 남기세요.');
+              return;
+            }
+            setError('');
             mutation.mutate();
           }}
         >
-          <FormField label="상담 유형" required>
-            <Select value={type} onValueChange={setType}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="phone">전화</SelectItem>
-                <SelectItem value="visit">방문</SelectItem>
-                <SelectItem value="online">온라인</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormField>
+          {error && (
+            <div className="rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
+            <FormField label="방식" required>
+              <ConsultationTypeButtons value={type} onChange={setType} />
+            </FormField>
+            <FormField label="상담한 때">
+              <Input
+                type="datetime-local"
+                aria-label="상담한 때"
+                value={consultedAt}
+                max={toLocalDateTimeInput()}
+                onChange={(event) => setConsultedAt(event.target.value)}
+                className="h-8 text-sm"
+              />
+            </FormField>
+          </div>
 
           <FormField label="상담 내용" required>
             <Textarea
               rows={6}
               value={content}
               onChange={(event) => setContent(event.target.value)}
-              placeholder="누구와 무슨 이야기를 했는지 기록하세요."
-              required
+              placeholder="무슨 이야기를 했는지 적어 두세요. (원하는 조건, 가격, 약속한 것)"
+              autoFocus
             />
           </FormField>
 
+          <FormField label="다음 업무 (선택)">
+            <div className="flex items-center gap-2">
+              <Input
+                value={nextTitle}
+                onChange={(event) => setNextTitle(event.target.value)}
+                placeholder="예: 토요일 임장 일정 다시 확인"
+                className="min-w-0 flex-1"
+              />
+              <Input
+                type="date"
+                aria-label="다음 업무 날짜"
+                value={nextDue}
+                onChange={(event) => setNextDue(event.target.value)}
+                className="w-[150px] shrink-0"
+                disabled={!nextTitle.trim()}
+              />
+            </div>
+          </FormField>
+
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={mutation.isPending}
+              onClick={() => onOpenChange(false)}
+            >
               취소
             </Button>
             <Button type="submit" disabled={mutation.isPending}>
@@ -132,105 +233,29 @@ export function ConsultationAddDialog({
   );
 }
 
-// ── 2. 할 일 추가 ──
+// ── 2. 업무 추가 ──
 
+/**
+ * 예전 이름을 남겨 둔 것. 업무 창은 업무 영역의 TaskCreateDialog 하나를 쓴다(담당 기본값 = 만든 사람,
+ * 제목 · 내용 · 날짜 · 분류 · 담당을 모두 넣는 같은 창). 다른 화면(고객 원장)이 아직 이 이름으로 부른다.
+ */
 export function TaskAddDialog({
   contactId,
-  contactName,
   open,
   onOpenChange,
 }: {
   contactId: string;
-  contactName: string;
+  contactName?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const queryClient = useQueryClient();
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [dueDate, setDueDate] = useState('');
-
-  useEffect(() => {
-    if (!open) return;
-    setTitle('');
-    setContent('');
-    setDueDate('');
-  }, [open]);
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      api.tasks.create({
-        title: title.trim(),
-        content: content.trim() || undefined,
-        dueDate: dueDate ? new Date(`${dueDate}T09:00:00`).toISOString() : undefined,
-        contactId,
-        source: 'manual',
-      }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      toast.success('할 일이 등록되었습니다.');
-      onOpenChange(false);
-    },
-    onError: () => {
-      toast.error('할 일 등록에 실패했습니다.');
-    },
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>할 일 추가</DialogTitle>
-          <DialogDescription>{contactName} 님 관련 후속 업무를 등록합니다.</DialogDescription>
-        </DialogHeader>
-
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!title.trim()) {
-              toast.error('할 일 제목을 입력하세요.');
-              return;
-            }
-            mutation.mutate();
-          }}
-        >
-          <FormField label="제목" required>
-            <Input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="예: 매물 조건 재확인 연락"
-              required
-            />
-          </FormField>
-
-          <FormField label="내용">
-            <Textarea rows={3} value={content} onChange={(event) => setContent(event.target.value)} />
-          </FormField>
-
-          <FormField label="마감일">
-            <Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
-          </FormField>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              취소
-            </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? '등록 중...' : '등록'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+  return <TaskCreateDialog open={open} onOpenChange={onOpenChange} contactId={contactId} />;
 }
 
 // ── 3. 매물 연결 (PropertyContact 생성) ──
 
 function propertyLabel(property: Property) {
-  const dong = property.unit?.dong && !property.unit.dong.isPlaceholder ? property.unit.dong.name : null;
-  return [property.site?.name ?? '매물', dong, formatUnitName(property.unit)].filter(Boolean).join(' ');
+  return placeLabelOf(property) || '매물';
 }
 
 export function PropertyLinkDialog({
@@ -290,8 +315,10 @@ export function PropertyLinkDialog({
       toast.success('매물이 연결되었습니다.');
       onOpenChange(false);
     },
-    onError: () => {
-      toast.error('매물 연결에 실패했습니다.');
+    onError: (caught) => {
+      const message = apiErrorMessage(caught, '매물을 연결하지 못했습니다. 잠시 뒤 다시 시도하세요.');
+      setError(message);
+      toast.error(message);
     },
   });
 
@@ -299,7 +326,7 @@ export function PropertyLinkDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>매물 연결</DialogTitle>
+          <DialogTitle>소유 매물 연결</DialogTitle>
           <DialogDescription>
             {contactName} 님을 매물의 소유자·대리인 등으로 연결합니다.
           </DialogDescription>
@@ -414,166 +441,7 @@ export function PropertyLinkDialog({
               취소
             </Button>
             <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? '연결 중...' : '매물 연결'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ── 4. 매수요건 추가 (간단 등록 — 상세 조건은 구매고객 페이지에서 보완) ──
-
-export function BuyerReqAddDialog({
-  contactId,
-  contactName,
-  open,
-  onOpenChange,
-}: {
-  contactId: string;
-  contactName: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [transactionType, setTransactionType] = useState('sale');
-  const [urgency, setUrgency] = useState('normal');
-  const [budgetMin, setBudgetMin] = useState('');
-  const [budgetMax, setBudgetMax] = useState('');
-  const [monthlyRentMax, setMonthlyRentMax] = useState('');
-  const [memo, setMemo] = useState('');
-
-  useEffect(() => {
-    if (!open) return;
-    setTransactionType('sale');
-    setUrgency('normal');
-    setBudgetMin('');
-    setBudgetMax('');
-    setMonthlyRentMax('');
-    setMemo('');
-  }, [open]);
-
-  const budgetLabel = transactionType === 'sale' ? '매매 예산 (만원)' : '보증금 (만원)';
-
-  const parsedMin = budgetMin ? Number(budgetMin) : undefined;
-  const parsedMax = budgetMax ? Number(budgetMax) : undefined;
-
-  const mutation = useMutation({
-    mutationFn: () =>
-      api.buyerRequirements.create({
-        contactId,
-        transactionType,
-        urgency,
-        priceMin: transactionType === 'sale' ? parsedMin : undefined,
-        priceMax: transactionType === 'sale' ? parsedMax : undefined,
-        depositMin: transactionType !== 'sale' ? parsedMin : undefined,
-        depositMax: transactionType !== 'sale' ? parsedMax : undefined,
-        monthlyRentMax:
-          transactionType === 'monthly' && monthlyRentMax ? Number(monthlyRentMax) : undefined,
-        memo: memo.trim() || undefined,
-      }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['contacts'] }),
-        queryClient.invalidateQueries({ queryKey: ['buyer-requirements'] }),
-      ]);
-      toast.success('매수요건이 등록되었습니다. 상세 조건은 구매고객 페이지에서 보완하세요.');
-      onOpenChange(false);
-    },
-    onError: () => {
-      toast.error('매수요건 등록에 실패했습니다.');
-    },
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>매수요건 추가</DialogTitle>
-          <DialogDescription>
-            {contactName} 님의 희망 조건을 간단히 등록합니다. 지역·면적 등 상세 조건은 구매고객
-            페이지에서 이어서 입력할 수 있습니다.
-          </DialogDescription>
-        </DialogHeader>
-
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            mutation.mutate();
-          }}
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="거래유형" required>
-              <Select value={transactionType} onValueChange={setTransactionType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="sale">매매</SelectItem>
-                  <SelectItem value="jeonse">전세</SelectItem>
-                  <SelectItem value="monthly">월세</SelectItem>
-                </SelectContent>
-              </Select>
-            </FormField>
-
-            <FormField label="긴급도">
-              <Select value={urgency} onValueChange={setUrgency}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="urgent">급함</SelectItem>
-                  <SelectItem value="normal">보통</SelectItem>
-                  <SelectItem value="flexible">여유</SelectItem>
-                </SelectContent>
-              </Select>
-            </FormField>
-          </div>
-
-          <FormField label={budgetLabel}>
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={0}
-                value={budgetMin}
-                onChange={(event) => setBudgetMin(event.target.value)}
-                placeholder="최소"
-              />
-              <span className="text-sm text-muted-foreground">~</span>
-              <Input
-                type="number"
-                min={0}
-                value={budgetMax}
-                onChange={(event) => setBudgetMax(event.target.value)}
-                placeholder="최대"
-              />
-            </div>
-          </FormField>
-
-          {transactionType === 'monthly' && (
-            <FormField label="월세 상한 (만원)">
-              <Input
-                type="number"
-                min={0}
-                value={monthlyRentMax}
-                onChange={(event) => setMonthlyRentMax(event.target.value)}
-                placeholder="예: 120"
-              />
-            </FormField>
-          )}
-
-          <FormField label="메모">
-            <Textarea rows={3} value={memo} onChange={(event) => setMemo(event.target.value)} />
-          </FormField>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              취소
-            </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? '등록 중...' : '등록'}
+              {mutation.isPending ? '연결 중...' : '연결'}
             </Button>
           </DialogFooter>
         </form>

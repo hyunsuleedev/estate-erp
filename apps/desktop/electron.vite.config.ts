@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 import { resolveMainAuth0Config } from './src/common/auth0DesktopConfig';
+import { autoI18n } from './scripts/i18n/vite-plugin.mjs';
 
 /**
  * 앱 빌드(electron-vite)의 설정. main·preload·화면 세 빌드를 한 번에 돌린다.
@@ -83,6 +84,8 @@ export default defineConfig(({ mode, command }) => {
         },
       },
       plugins: [
+        // 화면 코드의 한글 문구를 번역 함수 호출로 바꾼다(영어 표시). 소스는 한글 그대로 둔다 — scripts/i18n/core.mjs
+        autoI18n(),
         TanStackRouterVite({
           routesDirectory: path.resolve(__dirname, 'src/renderer/routes'),
           generatedRouteTree: path.resolve(__dirname, 'src/renderer/routeTree.gen.ts'),

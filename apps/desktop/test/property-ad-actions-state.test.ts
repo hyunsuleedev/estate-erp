@@ -2,33 +2,36 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { ListingAdvertisement } from '@estate-erp/api-client';
 import {
-  buildAdRequestTask, buildManualAdPayload, initialAdTerms, initialManualAdDraft,
+  buildAdChangeRequestsBatch, buildManualAdPayload, initialAdTerms, initialManualAdDraft,
   type AdListing, type AdRequestTarget,
 } from '../src/renderer/routes/_authenticated/properties/-components/property-ad-actions-state';
 
 const listing: AdListing = { id: 'listing-1', transactionType: 'sale', price: 319000, deposit: null, monthlyRent: null };
 const ad = {
-  id: 'ad-1', listingId: listing.id, channel: 'esiljang', source: 'cp_sync', status: 'active',
+  id: 'ad-1', listingId: listing.id, channel: 'esiljang', status: 'active',
   advertisedPrice: 315000, advertisedDeposit: null, advertisedMonthlyRent: null,
   startedAt: '2026-11-14T14:23:00.000Z', endedAt: null, url: null, memo: '기존 메모',
-  externalAdId: 'cp-123', naverArticleNo: 'naver-456',
+  externalAdId: 'cp-123', naverArticleNo: 'naver-456', lastSyncedAt: '2026-11-15T00:00:00.000Z',
 } as ListingAdvertisement;
 const target: AdRequestTarget = { listing, advertisement: ad, channel: ad.channel, terms: initialAdTerms(listing, ad) };
-const request = { title: '광고 조건 변경', notes: '요청사항', action: 'update' as const, targets: [target], location: '단지 102동 3401호', propertyId: 'property-1', intakeId: 'intake-1' };
+const request = { title: '광고 조건 변경', notes: '요청사항', action: 'update' as const, targets: [target] };
 
 describe('manual advertisement edits', () => {
-  it('prefills observed ad values and sends only changed fields, retaining source, identifiers and exact dates', () => {
+  it('prefills observed ad values (including jeonse listing.price -> advertisedDeposit) and sends only changed fields', () => {
     const draft = initialManualAdDraft(listing, ad);
     assert.equal(draft.advertisedPrice, '315000');
     assert.deepEqual(buildManualAdPayload(listing, { ...draft, memo: '수정 메모' }, ad), { memo: '수정 메모' });
     assert.deepEqual(buildManualAdPayload(listing, { ...draft, advertisedPrice: '' }, ad), { advertisedPrice: null });
     assert.equal(initialAdTerms(listing, { ...ad, advertisedPrice: null }).advertisedPrice, '');
     assert.throws(() => buildManualAdPayload(listing, draft, ad), /변경한 내용/);
+
+    const jeonse: AdListing = { id: 'listing-j', transactionType: 'jeonse', price: 85000, deposit: null, monthlyRent: null };
+    assert.deepEqual(initialAdTerms(jeonse), { advertisedPrice: '', advertisedDeposit: '85000', advertisedMonthlyRent: '' });
   });
   it('creates the correct monthly payload, including a real zero deposit', () => {
     const monthly = { ...listing, transactionType: 'monthly', price: null, deposit: 0, monthlyRent: 180 };
     const payload = buildManualAdPayload(monthly, { ...initialManualAdDraft(monthly), startedAt: '2026-11-15' });
-    assert.deepEqual(payload, { listingId: listing.id, channel: 'esiljang', source: 'manual', status: 'active',
+    assert.deepEqual(payload, { listingId: listing.id, channel: 'esiljang', status: 'active',
       advertisedDeposit: 0, advertisedMonthlyRent: 180, startedAt: '2026-11-15T00:00:00.000Z', endedAt: null, url: null, memo: null });
   });
   it('rejects invalid amounts, unsafe links, impossible dates and backwards end dates', () => {
@@ -50,35 +53,51 @@ describe('manual advertisement edits', () => {
   });
 });
 
-describe('advertisement request tasks', () => {
-  it('makes one ordinary task with explicit identities and independent terms for multiple ads', () => {
-    const task = buildAdRequestTask({ ...request, targets: [target, { ...target, advertisement: { ...ad, id: 'ad-2' }, terms: { ...target.terms, advertisedPrice: '320000' } }] });
-    assert.equal(task.category, 'advertisement');
-    assert.equal(task.status, 'pending');
-    assert.equal(task.listingId, listing.id);
-    assert.equal(task.propertyId, 'property-1');
-    for (const expected of ['listingAdvertisementId=ad-1', 'listingAdvertisementId=ad-2', 'externalAdId=cp-123', 'naverArticleNo=naver-456', '매매가=315000만원', '매매가=320000만원']) assert.ok(task.content?.includes(expected));
+describe('advertisement change requests batch', () => {
+  it('builds one batch payload with explicit identities and independent terms for multiple ads', () => {
+    const batch = buildAdChangeRequestsBatch({
+      ...request,
+      targets: [target, { ...target, advertisement: { ...ad, id: 'ad-2' }, terms: { ...target.terms, advertisedPrice: '320000' } }],
+    });
+    assert.equal(batch.title, '광고 조건 변경');
+    assert.equal(batch.memo, '요청사항');
+    assert.equal(batch.items.length, 2);
+    assert.deepEqual(batch.items[0], {
+      action: 'update',
+      advertisementId: 'ad-1',
+      listingId: listing.id,
+      channel: 'esiljang',
+      targetValue: { price: 315000 },
+    });
+    assert.deepEqual(batch.items[1], {
+      action: 'update',
+      advertisementId: 'ad-2',
+      listingId: listing.id,
+      channel: 'esiljang',
+      targetValue: { price: 320000 },
+    });
   });
-  it('does not assign a multi-listing request to an arbitrary listing', () => {
-    const task = buildAdRequestTask({ ...request, targets: [target, { ...target, listing: { ...listing, id: 'listing-2' } }] });
-    assert.equal(task.listingId, undefined);
-  });
-  it('validates requested terms, allows zero monthly deposit, and omits terms for ending ads', () => {
+  it('validates requested terms, allows zero monthly deposit, and omits terms for takedowns', () => {
     const empty = { ...target, terms: { advertisedPrice: '', advertisedDeposit: '', advertisedMonthlyRent: '' } };
-    assert.throws(() => buildAdRequestTask({ ...request, targets: [empty] }), /가격/);
-    const ended = buildAdRequestTask({ ...request, action: 'end', targets: [empty] });
-    assert.match(ended.content!, /광고 종료/);
-    assert.doesNotMatch(ended.content!, /요청조건/);
-    const monthly = { ...target, listing: { ...listing, transactionType: 'monthly' }, terms: { ...target.terms, advertisedDeposit: '0', advertisedMonthlyRent: '100' } };
-    assert.match(buildAdRequestTask({ ...request, action: 'republish', targets: [monthly] }).content!, /보증금=0만원, 월세=100만원, 재광고=요청/);
+    assert.throws(() => buildAdChangeRequestsBatch({ ...request, targets: [empty] }), /가격/);
+    const takedown = buildAdChangeRequestsBatch({ ...request, action: 'takedown', targets: [empty] });
+    assert.equal(takedown.items[0].action, 'takedown');
+    assert.deepEqual(takedown.items[0].targetValue, {});
+    const monthly = { ...target, listing: { ...listing, transactionType: 'monthly' }, terms: { ...target.terms, advertisedDeposit: '0', advertisedMonthlyRent: '100' }, floorExposure: 'exact' as const };
+    const readvertise = buildAdChangeRequestsBatch({ ...request, action: 'readvertise', targets: [monthly] });
+    assert.equal(readvertise.items[0].action, 'readvertise');
+    assert.deepEqual(readvertise.items[0].targetValue, { deposit: 0, monthlyRent: 100, floorExposure: 'exact' });
   });
-  it('supports an unadvertised listing request with explicit channel and rejects duplicates', () => {
+  it('supports a publish request with explicit channel and rejects duplicates', () => {
     const fresh = { listing, channel: 'esiljang', terms: initialAdTerms(listing) };
-    const task = buildAdRequestTask({ ...request, action: 'create', targets: [fresh] });
-    assert.match(task.content!, /요청작업: 광고 등록/);
-    assert.match(task.content!, /listingId=listing-1, channel=esiljang/);
-    assert.doesNotMatch(task.content!, /listingAdvertisementId/);
-    assert.throws(() => buildAdRequestTask({ ...request, action: 'create', targets: [{ ...fresh, listing: { ...listing, activeAdvertisements: [ad] } }] }), /진행 중/);
-    assert.throws(() => buildAdRequestTask({ ...request, title: '  ' }), /제목/);
+    const batch = buildAdChangeRequestsBatch({ ...request, action: 'publish', targets: [fresh] });
+    assert.deepEqual(batch.items[0], {
+      action: 'publish',
+      advertisementId: null,
+      listingId: 'listing-1',
+      channel: 'esiljang',
+      targetValue: { price: 319000 },
+    });
+    assert.throws(() => buildAdChangeRequestsBatch({ ...request, action: 'publish', targets: [{ ...fresh, listing: { ...listing, activeAdvertisements: [ad] } }] }), /진행 중/);
   });
 });

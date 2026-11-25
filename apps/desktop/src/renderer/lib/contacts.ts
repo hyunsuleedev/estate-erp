@@ -1,24 +1,14 @@
+import { formatPhone } from './format';
+
 export function normalizePhone(value?: string | null) {
   return value?.replace(/\D/g, '') ?? '';
 }
 
+/**
+ * 전화번호 하이픈 표기. 규칙은 lib/format.ts의 formatPhone 하나다(02·휴대폰·지역번호·1588 대표번호).
+ * 이 이름은 연락처 화면들이 쓰던 것이라 남겨 두고, 비었을 때만 예전처럼 "-"를 돌려준다.
+ */
 export function formatPhoneNumber(value?: string | null) {
-  const digits = normalizePhone(value);
-
-  if (!digits) return '-';
-
-  if (digits.startsWith('02')) {
-    if (digits.length === 9) return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
-    if (digits.length === 10) return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6)}`;
-  }
-
-  if (digits.length === 10) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-
-  if (digits.length === 11) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-  }
-
-  return value ?? digits;
+  if (!normalizePhone(value)) return '-';
+  return formatPhone(value);
 }

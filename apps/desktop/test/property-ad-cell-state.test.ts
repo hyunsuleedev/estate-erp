@@ -3,13 +3,13 @@ import { describe, it } from 'node:test';
 import type { ListingAdvertisement } from '@estate-erp/api-client';
 import { buildAdvertisementCellPatch } from '../src/renderer/routes/_authenticated/properties/-components/property-ad-cell-state';
 
-const ad = { id: 'ad-1', source: 'cp_sync', status: 'active', advertisedPrice: 315000,
+const ad = { id: 'ad-1', status: 'active', advertisedPrice: 315000,
   advertisedDeposit: 0, advertisedMonthlyRent: 180, startedAt: '2026-11-14T13:24:00.000Z',
-  endedAt: null, memo: null, url: null } as ListingAdvertisement;
+  endedAt: null, memo: null, url: null, lastSyncedAt: '2026-11-15T00:00:00.000Z' } as ListingAdvertisement;
 
 describe('advertisement inline edits', () => {
   it('accepts a known CP channel, rejects arbitrary values, and does not rewrite an unchanged legacy channel', () => {
-    const manualAd = { ...ad, channel: 'esiljang', source: 'manual' as const };
+    const manualAd = { ...ad, channel: 'esiljang', lastSyncedAt: null };
     assert.deepEqual(buildAdvertisementCellPatch(manualAd, 'channel', 'peterpan'), { channel: 'peterpan' });
     assert.deepEqual(buildAdvertisementCellPatch({ ...ad, channel: 'legacy_cp' }, 'channel', 'legacy_cp'), {});
     for (const value of ['', null, '피터팬', 'unknown_cp']) {

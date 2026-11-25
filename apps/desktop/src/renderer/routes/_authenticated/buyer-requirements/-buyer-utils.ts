@@ -19,7 +19,7 @@ export const SITE_TYPE_LABELS: Record<string, string> = {
 export const CONSULTATION_TYPE_LABELS: Record<string, string> = {
   phone: "전화",
   visit: "방문",
-  online: "온라인",
+  online: "문자·온라인",
 };
 
 /** 다음 연락일 파생 상태 */

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ApiError } from '@estate-erp/api-client';
+import { apiErrorMessage } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -53,11 +53,7 @@ export function ContactGroupNameDialog({
       await onSubmit(name.trim());
       onOpenChange(false);
     } catch (submitError) {
-      setError(
-        submitError instanceof ApiError
-          ? submitError.message
-          : '저장하지 못했습니다. 다시 시도해 주세요.',
-      );
+      setError(apiErrorMessage(submitError, '저장하지 못했습니다. 다시 시도해 주세요.'));
     } finally {
       setIsPending(false);
     }

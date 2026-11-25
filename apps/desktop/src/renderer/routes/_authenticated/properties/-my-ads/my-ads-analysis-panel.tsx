@@ -1,6 +1,8 @@
 import {
+  CHANGE_REQUEST_STATUS_LABELS,
   advertisementTransactionType,
   changeRequestSummary,
+  failedChangeRequests,
   pendingChangeRequests,
 } from "./my-ads-link";
 import { draftLines, flagBlockReason } from "./my-ads-modes";
@@ -38,15 +40,14 @@ import type {
   OfficeAdvertisement,
 } from "@estate-erp/api-client";
 import {
-  analyzeOfficeAdvertisementComparison,
   analyzeOfficeAdvertisementRow,
 } from "@estate-erp/api-client";
 import { inferOfficeAdvertisementFloorExposureMode } from "@estate-erp/shared";
 import { cn } from "@/lib/utils";
 import {
-  formatDate,
-  formatDateTime,
   formatMoney,
+  formatRelativeDay,
+  formatRelativeDayTime,
   formatRent,
 } from "@/lib/format";
 import { useAuth } from "@/providers/auth-provider";
@@ -70,7 +71,9 @@ import {
   cpChannelLabel,
   floorExposureDescription,
   formatYmd,
+  getCachedComparison,
   getCanonicalLocation,
+  resolvedNaverUrl,
 } from "./my-ads-format";
 import { myAdsAnalysisSignal } from "./my-ads-manual-ad-state";
 import { myAdsAnalysisPanelSummary } from "./my-ads-analysis-summary";
@@ -88,6 +91,7 @@ import {
   type CompetitorTableSort,
 } from "./my-ads-competitor-table-state";
 import { useCompetitorTablePreferences } from "./use-competitor-table-preferences";
+import { advertisementLocationLabel } from "./my-ads-location";
 
 // 매물관리 펼침 광고 표(properties/index.tsx PropertyAdPanel)와 같은 태그·상태 모양.
 const TAG_CLASS_NAME =
@@ -119,7 +123,7 @@ type CompetitorView = CompetitorTableRow & {
 
 function buildAnalysis(advertisement: ListingAdvertisementWithListing) {
   const group = advertisement.comparison;
-  const comparison = analyzeOfficeAdvertisementComparison(advertisement);
+  const comparison = getCachedComparison(advertisement);
   const transactionType = advertisementTransactionType(advertisement) ?? undefined;
   const rows = (group?.advertisements ?? [])
     .filter((comparedAdvertisement) => comparedAdvertisement.isActive)
@@ -148,7 +152,7 @@ function buildAnalysis(advertisement: ListingAdvertisementWithListing) {
     });
   return {
     group,
-    main: group?.mainAdvertisement ?? null,
+    own: group?.ownAdvertisement ?? null,
     comparison,
     // getAnalysisSignal은 내부에서 비교 분석을 한 번 더 한다(my-ads-format 소유라 그대로 둔다).
     // 수동 등록 광고는 CP 읽기 문구 대신 수동 광고 문구를 쓴다.
@@ -209,7 +213,7 @@ export function AdvertisementAnalysisPanel({
   advertisement: ListingAdvertisementWithListing;
   onEditAdvertisement: () => void;
 }) {
-  const { group, main, comparison, signal, location, rows, summary } = useMemo(
+  const { own, comparison, signal, rows, summary } = useMemo(
     () => buildAnalysis(advertisement),
     [advertisement],
   );
@@ -238,9 +242,7 @@ export function AdvertisementAnalysisPanel({
   );
   const setSort = (sort: CompetitorTableSort) =>
     updatePreferences((current) => ({ ...current, sort }));
-  const locationLabel = [location.site, location.dong, location.ho]
-    .filter(Boolean)
-    .join(" ");
+  const locationLabel = advertisementLocationLabel(advertisement);
 
   const floorExposureDetail =
     comparison.ownFloorExposureMode === "exact"
@@ -312,19 +314,15 @@ export function AdvertisementAnalysisPanel({
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            {/* 직접 입력한 광고는 채널 · 날짜까지 고치는 수정 창이 따로 있다.
-                값만 고치거나 바꿔 달라고 하는 것은 위쪽의 기록 수정 · 변경 요청으로 한다. */}
-            {advertisement.source === "manual" && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1 px-2.5 text-[13px] font-normal"
-                onClick={onEditAdvertisement}
-              >
-                <Pencil className="size-3.5" />
-                광고 수정
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 gap-1 px-2.5 text-[13px] font-normal"
+              onClick={onEditAdvertisement}
+            >
+              <Pencil className="size-3.5" />
+              광고 수정
+            </Button>
             {advertisement.url && (
               <Button
                 variant="outline"
@@ -342,23 +340,27 @@ export function AdvertisementAnalysisPanel({
                 </a>
               </Button>
             )}
-            {advertisement.naverUrl && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1 px-2.5 text-[13px] font-normal"
-                asChild
-              >
-                <a
-                  href={advertisement.naverUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+            {(() => {
+              const naverUrl = resolvedNaverUrl(advertisement);
+              if (!naverUrl) return null;
+              return (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 px-2.5 text-[13px] font-normal"
+                  asChild
                 >
-                  <ExternalLink className="size-3.5" />
-                  네이버 원문
-                </a>
-              </Button>
-            )}
+                  <a
+                    href={naverUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="size-3.5" />
+                    네이버 원문
+                  </a>
+                </Button>
+              );
+            })()}
           </div>
         </div>
         {activeTab === "analysis" && (
@@ -384,7 +386,7 @@ export function AdvertisementAnalysisPanel({
                 </span>
                 {advertisement.lastCheckedAt && (
                   <span className="truncate text-xs tabular-nums text-muted-foreground">
-                    {formatDateTime(advertisement.lastCheckedAt)} 읽음
+                    {formatRelativeDayTime(advertisement.lastCheckedAt)} 읽음
                   </span>
                 )}
               </>
@@ -405,7 +407,7 @@ export function AdvertisementAnalysisPanel({
               {comparison.ownFloorInfo}
             </AnalysisRow>
             <AnalysisRow icon={<CalendarCheck />} label="확인일">
-              {formatYmd(main?.articleConfirmYmd)}
+              {formatYmd(own?.articleConfirmYmd)}
             </AnalysisRow>
           </AnalysisCard>
 
@@ -558,8 +560,9 @@ function RequestsTab({
   const draft = drafts[advertisement.id];
   const lines = draftLines(advertisement, draft);
   const pending = pendingChangeRequests(advertisement);
-  const isManual = advertisement.source === "manual";
-  const canDraft = mode === "request" && !isManual;
+  const failed = failedChangeRequests(advertisement);
+  const visibleRequests = [...pending, ...failed];
+  const canDraft = mode === "request";
 
   return (
     <div className="mt-3 grid max-w-[940px] items-start gap-4 lg:grid-cols-2">
@@ -623,11 +626,9 @@ function RequestsTab({
           ))
         ) : (
           <p className="px-2 pb-1.5 pt-1 text-[13.5px] leading-5 text-muted-foreground">
-            {isManual
-              ? "직접 입력한 광고는 요청할 곳이 없습니다. 기록 수정으로 고쳐 주세요."
-              : mode === "request"
-                ? "위 줄의 가격 · 월세 · 층 노출 칸을 눌러 바꿀 값을 적으세요."
-                : "위쪽의 \"변경 요청\"을 누르면 여기에서 요청을 만들 수 있습니다."}
+            {mode === "request"
+              ? "위 줄의 가격 · 월세 · 층 노출 칸을 눌러 바꿀 값을 적으세요."
+              : "위쪽의 \"광고 요청\"을 누르면 여기에서 요청을 만들 수 있습니다."}
           </p>
         )}
       </AnalysisCard>
@@ -637,40 +638,50 @@ function RequestsTab({
         head={
           <>
             <span className="font-semibold">걸려 있는 요청</span>
-            {pending.length > 0 && (
+            {visibleRequests.length > 0 && (
               <span className="text-xs tabular-nums text-muted-foreground">
-                {pending.length}건
+                {visibleRequests.length}건
               </span>
             )}
           </>
         }
       >
-        {pending.length > 0 ? (
-          pending.map((request) => (
+        {visibleRequests.length > 0 ? (
+          visibleRequests.map((request) => (
             <AnalysisRow
               key={request.id}
               icon={<Send />}
-              label={REQUEST_KIND_LABELS[request.kind] ?? request.kind}
+              label={REQUEST_ACTION_LABELS[request.action] ?? request.action}
               sub={[
+                CHANGE_REQUEST_STATUS_LABELS[request.status] ?? request.status,
+                request.failureReason ? `사유: ${request.failureReason}` : null,
                 request.fulfilled === true ? "반영된 것이 확인됨" : null,
-                request.task?.assignedToId ? "직원에게 맡김" : "에이전트",
-                formatDate(request.createdAt),
+                request.assignedTo?.name
+                  ? request.assignedTo.name
+                  : request.assignedToId
+                    ? "직원에게 맡김"
+                    : "에이전트",
+                formatRelativeDay(request.createdAt),
               ]
                 .filter(Boolean)
                 .join(" · ")}
               action={
-                <button
-                  type="button"
-                  aria-label={`${changeRequestSummary(request)} 요청 거두기`}
-                  disabled={cancellingRequestIds.has(request.id)}
-                  onClick={() => onCancelRequest(request)}
-                  className={rowActionClassName}
-                >
-                  거두기
-                </button>
+                request.status !== "failed" ? (
+                  <button
+                    type="button"
+                    aria-label={`${changeRequestSummary(request)} 요청 거두기`}
+                    disabled={cancellingRequestIds.has(request.id)}
+                    onClick={() => onCancelRequest(request)}
+                    className={rowActionClassName}
+                  >
+                    거두기
+                  </button>
+                ) : undefined
               }
             >
-              {changeRequestSummary(request)}
+              <span className={request.status === "failed" ? "text-destructive" : undefined}>
+                {changeRequestSummary(request)}
+              </span>
             </AnalysisRow>
           ))
         ) : (
@@ -683,11 +694,11 @@ function RequestsTab({
   );
 }
 
-const REQUEST_KIND_LABELS: Record<string, string> = {
-  price: "가격",
-  floor_exposure: "층 노출",
+const REQUEST_ACTION_LABELS: Record<string, string> = {
+  publish: "신규 게재",
+  update: "조건 변경",
   readvertise: "재광고",
-  takedown: "내리기",
+  takedown: "광고 내리기",
 };
 
 const rowActionClassName =

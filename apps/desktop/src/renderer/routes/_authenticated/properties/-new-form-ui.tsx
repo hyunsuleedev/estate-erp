@@ -1,63 +1,116 @@
 import { Lock } from 'lucide-react';
 import { MAINTENANCE_FEE_INCLUDE_LABELS } from '@estate-erp/shared';
 import { cn } from '@/lib/utils';
-import { formatMoney } from '@/lib/format';
 import { Input } from '@/components/ui/input';
+import { describeManwonText, parseManwonText } from './-manwon-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
 // ── 폼 레이아웃 (new.tsx 공용) ──────────────────────────────────
 
+/**
+ * 등록 문서의 한 구역. 상자·번호 딱지 없이 제목과 위쪽 선으로만 나눈다
+ * (앱 톤: 상자와 띠보다 선과 여백). 첫 구역은 선을 긋지 않는다.
+ */
 export function Section({
-  step,
   title,
   subtitle,
   children,
 }: {
-  step: number;
   title: string;
   subtitle?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section data-registration-section className="rounded-lg border bg-card p-5">
-      <header className="mb-4 flex items-baseline gap-2">
-        <span data-registration-step className="flex size-5 shrink-0 translate-y-0.5 items-center justify-center rounded-sm bg-muted text-[11px] font-medium tabular-nums text-muted-foreground">
-          {step}
-        </span>
-        <h2 className="text-sm font-semibold">{title}</h2>
+    <section
+      data-registration-section
+      className="border-t border-border/70 pt-7 first:border-t-0 first:pt-0"
+    >
+      <header className="mb-4">
+        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
         {subtitle && (
-          <span className="text-xs text-muted-foreground">{subtitle}</span>
+          <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{subtitle}</p>
         )}
       </header>
-      <div className="space-y-3">{children}</div>
+      <div className="space-y-4">{children}</div>
     </section>
   );
 }
+
+/** 고르는 알약 (거래유형·포함 항목 등). 희망매물 등록 화면의 알약과 같은 모양이다. */
+export const choiceChipClassName = (active: boolean) =>
+  cn(
+    'inline-flex h-8 items-center rounded-md border px-3 text-[13px] transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40',
+    active
+      ? 'border-primary bg-primary font-medium text-primary-foreground'
+      : 'border-input bg-background text-foreground/80 hover:bg-muted',
+  );
 
 export function FieldRow({
   label,
   required,
   hint,
+  hintInvalid,
   children,
 }: {
   label: string;
   required?: boolean;
   hint?: string;
+  /** 입력을 읽지 못했을 때 힌트를 경고색으로 */
+  hintInvalid?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between">
-        <Label className="text-xs font-medium text-muted-foreground">
+      <div className="flex items-baseline justify-between gap-2">
+        <Label className="text-[13px] font-normal text-muted-foreground">
           {label}
           {required && <span className="ml-0.5 text-destructive">*</span>}
         </Label>
-        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+        {hint && (
+          <span
+            aria-live="polite"
+            className={cn('text-xs tabular-nums', hintInvalid ? 'text-destructive-strong' : 'text-muted-foreground')}
+          >
+            {hint}
+          </span>
+        )}
       </div>
       {children}
     </div>
   );
+}
+
+/**
+ * 만원 단위 금액 입력칸. "15억", "15억 8천", "158000" 어느 쪽으로 넣어도 되고,
+ * 읽은 값은 FieldRow 힌트(describeManwonText)로 바로 보여 준다.
+ */
+export function ManwonInput({
+  value,
+  onChange,
+  placeholder = '예: 15억 8천',
+  ...props
+}: Omit<React.ComponentProps<typeof Input>, 'value' | 'onChange' | 'type'> & {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const invalid = !parseManwonText(value).valid;
+  return (
+    <Input
+      {...props}
+      type="text"
+      autoComplete="off"
+      value={value}
+      aria-invalid={invalid || undefined}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+    />
+  );
+}
+
+export function manwonHint(value: string, empty?: string) {
+  const described = describeManwonText(value, empty);
+  return { hint: described.text, hintInvalid: described.invalid };
 }
 
 // ── 비용 정보 필드 (관리비/포함항목/융자금/권리금) ──────────────
@@ -95,28 +148,20 @@ export function ListingCostFields({
   return (
     <>
       <div className="grid grid-cols-2 gap-3">
-        <FieldRow
-          label="관리비 (만원/월)"
-          hint={value.maintenanceFee ? formatMoney(Number(value.maintenanceFee)) : undefined}
-        >
-          <Input
-            type="number"
-            inputMode="numeric"
+        <FieldRow label="관리비 (만원/월)" {...manwonHint(value.maintenanceFee)}>
+          <ManwonInput
+            aria-label="관리비 만원"
             value={value.maintenanceFee}
-            onChange={(event) => onChange('maintenanceFee', event.target.value)}
-            placeholder="15"
+            onChange={(next) => onChange('maintenanceFee', next)}
+            placeholder="예: 25"
           />
         </FieldRow>
-        <FieldRow
-          label="융자금 / 근저당 (만원)"
-          hint={value.loanAmount ? formatMoney(Number(value.loanAmount)) : undefined}
-        >
-          <Input
-            type="number"
-            inputMode="numeric"
+        <FieldRow label="융자금 / 근저당 (만원)" {...manwonHint(value.loanAmount)}>
+          <ManwonInput
+            aria-label="융자금 만원"
             value={value.loanAmount}
-            onChange={(event) => onChange('loanAmount', event.target.value)}
-            placeholder="0"
+            onChange={(next) => onChange('loanAmount', next)}
+            placeholder="없으면 비워 두세요"
           />
         </FieldRow>
       </div>
@@ -137,12 +182,7 @@ export function ListingCostFields({
                 type="button"
                 aria-pressed={active}
                 onClick={() => toggleInclude(slug)}
-                className={cn(
-                  'rounded-md border px-2.5 py-1 text-xs transition-colors',
-                  active
-                    ? 'border-primary/60 bg-primary/10 font-medium text-primary'
-                    : 'border-input bg-background text-muted-foreground hover:bg-muted',
-                )}
+                className={choiceChipClassName(active)}
               >
                 {label}
               </button>
@@ -152,16 +192,12 @@ export function ListingCostFields({
       </FieldRow>
 
       {showPremium && (
-        <FieldRow
-          label="권리금 (만원)"
-          hint={value.premium ? formatMoney(Number(value.premium)) : '상가 매물 전용'}
-        >
-          <Input
-            type="number"
-            inputMode="numeric"
+        <FieldRow label="권리금 (만원)" {...manwonHint(value.premium, '상가 매물 전용')}>
+          <ManwonInput
+            aria-label="권리금 만원"
             value={value.premium}
-            onChange={(event) => onChange('premium', event.target.value)}
-            placeholder="5000"
+            onChange={(next) => onChange('premium', next)}
+            placeholder="예: 5천"
           />
         </FieldRow>
       )}
@@ -182,7 +218,7 @@ export function PrivateMemoField({
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
         <Lock className="size-3.5 text-muted-foreground" />
-        <Label className="text-xs font-medium text-muted-foreground">내부 전용 메모</Label>
+        <Label className="text-[13px] font-normal text-muted-foreground">내부 전용 메모</Label>
         <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
           외부 비공개
         </span>

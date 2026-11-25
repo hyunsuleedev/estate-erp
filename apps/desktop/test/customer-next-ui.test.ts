@@ -148,26 +148,30 @@ describe("customer next workspace", () => {
       /createTab\(\{ route, kind: meta\.kind, title: meta\.title \}\)/,
     );
     assert.match(pageSource, />\s*구함 의뢰 추가\s*<\/Button>/);
+    // 첫 조건은 새 구매 의뢰로 만들고, "함께 알아보는 거래"는 같은 의뢰 안에 하나씩 더 만든다
     assert.match(
       newDemandIntakePageSource,
-      /api\.buyerRequirements\.create\(\{ \.\.\.dto, createNewIntake: true \}\)/,
+      /api\.buyerRequirements\.create\(\{\s*\.\.\.\(primary as CreateBuyerRequirementDto\),\s*createNewIntake: true,\s*\}\)/,
     );
+    assert.match(newDemandIntakePageSource, /buyerIntakeId: created\.buyerIntakeId/);
     assert.match(
       newDemandIntakePageSource,
       /queryKey: \[['"]projects['"]\]/,
     );
-    assert.match(newDemandIntakePageSource, /title="구함 의뢰 추가"/);
+    // 화면 이름은 목록의 단추와 같은 "희망매물 생성"이다 (2026-11-22 검수: 화면마다 낱말이 달랐다)
+    assert.match(newDemandIntakePageSource, /title="희망매물 생성"/);
     // 취소하면 연 화면으로 돌아간다: 희망매물에서 열었으면 희망매물, 그 밖에는 고객 원장
     assert.match(
       newDemandIntakePageSource,
-      /const returnRoute = from === 'wanted-properties' \? '\/wanted-properties' : '\/customers-table';/,
+      /from === 'project' && projectId\s*\? `\/projects\/\$\{projectId\}`\s*: from === 'wanted-properties'\s*\? '\/wanted-properties'\s*: from === 'contacts' \? '\/contacts' : '\/customers-table';/,
     );
-    // 돌아갈 화면을 먼저 열고 그다음에 이 탭을 닫는다 (닫힌 탭이 보낸 요청은 셸이 무시한다)
+    // 돌아갈 화면을 먼저 열고 그다음에 이 탭을 닫는다 (닫힌 탭이 보낸 요청은 셸이 무시한다).
+    // 연락처 상세에서 열었으면(from=contact) 그 연락처 탭으로 돌아간다 (6차 검수: 메뉴에 없는 고객 원장으로 갔다)
     assert.match(
       newDemandIntakePageSource,
-      /const handleCancel = \(\) => \{[\s\S]*?getRouteMeta\(returnRoute\)[\s\S]*?openModule\(\{[\s\S]*?\}\);\s*if \(ownerTabIdRef\.current\) \{\s*closeTab\(ownerTabIdRef\.current\);/,
+      /const handleCancel = \(\) => \{[\s\S]*?from === 'contact' && contactId[\s\S]*?openOrRevealResource\(\{[\s\S]*?tabResourceKeys\.entity\('contact', contactId\)[\s\S]*?getRouteMeta\(returnRoute\)[\s\S]*?openModule\(\{[\s\S]*?\}\);\s*\}\s*if \(ownerTabIdRef\.current\) \{\s*closeTab\(ownerTabIdRef\.current\);/,
     );
-    assert.match(buyerRequirementFormSource, /구함 의뢰 등록/);
+    assert.match(buyerRequirementFormSource, /"희망매물 생성"/);
   });
 
   it("starts every customer group expanded and collapses each one independently", () => {
@@ -433,7 +437,7 @@ describe("customer next workspace", () => {
     assert.match(pageSource, /aria-label=\{`\$\{conditionLabel\} 연결 매물/);
     assert.match(
       pageSource,
-      /aria-label=\{`\$\{first\.contextLabel\} 내놓음 의뢰 연결 구매고객/,
+      /aria-label=\{`\$\{first\.contextLabel\} 내놓음 의뢰 연결 고객/,
     );
     assert.doesNotMatch(pageSource, /activeListingMatchPanel/);
     assert.doesNotMatch(pageSource, /data-customer-case-match-panel/);
@@ -652,10 +656,9 @@ describe("customer next workspace", () => {
     );
     assert.match(demandRowSource, /text-\[13px\]/);
     assert.match(demandRowSource, /text-\[11\.5px\]/);
-    assert.match(
-      pageSource,
-      /return `\$\{formatMoney\(minimum\)\}–\$\{formatMoney\(maximum\)\}`/,
-    );
+    // 금액 범위는 공용 formatMoneyRange("15억 ~ 16억", 화면 표기 기준)
+    assert.match(pageSource, /formatMoneyRange,\s*formatPhone,/);
+    assert.doesNotMatch(pageSource, /function formatMoneyRange\(/);
     assert.match(demandRowSource, /bg-neutral-soft/);
     assert.doesNotMatch(demandRowSource, /<MapPin/);
     assert.doesNotMatch(demandRowSource, /<StickyNote/);

@@ -45,10 +45,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
 import {
   formatDateShortYear,
   formatDateTime,
   formatMoney,
+  formatMoneyRange,
   formatPhone,
   formatPyeong,
 } from "@/lib/format";
@@ -816,7 +818,7 @@ function EditableIntentMemo({
       toast.success("메모가 저장되었습니다.");
     },
     onError: (error: Error) => {
-      toast.error(error.message || `${label} 저장에 실패했습니다.`);
+      toast.error(apiErrorMessage(error, `${label} 저장에 실패했습니다.`));
     },
   });
 
@@ -1782,7 +1784,7 @@ function ListingIntakeGroup({
                 matchExpanded &&
                   "bg-info-soft text-info-strong hover:bg-info-soft/80 hover:text-info-strong",
               )}
-              aria-label={`${first.contextLabel} 내놓음 의뢰 연결 구매고객 ${matchCount}건 ${matchExpanded ? "접기" : "펼치기"}`}
+              aria-label={`${first.contextLabel} 내놓음 의뢰 연결 고객 ${matchCount}건 ${matchExpanded ? "접기" : "펼치기"}`}
               aria-expanded={matchExpanded}
               aria-controls={matchExpanded ? panelId : undefined}
               onClick={() => onToggleMatch(matchKey)}
@@ -2027,19 +2029,6 @@ function getMatchPanelId(matchKey: string) {
   return `customers-next-match-${matchKey.replace(":", "-")}`;
 }
 
-function formatMoneyRange(
-  minimum: number | null,
-  maximum: number | null,
-): string {
-  if (minimum == null && maximum == null) return "—";
-  if (minimum != null && maximum != null && minimum === maximum) {
-    return formatMoney(minimum);
-  }
-  if (minimum == null) return `${formatMoney(maximum)} 이하`;
-  if (maximum == null) return `${formatMoney(minimum)} 이상`;
-  return `${formatMoney(minimum)}–${formatMoney(maximum)}`;
-}
-
 interface DemandTerm {
   label: string;
   value: string;
@@ -2114,7 +2103,8 @@ function formatAreaRange(
   }
   if (minimum == null) return `${formatPyeong(maximum)} 이하`;
   if (maximum == null) return `${formatPyeong(minimum)} 이상`;
-  return `${formatPyeong(minimum)}–${formatPyeong(maximum)}`;
+  // 범위는 "30평 ~ 39평"(화면 표기 기준, 금액 범위와 같은 모양)
+  return `${formatPyeong(minimum)} ~ ${formatPyeong(maximum)}`;
 }
 
 interface ListingTerm {

@@ -1,10 +1,11 @@
-import { formatUnitName } from '@estate-erp/shared';
+import { formatPlaceLabel } from '@estate-erp/shared';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Contact, Deal, Listing } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { formatMoney, formatRent } from '@/lib/format';
 import { getStatusMeta } from '@/lib/status-config';
@@ -28,20 +29,27 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { StatusBadge } from '@/components/domain';
-import { ContactPicker } from './-deal-shared';
-import { ourSideLabels } from './-deal-view-utils';
+import { AssigneeSelect, ContactPicker, ManwonInput, PartnerBrokerSelect } from './-deal-shared';
+import { useAuth } from '@/providers/auth-provider';
+import { getOurSideLabel } from './-deal-view-utils';
 
 const TX_TYPES = ['sale', 'jeonse', 'monthly'] as const;
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : '요청 처리에 실패했습니다.';
+function getErrorMessage(error: unknown, fallback = '요청을 처리하지 못했습니다. 다시 시도해 주세요.') {
+  return apiErrorMessage(error, fallback);
 }
 
+/** "고덕그라시움 105동 1003호" — 화면 표기 기준(STANDARDS)의 공용 함수로 만든다 */
 function listingTitle(listing: Listing) {
-  const site = listing.property?.site?.name;
-  const dong = listing.property?.unit?.dong?.isPlaceholder ? null : listing.property?.unit?.dong?.name;
-  const unit = formatUnitName(listing.property?.unit);
-  return [site, dong, unit].filter(Boolean).join(' ') || '매물';
+  const unit = listing.property?.unit;
+  return (
+    formatPlaceLabel({
+      siteName: listing.property?.site?.name,
+      dongName: unit?.dong?.name,
+      dongIsPlaceholder: unit?.dong?.isPlaceholder,
+      unit,
+    }) || '매물'
+  );
 }
 
 function listingPriceText(listing: Listing) {
@@ -73,17 +81,14 @@ export function DealCreateDialog({
   const [ourSide, setOurSide] = useState<'seller' | 'buyer' | 'both'>('both');
   const [partnerBrokerId, setPartnerBrokerId] = useState('');
   const [memo, setMemo] = useState('');
+  const { user } = useAuth();
+  // 담당 기본값은 만든 사람(나). 대표·매니저는 다른 직원으로 바꿀 수 있다.
+  const [assigneeUserId, setAssigneeUserId] = useState(user?.id ?? '');
 
   const listingsQuery = useQuery({
     queryKey: ['deal-create-listings', listingSearch],
     queryFn: () => api.listings.findAll({ search: listingSearch || undefined, limit: 8 }),
     enabled: open && !selectedListing,
-  });
-
-  const partnersQuery = useQuery({
-    queryKey: ['partner-brokers'],
-    queryFn: () => api.partnerBrokers.list(),
-    enabled: open && isJoint,
   });
 
   const reset = () => {
@@ -99,6 +104,7 @@ export function DealCreateDialog({
     setOurSide('both');
     setPartnerBrokerId('');
     setMemo('');
+    setAssigneeUserId(user?.id ?? '');
   };
 
   const selectListing = (listing: Listing) => {
@@ -130,23 +136,26 @@ export function DealCreateDialog({
         ourSide: isJoint ? ourSide : undefined,
         partnerBrokerId: isJoint && partnerBrokerId ? partnerBrokerId : undefined,
         memo: memo || undefined,
+        assigneeUserId: assigneeUserId || undefined,
       }),
     onSuccess: (deal) => {
       void queryClient.invalidateQueries({ queryKey: ['deals'] });
       void queryClient.invalidateQueries({ queryKey: ['commission-payments'] });
-      toast.success('계약 준비 거래가 생성되었습니다. 합의가가 있으면 수수료 청구가 자동 생성됩니다.');
+      toast.success('거래를 만들었습니다.', {
+        description: '합의 금액이 있으면 법정 상한으로 수수료 청구가 함께 만들어집니다.',
+      });
       onOpenChange(false);
       reset();
       onCreated(deal);
     },
-    onError: (error) => toast.error(getErrorMessage(error)),
+    onError: (error) => toast.error(getErrorMessage(error, '거래를 만들지 못했습니다. 다시 시도해 주세요.')),
   });
 
   const showPrice = transactionType !== 'monthly';
   const showDeposit = transactionType === 'monthly';
   const showMonthlyRent = transactionType === 'monthly';
-  const priceLabel =
-    transactionType === 'sale' ? '매매가 (만원)' : '전세금 (만원)';
+  const isLease = transactionType !== 'sale';
+  const priceLabel = transactionType === 'sale' ? '매매가' : '전세금';
 
   const listings = useMemo(() => listingsQuery.data?.items ?? [], [listingsQuery.data]);
 
@@ -160,10 +169,9 @@ export function DealCreateDialog({
     >
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>새 거래 생성</DialogTitle>
+          <DialogTitle>새 거래</DialogTitle>
           <DialogDescription>
-            계약 준비 단계에서 시작합니다. 매물을 연결하거나, 매물 없이 거래유형만으로 생성할 수 있습니다.
-            금액은 만원 단위입니다.
+            계약 준비 단계에서 시작합니다. 우리 매물이면 매물을 고르고, 다른 사무소 매물이면 매물 없이 만들어도 됩니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -211,23 +219,30 @@ export function DealCreateDialog({
                     </div>
                   ) : listings.length === 0 ? (
                     <p className="px-3 py-3 text-xs text-muted-foreground">
-                      검색 결과가 없습니다. 매물 없이도 거래를 생성할 수 있습니다.
+                      검색 결과가 없습니다. 매물 없이도 거래를 만들 수 있습니다.
                     </p>
                   ) : (
-                    listings.map((listing) => (
-                      <button
-                        key={listing.id}
-                        type="button"
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50"
-                        onClick={() => selectListing(listing)}
-                      >
-                        <StatusBadge kind="transactionType" status={listing.transactionType} size="sm" />
-                        <span className="min-w-0 flex-1 truncate text-sm">{listingTitle(listing)}</span>
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {listingPriceText(listing)}
-                        </span>
-                      </button>
-                    ))
+                    listings.map((listing) => {
+                      // 한 의뢰에 진행 중인 거래는 하나만 둔다 — 이미 거래 중인 매물은 고를 수 없게 알려 준다
+                      const busy = (listing.deals ?? []).length > 0;
+                      return (
+                        <button
+                          key={listing.id}
+                          type="button"
+                          disabled={busy}
+                          title={busy ? '이미 진행 중인 거래가 있는 매물입니다.' : undefined}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                          onClick={() => selectListing(listing)}
+                        >
+                          <StatusBadge kind="transactionType" status={listing.transactionType} size="sm" />
+                          <span className="min-w-0 flex-1 truncate text-sm">{listingTitle(listing)}</span>
+                          {busy ? <span className="shrink-0 text-xs text-muted-foreground">거래 중</span> : null}
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {listingPriceText(listing)}
+                          </span>
+                        </button>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -235,10 +250,15 @@ export function DealCreateDialog({
           </div>
 
           {/* 거래유형 + 금액 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+            <div className="grid min-w-0 gap-1.5">
               <Label>거래유형 *</Label>
-              <Select value={transactionType} onValueChange={setTransactionType}>
+              {/* 매물을 고르면 거래유형은 그 매물의 것으로 정해진다 */}
+              <Select
+                value={transactionType}
+                onValueChange={setTransactionType}
+                disabled={Boolean(selectedListing)}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -252,38 +272,33 @@ export function DealCreateDialog({
               </Select>
             </div>
             {showPrice ? (
-              <div className="grid gap-1.5">
-                <Label>{priceLabel}</Label>
-                <Input type="number" min={0} value={price} onChange={(event) => setPrice(event.target.value)} />
+              <div className="grid min-w-0 gap-1.5">
+                <Label htmlFor="deal-create-price">{priceLabel}</Label>
+                <ManwonInput id="deal-create-price" value={price} onChange={setPrice} />
               </div>
             ) : null}
             {showDeposit ? (
-              <div className="grid gap-1.5">
-                <Label>보증금 (만원)</Label>
-                <Input type="number" min={0} value={deposit} onChange={(event) => setDeposit(event.target.value)} />
+              <div className="grid min-w-0 gap-1.5">
+                <Label htmlFor="deal-create-deposit">보증금</Label>
+                <ManwonInput id="deal-create-deposit" value={deposit} onChange={setDeposit} />
               </div>
             ) : null}
             {showMonthlyRent ? (
-              <div className="grid gap-1.5">
-                <Label>월세 (만원)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={monthlyRent}
-                  onChange={(event) => setMonthlyRent(event.target.value)}
-                />
+              <div className="grid min-w-0 gap-1.5">
+                <Label htmlFor="deal-create-rent">월세</Label>
+                <ManwonInput id="deal-create-rent" value={monthlyRent} onChange={setMonthlyRent} />
               </div>
             ) : null}
           </div>
 
           {/* 당사자 */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <Label>매도인 (임대인)</Label>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="grid min-w-0 gap-1.5">
+              <Label>{isLease ? '임대인' : '매도인'}</Label>
               <ContactPicker value={seller} onChange={setSeller} />
             </div>
-            <div className="grid gap-1.5">
-              <Label>매수인 (임차인)</Label>
+            <div className="grid min-w-0 gap-1.5">
+              <Label>{isLease ? '임차인' : '매수인'}</Label>
               <ContactPicker value={buyer} onChange={setBuyer} />
             </div>
           </div>
@@ -295,7 +310,7 @@ export function DealCreateDialog({
               공동중개 거래
             </label>
             {isJoint ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                 <div className="grid gap-1.5">
                   <Label className="text-xs">우리 담당 측</Label>
                   <Select value={ourSide} onValueChange={(value) => setOurSide(value as typeof ourSide)}>
@@ -305,37 +320,24 @@ export function DealCreateDialog({
                     <SelectContent>
                       {(['seller', 'buyer', 'both'] as const).map((side) => (
                         <SelectItem key={side} value={side}>
-                          {ourSideLabels[side]}
+                          {getOurSideLabel(side, transactionType)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-1.5">
-                  <Label className="text-xs">파트너 중개사</Label>
-                  <Select value={partnerBrokerId} onValueChange={setPartnerBrokerId}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue
-                        placeholder={
-                          partnersQuery.isLoading
-                            ? '불러오는 중...'
-                            : (partnersQuery.data ?? []).length === 0
-                              ? '등록된 파트너 없음'
-                              : '파트너 선택'
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(partnersQuery.data ?? []).map((partner) => (
-                        <SelectItem key={partner.id} value={partner.id}>
-                          {partner.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs">상대 중개사</Label>
+                  <PartnerBrokerSelect value={partnerBrokerId} onChange={setPartnerBrokerId} />
                 </div>
               </div>
             ) : null}
+          </div>
+
+          {/* 담당 */}
+          <div className="grid gap-1.5">
+            <Label>담당</Label>
+            <AssigneeSelect value={assigneeUserId} onChange={setAssigneeUserId} />
           </div>
 
           {/* 메모 */}
@@ -346,16 +348,18 @@ export function DealCreateDialog({
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" disabled={mutation.isPending} onClick={() => onOpenChange(false)}>
             닫기
           </Button>
           <Button
             type="button"
             disabled={mutation.isPending || (!selectedListing && !transactionType)}
-            onClick={() => mutation.mutate()}
+            onClick={() => {
+              if (!mutation.isPending) mutation.mutate();
+            }}
           >
             <Check className={cn('size-4', mutation.isPending && 'animate-pulse')} />
-            거래 생성
+            거래 만들기
           </Button>
         </DialogFooter>
       </DialogContent>

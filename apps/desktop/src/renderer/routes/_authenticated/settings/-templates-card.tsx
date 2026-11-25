@@ -11,6 +11,7 @@ import type {
   OfficePrintTemplate,
 } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { ConfirmDialog, EmptyState } from '@/components/domain';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -61,26 +62,7 @@ const txTypeLabel = (value: string) =>
 
 export function ContractTemplatesCard({ canEdit }: { canEdit: boolean }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-border/80 bg-card shadow-[0_1px_2px_rgba(55,53,47,0.035)]">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 px-5 py-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-neutral-soft">
-            <FileText className="size-4" />
-          </div>
-          <div>
-            <h3 className="text-[13px] font-semibold">사무소 계약서 라이브러리</h3>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              계약서 작성 시 불러오는 특약 문구와 인쇄 서식을 사무소 단위로 관리합니다.
-            </p>
-          </div>
-        </div>
-        {!canEdit ? (
-          <Badge variant="secondary" className="font-normal">
-            읽기 전용
-          </Badge>
-        ) : null}
-      </div>
-      <div className="p-5">
+    <section>
         <Tabs defaultValue="clause">
           <TabsList className="h-8">
             <TabsTrigger value="clause">특약 템플릿</TabsTrigger>
@@ -93,7 +75,6 @@ export function ContractTemplatesCard({ canEdit }: { canEdit: boolean }) {
             <PrintTemplateSection canEdit={canEdit} />
           </TabsContent>
         </Tabs>
-      </div>
     </section>
   );
 }
@@ -224,7 +205,7 @@ function ClauseTemplateSection({ canEdit }: { canEdit: boolean }) {
     },
     onError: (error) =>
       toast.error(
-        error instanceof Error ? error.message : '특약 템플릿 저장에 실패했습니다.',
+        apiErrorMessage(error, '특약 템플릿을 저장하지 못했습니다. 다시 시도해 주세요.'),
       ),
   });
 
@@ -238,7 +219,7 @@ function ClauseTemplateSection({ canEdit }: { canEdit: boolean }) {
     },
     onError: (error) =>
       toast.error(
-        error instanceof Error ? error.message : '특약 템플릿 삭제에 실패했습니다.',
+        apiErrorMessage(error, '특약 템플릿을 삭제하지 못했습니다. 다시 시도해 주세요.'),
       ),
   });
 
@@ -294,15 +275,15 @@ function ClauseTemplateSection({ canEdit }: { canEdit: boolean }) {
           }
         />
       ) : (
-        <div className="space-y-2">
+        <div className="divide-y divide-border/70 border-y border-border/70">
           {templates.map((template) => (
             <div
               key={template.id}
-              className="flex items-start justify-between gap-3 rounded-md border border-border/60 px-3 py-2.5"
+              className="flex items-start justify-between gap-3 py-3"
             >
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium">{template.title}</p>
+                  <p className="text-[13px] font-medium">{template.title}</p>
                   <Badge variant="outline" className="text-[11px] font-normal">
                     {CLAUSE_TYPE_LABELS[template.type] ?? template.type}
                   </Badge>
@@ -510,7 +491,7 @@ function PrintTemplateSection({ canEdit }: { canEdit: boolean }) {
     },
     onError: (error) =>
       toast.error(
-        error instanceof Error ? error.message : '인쇄 서식 저장에 실패했습니다.',
+        apiErrorMessage(error, '인쇄 서식을 저장하지 못했습니다. 다시 시도해 주세요.'),
       ),
   });
 
@@ -524,7 +505,7 @@ function PrintTemplateSection({ canEdit }: { canEdit: boolean }) {
     },
     onError: (error) =>
       toast.error(
-        error instanceof Error ? error.message : '인쇄 서식 삭제에 실패했습니다.',
+        apiErrorMessage(error, '인쇄 서식을 삭제하지 못했습니다. 다시 시도해 주세요.'),
       ),
   });
 
@@ -581,15 +562,15 @@ function PrintTemplateSection({ canEdit }: { canEdit: boolean }) {
           }
         />
       ) : (
-        <div className="space-y-2">
+        <div className="divide-y divide-border/70 border-y border-border/70">
           {templates.map((template) => (
             <div
               key={template.id}
-              className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2.5"
+              className="flex items-center justify-between gap-3 py-3"
             >
               <div className="min-w-0 flex-1 space-y-0.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium">{template.title}</p>
+                  <p className="text-[13px] font-medium">{template.title}</p>
                   <Badge variant="outline" className="text-[11px] font-normal">
                     {PRINT_TYPE_LABELS[template.type] ?? template.type}
                   </Badge>

@@ -83,6 +83,12 @@ export interface TabWorkspaceState {
   activeTabId: TabId | null;
   /** 최근에 닫은 탭 묶음. 앞쪽이 가장 최근이다. */
   recentlyClosedTabs: ClosedTabGroup[];
+  /**
+   * 탭 id → 그 탭을 열 때 보고 있던 탭(연 탭). 브라우저처럼, 다른 탭에서 열린 탭을 닫으면
+   * 연 탭이 아직 있을 때 그리로 돌아간다(없으면 오른쪽 · 왼쪽 탭). 창 안에서만 뜻이 있고 저장하지 않는다.
+   * 예전에는 늘 오른쪽 탭으로 가서, 매물관리에서 연 매물 상세를 닫으면 그 사이 연 연락처 탭이 나왔다.
+   */
+  openerTabIds?: Record<TabId, TabId>;
 }
 
 /** 새 id와 현재 시각. 테스트와 main은 정해진 값을 넣을 수 있다. */
@@ -125,6 +131,30 @@ export function applyTabStep<R>(
 
 function unchanged<R>(result: R): TabStep<R> {
   return { patch: null, result };
+}
+
+/** 새 탭 newId를 opener가 열었다고 기억한다. opener가 없으면(첫 탭) 그대로 둔다. */
+function withOpener(
+  openers: TabWorkspaceState['openerTabIds'],
+  newId: TabId,
+  opener: TabId | null | undefined,
+): TabWorkspaceState['openerTabIds'] {
+  if (!opener || opener === newId) return openers;
+  return { ...openers, [newId]: opener };
+}
+
+/** 남은 탭끼리의 연결만 남긴다(닫힌 탭이 연 탭이거나 열린 탭인 줄은 버린다). */
+function pruneOpeners(
+  openers: TabWorkspaceState['openerTabIds'],
+  remaining: Tab[],
+): TabWorkspaceState['openerTabIds'] {
+  if (!openers) return openers;
+  const kept = new Set(remaining.map((tab) => tab.id));
+  const next: Record<TabId, TabId> = {};
+  for (const [child, opener] of Object.entries(openers)) {
+    if (kept.has(child) && kept.has(opener)) next[child] = opener;
+  }
+  return next;
 }
 
 /** 탭 화면이 보고한 스크롤만 탭 상태에 합친다. 입력 초안은 원래 값을 지킨다. */
@@ -194,10 +224,15 @@ export function createTab(
 ): TabStep<TabId> {
   const id = env.newId();
   const tab = buildTab(id, input, env.now());
+  const activate = input.activate !== false;
   return {
     patch: {
       tabs: [...state.tabs, tab],
-      activeTabId: input.activate === false ? state.activeTabId : id,
+      activeTabId: activate ? id : state.activeTabId,
+      // 보던 탭에서 새 탭으로 옮겨 가면, 닫을 때 보던 탭으로 돌아오도록 기억한다
+      ...(activate && state.activeTabId
+        ? { openerTabIds: withOpener(state.openerTabIds, id, state.activeTabId) }
+        : {}),
     },
     result: id,
   };
@@ -273,6 +308,9 @@ export function replaceTabResource(
       patch: {
         tabs: state.tabs.filter((tab) => tab.id !== id),
         activeTabId: wasSourceActive ? existing.id : state.activeTabId,
+        ...(state.openerTabIds
+          ? { openerTabIds: pruneOpeners(state.openerTabIds, state.tabs.filter((tab) => tab.id !== id)) }
+          : {}),
       },
       result: existing.id,
     };
@@ -452,7 +490,12 @@ export function adoptTabLocation(
     env.now(),
   );
   return {
-    patch: { tabs: [...state.tabs, newTab], activeTabId: newId },
+    patch: {
+      tabs: [...state.tabs, newTab],
+      activeTabId: newId,
+      // 링크를 누른 탭이 연 탭이다
+      openerTabIds: withOpener(state.openerTabIds, newId, id),
+    },
     result: newId,
   };
 }
@@ -576,13 +619,17 @@ export function closeTab(
   const next = state.tabs.filter((tab) => tab.id !== id);
   let nextActive = state.activeTabId;
   if (state.activeTabId === id) {
-    const fallback = next[idx] ?? next[idx - 1] ?? next[0] ?? null;
+    // 연 탭이 남아 있으면 그리로 돌아간다(브라우저와 같다). 없으면 오른쪽, 그다음 왼쪽.
+    const openerId = state.openerTabIds?.[id];
+    const opener = openerId ? next.find((tab) => tab.id === openerId) : undefined;
+    const fallback = opener ?? next[idx] ?? next[idx - 1] ?? next[0] ?? null;
     nextActive = fallback?.id ?? null;
   }
   return {
     patch: {
       tabs: next,
       activeTabId: nextActive,
+      ...(state.openerTabIds ? { openerTabIds: pruneOpeners(state.openerTabIds, next) } : {}),
       recentlyClosedTabs: withClosedGroup(
         state.recentlyClosedTabs,
         [{ tab: state.tabs[idx], index: idx }],
@@ -608,6 +655,7 @@ export function closeOtherTabs(
       tabs: [tab],
       activeTabId: id,
       recentlyClosedTabs: withClosedGroup(state.recentlyClosedTabs, closed, env.now()),
+      ...(state.openerTabIds ? { openerTabIds: pruneOpeners(state.openerTabIds, [tab]) } : {}),
     },
     result: undefined,
   };
@@ -633,6 +681,7 @@ export function closeTabsOnSide(
       tabs,
       activeTabId: activeStillOpen ? state.activeTabId : id,
       recentlyClosedTabs: withClosedGroup(state.recentlyClosedTabs, closed, env.now()),
+      ...(state.openerTabIds ? { openerTabIds: pruneOpeners(state.openerTabIds, tabs) } : {}),
     },
     result: undefined,
   };
@@ -784,6 +833,7 @@ export function takeTab(state: TabWorkspaceState, id: TabId): TabStep<Tab | null
       tabs,
       activeTabId:
         state.activeTabId === id ? (fallback?.id ?? null) : state.activeTabId,
+      ...(state.openerTabIds ? { openerTabIds: pruneOpeners(state.openerTabIds, tabs) } : {}),
     },
     result: state.tabs[idx],
   };

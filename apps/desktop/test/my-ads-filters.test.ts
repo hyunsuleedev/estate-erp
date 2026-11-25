@@ -120,8 +120,8 @@ function ad(options: AdOptions = {}): ListingAdvertisementWithListing {
     comparison: own
       ? {
           id: "group-1",
-          mainAdvertisementId: own.id,
-          mainAdvertisement: own,
+          ownAdvertisementId: own.id,
+          ownAdvertisement: own,
           advertisements: [own, ...(options.competitors ?? [])],
         }
       : null,

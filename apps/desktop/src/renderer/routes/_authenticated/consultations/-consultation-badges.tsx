@@ -1,11 +1,12 @@
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { getConsultationPurposeMeta } from './-consultation-view-utils';
+import { splitConsultationTag } from './-consultation-list-model';
 
 export const consultationTypeLabels: Record<string, string> = {
   phone: '전화',
   visit: '방문',
-  online: '온라인',
+  online: '문자·온라인',
 };
 
 const typeColors: Record<string, string> = {
@@ -45,3 +46,32 @@ export function PurposeBadge({
 export function getInitial(name: string | null | undefined) {
   return name?.trim().charAt(0) || '?';
 }
+
+/**
+ * 상담 본문. "[매물확인] 살아있음" 같은 꼬리표는 작은 표로 떼어 보이고 나머지만 글로 보인다
+ * (저장된 글은 그대로 두고 보일 때만 나눈다).
+ */
+export function ConsultationContent({ content, className }: { content: string | null | undefined; className?: string }) {
+  const { tag, body, tone } = splitConsultationTag(content);
+  return (
+    <>
+      {tag && (
+        <span
+          data-consultation-tag
+          className={cn(
+            'mb-1 inline-flex h-5 items-center rounded-[4px] px-1.5 text-[12px]',
+            tone === 'good'
+              ? 'bg-success-soft text-success'
+              : tone === 'attention'
+                ? 'bg-warning-soft text-warning-strong'
+                : 'bg-neutral-soft text-muted-foreground',
+          )}
+        >
+          {tag}
+        </span>
+      )}
+      {body && <p className={cn('whitespace-pre-wrap', className)}>{body}</p>}
+    </>
+  );
+}
+

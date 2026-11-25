@@ -493,7 +493,7 @@ export function PropertyInspectorView({
                 사람
               </SectionTitle>
               {model.people.length === 0 ? (
-                <EmptyText>등록된 소유주, 대리인, 세입자가 없습니다.</EmptyText>
+                <EmptyText>등록된 소유자, 대리인, 세입자가 없습니다.</EmptyText>
               ) : (
                 <div className="-mx-2">
                   {model.people.map((person) => (
@@ -505,7 +505,7 @@ export function PropertyInspectorView({
             <section>
               <SectionTitle
                 count={consultations.length || undefined}
-                action={<TextAction icon={<Plus />} label="상담 기록" onClick={onConsult} />}
+                action={<TextAction icon={<Plus />} label="상담 적기" onClick={onConsult} />}
               >
                 상담
               </SectionTitle>
@@ -533,7 +533,7 @@ export function PropertyInspectorView({
                 <div className="divide-y divide-[#f2f1ef]">
                   {model.ads.map((ad) => (
                     <div key={ad.id} className="flex items-start gap-3 py-2.5">
-                      <StatusChip chip={{ label: ad.active ? "게재중" : "종료", tone: ad.active ? "ok" : "neutral" }} />
+                      <StatusChip chip={{ label: ad.active ? "게재 중" : "종료", tone: ad.active ? "ok" : "neutral" }} />
                       <div className="min-w-0 flex-1">
                         <div className="text-[13px] font-semibold text-[#2f2e2a]">
                           {ad.channelLabel}
@@ -586,7 +586,7 @@ export function PropertyInspectorView({
       <div className="flex shrink-0 items-center gap-2 border-t border-[#ecebe8] bg-white px-6 py-3">
         <button type="button" onClick={onConsult} className={cn(barButtonClassName, barSecondaryClassName)}>
           <MessageSquarePlus />
-          상담 남기기
+          상담 적기
         </button>
         <button type="button" onClick={onEdit} className={cn(barButtonClassName, barSecondaryClassName)}>
           <Pencil />
@@ -596,7 +596,7 @@ export function PropertyInspectorView({
           type="button"
           disabled={isConfirming}
           onClick={onConfirm}
-          title="소유주에게 가격과 거래 가능 여부를 확인했으면 누르세요"
+          title="소유자에게 가격과 거래 가능 여부를 확인했으면 누르세요"
           className={cn(barButtonClassName, "ml-auto bg-[#2f2e2a] px-4 text-white hover:bg-[#1f1e1b]")}
         >
           {isConfirming ? <Loader2 className="animate-spin" /> : <Check />}
@@ -856,6 +856,10 @@ export function InlineMemoField({
       type="button"
       aria-label={`${label} 메모 편집`}
       aria-busy={saving !== null || undefined}
+      // 저장이 끝나지 않은 동안은 "저장 전"이다. 실패하면 적은 글을 편집 상자로 되돌려야 하므로,
+      // 그동안 패널이 닫혀(밖을 누름 · 탭 닫기) 이 칸이 사라지면 그 글을 잃는다.
+      data-native-tab-discard-blocker={saving !== null ? "true" : undefined}
+      data-native-tab-dirty={saving !== null ? "true" : undefined}
       onClick={startEditing}
       className={cn(
         "block w-full rounded-md px-2 py-1 text-left text-[13px] leading-[1.6] transition-colors duration-100 focus-visible:outline-none",

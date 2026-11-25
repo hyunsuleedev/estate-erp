@@ -10,8 +10,9 @@ import {
   flagBlockReason,
   isValueAsked,
   parseManwonCell,
+  requestedCellDisplay,
   withDraftValue,
-  withoutSentKinds,
+  withoutSentActions,
 } from "../src/renderer/routes/_authenticated/properties/-my-ads/my-ads-modes";
 
 type Ad = ListingAdvertisementWithListing;
@@ -19,22 +20,26 @@ const ad = (patch: Record<string, unknown> = {}): Ad =>
   ({
     id: "ad-1",
     status: "active",
-    source: "cp_sync",
     channel: "esiljang",
     transactionType: "monthly",
     advertisedPrice: null,
     advertisedDeposit: 5000,
     advertisedMonthlyRent: 250,
     floorExposure: "exact",
+    lastSyncedAt: "2026-11-15T00:00:00.000Z",
     comparison: null,
     changeRequests: [],
     ...patch,
   }) as unknown as Ad;
-const pending = (kind: string, toValue: Record<string, unknown> = {}) => ({
-  id: `r-${kind}`,
-  kind,
-  fromValue: {},
-  toValue,
+const pending = (
+  action: "publish" | "update" | "readvertise" | "takedown",
+  targetValue: Record<string, unknown> = {},
+) => ({
+  id: `r-${action}`,
+  action,
+  status: "requested",
+  baseSnapshot: {},
+  targetValue,
   task: { id: "t", status: "pending", assignedToId: null, updatedAt: "" },
 });
 const shared = { memo: "메모", dueDate: null, assignedToId: null };
@@ -61,55 +66,69 @@ describe("my ads edit and request modes", () => {
     assert.deepEqual(withDraftValue(ad(), { readvertise: true }, "primary", 5000), { readvertise: true });
   });
 
-  it("sends price and rent as one price request, and one request per kind", () => {
+  it("merges price, rent and floorExposure into one request per advertisement", () => {
     const requests = draftToRequests(
       ad(),
       { primary: 4000, monthlyRent: 240, floorExposure: "band", readvertise: true },
       shared,
     );
     assert.deepEqual(requests, [
-      { kind: "price", toValue: { deposit: 4000, monthlyRent: 240 }, ...shared },
-      { kind: "floor_exposure", toValue: { floorExposure: "band" }, ...shared },
-      { kind: "readvertise", ...shared },
+      {
+        advertisementId: "ad-1",
+        listingId: null,
+        channel: "esiljang",
+        action: "readvertise",
+        targetValue: { deposit: 4000, monthlyRent: 240, floorExposure: "band" },
+        ...shared,
+      },
     ]);
-    // 매매는 보증금이 아니라 매매가로 보낸다
     assert.deepEqual(
-      draftToRequests(ad({ transactionType: "sale", advertisedPrice: 320000 }), { primary: 315000 }, shared)[0].toValue,
-      { price: 315000 },
+      draftToRequests(ad({ transactionType: "sale", advertisedPrice: 320000 }), { primary: 315000 }, shared)[0],
+      {
+        advertisementId: "ad-1",
+        listingId: null,
+        channel: "esiljang",
+        action: "update",
+        targetValue: { price: 315000 },
+        ...shared,
+      },
     );
   });
 
-  it("blocks requests that could not be sent, both when drafting and when sending", () => {
-    const manual = ad({ source: "manual" });
-    assert.match(editBlockReason(manual, "primary", "request") ?? "", /직접 입력한 광고/);
+  it("allows manual ads to draft requests while blocking duplicate open requests and invalid inline edits", () => {
+    const manual = ad({ lastSyncedAt: null });
+    assert.equal(editBlockReason(manual, "primary", "request"), null);
     assert.equal(editBlockReason(manual, "primary", "edit"), null);
-    assert.match(flagBlockReason(manual, "takedown") ?? "", /직접 입력한 광고/);
-    assert.deepEqual(draftToRequests(manual, { primary: 4000, takedown: true }, shared), []);
-
-    // 가격과 월세는 같은 종류다: 가격 요청이 걸려 있으면 월세도 또 요청하지 못한다
-    const asked = ad({ changeRequests: [pending("price", { deposit: 4000 })] });
-    assert.match(editBlockReason(asked, "monthlyRent", "request") ?? "", /가격 변경 요청이 이미/);
-    assert.equal(editBlockReason(asked, "floorExposure", "request"), null);
+    assert.equal(flagBlockReason(manual, "takedown"), null);
     assert.deepEqual(
-      draftToRequests(asked, { monthlyRent: 240, floorExposure: "band" }, shared).map((request) => request.kind),
-      ["floor_exposure"],
+      draftToRequests(manual, { primary: 4000, takedown: true }, shared).map((r) => r.action),
+      ["takedown"],
     );
-    assert.match(flagBlockReason(ad({ changeRequests: [pending("readvertise")] }), "readvertise") ?? "", /재광고 요청이 이미/);
+
+    // 열린 변경 요청이 이미 있으면 추가 요청을 막는다
+    const asked = ad({ changeRequests: [pending("update", { deposit: 4000 })] });
+    assert.match(editBlockReason(asked, "monthlyRent", "request") ?? "", /처리 중인 요청이 이미/);
+    assert.match(editBlockReason(asked, "floorExposure", "request") ?? "", /처리 중인 요청이 이미/);
+    assert.deepEqual(
+      draftToRequests(asked, { monthlyRent: 240, floorExposure: "band" }, shared),
+      [],
+    );
+    assert.match(flagBlockReason(ad({ changeRequests: [pending("readvertise")] }), "readvertise") ?? "", /처리 중인 요청이 이미/);
 
     // 층 노출은 읽어 온 값이라 기록 수정으로 고치지 않는다
-    assert.match(editBlockReason(ad(), "floorExposure", "edit") ?? "", /변경 요청으로/);
+    assert.match(editBlockReason(ad(), "floorExposure", "edit") ?? "", /광고 요청으로/);
     assert.match(editBlockReason(ad({ transactionType: "sale" }), "monthlyRent", "edit") ?? "", /월세 광고가 아닙니다/);
   });
 
   it("strikes only the values a request touches", () => {
     assert.equal(isValueAsked(ad(), { monthlyRent: 240 }, "monthlyRent"), true);
     assert.equal(isValueAsked(ad(), { monthlyRent: 240 }, "primary"), false);
-    const asked = ad({ changeRequests: [pending("price", { deposit: 4000 })] });
+    const asked = ad({ changeRequests: [pending("update", { deposit: 4000 })] });
     assert.equal(isValueAsked(asked, undefined, "primary"), true);
     assert.equal(isValueAsked(asked, undefined, "monthlyRent"), false);
-    assert.equal(isValueAsked(ad({ changeRequests: [pending("floor_exposure", { floorExposure: "band" })] }), undefined, "floorExposure"), true);
-    // 끝난 요청은 긋지 않는다
-    const done = ad({ changeRequests: [{ ...pending("price", { deposit: 4000 }), task: { id: "t", status: "completed", assignedToId: null, updatedAt: "" } }] });
+    assert.equal(isValueAsked(ad({ changeRequests: [pending("update", { floorExposure: "band" })] }), undefined, "floorExposure"), true);
+    // 검증 끝난 요청은 긋지 않는다
+    const done = ad({ changeRequests: [{ ...pending("update", { deposit: 4000 }), status: "verified" }] });
     assert.equal(isValueAsked(done, undefined, "primary"), false);
   });
 
@@ -129,16 +148,53 @@ describe("my ads edit and request modes", () => {
     });
   });
 
-  it("drops only the kinds that were already created after a partial send", () => {
-    // 가격 요청은 만들어지고 재광고에서 끊겼다 — 다시 보낼 것은 재광고뿐이다
+  it("drops only the actions that were already created after a partial send", () => {
     assert.deepEqual(
-      withoutSentKinds({ primary: 4000, monthlyRent: 240, readvertise: true }, ["price"]),
+      withoutSentActions({ primary: 4000, monthlyRent: 240, readvertise: true }, ["update"]),
       { readvertise: true },
     );
     assert.deepEqual(
-      withoutSentKinds({ floorExposure: "band", takedown: true }, ["floor_exposure"]),
+      withoutSentActions({ floorExposure: "band", takedown: true }, ["update"]),
       { takedown: true },
     );
-    assert.equal(withoutSentKinds({ primary: 4000 }, ["price"]), null);
+    assert.equal(withoutSentActions({ primary: 4000 }, ["update"]), null);
+  });
+
+  it("formats requestedCellDisplay for drafts first and falls back to open server changeRequests", () => {
+    const withPending = ad({
+      changeRequests: [pending("update", { deposit: 4500, monthlyRent: 220, floorExposure: "band" })],
+    });
+    assert.deepEqual(requestedCellDisplay(withPending, undefined, "primary"), {
+      kind: "pending",
+      text: "4,500만",
+    });
+    assert.deepEqual(requestedCellDisplay(withPending, undefined, "monthlyRent"), {
+      kind: "pending",
+      text: "220만",
+    });
+    assert.deepEqual(requestedCellDisplay(withPending, undefined, "floorExposure"), {
+      kind: "pending",
+      text: "고·중·저",
+    });
+    assert.deepEqual(requestedCellDisplay(withPending, { primary: 4000 }, "primary"), {
+      kind: "draft",
+      text: "4,000만",
+    });
+
+    const takedownOnly = ad({
+      changeRequests: [pending("takedown", {})],
+    });
+    assert.equal(requestedCellDisplay(takedownOnly, undefined, "primary"), null);
+
+    const jeonseWithPending = ad({
+      transactionType: "jeonse",
+      advertisedDeposit: 85000,
+      advertisedMonthlyRent: null,
+      changeRequests: [pending("readvertise", { deposit: 82000 })],
+    });
+    assert.deepEqual(requestedCellDisplay(jeonseWithPending, undefined, "primary"), {
+      kind: "pending",
+      text: "8억 2,000만",
+    });
   });
 });

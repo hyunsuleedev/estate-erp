@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { formatPrice } from '@estate-erp/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -28,6 +29,8 @@ import type {
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format';
+import { apiErrorMessage } from '@/lib/api-error';
+import { formatManwonEcho, MANWON_INPUT_HINT, parseManwon } from '@/lib/manwon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -85,7 +88,7 @@ const RELATED_QUERY_KEYS = [
 const SUGGESTION_COUNT_QUERY_KEYS = [['call-recordings'], ['consultations'], ['consultation']];
 
 function errorText(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
+  return apiErrorMessage(error, fallback);
 }
 
 export function CallSuggestionList({
@@ -433,8 +436,8 @@ function RequirementBlock({ suggestion, labels, hasContact, renderEvidenceLink }
       <p className="text-[13px] font-medium leading-snug">{suggestion.title}</p>
       <p className="mt-0.5 text-[12px] text-muted-foreground">
         {isUpdate
-          ? `${labels[updatePayload.buyerReqId] ?? '저장된 희망조건'}을 고칩니다.`
-          : '새 희망조건으로 등록합니다.'}
+          ? `${labels[updatePayload.buyerReqId] ?? '저장된 희망 조건'}을 고칩니다.`
+          : '새 희망 조건으로 등록합니다.'}
       </p>
       <EvidenceQuote evidence={suggestion.evidence} renderEvidenceLink={renderEvidenceLink} />
 
@@ -681,7 +684,10 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const selectClass =
   'h-8 rounded-md border border-input bg-background px-2 text-[13px] text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
 
-/** 만원 입력 (빈 칸 = 없음) */
+/**
+ * 만원 입력 (빈 칸 = 없음). 전화로 들은 대로 "15억 8천"처럼 적어도 읽는다(앱 공용 규칙 parseManwon).
+ * 읽은 값을 바로 아래에 되비춘다("= 15억 8,000만"). 못 읽는 글이면 값을 바꾸지 않고 그렇다고 알린다.
+ */
 function ManwonInput({
   value,
   onChange,
@@ -691,20 +697,37 @@ function ManwonInput({
   onChange: (value: number | null) => void;
   ariaLabel: string;
 }) {
+  const [text, setText] = useState(() => (value == null ? '' : formatPrice(value)));
+  // 바깥에서 값이 바뀌면(다른 칸에서 고침, 초기화) 적힌 글도 맞춘다. 같은 값을 다르게 적은 것은 그대로 둔다.
+  useEffect(() => {
+    const parsed = parseManwon(text);
+    const current = parsed.valid ? parsed.value : undefined;
+    if (current !== (value ?? null)) setText(value == null ? '' : formatPrice(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  const parsed = parseManwon(text);
   return (
-    <div className="relative">
+    <div className="space-y-0.5">
       <Input
-        type="number"
-        min={0}
-        inputMode="numeric"
+        type="text"
+        inputMode="text"
         aria-label={ariaLabel}
-        className="h-8 pr-9 text-[13px] tabular-nums"
-        value={value ?? ''}
-        onChange={(event) => onChange(event.target.value === '' ? null : Number(event.target.value))}
+        aria-invalid={!parsed.valid || undefined}
+        placeholder={MANWON_INPUT_HINT}
+        className="h-8 text-[13px] tabular-nums"
+        value={text}
+        onChange={(event) => {
+          const next = event.target.value;
+          setText(next);
+          const read = parseManwon(next);
+          if (read.valid) onChange(read.value);
+        }}
       />
-      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
-        만원
-      </span>
+      {!parsed.valid ? (
+        <p className="text-[11px] text-destructive">금액을 읽을 수 없습니다. 예: 15억 8천</p>
+      ) : parsed.value != null ? (
+        <p className="text-[11px] tabular-nums text-muted-foreground">{formatManwonEcho(parsed.value)}</p>
+      ) : null}
     </div>
   );
 }

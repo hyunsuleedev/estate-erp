@@ -68,7 +68,7 @@ export function MatchTableSortControl({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="구매고객 정렬 설정"
+          aria-label="고객 정렬 설정"
           className={cn(
             "inline-flex h-[26px] items-center gap-1 rounded-full px-2 text-xs outline-none hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring",
             sort ? "bg-info-soft/50 text-info-strong" : "text-muted-foreground",

@@ -1,112 +1,29 @@
-import { formatUnitName } from '@estate-erp/shared';
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { CommissionPayment, Contract } from '@estate-erp/api-client';
 
 import { api } from '@/lib/api';
-import { formatMoney } from '@/lib/format';
-import { getLocalDateKey } from './-calendar-view-utils';
+import { buildOverlayItems, groupOverlaysByDate } from './-calendar-overlay-items';
 
-export type OverlayKind = 'contractDate' | 'interimDate' | 'balanceDate' | 'commissionDue';
-
-export type OverlayMeta = {
-  label: string;
-  color: string;
-};
-
-/** 계약/수금에서 자동 도출되는 일정 — 시맨틱 토큰 색상 사용 (info/violet/orange/success) */
-export const OVERLAY_META: Record<OverlayKind, OverlayMeta> = {
-  contractDate: { label: '계약일', color: '#2383e2' },
-  interimDate: { label: '중도금일', color: '#6940a5' },
-  balanceDate: { label: '잔금일', color: '#d9730d' },
-  commissionDue: { label: '수금예정', color: '#0f7b6c' },
-};
-
-export interface OverlayItem {
-  id: string;
-  kind: OverlayKind;
-  dateKey: string;
-  title: string;
-  sublabel: string | null;
-  source:
-    | { type: 'contract'; contract: Contract }
-    | { type: 'commissionPayment'; payment: CommissionPayment };
-}
-
-function contractPlaceLabel(contract: Contract) {
-  const property = contract.deal?.listing?.property;
-  const site = property?.site?.name ?? null;
-  const unit = formatUnitName(property?.unit) || null;
-  if (site) return unit ? `${site} ${unit}` : site;
-
-  const buyer = contract.buyerContact?.name;
-  const seller = contract.sellerContact?.name;
-  if (buyer || seller) return [seller, buyer].filter(Boolean).join(' ↔ ');
-  return '계약';
-}
-
-function pushContractItem(
-  items: OverlayItem[],
-  contract: Contract,
-  kind: OverlayKind,
-  date: string | null,
-  amount: number | null,
-) {
-  if (!date) return;
-  items.push({
-    id: `${contract.id}-${kind}`,
-    kind,
-    dateKey: getLocalDateKey(new Date(date)),
-    title: `${OVERLAY_META[kind].label} · ${contractPlaceLabel(contract)}`,
-    sublabel: amount ? formatMoney(amount) : null,
-    source: { type: 'contract', contract },
-  });
-}
-
-export function buildOverlayItems(
-  contracts: Contract[],
-  payments: CommissionPayment[],
-): OverlayItem[] {
-  const items: OverlayItem[] = [];
-
-  for (const contract of contracts) {
-    if (contract.status === 'cancelled') continue;
-    pushContractItem(items, contract, 'contractDate', contract.contractDate, contract.totalPrice);
-    pushContractItem(items, contract, 'interimDate', contract.statedInterimDate, contract.statedInterimPayment);
-    pushContractItem(items, contract, 'balanceDate', contract.statedBalanceDate, contract.statedBalance);
-  }
-
-  for (const payment of payments) {
-    if (!payment.dueDate) continue;
-    if (!['draft', 'pending', 'partial', 'overdue'].includes(payment.status)) continue;
-    items.push({
-      id: `${payment.id}-commissionDue`,
-      kind: 'commissionDue',
-      dateKey: getLocalDateKey(new Date(payment.dueDate)),
-      title: `수금예정 · ${payment.payerContact?.name ?? (payment.clientSide === 'seller' ? '매도측' : '매수측')}`,
-      sublabel: formatMoney(payment.expectedAmount),
-      source: { type: 'commissionPayment', payment },
-    });
-  }
-
-  return items;
-}
-
-export function groupOverlaysByDate(items: OverlayItem[]) {
-  const grouped = new Map<string, OverlayItem[]>();
-  for (const item of items) {
-    const dayItems = grouped.get(item.dateKey) ?? [];
-    dayItems.push(item);
-    grouped.set(item.dateKey, dayItems);
-  }
-  return grouped;
-}
+export {
+  OVERLAY_META,
+  assignedDealIds,
+  buildOverlayItems,
+  groupOverlaysByDate,
+  type DealPayment,
+  type OverlayItem,
+  type OverlayKind,
+  type OverlayMeta,
+} from './-calendar-overlay-items';
 
 /**
- * 계약일·중도금일·잔금일(Contract) + 수금예정일(CommissionPayment)을
+ * 거래 대금 일정(DealPayment) + 계약일·중도금일·잔금일(Contract) + 수금예정일(CommissionPayment)을
  * 캘린더 오버레이로 변환. 전용 범위 API가 없어 전체 목록을 받아 클라이언트에서 날짜 매핑.
+ * 대시보드도 같은 것을 쓴다(오늘 일정·다가오는 일정·미니 달력 점).
  */
-export function useCalendarOverlays(enabled: boolean) {
+/**
+ * @param assigneeId 이 직원이 담당인 거래의 날짜만 보인다 (대시보드 '내 담당'·캘린더 '내 일정만'·담당자 거르기).
+ */
+export function useCalendarOverlays(enabled: boolean, assigneeId?: string | null) {
   const contractsQuery = useQuery({
     queryKey: ['contracts', 'calendar-overlay'],
     queryFn: () => api.contracts.findAll(),
@@ -121,17 +38,27 @@ export function useCalendarOverlays(enabled: boolean) {
     staleTime: 60_000,
   });
 
+  // 거래관리·대시보드와 같은 캐시. 대금 일정(payments)이 함께 온다.
+  const dealsQuery = useQuery({
+    queryKey: ['deals'],
+    queryFn: () => api.deals.findAll(),
+    enabled,
+    staleTime: 60_000,
+  });
+
   const overlaysByDate = useMemo(
     () =>
       groupOverlaysByDate(
-        buildOverlayItems(contractsQuery.data ?? [], paymentsQuery.data ?? []),
+        buildOverlayItems(contractsQuery.data ?? [], paymentsQuery.data ?? [], dealsQuery.data ?? [], {
+          assigneeId,
+        }),
       ),
-    [contractsQuery.data, paymentsQuery.data],
+    [contractsQuery.data, paymentsQuery.data, dealsQuery.data, assigneeId],
   );
 
   return {
     overlaysByDate,
-    isLoading: enabled && (contractsQuery.isLoading || paymentsQuery.isLoading),
-    isError: contractsQuery.isError || paymentsQuery.isError,
+    isLoading: enabled && (contractsQuery.isLoading || paymentsQuery.isLoading || dealsQuery.isLoading),
+    isError: contractsQuery.isError || paymentsQuery.isError || dealsQuery.isError,
   };
 }

@@ -1,5 +1,6 @@
 import { useIsMutating } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import type { Tab } from '@estate-erp/shared';
 import type { NativeTabRetentionUpdate } from '../../../../common/nativeTabs';
 import {
   ACTIVE_TRANSFER_SELECTOR,
@@ -29,6 +30,32 @@ export function createNativeTabRetentionUpdate(
     // 올리는 중이 아닐 때는 칸을 넣지 않는다 (보고 내용이 예전과 똑같이 유지된다)
     reasons: { mutating, transientEditor, explicitDirty, ...(transferring ? { transferring } : {}) },
   };
+}
+
+/**
+ * 방금 맡은 탭에 되살릴 것(스크롤, 입력 초안)이 없을 때 곧바로 보낼 "저장 안 한 것 없음" 보고.
+ * 되살릴 것이 있으면 null — 그런 탭은 다 되살린 뒤에 `NativeTabRetentionReporter`가 알린다
+ * (먼저 알리면 되살리는 중인 화면이 내려갈 수 있고, 스크롤 0이 저장된 위치를 덮는다).
+ *
+ * main은 화면이 처음 알려 오기 전까지 그 탭에 저장 안 한 작업이 있다고 보고(안전한 쪽),
+ * 그동안 사이드바 메뉴를 누르면 탭을 옮기지 않고 새 탭으로 연다. 예전에는 그 사이를 시작
+ * 화면이 가리고 있었지만, 지금은 새 탭의 사이드바가 곧바로 눌린다. 탭을 맡는 순간의 화면은
+ * 본문이 비어 있어 저장 안 한 것이 있을 수 없다.
+ */
+export function blankTabRetentionUpdate(
+  tab: Pick<Tab, 'uiState'>,
+): NativeTabRetentionUpdate | null {
+  const scrollY = tab.uiState?.scrollY;
+  const formDraft = tab.uiState?.formDraft;
+  const hasSavedViewState =
+    (typeof scrollY === 'number' && scrollY > 0) ||
+    Boolean(formDraft && Object.keys(formDraft).length > 0);
+  if (hasSavedViewState) return null;
+  return createNativeTabRetentionUpdate(
+    0,
+    { transientEditor: false, explicitDirty: false },
+    { scrollY: 0 },
+  );
 }
 
 function readRetentionSignals(): RetentionSignals {

@@ -221,7 +221,7 @@ describe("desktop customer ledger", () => {
       "buyer-requirements/$id_.edit.tsx",
     ]) {
       const source = readFileSync(resolve(routesDir, file), "utf8");
-      assert.match(source, /["']\/customers-table["']/, file);
+      // 원장은 메뉴에서 빠져 링크를 거둔 화면도 있다(업무 화면 등). 남아 있는 링크는 기본 표 보기로 간다.
       assert.doesNotMatch(source, /["']\/customers["']/, file);
     }
   });
@@ -558,6 +558,15 @@ describe("desktop customer ledger", () => {
     assert.equal(getLedgerRowStatus(ledgerRow({ demandIntents: [demand({ matchCount: 2 })] })), "active");
     assert.equal(getLedgerRowStatus(ledgerRow({ listingIntents: [listing({ matchCount: 1 })] })), "active");
     assert.equal(getLedgerRowStatus(ledgerRow()), "exploring");
+    // 매칭 없이 바로 만든 거래도 진행 중이다(계약까지 했는데 "파악 중"으로 보이지 않게).
+    assert.equal(
+      getLedgerRowStatus(ledgerRow({ listingIntents: [listing({ activeDealCount: 1 })] })),
+      "active",
+    );
+    assert.equal(
+      getLedgerRowStatus(ledgerRow({ demandIntents: [demand({ activeDealCount: 1 })] })),
+      "active",
+    );
     // 원장 API는 진행 중인 의뢰가 있는 줄만 준다. 화면이 "종료"를 지어내지 않는다.
     assert.match(modelSource, /export type LedgerRowStatus = "exploring" \| "active";/);
     assert.match(chipsSource, /data-ledger-status=\{status\}/);
@@ -616,17 +625,17 @@ describe("desktop customer ledger", () => {
   it("describes conditions in the app's money and area units", () => {
     assert.equal(
       describeDemandIntent(demand({ priceMin: 150000, priceMax: 160000, areaMin: 112.4, areaMax: 112.4 })),
-      "고덕동 · 34.0평 · 15억~16억",
+      "고덕동 · 34평 · 15억 ~ 16억",
     );
     assert.equal(describeDemandIntent(demand({ budgetMax: 90000 })), "고덕동 · 9억 이하");
     assert.equal(
       describeDemandIntent(demand({ transactionType: "monthly", depositMin: 1000, depositMax: 1000, monthlyRentMin: 80, monthlyRentMax: 80 })),
-      "고덕동 · 1,000만 / 월 80만",
+      "고덕동 · 1,000만 / 80만",
     );
     assert.equal(describeDemandIntent(demand()), "고덕동");
     assert.equal(describeListingPrice(listing({ price: 165000 })), "16억 5,000만");
     assert.equal(describeListingPrice(listing({ transactionType: "jeonse", deposit: 68000 })), "6억 8,000만");
-    assert.equal(describeListingPrice(listing({ transactionType: "monthly", deposit: 3000, monthlyRent: 180 })), "3,000만 / 월 180만");
+    assert.equal(describeListingPrice(listing({ transactionType: "monthly", deposit: 3000, monthlyRent: 180 })), "3,000만 / 180만");
     assert.equal(describeListingPrice(listing()), "금액 미정");
   });
 

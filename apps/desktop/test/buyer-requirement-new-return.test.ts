@@ -114,11 +114,12 @@ describe('구함 의뢰 추가 화면의 취소', () => {
     // 화면이 store를 부르는 순서
     assert.match(
       pageSource,
-      /const handleCancel = \(\) => \{[\s\S]*?openModule\(\{[\s\S]*?\}\);\s*if \(ownerTabIdRef\.current\) \{\s*closeTab\(ownerTabIdRef\.current\);\s*\}\s*\};/,
+      // 연락처 상세에서 열었으면(from=contact) 그 연락처 탭을 먼저 보이고, 그 밖에는 돌아갈 화면을 연다. 닫기는 그 뒤다.
+      /const handleCancel = \(\) => \{[\s\S]*?openOrRevealResource\(\{[\s\S]*?\}\);\s*\} else \{[\s\S]*?openModule\(\{[\s\S]*?\}\);\s*\}\s*if \(ownerTabIdRef\.current\) \{\s*closeTab\(ownerTabIdRef\.current\);\s*\}\s*\};/,
     );
     assert.match(
       pageSource,
-      /const returnRoute = from === 'wanted-properties' \? '\/wanted-properties' : '\/customers-table';/,
+      /from === 'project' && projectId\s*\? `\/projects\/\$\{projectId\}`\s*: from === 'wanted-properties'\s*\? '\/wanted-properties'\s*: from === 'contacts' \? '\/contacts' : '\/customers-table';/,
     );
   });
 

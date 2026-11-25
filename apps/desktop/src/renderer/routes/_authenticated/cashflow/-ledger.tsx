@@ -3,6 +3,7 @@
  * 청구·수금·잔여를 각각의 열로 두어 자릿수를 맞춰 읽고, 띠는 합계와 일괄 작업이 같은 자리를 쓴다.
  */
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
@@ -60,6 +61,7 @@ import {
   AdjustmentDecisionDialog,
   PaymentDialogHost,
   useCreateDunningTasks,
+  useOpenDunning,
   type LedgerAdjustment,
   type PaymentDialogKind,
   type PaymentDialogState,
@@ -86,7 +88,12 @@ import {
   effectiveDueDate,
   isFullyCollected,
   isOpenPayment,
+  isOurReceivable,
   isPaymentDone,
+  markCancelledDeals,
+  monthKeyOf,
+  collectedInMonth,
+  nextDueDate,
   ourRatioFrom,
   partnerRatioOf,
   payerName,
@@ -94,6 +101,7 @@ import {
   receivedAmount,
   relativeDueLabel,
   rollupPayments,
+  dayLabel,
   shortDate,
   stepMonth,
   toDayKey,
@@ -109,7 +117,7 @@ const COLUMN_OPTIONS: Array<{ key: ColumnKey; label: string }> = [
   { key: 'stage', label: '거래 단계' },
   { key: 'assignee', label: '담당' },
   { key: 'partner', label: '공동중개' },
-  { key: 'tax', label: '세금계산서' },
+  { key: 'tax', label: '현금영수증·세금계산서' },
 ];
 
 const DEFAULT_COLUMNS: Record<ColumnKey, boolean> = {
@@ -227,6 +235,8 @@ export function LedgerView({
     ],
     queryFn: () =>
       api.finance.ledger.get({ preset: effectivePreset, year, month }),
+    // 취소한 거래의 청구는 받을 돈이 아니다 (받은 돈은 수금에 남는다)
+    select: (view) => ({ ...view, groups: markCancelledDeals(view.groups) }),
   });
 
   const { assigneeOptions, partnerOptions } = useMemo(() => {
@@ -291,11 +301,9 @@ export function LedgerView({
         .includes(query);
     });
 
+    // 아직 받을 돈이 남은 청구의 가장 빠른 예정일로 줄을 세운다 (다 받은 청구의 날짜는 보지 않는다)
     const firstDue = (g: LedgerDealGroup) =>
-      g.payments
-        .map((p) => toDayKey(effectiveDueDate(p, g.deal.balanceDueDate)))
-        .filter((d): d is string => d !== null)
-        .sort()[0] ?? '9999';
+      toDayKey(nextDueDate(g)) ?? '9999';
     const direction = sort.dir === 'asc' ? 1 : -1;
     return [...list].sort((a, b) => {
       if (sort.key === 'amount') {
@@ -349,7 +357,7 @@ export function LedgerView({
     setPaymentDialog({
       kind,
       payment,
-      label: `${dealLocation(group.deal)} · ${clientSideLabel(payment.clientSide)} ${payment.code ?? ''}`.trim(),
+      label: `${dealLocation(group.deal)} · ${clientSideLabel(payment.clientSide, group.deal.transactionType)} ${payment.code ?? ''}`.trim(),
     });
 
   const hasFilter = Boolean(
@@ -373,19 +381,19 @@ export function LedgerView({
         '유형',
         '측',
         '상태',
-        '청구액(만원)',
-        '수금액(만원)',
-        '잔여(만원)',
+        '청구액(만원, 부가세 별도)',
+        '수금액(만원, 부가세 별도)',
+        '잔여(만원, 부가세 별도)',
         '예정일',
         '입금일',
         '공동중개',
-        '세금계산서',
+        '현금영수증·세금계산서',
       ],
       ...items.map(({ group, payment }) => [
         payment.code,
         dealLocation(group.deal),
         getStatusMeta('transactionType', group.deal.transactionType).label,
-        clientSideLabel(payment.clientSide),
+        clientSideLabel(payment.clientSide, group.deal.transactionType),
         getStatusMeta(
           'commissionStatus',
           displayStatus(payment, group.deal.balanceDueDate),
@@ -396,7 +404,9 @@ export function LedgerView({
         toDayKey(payment.dueDate),
         toDayKey(payment.paidAt),
         group.deal.partnerBroker?.name,
-        payment.taxInvoiceNo,
+        payment.taxInvoiceStatus === 'none'
+          ? ''
+          : `${payment.taxInvoiceStatus === 'cash_receipt' ? '현금영수증' : '세금계산서'} ${payment.taxInvoiceNo ?? ''}`.trim(),
       ]),
     ]);
 
@@ -405,6 +415,7 @@ export function LedgerView({
   const fullLedger = useQuery({
     queryKey: ['finance', 'ledger', 'all'],
     queryFn: () => api.finance.ledger.get({ preset: 'all' }),
+    select: (view) => ({ ...view, groups: markCancelledDeals(view.groups) }),
     enabled: detail !== null,
   });
   const detailGroup =
@@ -412,6 +423,44 @@ export function LedgerView({
     data?.groups.find((g) => g.deal.id === detail?.dealId) ??
     null;
   const adjustments = data?.adjustmentsPending ?? [];
+
+  // 빈 화면은 이유를 나눠 말한다: 아직 청구가 하나도 없음 / 이 기간에 없음 / 필터에 걸림
+  const emptyState = !data?.hasAnyPayment ? (
+    <EmptyState
+      icon={Wallet}
+      title="아직 수수료 청구가 없습니다"
+      description="거래가 본계약 단계로 넘어가면 그 거래의 수수료 청구가 여기에 생깁니다. 수금 처리와 독촉도 여기서 합니다."
+      action={
+        <Button asChild variant="outline">
+          <Link to="/deals">거래관리로 가기</Link>
+        </Button>
+      }
+    />
+  ) : (data?.groups.length ?? 0) === 0 ? (
+    <EmptyState
+      icon={Wallet}
+      title="이 기간에 받을 수수료가 없습니다"
+      description="다른 기간의 청구는 '전체'에서 볼 수 있습니다."
+      action={
+        <Button variant="outline" onClick={() => setPreset('all')}>
+          전체 보기
+        </Button>
+      }
+    />
+  ) : (
+    <EmptyState
+      icon={Wallet}
+      title="조건에 맞는 청구가 없습니다"
+      description="검색어나 필터를 바꿔 보세요."
+      action={
+        hasFilter ? (
+          <Button variant="outline" onClick={resetFilters}>
+            필터 초기화
+          </Button>
+        ) : undefined
+      }
+    />
+  );
 
   return (
     <CashflowPage title="수금 원장">
@@ -535,6 +584,13 @@ export function LedgerView({
             viewMode={viewMode}
             year={year}
             month={month}
+            collectedMonth={
+              effectivePreset === 'month'
+                ? monthKeyOf(year, month)
+                : effectivePreset === 'this-month'
+                  ? monthKeyOf(now.getFullYear(), now.getMonth() + 1)
+                  : null
+            }
             groups={filtered}
             payments={visiblePayments}
             selectedIds={selectedIds}
@@ -549,6 +605,7 @@ export function LedgerView({
             {viewMode === 'table' ? (
               <LedgerTable
                 groups={filtered}
+                empty={emptyState}
                 paymentsOf={paymentsOf}
                 columns={columns}
                 sort={sort}
@@ -581,11 +638,14 @@ export function LedgerView({
                   })
                 }
                 highlightPaymentId={initialPaymentId ?? null}
+                highlightDealId={initialDealId ?? null}
                 onOpenDeal={openDeal}
                 onPaymentAction={openPaymentDialog}
               />
             ) : viewMode === 'kanban' ? (
-              <LedgerKanban groups={filtered} onOpenDeal={openDeal} />
+              <LedgerKanban groups={filtered} empty={emptyState} onOpenDeal={openDeal} />
+            ) : !data.hasAnyPayment ? (
+              emptyState
             ) : (
               <LedgerCalendar
                 year={year}
@@ -596,7 +656,10 @@ export function LedgerView({
             )}
           </div>
           <CashflowFooter>
-            거래 {filtered.length}건 · 청구 {visiblePayments.length}건 표시
+            <span>
+              거래 {filtered.length}건 · 청구 {visiblePayments.length}건 표시
+            </span>
+            <span>금액 단위 만원 · 부가세 별도</span>
           </CashflowFooter>
         </>
       )}
@@ -615,6 +678,7 @@ export function LedgerView({
           key={decision.id}
           adjustment={decision}
           label={adjustmentLocation(decision, data?.groups ?? [])}
+          transactionType={data?.groups.find((g) => g.deal.id === decision.dealId)?.deal.transactionType}
           onClose={() => setDecision(null)}
         />
       )}
@@ -706,6 +770,7 @@ function LedgerBand({
   viewMode,
   year,
   month,
+  collectedMonth,
   groups,
   payments,
   selectedIds,
@@ -717,6 +782,8 @@ function LedgerBand({
   viewMode: LedgerViewMode;
   year: number;
   month: number;
+  /** '월'·'이번 달' 보기면 그 달('YYYY-MM'): 수금 합계를 그 달에 받은 돈으로 센다 */
+  collectedMonth: string | null;
   groups: LedgerDealGroup[];
   payments: Array<{ group: LedgerDealGroup; payment: LedgerPayment }>;
   selectedIds: Set<string>;
@@ -728,6 +795,7 @@ function LedgerBand({
   onClearSelection: () => void;
 }) {
   const dunning = useCreateDunningTasks();
+  const openDunning = useOpenDunning();
 
   if (viewMode === 'calendar') {
     const totals = calendarTotals(groups, year, month);
@@ -744,10 +812,14 @@ function LedgerBand({
   if (viewMode === 'table' && selectedIds.size > 0) {
     const picked = payments.filter(({ payment }) => selectedIds.has(payment.id));
     const remaining = picked.reduce(
-      (sum, { payment }) => sum + paymentRemaining(payment),
+      (sum, { payment }) => sum + (isOurReceivable(payment) ? paymentRemaining(payment) : 0),
       0,
     );
-    const dunnable = picked.filter(({ payment }) => isOpenPayment(payment));
+    // 끝나지 않은 독촉 업무가 있는 청구는 또 만들지 않는다
+    const dunnable = picked.filter(
+      ({ group, payment }) =>
+        isOpenPayment(payment) && isOurReceivable(payment) && !openDunning(payment, group.deal.id),
+    );
     return (
       <CashflowBand>
         <b className="font-semibold text-foreground tabular-nums">
@@ -767,6 +839,7 @@ function LedgerBand({
                 payment,
                 location: dealLocation(group.deal),
                 dealId: group.deal.id,
+                transactionType: group.deal.transactionType,
               })),
               { onSuccess: onClearSelection },
             )
@@ -818,7 +891,15 @@ function LedgerBand({
     <CashflowBand>
       <BandItem label="청구" value={`${billedCount}건`} />
       <BandItem label="합계" value={formatMoney(totals.billed)} />
-      <BandItem label="수금" value={formatMoney(totals.collected)} />
+      {collectedMonth ? (
+        // 그 달에 받은 돈 (캐시플로우 월 수금과 같은 범위). 걸린 청구의 지난 입금까지 더하지 않는다.
+        <BandItem
+          label={`${Number(collectedMonth.slice(5))}월 수금`}
+          value={formatMoney(collectedInMonth(payments.map(({ payment }) => payment), collectedMonth))}
+        />
+      ) : (
+        <BandItem label="수금" value={formatMoney(totals.collected)} />
+      )}
       <BandItem label="미수" value={formatMoney(totals.remaining)} />
       <span className="ml-auto" />
       <button
@@ -878,6 +959,7 @@ function DueCell({
 
 function LedgerTable({
   groups,
+  empty,
   paymentsOf,
   columns,
   sort,
@@ -888,10 +970,13 @@ function LedgerTable({
   foldToggled,
   onToggleFold,
   highlightPaymentId,
+  highlightDealId,
   onOpenDeal,
   onPaymentAction,
 }: {
   groups: LedgerDealGroup[];
+  /** 보일 청구가 없을 때 띄울 안내 */
+  empty: React.ReactNode;
   paymentsOf: (group: LedgerDealGroup) => LedgerPayment[];
   columns: Record<ColumnKey, boolean>;
   sort: { key: SortKey; dir: 'asc' | 'desc' };
@@ -902,6 +987,8 @@ function LedgerTable({
   foldToggled: Set<string>;
   onToggleFold: (dealId: string) => void;
   highlightPaymentId: string | null;
+  /** 다른 화면에서 이 거래로 들어왔을 때: 줄을 펼치고 화면에 보이게 한다 */
+  highlightDealId: string | null;
   onOpenDeal: (dealId: string, paymentId?: string) => void;
   onPaymentAction: (
     kind: PaymentDialogKind,
@@ -909,15 +996,17 @@ function LedgerTable({
     payment: LedgerPayment,
   ) => void;
 }) {
-  if (groups.length === 0) {
-    return (
-      <EmptyState
-        icon={Wallet}
-        title="조건에 맞는 청구가 없습니다"
-        description="기간이나 필터를 바꿔 보세요."
-      />
+  useEffect(() => {
+    if (!highlightDealId) return;
+    const id = requestAnimationFrame(() =>
+      document
+        .querySelector(`[data-ledger-deal-id="${highlightDealId}"]`)
+        ?.scrollIntoView({ block: 'center' }),
     );
-  }
+    return () => cancelAnimationFrame(id);
+  }, [highlightDealId, groups.length]);
+
+  if (groups.length === 0) return <>{empty}</>;
 
   const allIds = groups.flatMap((g) => paymentsOf(g).map((p) => p.id));
   const selectedCount = allIds.filter((id) => selectedIds.has(id)).length;
@@ -981,7 +1070,7 @@ function LedgerTable({
           </SortHead>
           {columns.assignee && <th>담당</th>}
           {columns.partner && <th>공동중개</th>}
-          {columns.tax && <th>계산서</th>}
+          {columns.tax && <th title="현금영수증·세금계산서 발행 기록">영수증</th>}
           <th className="cf-pin-right">
             <span className="sr-only">작업</span>
           </th>
@@ -1000,9 +1089,11 @@ function LedgerTable({
             // 다 받은 거래는 접어서 시작한다. 강조할 청구가 있으면 펼친다.
             open={
               (isFullyCollected(group) &&
+                group.deal.id !== highlightDealId &&
                 !group.payments.some((p) => p.id === highlightPaymentId)) ===
               foldToggled.has(group.deal.id)
             }
+            highlighted={group.deal.id === highlightDealId}
             onToggleFold={() => onToggleFold(group.deal.id)}
             onOpenDeal={onOpenDeal}
             onPaymentAction={onPaymentAction}
@@ -1021,6 +1112,7 @@ function DealRows({
   onToggleSelected,
   onToggleMany,
   open,
+  highlighted,
   onToggleFold,
   onOpenDeal,
   onPaymentAction,
@@ -1032,6 +1124,7 @@ function DealRows({
   onToggleSelected: (id: string, checked: boolean) => void;
   onToggleMany: (ids: string[], checked: boolean) => void;
   open: boolean;
+  highlighted?: boolean;
   onToggleFold: () => void;
   onOpenDeal: (dealId: string, paymentId?: string) => void;
   onPaymentAction: (
@@ -1048,15 +1141,26 @@ function DealRows({
   const ids = payments.map((p) => p.id);
   const pickedCount = ids.filter((id) => selectedIds.has(id)).length;
   const names = deal.participants.map((p) => p.userName);
-  const firstDue = group.payments
-    .map((p) => effectiveDueDate(p, deal.balanceDueDate))
-    .filter((d): d is string => d !== null)
-    .sort()[0];
-  const dueDate = deal.balanceDueDate ?? firstDue ?? null;
+  // 받을 돈이 남은 청구의 가장 빠른 예정일. 다 받은 거래는 마지막 입금일을 보여 준다.
+  // 예전에는 잔금일이나 다 받은 청구의 날짜를 써서, 연체가 아닌데 "13일 경과"로 보였다.
+  const dueDate = nextDueDate(group);
+  const lastPaid = dueDate
+    ? null
+    : group.payments
+        .map((p) => p.paidAt)
+        .filter((d): d is string => Boolean(d))
+        .sort()
+        .at(-1) ?? null;
 
   return (
     <Fragment>
-      <tr data-row="group" data-clickable onClick={() => onOpenDeal(deal.id)}>
+      <tr
+        data-row="group"
+        data-clickable
+        data-ledger-deal-id={deal.id}
+        data-selected={highlighted || undefined}
+        onClick={() => onOpenDeal(deal.id)}
+      >
         <td
           className="cf-pin-left left-0 !px-0"
           onClick={(e) => e.stopPropagation()}
@@ -1093,7 +1197,16 @@ function DealRows({
           </td>
         )}
         <td>
-          <StatusBadge kind="commissionStatus" status={worst} size="sm" />
+          {deal.isCancelled ? (
+            <span
+              className="text-xs text-muted-foreground"
+              title="취소한 거래입니다. 받은 돈은 수금에 남고, 받을 돈으로는 세지 않습니다."
+            >
+              취소된 거래
+            </span>
+          ) : (
+            <StatusBadge kind="commissionStatus" status={worst} size="sm" />
+          )}
         </td>
         <td className="cf-num">{formatMoney(totals.billed)}</td>
         <td className="cf-num">{formatMoney(totals.collected)}</td>
@@ -1101,11 +1214,17 @@ function DealRows({
           {formatMoney(totals.remaining)}
         </td>
         <td>
-          <DueCell
-            date={shortDate(dueDate)}
-            relative={worst === 'collected' ? '' : relativeDueLabel(dueDate)}
-            overdue={overdue}
-          />
+          {dueDate ? (
+            <DueCell
+              date={shortDate(dueDate)}
+              relative={relativeDueLabel(dueDate)}
+              overdue={overdue}
+            />
+          ) : lastPaid ? (
+            <DueCell date={dayLabel(lastPaid, false)} relative="입금" muted />
+          ) : (
+            <DueCell date={shortDate(null)} relative="" muted />
+          )}
         </td>
         {columns.assignee && (
           <td className="cf-plain" title={names.join(', ')}>
@@ -1191,7 +1310,7 @@ function PaymentRow({
       </td>
       <td className="cf-pin-left cf-pin-edge left-9">
         <div className="flex min-w-0 items-center gap-1.5 pl-[22px]">
-          <span className="shrink-0">{clientSideLabel(payment.clientSide)}</span>
+          <span className="shrink-0">{clientSideLabel(payment.clientSide, deal.transactionType)}</span>
           <span className="min-w-0 truncate text-muted-foreground">
             {payerName(deal, payment)}
           </span>
@@ -1224,17 +1343,39 @@ function PaymentRow({
         </span>
       </td>
       <td className="cf-num">{formatMoney(payment.expectedAmount)}</td>
-      <td className="cf-num">{formatMoney(receivedAmount(payment))}</td>
-      <td className={cn('cf-num', overdue && 'text-destructive-strong')}>
+      <td
+        className={cn('cf-num', !isOurReceivable(payment) && 'text-muted-foreground')}
+        title={
+          isOurReceivable(payment)
+            ? undefined
+            : '상대 사무소가 받은 돈입니다. 우리 수금 합계에는 받음 기록한 우리 몫만 들어갑니다.'
+        }
+      >
+        {/* 취소한 거래의 청구는 상태가 '취소'라도 이미 받은 돈을 보여 준다 */}
+        {formatMoney(
+          payment.status === 'cancelled'
+            ? Math.round((payment.ourCollectedWon ?? 0) / 10_000)
+            : receivedAmount(payment),
+        )}
+      </td>
+      <td
+        className={cn(
+          'cf-num',
+          overdue && 'text-destructive-strong',
+          !isOurReceivable(payment) && 'text-muted-foreground',
+        )}
+        title={isOurReceivable(payment) ? undefined : '상대 사무소가 받을 돈이라 미수 합계에 넣지 않습니다'}
+      >
         {formatMoney(paymentRemaining(payment))}
       </td>
       <td>
         {isPaymentDone(payment) ? (
-          <DueCell date={shortDate(payment.paidAt)} relative="입금" muted />
+          <DueCell date={dayLabel(payment.paidAt, false)} relative="입금" muted />
         ) : (
           <DueCell
             date={shortDate(due)}
-            relative={relativeDueLabel(due)}
+            // 상대가 수금하는 청구는 우리가 셀 기한이 아니라 'n일 경과'를 붙이지 않는다
+            relative={isOurReceivable(payment) ? relativeDueLabel(due) : ''}
             overdue={overdue}
           />
         )}
@@ -1249,7 +1390,7 @@ function PaymentRow({
         <td>
           {payment.taxInvoiceStatus !== 'none' ? (
             <span className="text-muted-foreground" title={payment.taxInvoiceNo ?? undefined}>
-              기록함
+              {payment.taxInvoiceStatus === 'cash_receipt' ? '현금영수증' : '계산서'}
             </span>
           ) : taxPending ? (
             <span className="text-warning-strong">미기록</span>
@@ -1271,7 +1412,7 @@ function PaymentRow({
             </RowAction>
           ) : taxPending ? (
             <RowAction onClick={() => onPaymentAction('tax', group, payment)}>
-              계산서
+              영수증 기록
             </RowAction>
           ) : null}
           <DropdownMenu>
@@ -1292,13 +1433,14 @@ function PaymentRow({
                 거래 상세
               </DropdownMenuItem>
               <DropdownMenuItem
-                disabled={!isOpenPayment(payment) || dunning.isPending}
+                disabled={!isOpenPayment(payment) || !isOurReceivable(payment) || dunning.isPending}
                 onSelect={() =>
                   dunning.mutate([
                     {
                       payment,
                       location: dealLocation(deal),
                       dealId: deal.id,
+                      transactionType: deal.transactionType,
                     },
                   ])
                 }
@@ -1314,7 +1456,7 @@ function PaymentRow({
                 onSelect={() => onPaymentAction('tax', group, payment)}
               >
                 <ReceiptText className="size-3.5" />
-                세금계산서 기록
+                영수증·계산서 기록
               </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={!isOpenPayment(payment)}

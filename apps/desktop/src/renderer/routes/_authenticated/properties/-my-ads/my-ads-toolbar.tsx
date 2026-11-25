@@ -46,6 +46,7 @@ import {
   comparisonFilterOptions,
   exposurePeriodFilterOptions,
   floorExposureFilterOptions,
+  statusFilterOptions,
   transactionFilterOptions,
   verificationFilterOptions,
   viewTabs,
@@ -62,6 +63,8 @@ export type MyAdsToolbarProps = {
   search: string;
   onSearchChange: (value: string) => void;
   siteFilterOptions: MultiSelectOption[];
+  channelOptions?: MyAdsFilterOption[];
+  cpAccountOptions?: MyAdsFilterOption[];
   isSiteFilterOpen: boolean;
   onSiteFilterOpenChange: (open: boolean) => void;
   filters: MyAdsFilterState;
@@ -95,6 +98,8 @@ export function MyAdsToolbar({
   search,
   onSearchChange,
   siteFilterOptions,
+  channelOptions = channelFilterOptions,
+  cpAccountOptions = [],
   isSiteFilterOpen,
   onSiteFilterOpenChange,
   filters,
@@ -185,7 +190,9 @@ export function MyAdsToolbar({
       >
         <div
           ref={findRowRef}
-          className="@container/find flex min-w-0 items-center gap-2"
+          // flex-wrap: 1100px 창에서는 보기 탭·찾기 막대만으로 줄이 차서 모드·등록 버튼이 화면 밖으로 잘렸다.
+          // 넘치면 버튼 묶음이 다음 줄 오른쪽으로 내려간다(넓은 창에서는 한 줄 그대로).
+          className="@container/find flex min-w-0 flex-wrap items-center gap-x-2 gap-y-2"
         >
           <ToolbarPillTabs
             shape="muted"
@@ -290,6 +297,15 @@ export function MyAdsToolbar({
           {/* 필터가 모두 이 줄에 있으므로, 창이 좁으면 옆으로 숨기지 않고 다음 줄로 내린다 */}
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
             <MyAdsSelectFilterChip
+              label="상태"
+              icon={<ListFilter />}
+              options={statusFilterOptions}
+              value={filters.status}
+              onChange={(value) => updateMyAdsFilter("status", value)}
+              onClear={clearChip}
+              defaultValue="active"
+            />
+            <MyAdsSelectFilterChip
               label="거래"
               icon={<Tag />}
               options={transactionFilterOptions}
@@ -300,11 +316,21 @@ export function MyAdsToolbar({
             <MyAdsSelectFilterChip
               label="CP사"
               icon={<Megaphone />}
-              options={channelFilterOptions}
+              options={channelOptions}
               value={filters.channel}
               onChange={(value) => updateMyAdsFilter("channel", value)}
               onClear={clearChip}
             />
+            {cpAccountOptions.length > 1 && (
+              <MyAdsSelectFilterChip
+                label="CP 계정"
+                icon={<Megaphone />}
+                options={cpAccountOptions}
+                value={filters.cpAccountId}
+                onChange={(value) => updateMyAdsFilter("cpAccountId", value)}
+                onClear={clearChip}
+              />
+            )}
 
             <ToolbarFilterChip
               label="가격/보증금"
@@ -462,6 +488,7 @@ function MyAdsSelectFilterChip<T extends string>({
   value,
   onChange,
   onClear,
+  defaultValue = "all" as T,
 }: {
   label: string;
   icon: ReactNode;
@@ -470,6 +497,7 @@ function MyAdsSelectFilterChip<T extends string>({
   onChange: (value: T) => void;
   /** ✕를 누를 때. 값을 지우는 함수를 받아 지운 뒤 이 칩으로 포커스를 돌려놓는다. */
   onClear: (label: string, clear: () => void) => void;
+  defaultValue?: T;
 }) {
   return (
     <ToolbarFilterChip
@@ -477,11 +505,11 @@ function MyAdsSelectFilterChip<T extends string>({
       shape="soft"
       icon={icon}
       summary={
-        value === "all"
+        value === defaultValue
           ? null
           : (options.find((option) => option.value === value)?.label ?? value)
       }
-      onClear={() => onClear(label, () => onChange("all" as T))}
+      onClear={() => onClear(label, () => onChange(defaultValue))}
       contentClassName="w-[200px] p-0"
     >
       {(close) => (

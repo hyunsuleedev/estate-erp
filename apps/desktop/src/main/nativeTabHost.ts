@@ -38,6 +38,11 @@ export interface NativeTabHostPort {
   detach(view: NativeTabViewPort): void;
   bringToFront(view: NativeTabViewPort): void;
   /**
+   * 화면을 이 창의 탭 화면들 맨 아래에 붙인다(이미 붙어 있으면 순서만 바꾼다). 보이는 탭에
+   * 가려진 채로 실제 크기를 받게 할 때 쓴다. 없으면 예비 화면은 숨긴 채로만 붙는다.
+   */
+  attachBehind?(view: NativeTabViewPort): void;
+  /**
    * 이 창에서 보여 주는 탭 화면에 키보드 입력을 줘도 되는지. 탭 화면에 입력을 주면 그 창도
    * 앞으로 나오므로, 앱의 다른 창을 쓰고 있는 동안에는 아니다. 없으면 늘 준다.
    */
@@ -87,12 +92,34 @@ export interface NativeTabHostOptions {
     createTab: () => Tab;
     /** 하나를 쓰고 다음 것을 띄우기까지 기다리는 시간. 방금 연 탭과 경쟁하지 않게 한다. */
     replenishDelayMs?: number;
+    /**
+     * 예비 화면에 탭을 맡기기 직전에 부른다. 예비 화면은 사이드바와 화면 틀을 미리 그려 두므로,
+     * 보이기 전에 그 창의 상태(사이드바 접힘 등)를 맞춰 보낼 기회다. `send`는 그 화면에만 보낸다.
+     */
+    beforeAssign?: (
+      hostId: number,
+      send: (channel: string, payload: unknown) => void,
+    ) => void;
   };
 }
 
 interface SpareRecord {
   view: NativeTabViewPort;
   loaded: boolean;
+  /**
+   * 예비 화면을 숨긴 채 붙여 둔 창. 창에 붙어 있지 않은 화면은 크기가 0이라 사이드바와 틀을
+   * 실제 크기로 그려 둘 수 없다(Notion도 빈 탭을 활성 탭 뒤에 같은 크기로 붙여 둔다).
+   * 그 창의 크기가 바뀌면 예비 화면도 따라 바꾼다.
+   */
+  sizedForHostId: number | null;
+  /**
+   * 실제 크기로 틀을 그려 두었는지. 한 번도 보인 적 없는 화면은 창에 붙어 있어도 크기가
+   * 0이다(실제 창에서 확인). 그래서 처음 한 번은 보이는 탭 뒤에 가려진 채로 보이게 두고,
+   * 틀을 그렸다고 알려 오면 숨긴다. 한 번 보였던 화면은 숨겨도 크기를 유지한다.
+   */
+  warm: 'no' | 'warming' | 'done';
+  /** 틀 그리기 시도 번호. 중간에 그만둔 시도의 "다 그렸다"가 다음 시도를 끝내지 않게 한다. */
+  warmAttempt: number;
 }
 
 export type NativeTabProtectionReason =
@@ -243,7 +270,12 @@ export class NativeTabHost {
     if (!host) return 0;
     const tabIds = [...host.tabIds];
     for (const tabId of tabIds) this.close(tabId);
+    const spare = this.spare;
+    const spareWasHere = spare !== null && spare.sizedForHostId === hostId;
+    if (spare && spareWasHere) this.releaseSpareFromHost(spare);
     this.hosts.delete(hostId);
+    // 예비 화면이 닫히는 창에 붙어 있었으면 남은 창으로 옮겨 둔다.
+    if (spare && spareWasHere && this.spare === spare) this.placeSpare(spare);
     return tabIds.length;
   }
 
@@ -255,6 +287,16 @@ export class NativeTabHost {
       const record = this.tabs.get(tabId);
       if (!record || record.view.isDestroyed()) continue;
       record.view.setBounds(normalized);
+    }
+    // 예비 화면도 그 창의 크기를 따라가게 한다. 새 탭으로 붙는 순간 다시 배치하지 않도록.
+    const spare = this.spare;
+    if (spare && !spare.view.isDestroyed()) {
+      if (spare.sizedForHostId === hostId) {
+        this.safeCleanup(() => spare.view.setBounds(normalized));
+      } else if (spare.sizedForHostId === null) {
+        // 창이 생기기 전에 준비된 예비 화면은 첫 창의 크기가 정해질 때 붙인다.
+        this.placeSpare(spare);
+      }
     }
   }
 
@@ -318,7 +360,7 @@ export class NativeTabHost {
     }
 
     const nextTab = cloneTab(tab);
-    const spareView = this.takeSpare();
+    const spareView = this.takeSpare(hostId);
     const view = spareView ?? this.viewFactory.create(nextTab);
     if (view.isDestroyed()) {
       throw new Error(`native tab view for ${tab.id} was created destroyed`);
@@ -356,7 +398,15 @@ export class NativeTabHost {
       host.port.attach(view);
       view.setBounds(host.bounds);
       if (spareView) {
-        // 앱은 이미 떠 있다. 탭을 맡기면 화면 안에서 그 주소로 옮겨 그린다.
+        // 앱은 이미 떠 있고 사이드바와 화면 틀도 그려져 있다. 보이기 전에 이 창의 상태를 맞춘 뒤
+        // 탭을 맡기면, 화면 안에서 그 주소로 옮겨 본문만 그린다.
+        try {
+          this.spareOptions?.beforeAssign?.(hostId, (channel, payload) =>
+            spareView.send(channel, payload),
+          );
+        } catch (error) {
+          this.onCleanupError(error);
+        }
         spareView.assign?.(nextTab);
         record.loadedRoute = nextTab.route;
       } else {
@@ -435,6 +485,18 @@ export class NativeTabHost {
     host.activeTabId = tabId;
     host.epoch += 1;
     this.reconcileLiveTabLimit();
+    const spare = this.spare;
+    if (spare && spare.sizedForHostId === hostId) {
+      if (tabId === null) {
+        // 가려 줄 탭이 없어졌다. 틀을 그리던 중이면 드러나지 않게 숨기고 다음에 다시 한다.
+        if (spare.warm === 'warming') {
+          spare.warm = 'no';
+          this.safeCleanup(() => spare.view.setVisible(false));
+        }
+      } else {
+        this.warmSpareBehindActiveTab(spare);
+      }
+    }
   }
 
   reparent(tabId: string, targetHostId: number): NativeTabMove {
@@ -808,9 +870,12 @@ export class NativeTabHost {
       this.safeCleanup(() => view.destroy());
       return;
     }
-    const record: SpareRecord = { view, loaded: false };
+    const record: SpareRecord = { view, loaded: false, sizedForHostId: null, warm: 'no', warmAttempt: 0 };
     this.spare = record;
     this.safeCleanup(() => view.setVisible(false));
+    // 새 탭이 열릴 가능성이 가장 큰 창에 숨긴 채 같은 크기로 붙여 둔다. 다른 창에서 쓰이면
+    // 그때 그 창으로 옮긴다.
+    this.placeSpare(record);
     view.navigate(tab.route).then(
       () => {
         if (this.spare === record) record.loaded = true;
@@ -822,11 +887,109 @@ export class NativeTabHost {
     );
   }
 
+  /** 미리 띄워 둔 예비 화면에만 보낸다(사이드바처럼 미리 맞춰 둘 창 단위 상태). */
+  sendToSpare(channel: string, payload: unknown): boolean {
+    const spare = this.spare;
+    if (!spare || spare.view.isDestroyed()) return false;
+    try {
+      spare.view.send(channel, payload);
+      return true;
+    } catch (error) {
+      this.onCleanupError(error);
+      return false;
+    }
+  }
+
+  /** 예비 화면을 붙여 둘 창: 가장 최근에 쓴 탭이 있는 창, 없으면 처음 등록된 창. */
+  private spareSizeHost(): { id: number; host: HostRecord } | null {
+    let latest: TabRecord | null = null;
+    for (const record of this.tabs.values()) {
+      if (!latest || record.lastAccessed > latest.lastAccessed) latest = record;
+    }
+    const preferred = latest ? this.hosts.get(latest.hostId) : undefined;
+    if (preferred && latest && !preferred.port.isDestroyed()) {
+      return { id: latest.hostId, host: preferred };
+    }
+    for (const [id, host] of this.hosts) {
+      if (!host.port.isDestroyed()) return { id, host };
+    }
+    return null;
+  }
+
+  /**
+   * 예비 화면을 숨긴 채 창에 붙이고 그 창의 탭 자리 크기로 맞춘다. 붙어 있어야 화면이 실제
+   * 크기를 갖고, 그래야 사이드바와 틀을 미리 그려 둘 수 있다. 숨겨 둔 화면이라 보이지도
+   * 입력을 받지도 않는다.
+   */
+  private placeSpare(spare: SpareRecord): void {
+    if (spare.view.isDestroyed()) return;
+    const target = this.spareSizeHost();
+    if (!target) return;
+    try {
+      spare.view.setVisible(false);
+      target.host.port.attach(spare.view);
+      spare.view.setBounds(target.host.bounds);
+      spare.sizedForHostId = target.id;
+    } catch (error) {
+      this.onCleanupError(error);
+      return;
+    }
+    this.warmSpareBehindActiveTab(spare);
+  }
+
+  /**
+   * 예비 화면을 보이는 탭 뒤에 가려진 채로 보이게 해서 실제 크기로 틀을 그리게 한다.
+   * 가려 줄 탭이 없는 창에서는 하지 않는다(예비 화면이 그대로 드러난다) — 그 창에 탭이
+   * 보이기 시작할 때 다시 시도한다.
+   */
+  private warmSpareBehindActiveTab(spare: SpareRecord): void {
+    if (spare.warm !== 'no' || this.spare !== spare || spare.view.isDestroyed()) return;
+    const hostId = spare.sizedForHostId;
+    const host = hostId === null ? undefined : this.hosts.get(hostId);
+    if (!host || host.port.isDestroyed() || host.activeTabId === null) return;
+    const attachBehind = host.port.attachBehind?.bind(host.port);
+    if (!attachBehind) return;
+    try {
+      attachBehind(spare.view);
+      spare.view.setBounds(host.bounds);
+      spare.view.setVisible(true);
+    } catch (error) {
+      this.onCleanupError(error);
+      this.safeCleanup(() => spare.view.setVisible(false));
+      return;
+    }
+    spare.warm = 'warming';
+    spare.warmAttempt += 1;
+    const attempt = spare.warmAttempt;
+    const settle = (): void => {
+      // 그 사이에 새 탭으로 넘어갔으면 이미 탭이다. 건드리면 보이는 탭이 숨는다.
+      if (this.spare !== spare) return;
+      if (spare.warm !== 'warming' || spare.warmAttempt !== attempt) return;
+      spare.warm = 'done';
+      if (!spare.view.isDestroyed()) this.safeCleanup(() => spare.view.setVisible(false));
+    };
+    (spare.view.whenReady?.() ?? Promise.resolve()).then(settle, settle);
+  }
+
+  /** 예비 화면을 붙여 둔 창에서 뗀다. */
+  private releaseSpareFromHost(spare: SpareRecord): void {
+    const hostId = spare.sizedForHostId;
+    spare.sizedForHostId = null;
+    // 틀을 그리던 중에 창을 옮기면 옮긴 창에서 처음부터 다시 한다.
+    if (spare.warm === 'warming') spare.warm = 'no';
+    if (hostId === null) return;
+    const host = this.hosts.get(hostId);
+    if (!host || host.port.isDestroyed()) return;
+    this.safeCleanup(() => host.port.detach(spare.view));
+  }
+
   discardSpare(): void {
     this.clearSpareTimer();
     const spare = this.spare;
     this.spare = null;
-    if (spare) this.safeCleanup(() => spare.view.destroy());
+    if (!spare) return;
+    this.releaseSpareFromHost(spare);
+    this.safeCleanup(() => spare.view.destroy());
   }
 
   /**
@@ -909,11 +1072,12 @@ export class NativeTabHost {
   }
 
   /** 다 뜬 예비 탭 화면을 꺼낸다. 아직 뜨는 중이면 새로 만드는 쪽이 낫다. */
-  private takeSpare(): NativeTabViewPort | null {
+  private takeSpare(hostId: number): NativeTabViewPort | null {
     const spare = this.spare;
     if (!spare) return null;
     if (spare.view.isDestroyed()) {
       this.spare = null;
+      this.releaseSpareFromHost(spare);
       return null;
     }
     if (spare.view.isCrashed?.()) {
@@ -924,6 +1088,9 @@ export class NativeTabHost {
     }
     if (!spare.loaded || this.senderToTabId.has(spare.view.senderId)) return null;
     this.spare = null;
+    // 다른 창에 붙여 둔 예비 화면이면 거기서 떼고 넘긴다. 같은 창이면 그대로 두고, 여는 쪽이
+    // 다시 붙이면서 순서만 맨 위로 바뀐다.
+    if (spare.sizedForHostId !== hostId) this.releaseSpareFromHost(spare);
     return spare.view;
   }
 

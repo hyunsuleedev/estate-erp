@@ -1,3 +1,5 @@
+import { MANWON_INPUT_HINT, parseManwon } from '../../lib/manwon';
+
 export type CellSaveResult = boolean | void | Promise<boolean | void>;
 export type CellNavigation = 'current' | 'next' | 'previous' | 'down' | 'none';
 
@@ -63,9 +65,21 @@ export class CellDraftStore {
 export function parseCellNumber(
   raw: string,
   minimum?: number,
+  unit?: string,
 ): { valid: true; value: number | null } | { valid: false; error: string } {
   const text = raw.normalize('NFKC').trim();
   if (!text) return { valid: true, value: null };
+  // 만원 칸은 앱 공통 금액 규칙으로 읽는다: "15억 8천" · "9억5천만" · "158,000"
+  if (unit === '만원') {
+    const parsed = parseManwon(text);
+    if (!parsed.valid) {
+      return { valid: false, error: `금액을 읽을 수 없습니다. ${MANWON_INPUT_HINT}` };
+    }
+    if (minimum !== undefined && parsed.value !== null && parsed.value < minimum) {
+      return { valid: false, error: `${minimum} 이상의 금액을 입력해 주세요.` };
+    }
+    return { valid: true, value: parsed.value };
+  }
   // Group separators must be complete: 1,000 is valid; 1,00 is not a deletion.
   const validNotation = /^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(text);
   const value = Number(text.replaceAll(',', ''));

@@ -1,5 +1,10 @@
-import { compareUnitSpaces, formatUnitName, formatUnitLabel } from '@estate-erp/shared';
-import { createFileRoute } from '@tanstack/react-router';
+import {
+  compareUnitSpaces,
+  formatDongLabel,
+  formatPlaceLabel,
+  formatUnitName,
+} from '@estate-erp/shared';
+import { Link, createFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   useState,
@@ -29,6 +34,7 @@ import {
   Users,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/api-error';
 import { consultationChannelIcons } from '../consultations/-consultation-inspector';
 import type {
   Dong,
@@ -50,20 +56,13 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   ConfirmDialog,
   ContactNameChip,
   EmptyState,
   RowOpenButton,
 } from '@/components/domain';
 import { cn } from '@/lib/utils';
-import { formatDate, formatPhone, formatPyeong } from '@/lib/format';
+import { formatPhone, formatPyeong, formatRelativeDay } from '@/lib/format';
 import {
   filterUnitsByRecordPresence,
   formatListingPrice,
@@ -108,13 +107,32 @@ import {
   storePanelWidth,
 } from './-sites-panel';
 import { AddSiteDialog } from './-add-site-dialog';
+import { AddUnitDialog } from './-add-unit-dialog';
+import { LandSiteProperties, WholeBuildingPropertiesStrip } from './-site-whole-properties';
 import { UnitLayoutBoard } from './-unit-layout-board';
 import { UnitDetailPanel } from './-unit-detail-dialog';
 import { ExpiryBoard } from './-expiry-board';
+import { consultationDisplayText } from '../consultations/-consultation-list-model';
 
 // ── Route ───────────────────────────────────────────────────────
 
+type SitesSearch = { siteId?: string; dong?: string; ho?: string };
+
+const optionalSearchText = (value: unknown) =>
+  typeof value === 'string' && value.trim()
+    ? value.trim()
+    : typeof value === 'number'
+      ? String(value)
+      : undefined;
+
 export const Route = createFileRoute('/_authenticated/sites/')({
+  // 전체 검색 등에서 /sites?siteId=<Site.id>로 오면 그 관리단지를 연다(없으면 첫 단지).
+  // &dong=102&ho=3302를 같이 주면 그 동을 고르고 호수 칸에 3302를 넣는다("102동 3302호" 검색).
+  validateSearch: (search: Record<string, unknown>): SitesSearch => ({
+    siteId: optionalSearchText(search.siteId),
+    dong: optionalSearchText(search.dong),
+    ho: optionalSearchText(search.ho)?.replace(/\D/g, '') || undefined,
+  }),
   component: SitesPage,
 });
 
@@ -225,16 +243,19 @@ function readStoredUnitTableScope(): UnitTableScope {
 
 
 
-const EMPTY_NEW_UNIT = {
-  name: '',
-  area: '',
-  roomCount: '',
-  bathRoomCount: '',
-  dongId: '',
-};
-
 function SitesPage() {
   const queryClient = useQueryClient();
+  const {
+    siteId: requestedSiteId,
+    dong: requestedDong,
+    ho: requestedHo,
+  } = Route.useSearch();
+  // 주소로 받은 동·호는 그 단지의 동 목록을 받은 뒤에 적용한다
+  const pendingPlaceRef = useRef<{ siteId: string; dong?: string; ho?: string } | null>(
+    requestedSiteId && (requestedDong || requestedHo)
+      ? { siteId: requestedSiteId, dong: requestedDong, ho: requestedHo }
+      : null,
+  );
 
   // ── 관리단지 사이드바 (단지 버튼으로 열고 닫음) ───────────────
   const [isSitesPanelOpen, setIsSitesPanelOpen] = useState(readStoredPanelOpen);
@@ -267,7 +288,6 @@ function SitesPage() {
   const [showAddDongDialog, setShowAddDongDialog] = useState(false);
   const [showAddUnitDialog, setShowAddUnitDialog] = useState(false);
   const [newDongName, setNewDongName] = useState('');
-  const [newUnit, setNewUnit] = useState(EMPTY_NEW_UNIT);
 
   // ── Refs (키보드 단축키) ──────────────────────────────────────
   const unitSearchRef = useRef<HTMLInputElement>(null);
@@ -337,8 +357,33 @@ function SitesPage() {
     }
 
     didAutoSelectOfficeSite.current = true;
-    setSelectedOfficeSite((current) => current ?? firstOfficeSite);
+    const requested = requestedSiteId
+      ? officeSites.find((officeSite) => officeSite.siteId === requestedSiteId)
+      : undefined;
+    setSelectedOfficeSite((current) => requested ?? current ?? firstOfficeSite);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 첫 선택에만 주소의 단지를 쓴다(아래 효과가 이후 변경을 맡는다)
   }, [isListError, isLoadingList, officeSites]);
+
+  // 이 화면에 있는 동안 주소의 단지·동·호가 바뀌면(전체 검색에서 다시 고름) 그리로 옮긴다
+  const requestedPlaceKey = [requestedSiteId, requestedDong, requestedHo].join('|');
+  const lastRequestedPlaceKey = useRef(requestedPlaceKey);
+  useEffect(() => {
+    if (lastRequestedPlaceKey.current === requestedPlaceKey) return;
+    lastRequestedPlaceKey.current = requestedPlaceKey;
+    if (!requestedSiteId) return;
+    const requested = officeSites.find((officeSite) => officeSite.siteId === requestedSiteId);
+    if (!requested) return;
+    pendingPlaceRef.current =
+      requestedDong || requestedHo
+        ? { siteId: requestedSiteId, dong: requestedDong, ho: requestedHo }
+        : null;
+    if (requested.id !== selectedOfficeSite?.id) {
+      handleSelectSite(requested);
+    } else if (siteDetail?.id === requestedSiteId) {
+      applyRequestedPlace(siteDetail);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 주소가 바뀔 때만 반응한다
+  }, [requestedPlaceKey, officeSites]);
 
   // 관리 단지가 하나도 없으면 사이드바의 안내와 추가 버튼이 가장 먼저 필요하므로 열어 둔다.
   // 사용자가 다시 닫을 수 있게 한 번만 열고, 저장된 열림 상태(사용자의 선택)는 덮어쓰지 않는다
@@ -379,6 +424,26 @@ function SitesPage() {
       dongIds: getInitialDongScope(siteDetail.defaultDongId),
     });
   }, [hasDongScopeForSite, siteDetail]);
+
+  /** 주소로 받은 동·호를 적용한다. 동은 "102"·"102동" 어느 쪽으로 와도 이름으로 찾는다 */
+  function applyRequestedPlace(detail: { id: string; dongs: Dong[] }) {
+    const pending = pendingPlaceRef.current;
+    if (!pending || pending.siteId !== detail.id) return;
+    pendingPlaceRef.current = null;
+    if (pending.dong) {
+      const wanted = pending.dong.replace(/동$/, '').toLowerCase();
+      const dong = detail.dongs.find(
+        (item) => !item.isPlaceholder && item.name.replace(/동$/, '').toLowerCase() === wanted,
+      );
+      if (dong) setDongScope({ siteId: detail.id, dongIds: [dong.id] });
+    }
+    if (pending.ho) setUnitNo(pending.ho);
+  }
+  useEffect(() => {
+    // 기본 동 범위를 정하는 위 효과 뒤에 돌아 그 값을 덮는다
+    if (siteDetail) applyRequestedPlace(siteDetail);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 단지 정보를 받았을 때만
+  }, [siteDetail]);
 
   const usesOverviewUnits =
     !!siteDetail && isDefaultDongScope(selectedDongIds, siteDetail.defaultDongId);
@@ -428,7 +493,7 @@ function SitesPage() {
       toast.success('관리단지에서 제거했습니다');
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '관리단지 제거에 실패했습니다');
+      toast.error(apiErrorMessage(error, '관리단지에서 제거하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
@@ -465,7 +530,7 @@ function SitesPage() {
           : current,
       );
       toast.error(
-        error instanceof Error ? error.message : '즐겨찾기 변경에 실패했습니다',
+        apiErrorMessage(error, '고정을 바꾸지 못했습니다. 다시 시도해 주세요.'),
       );
     },
     onSettled: () => {
@@ -482,51 +547,12 @@ function SitesPage() {
       setShowAddDongDialog(false);
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '동 추가에 실패했습니다');
+      toast.error(apiErrorMessage(error, '동을 추가하지 못했습니다. 다시 시도해 주세요.'));
     },
   });
 
   const dongs: DongWithUnitCount[] = siteDetail?.dongs ?? [];
   const allUnits: Unit[] = usesOverviewUnits ? (siteDetail?.units ?? []) : (scopedUnits ?? []);
-
-  const addUnitMutation = useMutation({
-    mutationFn: async (dto: {
-      name: string;
-      area: string;
-      roomCount: string;
-      bathRoomCount: string;
-      dongId: string;
-    }) => {
-      if (!selectedSiteId) throw new Error('단지가 선택되지 않았습니다');
-      // 동 목록을 받기 전에는 아래에서 '동이 없다'고 판단할 수 없다
-      if (!siteDetail) throw new Error('단지 정보를 불러오지 못했습니다');
-      // 동이 미선택이면 placeholder Dong(단일 동 건물) 또는 첫 번째 Dong으로 자동 할당.
-      // Dong이 하나도 없으면 '본동'을 먼저 생성한다 (빌라/단독 클라이언트 경로).
-      let dongId =
-        dto.dongId || dongs.find((dong) => dong.isPlaceholder)?.id || dongs[0]?.id || '';
-      if (!dongId) {
-        const created = await api.dongs.create({ siteId: selectedSiteId, name: '본동' });
-        dongId = created.id;
-      }
-      return api.units.create({
-        siteId: selectedSiteId,
-        dongId,
-        name: dto.name.trim(),
-        exclusiveAreaM2: dto.area ? Number(dto.area) : undefined,
-        roomCount: dto.roomCount ? Number(dto.roomCount) : null,
-        bathRoomCount: dto.bathRoomCount ? Number(dto.bathRoomCount) : null,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sites', selectedSiteId] });
-      toast.success('호수를 추가했습니다');
-      setNewUnit(EMPTY_NEW_UNIT);
-      setShowAddUnitDialog(false);
-    },
-    onError: (error) => {
-      toast.error(error instanceof Error ? error.message : '호수 추가에 실패했습니다');
-    },
-  });
 
   // ── Derived data ──────────────────────────────────────────────
 
@@ -536,9 +562,27 @@ function SitesPage() {
     [officeSites],
   );
 
+  // 동 구분 없는 건물의 가짜 동(이름 '-')은 이름을 붙이지 않는다 — "- 201호"가 되지 않게
   const getDongName = useCallback(
-    (dongId: string | null) => dongs.find((d) => d.id === dongId)?.name ?? '',
+    (dongId: string | null) => {
+      const dong = dongs.find((d) => d.id === dongId);
+      return dong && !dong.isPlaceholder ? dong.name : '';
+    },
     [dongs],
+  );
+  /** 화면 글에 쓰는 집 이름: "101동 3401호", withSite면 "고덕그라시움 101동 3401호" (STANDARDS: formatPlaceLabel) */
+  const currentSiteName = siteDetail?.name ?? selectedOfficeSite?.site?.name ?? '';
+  const getPlaceLabel = useCallback(
+    (unit: Unit, withSite = false) => {
+      const dong = dongs.find((d) => d.id === unit.dongId);
+      return formatPlaceLabel({
+        siteName: withSite ? currentSiteName : undefined,
+        dongName: dong?.name,
+        dongIsPlaceholder: dong?.isPlaceholder,
+        unit,
+      });
+    },
+    [currentSiteName, dongs],
   );
 
   const selectedUnit = useMemo(
@@ -746,15 +790,76 @@ function SitesPage() {
     [filteredUnits, isSearchingUnits, unitTableScope],
   );
   const showsManagedUnitsOnly = unitTableScope === 'managed' && !isSearchingUnits;
+  const canEditStructure = !!siteDetail && canEditSiteStructure(siteDetail);
+  // 호실이 하나도 없는 건물: 표 대신 다음에 할 일을 보여 준다(토지는 호실 없이 매물로 다룬다)
+  const siteHasNoUnits =
+    !!siteDetail && (siteDetail.type === 'land' || siteDetail._count?.units === 0);
+  const usesWholeBuilding = siteDetail?.type === 'house' || siteDetail?.type === 'commercial';
+  const newListingForSite = selectedSiteId ? { siteId: selectedSiteId } : {};
+  const structureEmptyState =
+    siteDetail?.type === 'land' && selectedSiteId ? (
+      <LandSiteProperties siteId={selectedSiteId} />
+    ) : (
+      <EmptyState
+        icon={Building2}
+        title="아직 등록된 호수가 없습니다"
+        description={
+          !canEditStructure
+            ? undefined
+            : usesWholeBuilding
+              ? '호실을 나눠 관리하려면 호수를 추가하세요. 건물 전체를 내놓는 의뢰는 호수 없이 바로 매물 등록을 하면 됩니다.'
+              : '호수를 추가하면 소유자·세입자·상담을 호실마다 관리할 수 있습니다. 여러 호를 한 번에 넣을 수 있습니다. 내놓은 집이 있으면 매물 등록에서 호를 바로 적어도 됩니다.'
+        }
+        action={
+          canEditStructure ? (
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button size="sm" onClick={() => setShowAddUnitDialog(true)}>
+                <Plus className="size-3.5" />
+                호수 추가
+              </Button>
+              {/* 전화로 집이 들어온 참이면 호수를 먼저 만들지 않고 바로 등록한다(등록 화면에서 호를 적는다) */}
+              <Button size="sm" variant="outline" asChild>
+                <Link to="/properties/new" search={newListingForSite}>
+                  매물 등록
+                </Link>
+              </Button>
+              {!usesWholeBuilding && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setNewDongName('');
+                    setShowAddDongDialog(true);
+                  }}
+                >
+                  동 추가
+                </Button>
+              )}
+            </div>
+          ) : undefined
+        }
+      />
+    );
+
   const unitTableEmptyMessage = showsManagedUnitsOnly
     ? hasActiveUnitContentFilters
       ? '조건에 맞는 관리호수가 없습니다'
       : siteDetail?._count?.units === 0
         ? // 호수가 아직 없으면 고를 ‘전체’도 비어 있다. 직접 등록한 단지만 호수를 추가할 수 있다
-          canEditSiteStructure(siteDetail)
-          ? '아직 등록된 호수가 없습니다. 단지 목록에서 이 단지의 ⋯ 메뉴로 호수를 추가하세요.'
-          : '아직 등록된 호수가 없습니다.'
-        : '이 범위에 관리호수가 없습니다. ‘전체’에서 호수를 골라 관리호수로 등록하세요.'
+          '아직 등록된 호수가 없습니다.'
+        : (
+          <span className="flex flex-col items-center gap-2 py-2 text-center">
+            <span>이 범위에 관리호수가 없습니다. 전체 호수에서 골라 관리호수로 등록하세요.</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-[30px] rounded-[8px] px-3"
+              onClick={() => setUnitTableScope('all')}
+            >
+              전체 호수 보기
+            </Button>
+          </span>
+        )
     : hasActiveUnitFilters
       ? '검색 결과가 없습니다'
       : '등록된 호수가 없습니다';
@@ -774,7 +879,9 @@ function SitesPage() {
 
     for (const unit of filteredUnits) {
       const sectionKey = hasRealDongs ? (unit.dongId ?? '__no_dong__') : '__site__';
-      const sectionLabel = hasRealDongs ? getDongName(unit.dongId) || '미지정 동' : '전체';
+      const sectionLabel = hasRealDongs
+        ? formatDongLabel(getDongName(unit.dongId)) || '미지정 동'
+        : '전체';
 
       let section = sectionMap.get(sectionKey);
       if (!section) {
@@ -849,7 +956,6 @@ function SitesPage() {
   const prepareStructureDialog = (os: OfficeSite) => {
     if (selectedOfficeSite?.id !== os.id) handleSelectSite(os);
     setNewDongName('');
-    setNewUnit(EMPTY_NEW_UNIT);
   };
 
   const handleDongScopeChange = (dongIds: string[]) => {
@@ -890,9 +996,16 @@ function SitesPage() {
     addDongMutation.mutate({ siteId: selectedSiteId, name: newDongName.trim() });
   };
 
-  const handleAddUnit = () => {
-    if (!newUnit.name.trim() || !selectedSiteId || !siteDetail) return;
-    addUnitMutation.mutate(newUnit);
+  // 방금 넣은 호수는 아직 관리호수가 아니라 '관리호수' 범위에서는 안 보인다 — 전체로 바꿔 바로 보이게 한다
+  const handleUnitsAdded = (units: Unit[]) => {
+    if (unitTableScope === 'managed') setUnitTableScope('all');
+    const first = units[0];
+    if (!first || !selectedSiteId) return;
+    if (selectedDongIds.length > 0 && !selectedDongIds.includes(first.dongId)) {
+      setDongScope({ siteId: selectedSiteId, dongIds: [first.dongId] });
+    }
+    // 한 호만 넣었으면 그 호를 열어 관리호수 등록·소유자 연결로 바로 이어 간다
+    if (units.length === 1) handleSelectUnit(first);
   };
 
   const resetUnitFilters = () => {
@@ -939,13 +1052,12 @@ function SitesPage() {
       enableSorting: true,
       cell: ({ row }) => {
         const unit = row.original;
-        const dongName = getDongName(unit.dongId);
         return (
           <>
             <span className={cn(unitCellStrong, 'block tabular-nums')}>{formatUnitName(unit)}</span>
             {/* 매물관리 표와 같은 열기 버튼: 옆 상세 패널을 열고, 열려 있으면 닫는다 */}
             <RowOpenButton
-              label={`${dongName ? `${dongName} ` : ''}${formatUnitLabel(unit)}`}
+              label={getPlaceLabel(unit)}
               current={openUnitId === unit.id}
               controls="unit-inspector"
               onToggle={() =>
@@ -1178,7 +1290,7 @@ function SitesPage() {
         return (
           <div
             className="flex min-w-0 items-center gap-1.5"
-            title={`${typeLabel} · ${latest.contact.name}\n${latest.content}`}
+            title={`${typeLabel} · ${latest.contact.name}\n${consultationDisplayText(latest.content)}`}
           >
             <TypeIcon
               className="size-4 shrink-0 text-sidebar-icon"
@@ -1186,7 +1298,8 @@ function SitesPage() {
               aria-label={`${typeLabel} 상담`}
             />
             <span className="truncate text-[14px] leading-[21px] text-foreground">
-              {latest.content}
+              {/* "[매물확인] 살아있음" 같은 꼬리표는 화면 낱말로("매물 확인 · 유효함") */}
+              {consultationDisplayText(latest.content)}
             </span>
           </div>
         );
@@ -1208,7 +1321,8 @@ function SitesPage() {
               new Date(a.createdAt).getTime(),
           )[0];
         if (!latest) return <UnitTableEmptyCell />;
-        return <span className={unitCellSub}>{formatDate(latest.createdAt)}</span>;
+        // 상담 날짜는 앱 공용 표기(오늘·어제·11.19 (목))를 쓴다 — 상담분석·연락처 목록과 같게
+        return <span className={unitCellSub}>{formatRelativeDay(latest.createdAt)}</span>;
       },
     },
   ];
@@ -1225,6 +1339,7 @@ function SitesPage() {
     closeUnitInspector,
     dongs,
     getDongName,
+    getPlaceLabel,
     handleSelectUnit,
     openUnitId,
   ]);
@@ -1376,7 +1491,7 @@ function SitesPage() {
                 description={
                   officeSites.length > 0
                     ? '단지 목록에서 관리 단지를 선택하면 호수 목록이 표시됩니다'
-                    : '자주 다루는 단지를 추가하면 호수와 연락처를 한곳에서 관리할 수 있습니다'
+                    : '우리 사무소가 다루는 아파트·빌라·상가·주택을 찾아 추가하세요. 검색에 없는 건물은 주소로 직접 등록합니다.'
                 }
                 action={
                   officeSites.length > 0 ? (
@@ -1460,7 +1575,7 @@ function SitesPage() {
                   { value: 'table', label: '호수 목록', icon: <List /> },
                   { value: 'layout', label: '배치표', icon: <LayoutGrid /> },
                   { value: 'occupancy', label: '점유상태', icon: <House /> },
-                  { value: 'expiry', label: '만기/변동', icon: <CalendarClock /> },
+                  { value: 'expiry', label: '만기', icon: <CalendarClock /> },
                 ]}
               />
             </div>
@@ -1579,12 +1694,45 @@ function SitesPage() {
                   초기화
                 </button>
               )}
+              {/* 직접 등록한 건물만 동·호수를 넣을 수 있다. 사이드바 ⋯ 메뉴에도 있지만 여기서 바로 보이게 둔다 */}
+              {canEditStructure && (
+                <>
+                  <button
+                    type="button"
+                    className={cn(toolbarGhostButtonClassName, 'rounded-full')}
+                    onClick={() => {
+                      setNewDongName('');
+                      setShowAddDongDialog(true);
+                    }}
+                  >
+                    <Plus className="size-3.5" />
+                    동 추가
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(toolbarGhostButtonClassName, 'rounded-full')}
+                    onClick={() => setShowAddUnitDialog(true)}
+                  >
+                    <Plus className="size-3.5" />
+                    호수 추가
+                  </button>
+                </>
+              )}
             </div>
           </section>
 
+          {/* 호실 없이 건물 전체로 관리하는 매물 (단독·상가건물) */}
+          {selectedSiteId && siteDetail.type !== 'land' && (
+            <WholeBuildingPropertiesStrip siteId={selectedSiteId} siteType={siteDetail.type} />
+          )}
+
           {/* Units View */}
           <div className="flex-1 min-h-0 overflow-hidden">
-              {isLoadingUnits ? (
+              {siteHasNoUnits ? (
+                <div className="flex h-full items-center justify-center p-4">
+                  {structureEmptyState}
+                </div>
+              ) : isLoadingUnits ? (
                 <div className="space-y-2 p-5" aria-label={`${unitScopeLabel || '호수'} 불러오는 중`}>
                   {Array.from({ length: 10 }).map((_, i) => (
                     <Skeleton key={i} className="h-9 w-full rounded-md" />
@@ -1616,7 +1764,7 @@ function SitesPage() {
                   // 두 번 누르기 · Enter · 열기 버튼으로 호실 상세를 연다.
                   activateOnDoubleClick
                   getRowSelectionLabel={(unit) =>
-                    `${getDongName(unit.dongId) ? `${getDongName(unit.dongId)} ` : ''}${formatUnitLabel(unit)} 선택`
+                    `${getPlaceLabel(unit)} 선택`
                   }
                   layout="full-height"
                   variant="notion"
@@ -1656,7 +1804,6 @@ function SitesPage() {
                         </span>
                       );
                     }
-                    const dongName = getDongName(focusedRow.dongId);
                   const focusedOwners = getUnitOwnerContacts(focusedRow);
                   const owner = focusedOwners[0]?.contact;
                     return (
@@ -1666,7 +1813,7 @@ function SitesPage() {
                         </span>
                         <span className="text-border">|</span>
                         <span className="font-medium text-foreground">
-                          {selectedOfficeSite?.site?.name} {dongName} {focusedRow.name}호
+                          {getPlaceLabel(focusedRow, true)}
                         </span>
                         {owner && (
                           <>
@@ -1707,7 +1854,7 @@ function SitesPage() {
               ) : (
                 <ExpiryBoard
                   units={filteredUnits}
-                  getDongName={getDongName}
+                  getPlaceLabel={getPlaceLabel}
                   onUnitOpen={handleSelectUnit}
                 />
               )}
@@ -1788,118 +1935,18 @@ function SitesPage() {
       </Dialog>
 
       {/* ─── Add Unit Dialog ─────────────────────────────────── */}
-      <Dialog open={showAddUnitDialog} onOpenChange={setShowAddUnitDialog}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>호수 추가</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            {/* 동 목록을 받기 전(로딩·조회 실패)에는 '동 없음'으로 보지 않는다 — 있는 단지에 본동을 또 만들게 된다 */}
-            {!siteDetail ? (
-              isDetailError ? (
-                <div
-                  role="alert"
-                  className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-xs"
-                >
-                  <span className="min-w-0">단지 정보를 불러오지 못했습니다</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 shrink-0 px-2 text-xs"
-                    onClick={() => refetchDetail()}
-                  >
-                    다시 시도
-                  </Button>
-                </div>
-              ) : (
-                <Skeleton className="h-9 w-full rounded-md" />
-              )
-            ) : dongs.length > 0 ? (
-              <div className="space-y-1.5">
-                <Label className="text-sm">동</Label>
-                <Select value={newUnit.dongId} onValueChange={(v) => setNewUnit({ ...newUnit, dongId: v })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="동 선택 (선택)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dongs.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>
-                        {d.isPlaceholder ? '본동(단일동)' : d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
-              <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
-                등록된 동이 없습니다. 호수를 추가하면 '본동'이 자동으로 생성됩니다.
-              </p>
-            )}
-            <div className="space-y-1.5">
-              <Label className="text-sm">
-                호수 <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                placeholder="예: 301호"
-                value={newUnit.name}
-                onChange={(e) => setNewUnit({ ...newUnit, name: e.target.value })}
-                autoFocus
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-sm">전용면적 (m²)</Label>
-              <Input
-                type="number"
-                placeholder="예: 84.97"
-                value={newUnit.area}
-                onChange={(e) => setNewUnit({ ...newUnit, area: e.target.value })}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddUnit()}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-sm">방 수</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  placeholder="예: 2"
-                  value={newUnit.roomCount}
-                  onChange={(e) =>
-                    setNewUnit({ ...newUnit, roomCount: e.target.value })
-                  }
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm">욕실 수</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  placeholder="예: 1"
-                  value={newUnit.bathRoomCount}
-                  onChange={(e) =>
-                    setNewUnit({ ...newUnit, bathRoomCount: e.target.value })
-                  }
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddUnit()}
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setShowAddUnitDialog(false)}>
-              취소
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleAddUnit}
-              disabled={!newUnit.name.trim() || addUnitMutation.isPending || !siteDetail}
-            >
-              추가
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AddUnitDialog
+        open={showAddUnitDialog}
+        onOpenChange={setShowAddUnitDialog}
+        siteId={selectedSiteId}
+        siteName={siteDetail?.name ?? selectedOfficeSite?.site?.name ?? ''}
+        isSiteReady={!!siteDetail}
+        isSiteError={isDetailError}
+        onRetrySite={() => refetchDetail()}
+        dongs={dongs}
+        defaultDongId={selectedDongIds.length === 1 ? selectedDongIds[0] : undefined}
+        onAdded={handleUnitsAdded}
+      />
     </div>
   );
 }
