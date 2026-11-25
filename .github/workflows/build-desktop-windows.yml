@@ -1,16 +1,23 @@
 name: Build desktop (Windows)
 
 # Windows 설치 파일을 만들고 서명한다(Azure Artifact Signing). 손으로만 돌린다.
-# 결과는 이 실행의 Artifacts에 남는다. 업데이트 주소에 올리는 일은 여기서 하지 않는다.
+# 결과는 이 실행의 Artifacts에 남는다. "업데이트 주소에 올린다"를 켜면 이어서 Cloudflare R2에
+# 올린다 — 설치된 앱이 그 버전으로 올라간다. macOS는 Mac에서 scripts/publish-desktop.sh로 올린다.
+#
+# 올리기 전에 apps/desktop/package.json의 version을 올린다. 올라가 있는 버전보다 높지 않으면 멈춘다.
 #
 # 저장소 변수(Settings › Secrets and variables › Actions › Variables):
 #   ESTATE_ERP_WIN_PUBLISHER_NAME, ESTATE_ERP_WIN_SIGN_ENDPOINT,
 #   ESTATE_ERP_WIN_SIGN_ACCOUNT, ESTATE_ERP_WIN_SIGN_PROFILE      서명(apps/desktop/.env.example)
-#   VITE_API_BASE_URL, VITE_AUTH0_DOMAIN, VITE_AUTH0_CLIENT_ID,
-#   VITE_AUTH0_AUDIENCE, VITE_AUTH0_REALM, VITE_NAVER_MAPS_NCP_KEY_ID   앱에 들어가는 공개 값
-#   ESTATE_ERP_UPDATE_BASE_URL                                    자동 업데이트 주소(없으면 업데이트 없음)
+#   VITE_NAVER_MAPS_NCP_KEY_ID                                    지도 키(앱에 들어가는 공개 값)
+#   VITE_AUTH0_DOMAIN, VITE_AUTH0_CLIENT_ID,
+#   VITE_AUTH0_AUDIENCE, VITE_AUTH0_REALM                         정하지 않으면 코드의 기본 테넌트
+#   VITE_API_BASE_URL, ESTATE_ERP_UPDATE_BASE_URL                 정하지 않으면 아래 env의 운영 주소
+#                                                                 (scripts/publish-desktop.sh와 같은 값)
 # 저장소 비밀값(Secrets):
 #   AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET         서명 권한이 있는 Entra ID 앱
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID                   올릴 때만. R2 버킷 estaitflow-releases에
+#                                                                 쓸 수 있는 토큰(Workers R2 Storage: Edit)
 
 on:
   workflow_dispatch:
@@ -19,6 +26,10 @@ on:
         description: '서명한다 (끄면 서명 없는 시험용 설치 파일)'
         type: boolean
         default: true
+      publish:
+        description: '업데이트 주소에 올린다 (설치된 앱이 이 버전으로 올라간다)'
+        type: boolean
+        default: false
 
 concurrency:
   group: build-desktop-windows-${{ github.ref }}
@@ -34,17 +45,42 @@ jobs:
     timeout-minutes: 45
 
     env:
-      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      # 빈 값으로 두면 앱이 빈 주소를 그대로 쓴다. 정하지 않은 빌드는 운영 서버를 본다.
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://api.estaitt.com' }}
       VITE_AUTH0_DOMAIN: ${{ vars.VITE_AUTH0_DOMAIN }}
       VITE_AUTH0_CLIENT_ID: ${{ vars.VITE_AUTH0_CLIENT_ID }}
       VITE_AUTH0_AUDIENCE: ${{ vars.VITE_AUTH0_AUDIENCE }}
       VITE_AUTH0_REALM: ${{ vars.VITE_AUTH0_REALM }}
       VITE_NAVER_MAPS_NCP_KEY_ID: ${{ vars.VITE_NAVER_MAPS_NCP_KEY_ID }}
-      ESTATE_ERP_UPDATE_BASE_URL: ${{ vars.ESTATE_ERP_UPDATE_BASE_URL }}
+      ESTATE_ERP_UPDATE_BASE_URL: ${{ vars.ESTATE_ERP_UPDATE_BASE_URL || 'https://releases.estaitt.com/desktop' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # 올리기로 한 실행에서 값이 빠져 있으면, 20분 걸려 만든 뒤가 아니라 지금 멈춘다.
+      - name: Check publish settings
+        if: ${{ inputs.publish }}
+        shell: pwsh
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          $names = 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'VITE_NAVER_MAPS_NCP_KEY_ID'
+          $missing = $names | Where-Object { -not [Environment]::GetEnvironmentVariable($_) }
+          if ($missing) {
+            Write-Error "Missing publish settings: $($missing -join ', ')"
+            exit 1
+          }
+
+      # 서명한 버전이 나간 뒤에 서명 없는 버전을 올리면 설치된 앱이 그 업데이트를 거절한다.
+      # 서명 값을 정해 둔 저장소에서는 서명 없는 설치 파일을 올리지 않는다.
+      - name: Refuse an unsigned publish once signing is set up
+        if: ${{ inputs.publish && !inputs.sign && vars.ESTATE_ERP_WIN_PUBLISHER_NAME != '' }}
+        shell: pwsh
+        run: |
+          Write-Error 'Signing is set up for this repository. Publish a signed build (turn "sign" on).'
+          exit 1
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -87,7 +123,7 @@ jobs:
             exit 1
           }
 
-      # --publish never: CI에서는 electron-builder가 스스로 올리려 한다. 올리는 것은 따로 한다.
+      # --publish never: CI에서는 electron-builder가 스스로 올리려 한다. 올리는 것은 아래 publish가 한다.
       - name: Build signed installer
         if: ${{ inputs.sign }}
         env:
@@ -141,3 +177,73 @@ jobs:
             apps/desktop/dist/latest.yml
           if-no-files-found: error
           retention-days: 14
+
+  # 만든 설치 파일을 업데이트 주소에 올린다. 올리는 권한(Cloudflare 토큰)은 이 일에만 준다 —
+  # 패키지를 설치하고 빌드하는 위의 일은 그 토큰을 보지 못한다.
+  publish:
+    name: Publish to update feed
+    needs: build
+    if: ${{ inputs.publish }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 올리는 일은 브랜치와 상관없이 한 번에 하나만 한다. 둘이 함께 돌면 둘 다 버전 검사를
+    # 지난 뒤에 낮은 버전의 목록이 나중에 올라갈 수 있다.
+    concurrency:
+      group: publish-desktop-windows
+      cancel-in-progress: false
+
+    env:
+      ESTATE_ERP_UPDATE_BASE_URL: ${{ vars.ESTATE_ERP_UPDATE_BASE_URL || 'https://releases.estaitt.com/desktop' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Download installer
+        uses: actions/download-artifact@v4
+        with:
+          name: estaitflow-windows-${{ inputs.sign && 'signed' || 'unsigned' }}-${{ github.sha }}
+          path: apps/desktop/dist
+
+      # 올라가 있는 버전보다 높은 버전만 올린다.
+      # - 같은 버전: 설치 파일은 이름에 버전이 들어 있고 오래 캐시된다. 다시 올리면 캐시에 남은
+      #   옛 파일과 새 목록의 해시가 어긋나 업데이트가 실패한다.
+      # - 낮은 버전(옛 커밋에서 돌린 실행): 목록이 옛 버전으로 돌아가, 새로 설치한 사람은 옛 버전을
+      #   받고 이미 올라간 앱은 그 뒤의 수정을 받지 못한다. 되돌릴 때도 더 높은 번호로 낸다.
+      # 올리다 만 버전(목록이 아직 옛 버전)은 다시 올릴 수 있다.
+      - name: Check the version is newer than the published one
+        run: |
+          version="$(sed -n 's/^version: *//p' apps/desktop/dist/latest.yml | tr -d '\r')"
+          status="$(curl -sS -o published.yml -w '%{http_code}' "$ESTATE_ERP_UPDATE_BASE_URL/latest.yml")"
+          case "$status" in
+            404) published="" ;;
+            200) published="$(sed -n 's/^version: *//p' published.yml | tr -d '\r')" ;;
+            *) echo "::error::Could not read the update feed (HTTP $status)"; exit 1 ;;
+          esac
+          VERSION="$version" PUBLISHED="$published" node -e '
+            const plain = /^\d+\.\d+\.\d+$/;
+            const { VERSION: version, PUBLISHED: published } = process.env;
+            const stop = (message) => { console.log(`::error::${message}`); process.exit(1); };
+            if (!plain.test(version)) stop(`The built version "${version}" is not a plain x.y.z version`);
+            if (!published) { console.log(`No Windows version published yet. Publishing ${version}.`); process.exit(0); }
+            if (!plain.test(published)) stop(`The published version "${published}" is not a plain x.y.z version`);
+            const a = version.split(".").map(Number);
+            const b = published.split(".").map(Number);
+            const diff = a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+            if (diff <= 0) stop(`Version ${version} is not newer than the published ${published}. Raise the version in apps/desktop/package.json first.`);
+            console.log(`Published: ${published}. Publishing ${version}.`);
+          '
+
+      - name: Install wrangler
+        run: npm install --global wrangler@4
+
+      - name: Upload to the update feed
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: ./scripts/publish-desktop.sh --upload

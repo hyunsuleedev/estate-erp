@@ -12,8 +12,9 @@
 #      이미 설치된 앱은 업데이트로 보지 않는다.
 #
 # macOS는 서명한 앱만 자동 업데이트가 된다. ESTATE_ERP_MAC_IDENTITY(서명 인증서 이름)를 주고 실행한다.
-# Windows 설치 파일은 Windows에서 만든다(.github/workflows/build-desktop-windows.yml) — 거기서 만든 dist를
-# 이 스크립트의 --upload로 올리면 된다. Cloudflare에는 wrangler로 올리므로 `wrangler login`이 돼 있어야 한다.
+# Windows 설치 파일은 Windows에서 만든다(.github/workflows/build-desktop-windows.yml). 그 워크플로가
+# "업데이트 주소에 올린다"를 켠 실행에서 이 스크립트의 --upload로 올린다. Cloudflare에는 wrangler로
+# 올리므로 `wrangler login`이 돼 있거나 CLOUDFLARE_API_TOKEN · CLOUDFLARE_ACCOUNT_ID가 있어야 한다.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
