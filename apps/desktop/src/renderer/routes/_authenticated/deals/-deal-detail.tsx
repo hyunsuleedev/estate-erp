@@ -22,7 +22,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Contact, Contract, Deal } from '@estate-erp/api-client';
+import type { Contact, DealContract as Contract, Deal } from '@estate-erp/api-client';
 import { normalizeDealStage } from '@estate-erp/shared';
 import { api } from '@/lib/api';
 import { useAuth } from '@/providers/auth-provider';

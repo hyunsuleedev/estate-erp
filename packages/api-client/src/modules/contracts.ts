@@ -264,6 +264,98 @@ export interface Contract {
   sellerContact?: Contact | null;
 }
 
+/** 계약 목록의 문서 한 건: 제목 · 상태 · 종류. 본문(metadata)과 서식 정의는 상세에 있다 */
+export interface ContractListDocument
+  extends Pick<
+    ContractDocument,
+    | 'id'
+    | 'contractId'
+    | 'templateId'
+    | 'type'
+    | 'category'
+    | 'title'
+    | 'kind'
+    | 'sortOrder'
+    | 'kindOrder'
+    | 'status'
+    | 'fileUrl'
+    | 'createdAt'
+    | 'updatedAt'
+  > {
+  template: Pick<ContractDocumentTemplate, 'id' | 'code' | 'title' | 'category'> | null;
+}
+
+/** 목록 줄의 당사자: 이름과 대표 번호 */
+export interface ContractListContact {
+  id: string;
+  name: string;
+  phone: string | null;
+}
+
+/**
+ * 계약 목록(GET /contracts)의 한 줄: 금액 · 날짜 · 상태, 누구의 어느 집인지, 문서의 제목과 상태.
+ * 문서 본문 · 서식 정의 · 당사자 상세는 findOne(Contract)에 있다.
+ */
+export interface ContractListItem
+  extends Pick<
+    Contract,
+    | 'id'
+    | 'officeId'
+    | 'dealId'
+    | 'transactionType'
+    | 'status'
+    | 'totalPrice'
+    | 'monthlyRent'
+    | 'contractDate'
+    | 'statedDeposit'
+    | 'statedInterimPayment'
+    | 'statedInterimDate'
+    | 'statedBalance'
+    | 'statedBalanceDate'
+    | 'moveInDate'
+    | 'leaseStartDate'
+    | 'leaseEndDate'
+    | 'memo'
+    | 'attachments'
+    | 'createdAt'
+    | 'updatedAt'
+    | 'sellerContactId'
+    | 'buyerContactId'
+  > {
+  sellerContact: ContractListContact | null;
+  buyerContact: ContractListContact | null;
+  documents: ContractListDocument[];
+  documentCount: number;
+  missingDocumentCount: number;
+  /** 이 거래유형에 필요한 서식의 제목 */
+  requiredDocuments: string[];
+  /** 그중 아직 없는 서식의 제목 */
+  missingDocuments: string[];
+  transactionReportStatus: ContractDocumentStatus | 'none' | string;
+  deal: {
+    id: string;
+    stage: string;
+    isCancelled: boolean;
+    transactionType: string;
+    isJointBrokerage: boolean;
+    listing: {
+      id: string;
+      property: {
+        id: string;
+        site: { id: string; name: string; type: string } | null;
+        unit: {
+          id: string;
+          name: string | null;
+          floor: number | null;
+          floorEnd: number | null;
+          floorLabel: string | null;
+          dong: { id: string; name: string; isPlaceholder: boolean } | null;
+        } | null;
+      } | null;
+    } | null;
+  } | null;
+}
+
 /**
  * 문서 저장 응답. 계약서 문서를 저장하면 서버가 그 금액·날짜로 계약서 요약을 맞추고,
  * 맞춘 칸(updated)과 읽지 못해 그대로 둔 칸(unreadable)의 이름을 알려 준다.
@@ -524,8 +616,9 @@ export function createContractsApi(request: RequestFn) {
      * 계약 목록 — 레거시 DMLS001Q01 필터 지원. 필터 없이 호출하면
      * 기존과 동일하게 전체 계약 배열을 반환한다 (하위호환).
      */
+    /** 계약 목록(배열). 한 줄은 가벼운 모양이다 — 문서 본문 · 서식 정의 · 당사자 상세는 findOne. */
     findAll: (filter?: ContractsFilter) =>
-      request<Contract[]>('/contracts', {
+      request<ContractListItem[]>('/contracts', {
         params: buildContractsParams(filter),
       }),
     /**
@@ -533,7 +626,7 @@ export function createContractsApi(request: RequestFn) {
      * page 기본 1, limit 기본 20 (서버 최대 100).
      */
     findAllPaginated: (filter?: ContractsPaginatedFilter) =>
-      request<PaginatedResponse<Contract>>('/contracts', {
+      request<PaginatedResponse<ContractListItem>>('/contracts', {
         params: {
           ...buildContractsParams(filter),
           page: filter?.page ?? 1,

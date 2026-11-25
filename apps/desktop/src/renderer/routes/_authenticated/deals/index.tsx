@@ -123,19 +123,6 @@ function DealsPage() {
     if (deepLinkDealId) setSelectedDealId(deepLinkDealId);
   }, [deepLinkDealId]);
 
-  const contractsQuery = useQuery({
-    queryKey: ['contracts'],
-    queryFn: () => api.contracts.findAll(),
-  });
-  const contractByDealId = useMemo(
-    () =>
-      new Map(
-        (contractsQuery.data ?? [])
-          .filter((contract) => contract.dealId !== null)
-          .map((contract) => [contract.dealId as string, contract]),
-      ),
-    [contractsQuery.data],
-  );
 
   const filteredDeals = useMemo(() => {
     const query = deferredSearch.trim().toLowerCase();
@@ -146,8 +133,8 @@ function DealsPage() {
       if (stageFilter && deal.stage !== stageFilter) return false;
       if (jointFilter === 'joint' && !deal.isJointBrokerage) return false;
       if (jointFilter === 'solo' && deal.isJointBrokerage) return false;
-      if (contractFilter === 'has' && !contractByDealId.has(deal.id)) return false;
-      if (contractFilter === 'none' && contractByDealId.has(deal.id)) return false;
+      if (contractFilter === 'has' && !deal.contract) return false;
+      if (contractFilter === 'none' && deal.contract) return false;
       if (healthFilter && getDealPipelineHealth(deal, referenceDate).state !== healthFilter) return false;
 
       if (!query) return true;
@@ -176,7 +163,6 @@ function DealsPage() {
     stageFilter,
     jointFilter,
     contractFilter,
-    contractByDealId,
     healthFilter,
     referenceDate,
   ]);
@@ -244,7 +230,6 @@ function DealsPage() {
     moveStage,
     dialogs: dealDialogs,
   } = useDealActions({
-    contractByDealId,
     onOpenDeal: openDealInspector,
     onDeleted: (deal) => {
       if (selectedDealId === deal.id) setSelectedDealId(null);
@@ -531,7 +516,7 @@ function DealsPage() {
       {selectedDeal ? (
         <DealInspector
           deal={selectedDeal}
-          contract={contractByDealId.get(selectedDeal.id) ?? null}
+          contract={selectedDeal.contract ?? null}
           closing={isInspectorClosing}
           animate={inspectorMotion}
           referenceDate={referenceDate}

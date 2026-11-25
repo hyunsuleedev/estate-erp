@@ -3,7 +3,7 @@
  * 계약마다 카드 한 장: 무엇을 얼마나 작성했고 무엇이 빠졌는지가 먼저 보인다.
  * 누르거나 Enter를 치면 옆 상세 패널이 열린다. 문서 편집 탭은 그 패널의 확장 버튼으로 간다.
  */
-import type { Contract } from '@estate-erp/api-client';
+import type { ContractListItem as Contract } from '@estate-erp/api-client';
 import { ContractTransactionTypeBadge, transactionReportStatusMeta } from './-contract-shared';
 import { getContractTitle, selectTagClassName, statusPillClassName } from './-document-list-table';
 import { cn } from '@/lib/utils';
@@ -45,7 +45,7 @@ export function DocumentGallery({
     <div data-contract-gallery className="grid grid-cols-[repeat(auto-fill,minmax(264px,1fr))] gap-4">
       {contracts.map((contract) => {
         const missingCount = contract.missingDocumentCount ?? 0;
-        const requiredCount = contract.requiredDocumentTemplates?.length ?? 0;
+        const requiredCount = contract.requiredDocuments.length;
         const reportStatus = contract.transactionReportStatus ?? 'none';
         const report = transactionReportStatusMeta[reportStatus];
         const selected = contract.id === selectedId;

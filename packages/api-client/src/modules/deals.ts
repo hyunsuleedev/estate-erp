@@ -26,6 +26,25 @@ export interface DealPayment {
   updatedAt: string;
 }
 
+/** 거래에 실려 오는 계약서 요약: 상태 · 금액 · 날짜 */
+export interface DealContract {
+  id: string;
+  dealId: string | null;
+  status: string;
+  transactionType: string;
+  totalPrice: number;
+  monthlyRent: number | null;
+  contractDate: string | null;
+  statedDeposit: number | null;
+  statedInterimPayment: number | null;
+  statedInterimDate: string | null;
+  statedBalance: number | null;
+  statedBalanceDate: string | null;
+  moveInDate: string | null;
+  leaseStartDate: string | null;
+  leaseEndDate: string | null;
+}
+
 export interface Deal {
   id: string;
   officeId: string;
@@ -90,6 +109,8 @@ export interface Deal {
     user: { id: string; name: string };
   }>;
   payments?: DealPayment[];
+  /** 이 거래의 계약서 요약 (없으면 null). 문서와 당사자는 계약 상세에 있다 */
+  contract?: DealContract | null;
   /// 수수료 청구. 목록·상세 응답에 분배와 함께 포함된다.
   /// adjustments 에는 승인을 기다리는 조정만 실린다 (DealPendingAdjustment 모양, 요청한 사람 이름 포함).
   commissionPayments?: CommissionPayment[];

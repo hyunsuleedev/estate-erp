@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ApiError, type BuyerRequirement, type Contract, type Deal } from '@estate-erp/api-client';
+import { ApiError, type BuyerRequirement, type Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-error';
 import { invalidateListingDerivedCaches } from '@/lib/listing-cache';
@@ -49,12 +49,10 @@ function getErrorMessage(error: unknown, fallback = '요청을 처리하지 못�
  * 반환한 dialogs를 화면 어딘가에 그대로 그려야 한다.
  */
 export function useDealActions({
-  contractByDealId,
   onOpenDeal,
   onDeleted,
   onRestored,
 }: {
-  contractByDealId: Map<string, Contract>;
   /** 계약서가 없어 단계 변경이 막혔을 때 "거래 열기"로 갈 곳 */
   onOpenDeal: (dealId: string) => void;
   onDeleted?: (deal: Deal) => void;
@@ -76,7 +74,7 @@ export function useDealActions({
   // 계약서 없이 중도금/잔금 이후로 넘기려 할 때: 확인 창 대신 계약서 작성 창을 열고, 만들면 그 단계로 넘긴다
   const [contractFirst, setContractFirst] = useState<{ deal: Deal; stage: string } | null>(null);
   const needsContractFirst = (deal: Deal, stage: string) =>
-    CONTRACT_REQUIRED_STAGES.has(stage) && !contractByDealId.has(deal.id);
+    CONTRACT_REQUIRED_STAGES.has(stage) && !deal.contract;
   // 잔금 완료·정산 종료로 넘긴 거래: 손님의 희망 조건을 완료로 바꿀지 묻는다 (자동으로 바꾸지 않는다)
   const [requirementPromptDeal, setRequirementPromptDeal] = useState<Deal | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Deal | null>(null);
@@ -132,7 +130,7 @@ export function useDealActions({
         error instanceof ApiError &&
         error.statusCode === 400 &&
         CONTRACT_REQUIRED_STAGES.has(stage) &&
-        !contractByDealId.has(deal.id);
+        !deal.contract;
       if (needsContract) {
         toast.error('계약서를 작성해야 중도금/잔금 이후 단계로 변경할 수 있습니다.', {
           description: '본계약 거래 상세의 계약 요약에서 계약서를 먼저 작성하세요.',
@@ -222,7 +220,7 @@ export function useDealActions({
             ? `'${getDealTitle(pendingStage.deal)}' 거래를 '${getStatusMeta('dealStage', pendingStage.stage).label}' 단계로 변경할까요?${
                 pendingStage.stage === 'closed' ? ' 정산 종료된 거래는 진행 보드에서 제외됩니다.' : ''
               }${
-                CONTRACT_REQUIRED_STAGES.has(pendingStage.stage) && !contractByDealId.has(pendingStage.deal.id)
+                CONTRACT_REQUIRED_STAGES.has(pendingStage.stage) && !pendingStage.deal.contract
                   ? ' 이 단계로 이동하려면 본계약 계약서가 필요합니다. 계약서를 먼저 작성해 주세요.'
                   : ''
               }${describeUnfinishedMoney(pendingStage.deal, pendingStage.stage)}`

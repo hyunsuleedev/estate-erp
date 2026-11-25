@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { CONTRACT_TRANSACTION_TYPE_LABELS } from "@estate-erp/shared";
-import type { Contract, Deal } from "@estate-erp/api-client";
+import type { ContractListItem as Contract, Deal } from "@estate-erp/api-client";
 
 import { StatusBadge } from "@/components/domain";
 import { Button } from "@/components/ui/button";

@@ -352,6 +352,8 @@ export function ContractPartiesCard({ contract }: { contract: Contract }) {
       setError(null);
       toast.success('계약 당사자를 저장했습니다.');
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      // 거래에 계약서 요약이 실려 온다 — 계약서가 바뀌면 거래도 다시 받는다
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
       queryClient.invalidateQueries({ queryKey: ['contract', contract.id] });
     },
     onError: (mutationError) => {

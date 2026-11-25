@@ -13,7 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ChevronDown, Copy, ExternalLink, FilePlus2, FileText, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Contract } from '@estate-erp/api-client';
+import type { ContractListItem as Contract } from '@estate-erp/api-client';
 import {
   ContractTransactionTypeBadge,
   documentStatusMeta,

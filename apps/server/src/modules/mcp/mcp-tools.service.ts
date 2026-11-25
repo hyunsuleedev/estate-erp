@@ -1988,8 +1988,11 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     // 계약 (Contracts)
     // ═══════════════════════════════════════════════════════════
-    this.add('find_contracts', '계약 목록.', obj({}), async (_a, c) =>
-      this.contracts.findAll(c.officeId),
+    this.add(
+      'find_contracts',
+      '계약 목록: 금액 · 날짜 · 상태 · 당사자 이름 · 집 · 문서의 제목과 상태. 문서 내용과 당사자 상세는 get_contract로 봅니다.',
+      obj({}),
+      async (_a, c) => this.contracts.findAll(c.officeId),
     );
 
     this.add(

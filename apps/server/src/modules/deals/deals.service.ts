@@ -101,6 +101,27 @@ const dealInclude = {
       },
     },
   },
+  // 거래와 계약은 1:1이다. 화면이 "이 거래에 계약서가 있는지 · 계약금과 잔금이 얼마이고 언제인지"를 보려고
+  // 사무소의 계약 전체를 따로 받아 짝을 맞추던 것을, 거래에 그 계약의 요약을 실어 없앤다.
+  contract: {
+    select: {
+      id: true,
+      dealId: true,
+      status: true,
+      transactionType: true,
+      totalPrice: true,
+      monthlyRent: true,
+      contractDate: true,
+      statedDeposit: true,
+      statedInterimPayment: true,
+      statedInterimDate: true,
+      statedBalance: true,
+      statedBalanceDate: true,
+      moveInDate: true,
+      leaseStartDate: true,
+      leaseEndDate: true,
+    },
+  },
 } satisfies Prisma.DealInclude;
 
 type DealWithRelations = Prisma.DealGetPayload<{ include: typeof dealInclude }>;

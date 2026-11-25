@@ -25,7 +25,7 @@ import {
   Type,
   User,
 } from 'lucide-react';
-import type { Contract, Deal } from '@estate-erp/api-client';
+import type { ContractListItem as Contract, Deal } from '@estate-erp/api-client';
 import {
   ContractTransactionTypeBadge,
   getContractPropertyLabel,

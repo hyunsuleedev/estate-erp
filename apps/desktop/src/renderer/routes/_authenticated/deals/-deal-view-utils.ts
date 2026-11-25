@@ -1,4 +1,4 @@
-import type { Contract, Deal } from '@estate-erp/api-client';
+import type { DealContract as Contract, Deal } from '@estate-erp/api-client';
 import { normalizeDealStage, formatPlaceLabel } from '@estate-erp/shared';
 import { formatMoney, formatRent } from '@/lib/format';
 

@@ -12,7 +12,7 @@ import {
   decryptContractPartyField,
   encryptContractPartyField,
 } from './contract-party-crypto.util';
-import { normalizePhone, withPrimaryPhone } from '../contacts/contact-phone.utils';
+import { getPrimaryPhone, normalizePhone, withPrimaryPhone } from '../contacts/contact-phone.utils';
 
 const CONTRACT_TRANSACTION_TYPES = new Set<string>(Object.values(ContractTransactionType));
 
@@ -157,6 +157,96 @@ const contractInclude = {
     },
   },
 } satisfies Prisma.ContractInclude;
+
+/**
+ * 계약 목록(GET /contracts)의 한 줄: 금액 · 날짜 · 상태, 누구의 어느 집인지, 문서의 제목과 상태.
+ * 목록이 상세와 같은 include를 쓰던 때에는 계약마다 문서 본문 · 서식 정의 · 필수 서식 목록이 붙어
+ * 한 건에 48KB였고(그중 계약 정보는 10%), 날짜 몇 칸을 보려는 화면들까지 그것을 통째로 받았다.
+ * 문서 본문 · 서식 정의 · 당사자 상세는 상세(findOne)에만 있다.
+ */
+const contractListSelect = {
+  id: true,
+  officeId: true,
+  dealId: true,
+  transactionType: true,
+  status: true,
+  totalPrice: true,
+  monthlyRent: true,
+  contractDate: true,
+  statedDeposit: true,
+  statedInterimPayment: true,
+  statedInterimDate: true,
+  statedBalance: true,
+  statedBalanceDate: true,
+  moveInDate: true,
+  leaseStartDate: true,
+  leaseEndDate: true,
+  memo: true,
+  attachments: true,
+  createdAt: true,
+  updatedAt: true,
+  parties: {
+    where: { parentId: null, side: { in: ['one', 'two'] } },
+    select: {
+      side: true,
+      subId: true,
+      contactId: true,
+      contact: { select: { id: true, name: true, phones: contactWithPhonesInclude.phones } },
+    },
+    orderBy: { subId: 'asc' },
+  },
+  documents: {
+    select: {
+      id: true,
+      contractId: true,
+      templateId: true,
+      type: true,
+      category: true,
+      title: true,
+      kind: true,
+      sortOrder: true,
+      kindOrder: true,
+      status: true,
+      fileUrl: true,
+      createdAt: true,
+      updatedAt: true,
+      template: { select: { id: true, code: true, title: true, category: true } },
+    },
+    orderBy: [{ sortOrder: 'asc' }, { kindOrder: 'asc' }, { createdAt: 'asc' }],
+  },
+  deal: {
+    select: {
+      id: true,
+      stage: true,
+      isCancelled: true,
+      transactionType: true,
+      isJointBrokerage: true,
+      listing: {
+        select: {
+          id: true,
+          property: {
+            select: {
+              id: true,
+              site: { select: { id: true, name: true, type: true } },
+              unit: {
+                select: {
+                  id: true,
+                  name: true,
+                  floor: true,
+                  floorEnd: true,
+                  floorLabel: true,
+                  dong: { select: { id: true, name: true, isPlaceholder: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+} satisfies Prisma.ContractSelect;
+
+type ContractListRow = Prisma.ContractGetPayload<{ select: typeof contractListSelect }>;
 
 type ContractWithRelations = Prisma.ContractGetPayload<{
   include: typeof contractInclude;
@@ -390,23 +480,24 @@ export class ContractsService {
 
   private readonly contractInclude = contractInclude;
 
+  /**
+   * 계약 목록. 한 줄은 presentListRow가 만든 가벼운 모양이다(상세는 findOne).
+   * page · limit을 주면 { items, pagination }, 안 주면 배열을 돌려준다.
+   */
   async findAll(officeId: string, query: ContractSearchQuery = {}) {
     const where = this.buildContractWhere(officeId, query);
     const templateCache = new Map<string, ContractDocumentTemplateWithRelations[]>();
+    const present = (contracts: ContractListRow[]) =>
+      Promise.all(contracts.map((contract) => this.presentListRow(contract, templateCache)));
 
-    // page/limit 미지정 시 기존과 동일하게 배열 반환 (api-client 하위호환)
     const usePagination = query.page !== undefined || query.limit !== undefined;
-
     if (!usePagination) {
       const contracts = await this.prisma.contract.findMany({
         where,
-        include: this.contractInclude,
+        select: contractListSelect,
         orderBy: { updatedAt: 'desc' },
       });
-
-      return Promise.all(
-        contracts.map((contract) => this.enrichContract(contract, templateCache)),
-      );
+      return present(contracts);
     }
 
     const page = Math.max(1, query.page || 1);
@@ -416,7 +507,7 @@ export class ContractsService {
     const [contracts, total] = await Promise.all([
       this.prisma.contract.findMany({
         where,
-        include: this.contractInclude,
+        select: contractListSelect,
         orderBy: { updatedAt: 'desc' },
         skip,
         take: limit,
@@ -424,12 +515,8 @@ export class ContractsService {
       this.prisma.contract.count({ where }),
     ]);
 
-    const items = await Promise.all(
-      contracts.map((contract) => this.enrichContract(contract, templateCache)),
-    );
-
     return {
-      items,
+      items: await present(contracts),
       pagination: {
         page,
         limit,
@@ -437,6 +524,69 @@ export class ContractsService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /**
+   * 목록의 한 줄. 대표 당사자와 빠진 서식은 상세(enrichContract)와 같은 기준으로 정한다:
+   * 매도(one) · 매수(two)의 첫 사람, 취소하지 않은 문서로 채워지지 않은 필수 서식.
+   * 필수 서식은 제목만 싣는다(서식 정의는 /contracts/document-templates에 있다).
+   */
+  private async presentListRow(
+    { parties, ...contract }: ContractListRow,
+    templateCache: Map<string, ContractDocumentTemplateWithRelations[]>,
+  ) {
+    const activeDocuments = contract.documents.filter((document) => document.status !== 'cancelled');
+    const requiredTemplates = await this.getRequiredDocumentTemplates(
+      contract.officeId,
+      contract.transactionType,
+      templateCache,
+    );
+    const missingTemplates = this.missingTemplates(requiredTemplates, activeDocuments);
+    const seller = parties.find((party) => party.side === 'one') ?? null;
+    const buyer = parties.find((party) => party.side === 'two') ?? null;
+    const contactOf = (party: typeof seller) => {
+      if (!party?.contact) return null;
+      return { id: party.contact.id, name: party.contact.name, phone: getPrimaryPhone(party.contact) };
+    };
+
+    return {
+      ...contract,
+      sellerContactId: seller?.contactId ?? null,
+      buyerContactId: buyer?.contactId ?? null,
+      sellerContact: contactOf(seller),
+      buyerContact: contactOf(buyer),
+      documentCount: activeDocuments.length,
+      missingDocumentCount: missingTemplates.length,
+      requiredDocuments: requiredTemplates.map((template) => template.title),
+      missingDocuments: missingTemplates.map((template) => template.title),
+      transactionReportStatus: this.rollupTransactionReportStatus(activeDocuments),
+    };
+  }
+
+  /** 필수 서식 가운데 아직 문서로 채워지지 않은 것 (취소한 문서는 빼고 넘긴다) */
+  private missingTemplates<T extends { id: string; code: string; title: string }>(
+    requiredTemplates: T[],
+    activeDocuments: Array<{ templateId: string | null; title: string; template?: { code: string } | null }>,
+  ): T[] {
+    const fulfilledTemplateIds = new Set(
+      activeDocuments
+        .map((document) => document.templateId)
+        .filter((templateId): templateId is string => Boolean(templateId)),
+    );
+    const fulfilledTemplateCodes = new Set(
+      activeDocuments
+        .map((document) => document.template?.code)
+        .filter((code): code is string => Boolean(code)),
+    );
+    const fulfilledTitles = new Set(
+      activeDocuments.filter((document) => !document.templateId).map((document) => document.title),
+    );
+    return requiredTemplates.filter(
+      (template) =>
+        !fulfilledTemplateIds.has(template.id) &&
+        !fulfilledTemplateCodes.has(template.code) &&
+        !fulfilledTitles.has(template.title),
+    );
   }
 
   async findOne(id: string, officeId: string) {
@@ -2073,25 +2223,7 @@ export class ContractsService {
       contract.transactionType,
       templateCache,
     );
-    const fulfilledTemplateIds = new Set(
-      activeDocuments
-        .map((document) => document.templateId)
-        .filter((templateId): templateId is string => Boolean(templateId)),
-    );
-    const fulfilledTemplateCodes = new Set(
-      activeDocuments
-        .map((document) => document.template?.code)
-        .filter((code): code is string => Boolean(code)),
-    );
-    const fulfilledTitles = new Set(
-      activeDocuments.filter((document) => !document.templateId).map((document) => document.title),
-    );
-    const missingTemplates = requiredTemplates.filter(
-      (template) =>
-        !fulfilledTemplateIds.has(template.id) &&
-        !fulfilledTemplateCodes.has(template.code) &&
-        !fulfilledTitles.has(template.title),
-    );
+    const missingTemplates = this.missingTemplates(requiredTemplates, activeDocuments);
 
     // 당사자: side(one→two→office) → subId 정렬, 대리인은 parentId 로 중첩
     const parties = this.buildPartiesTree(

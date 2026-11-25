@@ -177,7 +177,7 @@ function ContractsPage() {
     useState<DocumentEditorForm>(emptyDocumentEditorForm());
   /** 에디터 오픈 시점 스냅샷 — §3.1 dirty tracking (미저장 변경 감지) */
   const [documentEditorBaseline, setDocumentEditorBaseline] = useState<string | null>(null);
-  const [deleteContractTarget, setDeleteContractTarget] = useState<Contract | null>(null);
+  const [deleteContractTarget, setDeleteContractTarget] = useState<Pick<Contract, 'id'> | null>(null);
   const [createForm, setCreateForm] = useState<CreateContractDto>({
     dealId: '',
     transactionType: 'sale',
@@ -230,7 +230,7 @@ function ContractsPage() {
 
   // 지표 + "이미 계약된 거래 제외" 계산용 전체 목록 (필터 무관)
   const allContractsQuery = useQuery({
-    queryKey: ['contracts'],
+    queryKey: ['contracts', 'all'],
     queryFn: () => api.contracts.findAll(),
   });
   const allContracts = useMemo(() => allContractsQuery.data ?? [], [allContractsQuery.data]);
@@ -398,6 +398,8 @@ function ContractsPage() {
     },
     onSuccess: ({ contractId, document, refreshed, reused, spec, template }) => {
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      // 거래에 계약서 요약이 실려 온다 — 계약서가 바뀌면 거래도 다시 받는다
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
       queryClient.setQueryData(['contract', contractId], refreshed);
 
       const refreshedDocument =
@@ -444,6 +446,8 @@ function ContractsPage() {
           : '계약서를 등록했습니다.',
       );
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      // 거래에 계약서 요약이 실려 온다 — 계약서가 바뀌면 거래도 다시 받는다
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
       setSelectedContractId(created.id);
       if (formSpec) {
         applyFormMutation.mutate({ contractId: created.id, spec: formSpec });
@@ -564,6 +568,8 @@ function ContractsPage() {
       toast.success('계약서를 삭제했습니다.');
       setDeleteContractTarget(null);
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      // 거래에 계약서 요약이 실려 온다 — 계약서가 바뀌면 거래도 다시 받는다
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
       queryClient.removeQueries({ queryKey: ['contract', contractId] });
       // 지운 계약이 상세 패널에 열려 있었으면 닫는다
       if (focusedContractId === contractId) finishClosingPeek();
@@ -585,6 +591,8 @@ function ContractsPage() {
     onSuccess: (copied) => {
       toast.success('계약 문서 사본을 추가했습니다.');
       queryClient.invalidateQueries({ queryKey: ['contracts'] });
+      // 거래에 계약서 요약이 실려 온다 — 계약서가 바뀌면 거래도 다시 받는다
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
       queryClient.invalidateQueries({ queryKey: ['contract', copied.id] });
       setSelectedContractId(copied.id);
       openContractEditorTab(copied.id);

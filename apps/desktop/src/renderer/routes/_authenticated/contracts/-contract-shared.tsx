@@ -7,6 +7,7 @@ import type {
   ContractDocument,
   ContractDocumentTemplate,
   Deal,
+  ContractListItem,
 } from '@estate-erp/api-client';
 import {
   CONTRACT_TRANSACTION_TYPE_LABELS,
@@ -175,8 +176,11 @@ export function getContractProperty(deal: Deal | null | undefined) {
 
 /** "래미안고덕 101동 1503호" (placeholder 동은 생략) */
 /** "고덕그라시움 105동 1003호" — 화면 표기 기준의 공용 함수(formatPlaceLabel)로 만든다 */
-export function getContractPropertyLabel(deal: Deal | null | undefined): string {
-  const property = getContractProperty(deal);
+export function getContractPropertyLabel(
+  deal: Deal | ContractListItem['deal'] | null | undefined,
+): string {
+  // 목록 줄의 거래에는 집이 listing 아래에만 있다
+  const property = deal && 'property' in deal ? getContractProperty(deal) : deal?.listing?.property;
   if (!property) return '';
   const dong = property.unit?.dong;
   return formatPlaceLabel({
@@ -365,7 +369,7 @@ export function findDocumentByTemplate(
 }
 
 /** PDF/파일이 연결된 문서가 하나라도 있는지 (취소 문서 제외) */
-export function hasContractFile(contract: Contract): boolean {
+export function hasContractFile(contract: Contract | ContractListItem): boolean {
   if ((contract.attachments ?? []).length > 0) return true;
   return (contract.documents ?? []).some(
     (document) => document.status !== 'cancelled' && !!document.fileUrl,
@@ -373,7 +377,9 @@ export function hasContractFile(contract: Contract): boolean {
 }
 
 /** 문서 목록 정렬 — sortOrder(묶음 내 탭 순서) → kindOrder(동일 서식 반복 순번) */
-export function sortContractDocuments(documents: ContractDocument[]): ContractDocument[] {
+export function sortContractDocuments<T extends Pick<ContractDocument, 'sortOrder' | 'kindOrder' | 'createdAt'>>(
+  documents: T[],
+): T[] {
   return [...documents].sort(
     (a, b) =>
       a.sortOrder - b.sortOrder ||

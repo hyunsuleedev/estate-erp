@@ -28,26 +28,12 @@ function DealDetailPage() {
     queryKey: ['deals', 'detail', id],
     queryFn: () => api.deals.findOne(id),
   });
-  const contractsQuery = useQuery({
-    queryKey: ['contracts'],
-    queryFn: () => api.contracts.findAll(),
-  });
   const deal = dealsQuery.data ?? null;
   // 탭 제목: "고덕그라시움 102동 2203호 매매" (매물 없는 거래는 당사자 이름)
   useTabTitle(deal ? getDealTabTitle(deal) : null);
-  const contractByDealId = useMemo(
-    () =>
-      new Map(
-        (contractsQuery.data ?? [])
-          .filter((contract) => contract.dealId !== null)
-          .map((contract) => [contract.dealId as string, contract]),
-      ),
-    [contractsQuery.data],
-  );
 
   const goToList = () => void navigate({ to: '/deals' });
   const { actions: dealActions, dialogs } = useDealActions({
-    contractByDealId,
     // 이미 이 거래를 보고 있으므로 따로 열 것이 없다
     onOpenDeal: () => undefined,
     onDeleted: goToList,
@@ -88,7 +74,7 @@ function DealDetailPage() {
           <DealDetailPanel
             key={deal.id}
             deal={deal}
-            contract={contractByDealId.get(deal.id) ?? null}
+            contract={deal.contract ?? null}
             referenceDate={referenceDate}
             actions={actions}
           />

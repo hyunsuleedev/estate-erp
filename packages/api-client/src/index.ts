@@ -143,7 +143,7 @@ export type {
   UpdateMatchAgreedTermsDto,
   UpdateMatchMemoDto,
 } from "./modules/matches.js";
-export type { Deal, CreateDealDto, DealPropertyTransitionPreview, ApplyDealPropertyTransitionDto } from "./modules/deals.js";
+export type { Deal, DealContract, CreateDealDto, DealPropertyTransitionPreview, ApplyDealPropertyTransitionDto } from "./modules/deals.js";
 export type {
   Contract,
   ContractClauseTemplate,
@@ -178,6 +178,9 @@ export type {
   UpdateOfficePrintTemplateDto,
   PrepareSaleContractDraftDto,
   PrepareSaleContractDraftResult,
+  ContractListItem,
+  ContractListDocument,
+  ContractListContact,
 } from "./modules/contracts.js";
 export type {
   Consultation,

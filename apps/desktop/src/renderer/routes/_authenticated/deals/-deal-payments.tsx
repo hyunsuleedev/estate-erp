@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, MoreVertical, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Contract, Deal } from '@estate-erp/api-client';
+import type { DealContract as Contract, Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
