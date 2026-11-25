@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대시보드 — 개선 시안 12</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+  /* 색은 apps/desktop/src/renderer/app.css 토큰 값 그대로.
+     카드 · 알약 · 띠 · 글자 크기는 2026-11-22에 희망매물 · 프로젝트 화면에서 정한 것과 같은 규격이다. */
+  :root {
+    --fg: #2c2c2b; --fg-sub: #5f5e59; --fg-muted: #79766f; --icon: #8e8b86;
+    --line: #f0efed; --input: #e6e5e3; --muted: #f9f8f7;
+    --success: #0f7b6c; --info-strong: #1b64b1; --violet: #6940a5;
+    --destructive-soft: #ffe2dd; --destructive-strong: #bb3430;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --card: 0 0 0 1px rgba(42,28,0,.09), 0 2px 4px rgba(25,25,25,.04);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
+    -webkit-font-smoothing: antialiased; color: var(--fg); background: #fff; font-size: 14px; line-height: 21px; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  button:focus-visible, a:focus-visible { outline: 2px solid rgba(35,131,226,.5); outline-offset: 1px; }
+  svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .num { font-variant-numeric: tabular-nums; }
+  .trunc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .demo-bar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 16px; padding: 8px 16px; background: #2c2c2b; color: #d9d7d2; font-size: 12px; }
+  .demo-bar b { color: #fff; font-weight: 600; font-size: 14px; }
+  .demo-bar button { padding: 2px 10px; border-radius: 4px; background: rgba(255,255,255,.12); color: #fff; }
+  .demo-note { margin-left: auto; color: #a3a09a; }
+  .why { display: none; margin: 0; padding: 12px 20px 14px 36px; background: #fbf6ea; color: #5c4a1e; font-size: 13px; line-height: 21px; }
+  .why.on { display: block; }
+  .why li + li { margin-top: 2px; }
+
+  main { padding: 16px; }
+
+  /* ── 인사 영역: 지금 앱의 날씨판을 그대로 둔다. 시안에서는 자리만 간단히 그렸다 ── */
+  .hero { position: relative; overflow: hidden; height: 176px; padding: 28px 24px; border-radius: 14px;
+    background: linear-gradient(100deg, #dcebf7 0%, #e7f0f6 46%, #f7ecd9 100%); }
+  .hero small { font-size: 12.5px; color: var(--fg-sub); }
+  .hero h1 { margin: 6px 0 12px; font-size: 26px; line-height: 34px; font-weight: 700; letter-spacing: -0.02em; }
+  .hero-pills { display: flex; gap: 8px; }
+  .hpill { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 15px; background: rgba(255,255,255,.86); box-shadow: 0 0 0 1px rgba(42,28,0,.07); font-size: 13px; }
+  .hpill svg { width: 14px; height: 14px; color: var(--icon); }
+  .hpill b { font-weight: 600; }
+  .hpill b.red { color: var(--destructive-strong); }
+  .hero-tools { position: absolute; right: 20px; top: 18px; display: flex; gap: 8px; }
+  .seg { display: inline-flex; padding: 2px; border-radius: 8px; background: rgba(44,44,43,.08); font-size: 13px; }
+  .seg span { padding: 3px 10px; border-radius: 6px; color: var(--fg-sub); }
+  .seg .on { background: #fff; color: var(--fg); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .dark-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px; background: var(--fg); color: #fff; font-size: 13px; font-weight: 500; }
+  .dark-btn svg { width: 14px; height: 14px; }
+  .skyline { position: absolute; right: 0; bottom: 0; width: 46%; height: 96px; }
+  .skyline i { position: absolute; bottom: 22px; border-radius: 3px 3px 0 0; }
+  .skyline .axis { position: absolute; left: 0; right: 0; bottom: 21px; height: 1px; background: rgba(44,44,43,.18); }
+  .skyline em { position: absolute; bottom: 2px; font-style: normal; font-size: 10.5px; color: var(--fg-muted); transform: translateX(-50%); }
+  .skyline .sun { position: absolute; width: 22px; height: 22px; border-radius: 50%; background: #f5b941; box-shadow: 0 0 0 5px rgba(245,185,65,.22); }
+  .hero-note { position: absolute; right: 24px; bottom: 100px; font-size: 11px; color: var(--fg-muted); }
+
+  /* ── 본문: 세 단. 일정 · 할 일 · 거래와 소식이 한 화면에 다 들어온다 ── */
+  .cols { display: grid; grid-template-columns: 300px minmax(0, 1fr) 396px; gap: 16px; margin-top: 16px; align-items: start; }
+  @media (max-width: 1240px) { .cols { grid-template-columns: 300px minmax(0, 1fr); } .cols > .col-right { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; } .col-right > .card { margin: 0 !important; } }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  /* 카드: 희망매물의 매물 카드와 같은 Notion형 판 */
+  .card { min-width: 0; border-radius: 10px; background: #fff; box-shadow: var(--card); }
+  .card-head { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; }
+  .card-head > svg { color: var(--icon); }
+  .card-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+  .card-head .n { font-size: 13px; color: var(--fg-muted); }
+  .more { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; height: 26px; padding: 0 6px; border-radius: 5px; font-size: 12.5px; color: var(--fg-muted); transition: background-color .12s ease, color .12s ease; }
+  .more:hover { background: rgba(44,44,43,.05); color: var(--fg); }
+  .more svg { width: 12px; height: 12px; }
+  .card-body { padding: 0 6px 8px; }
+  .rule { height: 1px; margin: 0 14px; background: var(--line); }
+  .empty { padding: 14px 14px 16px; font-size: 13px; color: var(--fg-muted); }
+
+  /* 알약: 프로젝트 · 희망매물 상태 알약과 같은 모양 (점 + 둥근 알약) */
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 9px 0 7px; border-radius: 10px; font-size: 13px; font-weight: 450; white-space: nowrap; flex: none; }
+  .pill i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .p-red { background: #fdebec; color: #b0423a; } .p-red i { background: #e16259; }
+  .p-amber { background: #fbf3db; color: #9f6b00; } .p-amber i { background: #dfab01; }
+  .p-gray { background: #f1f1ef; color: #787774; } .p-gray i { background: #b4b4b1; }
+  .p-green { background: #eef3ed; color: #44745a; } .p-green i { background: #6c9b7a; }
+  .p-blue { background: #e7f3f8; color: #337ea9; } .p-blue i { background: #529cca; }
+  .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; font-size: 12px; white-space: nowrap; flex: none; }
+  .tag.sale { background: #fdebec; color: #8f4b46; } .tag.jeonse { background: #e7f3f8; color: #337ea9; } .tag.monthly { background: #fbf3db; color: #8f6b1f; }
+  .tag.must { background: var(--destructive-soft); color: var(--destructive-strong); }
+  .chip-name { display: inline-flex; align-items: center; gap: 5px; min-width: 0; font-size: 13px; color: var(--fg-sub); }
+  .avatar { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #d3e5ef; color: #1b64b1; font-size: 10.5px; font-weight: 500; flex: none; }
+
+  /* ── 일정 카드 ── */
+  .cal-head { display: flex; align-items: center; padding: 12px 14px 4px; }
+  .cal-head b { font-size: 14px; font-weight: 600; }
+  .cal-nav { margin-left: auto; display: flex; align-items: center; gap: 2px; font-size: 12.5px; color: var(--fg-muted); }
+  .cal-nav button { display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 5px; }
+  .cal-nav button:hover { background: rgba(44,44,43,.05); color: var(--fg); }
+  .cal-nav svg { width: 13px; height: 13px; }
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); padding: 2px 10px 10px; }
+  .cal span { height: 22px; display: grid; place-items: center; font-size: 11.5px; color: var(--fg-muted); }
+  .cal button { position: relative; height: 32px; display: grid; place-items: center; border-radius: 8px; font-size: 13px; font-variant-numeric: tabular-nums; transition: background-color .12s ease; }
+  .cal button:hover { background: rgba(44,44,43,.05); }
+  .cal button.out { color: #c4c2bd; }
+  .cal button.has::after { content: ""; position: absolute; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #b4b4b1; }
+  .cal button.today { color: #d13a3a; font-weight: 600; }
+  .cal button.sel { background: var(--fg); color: #fff; font-weight: 600; }
+  .cal button.sel::after { background: rgba(255,255,255,.7); }
+  .day-head { display: flex; align-items: baseline; gap: 6px; padding: 12px 14px 4px; }
+  .day-head b { font-size: 14px; font-weight: 600; }
+  .day-head span { font-size: 12.5px; color: var(--fg-muted); }
+  .ev { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px 8px; border-radius: 6px; }
+  .ev:hover { background: var(--muted); }
+  .ev time { font-size: 12.5px; color: var(--fg-muted); line-height: 21px; }
+  .ev .t { display: flex; align-items: center; gap: 6px; font-weight: 450; }
+  .ev .t i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .ev .s { font-size: 12.5px; color: var(--fg-muted); line-height: 18px; }
+  .sub-head { display: flex; align-items: baseline; padding: 10px 14px 2px; font-size: 12.5px; color: var(--fg-muted); }
+  .sub-head b { font-weight: 500; color: var(--fg-sub); }
+  .sub-head span { margin-left: auto; }
+
+  /* ── 할 일 카드 ── */
+  .tabs { display: inline-flex; gap: 2px; margin-left: 4px; padding: 2px; border-radius: 15px; background: #f1f1ef; }
+  .tabs button { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: 12px; font-size: 13px; color: var(--fg-sub); transition: background-color .12s ease, color .12s ease; }
+  .tabs button:hover { color: var(--fg); }
+  .tabs button[aria-pressed="true"] { background: var(--fg); color: #fff; font-weight: 500; }
+  .tabs button span { font-size: 12px; opacity: .75; }
+  .todo { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 36px; padding: 0 8px; border-radius: 6px; transition: background-color .12s ease, opacity .2s ease; }
+  .todo:hover { background: var(--muted); }
+  .todo.done { opacity: 0; }
+  .box { width: 16px; height: 16px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px #c9c7c1; display: grid; place-items: center; transition: box-shadow .12s ease, background-color .12s ease, scale .14s var(--ease-out); }
+  .box:hover { box-shadow: inset 0 0 0 1.5px var(--fg-sub); }
+  .box:active { scale: .9; }
+  .box svg { width: 11px; height: 11px; stroke-width: 2.6; color: #fff; opacity: 0; }
+  .todo.done .box { background: var(--success); box-shadow: none; } .todo.done .box svg { opacity: 1; }
+  .todo .line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .todo .title { font-weight: 450; flex: 0 1 auto; }
+  .todo .meta { font-size: 12.5px; color: var(--fg-muted); flex: 1 1 0; }
+  .todo .right { display: flex; align-items: center; gap: 6px; }
+  .snooze { height: 24px; padding: 0 6px; border-radius: 5px; font-size: 12.5px; color: var(--fg-muted); opacity: 0; transition: opacity .12s ease, background-color .12s ease; }
+  .todo:hover .snooze, .snooze:focus-visible { opacity: 1; }
+  .snooze:hover { background: rgba(44,44,43,.06); color: var(--fg); }
+  .show-more { display: flex; align-items: center; gap: 6px; height: 32px; margin: 2px 8px 0; padding: 0 6px; border-radius: 6px; font-size: 13px; color: var(--fg-muted); }
+  .show-more:hover { background: var(--muted); color: var(--fg); }
+  .show-more svg { width: 12px; height: 12px; }
+  .add { display: flex; align-items: center; gap: 10px; width: calc(100% - 16px); height: 36px; margin: 0 8px; padding: 0 8px 0 9px; border-radius: 6px; font-size: 13.5px; color: var(--fg-muted); }
+  .add:hover { background: var(--muted); color: var(--fg); }
+  .add svg { width: 14px; height: 14px; }
+
+  /* ── 거래 카드: 단계는 희망매물과 같은 화살표 띠(작은 판) ── */
+  .deal { padding: 9px 8px 10px; border-radius: 6px; }
+  .deal:hover { background: var(--muted); }
+  .deal .l1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .deal .l1 b { font-weight: 500; }
+  .deal .l1 .amt { margin-left: auto; font-size: 13px; color: var(--fg-sub); flex: none; }
+  .deal .l2 { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .deal .next { margin-left: auto; font-size: 12.5px; color: var(--fg-muted); flex: none; }
+  .deal .next b { font-weight: 500; color: var(--fg); }
+  .band { display: flex; gap: 2px; flex: 1; min-width: 0; margin-top: 7px; }
+  .band div { flex: 1; min-width: 0; height: 22px; display: flex; align-items: center; justify-content: center; padding: 0 4px 0 9px; font-size: 11.5px; white-space: nowrap; overflow: hidden;
+    clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%, 6px 50%); background: #efeeec; color: var(--fg-sub); }
+  .band div:first-child { padding-left: 4px; border-radius: 5px 0 0 5px; clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 0 100%); }
+  .band div:last-child { border-radius: 0 5px 5px 0; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 6px 50%); }
+  .band .d { background: #cfe6d2; color: #0a5c51; }
+  .band .c { color: #fff; font-weight: 600; }
+  .c-gray { background: #5f5e59 !important; } .c-violet { background: #6940a5 !important; } .c-info { background: #1b64b1 !important; } .c-orange { background: #c2650b !important; } .c-success { background: #0f7b6c !important; }
+
+  /* ── 소식(공지 · 뉴스) · 상담 ── */
+  .row { display: flex; align-items: baseline; gap: 8px; min-height: 34px; padding: 6px 8px; border-radius: 6px; }
+  .row:hover { background: var(--muted); }
+  .row .t { font-weight: 450; }
+  .row .when { margin-left: auto; font-size: 12.5px; color: var(--fg-muted); flex: none; }
+  .row .src { font-size: 12.5px; color: var(--fg-muted); flex: none; }
+  .row.unread .t { font-weight: 600; }
+  .row .tag { align-self: center; }
+  .consult { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 7px 8px; border-radius: 6px; }
+  .consult:hover { background: var(--muted); }
+  .consult .who { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .consult .who b { font-weight: 500; }
+  .consult .kind { font-size: 12px; color: var(--fg-muted); }
+  .consult .when { font-size: 12.5px; color: var(--fg-muted); }
+  .consult p { grid-column: 1 / -1; margin: 0; font-size: 13px; line-height: 19px; color: var(--fg-sub); }
+  .seg2 { margin-left: auto; display: inline-flex; gap: 2px; }
+  .seg2 button { height: 24px; padding: 0 8px; border-radius: 12px; font-size: 12.5px; color: var(--fg-muted); }
+  .seg2 button[aria-pressed="true"] { background: #f1f1ef; color: var(--fg); font-weight: 500; }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 8px); display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 14px; border-radius: 8px; background: #2c2c2b; color: #fff; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 160ms ease, transform 220ms var(--ease-out); z-index: 40; box-shadow: 0 8px 24px -8px rgba(0,0,0,.3); }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  .toast button { height: 24px; padding: 0 8px; border-radius: 5px; background: rgba(255,255,255,.14); color: #fff; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+  <b>대시보드 · 개선 시안 12</b>
+  <button type="button" id="why-btn" aria-expanded="false">바꾼 점 보기</button>
+  <span class="demo-note">할 일 탭 · 체크 · 미루기, 달력의 날짜, 소식 탭을 눌러 볼 수 있습니다 (시안용 가짜 데이터)</span>
+</div>
+<ol class="why" id="why">
+  <li><b>세 단으로 나눴습니다.</b> 지금은 할 일이 화면을 다 차지해 진행 거래와 상담이 아래로 밀려 있습니다. 일정 · 할 일 · 거래와 소식이 굴리지 않고 한 화면에 들어옵니다.</li>
+  <li><b>할 일은 한 줄씩, 탭으로.</b> 두 줄짜리 14건이 길게 늘어서던 것을 한 줄(제목 · 곁 정보 · 기한 알약)로 줄이고, 지남 · 오늘 · 다가옴을 탭으로 나눴습니다. 처음에는 7건만 보이고 나머지는 "더 보기"입니다.</li>
+  <li><b>기한은 알약으로.</b> 오른쪽 끝의 빨간 글자("10일 지남")를 프로젝트 · 희망매물과 같은 점 알약으로 바꿨습니다(지남 빨강 · 오늘 노랑 · 다가옴 회색).</li>
+  <li><b>진행 거래에 단계 띠.</b> 희망매물에서 쓰기로 한 화살표 띠를 작게 넣어, 거래마다 지금 단계와 다음 날짜가 한눈에 보입니다.</li>
+  <li><b>공지사항 · 부동산 뉴스를 카드 하나로.</b> 할 일 머리에 끼어 있던 "공지 · 가이드" 단추와 "이달 수금 58%"를 빼고, 소식 카드에서 탭으로 봅니다.</li>
+  <li><b>카드 · 글자 규격 통일.</b> 카드는 희망매물의 매물 카드와 같은 판(옅은 선 + 얕은 그림자), 줄 글자는 14px · 굵기 450입니다.</li>
+  <li><b>인사 영역(날씨판)은 그대로 둡니다.</b> 시안에서는 자리만 간단히 그렸습니다.</li>
+</ol>
+
+<main>
+  <section class="hero" aria-label="인사 영역 (지금 앱의 날씨판 그대로)">
+    <small>11월 23일 월요일 · 고덕그라시움</small>
+    <h1>좋은 아침입니다, 현수님</h1>
+    <div class="hero-pills" id="hero-pills"></div>
+    <div class="hero-tools">
+      <span class="seg"><span>내 담당</span><span class="on">사무소 전체</span></span>
+      <span class="dark-btn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>빠른 등록</span>
+    </div>
+    <span class="hero-note">날씨 그림 자리 — 지금 앱의 그림을 그대로 씁니다</span>
+    <div class="skyline" aria-hidden="true">
+      <i style="left:12%;width:5%;height:38px;background:#f3c6c6"></i><i style="left:18%;width:6%;height:52px;background:#c9d8f0"></i>
+      <i style="left:25%;width:4.500%;height:30px;background:#cfe6d2"></i><i style="left:36%;width:6%;height:60px;background:#b9c9ea"></i>
+      <i style="left:43%;width:5%;height:40px;background:#f6e3a6"></i><i style="left:54%;width:5.500%;height:48px;background:#ddd0ef"></i>
+      <i style="left:61%;width:5%;height:34px;background:#f5d2bd"></i><i style="left:72%;width:6%;height:44px;background:#c9d8f0"></i>
+      <span class="sun" style="left:40%;bottom:74px"></span>
+      <span class="axis"></span><em style="left:30%">9</em><em style="left:48%">12</em><em style="left:66%">15</em><em style="left:84%">18</em>
+    </div>
+  </section>
+
+  <div class="cols">
+    <div class="col" id="col-left"></div>
+    <div class="col" id="col-mid"></div>
+    <div class="col col-right" id="col-right"></div>
+  </div>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"><span id="toast-text"></span><button type="button" id="toast-undo">되돌리기</button></div>
+
+<script>
+const ICON = {
+  cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 5.500l1 1 1.500-2M4 11.500l1 1 1.500-2M4 17.500l1 1 1.500-2"/>',
+  deal: '<path d="M4 12l4-4 4 3 4-3 4 4M8 16l2 2M12 14l3 3M4 12v5l4 3M20 12v5l-5 4"/>',
+  msg: '<path d="M4 5h16v11H9l-5 4z"/>',
+  news: '<path d="M4 5h13v14H6a2 2 0 0 1-2-2zM17 9h3v8a2 2 0 0 1-2 2M8 9h5M8 13h5"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>', left: '<path d="M15 6l-6 6 6 6"/>', check: '<path d="M5 12.500l4.500 4.500L19 7.500"/>', plus: '<path d="M12 5v14M5 12h14"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', down: '<path d="M6 9l6 6 6-6"/>',
+};
+const ic = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ── 시안 데이터 (오늘 = 2026-11-23 월) ──────────────────────────────────
+let seq = 0;
+const todo = (title, meta, due) => ({ id: 't' + (++seq), title, meta, due });  // due: 음수 = 지난 날 수, 0 = 오늘, 양수 = 남은 날 수
+const todos = [
+  todo('김민준 매도인 확인 전화 회신', '고덕그라시움 101동 3501호 · 김민준', -10), todo('전세 매물 등기부 열람', '고덕그라시움 101동 3503호', -9),
+  todo('19.8억 계약서 특약 검토', '고덕그라시움 101동 3401호', -8), todo('한지우 고객 매물 3건 추천 카톡', '한지우', -8),
+  todo('최도윤 고객 VIP 재연락', '최도윤', -7), todo('급매 26.8억 등기부 확인', '고덕그라시움 101동 3501호', -7),
+  todo('강수연 고객 토요일 임장 준비', '강수연', -6), todo('3501호 중개보수 352만 수금 독촉', '고덕그라시움 101동 3501호 · 미배정', -5),
+  todo('박성호 매물 사진 재촬영', '고덕그라시움 102동 3401호', -5), todo('월세 계약 특약 초안 작성', '', -4),
+  todo('정유진 계약 중도금 일정 확인', '정유진', -3), todo('3501호 중개보수 152만 수금 독촉', '고덕그라시움 101동 3501호 · 박실장', -1),
+  todo('윤미경 세입자 퇴거 일정 조율', '고덕그라시움 101동 3402호 · 윤미경', -1), todo('배현우 투자 매물 수익률 정리', '배현우', -1),
+  todo('김민준 임장 동선 확인', '고덕그라시움 101동 3501호 · 김민준', 0), todo('이서연 전세 계약금 입금 확인', '고덕아르테온 305동 1202호 · 이서연', 0),
+  todo('정하윤 잔금일 법무사 연락', '올림픽파크포레온 312동 1701호', 0),
+  todo('가계약서 초안 보내기', '고덕아르테온 305동 1202호', 1), todo('한지우 전세 대출 서류 안내', '한지우', 2), todo('리센츠 1504호 광고 문구 고치기', '리센츠 221동 1504호', 2),
+  todo('박도윤 월세 입주 점검', '리센츠 221동 1504호 · 박도윤', 3), todo('12월 관리단지 호가 정리', '', 4), todo('강수연 재방문 일정 잡기', '강수연', 5),
+  todo('연말 고객 인사 문자 대상 고르기', '', 7), todo('최도윤 펜트하우스 매물 문의 회신', '최도윤', 8),
+];
+const events = {
+  '2026-11-23': [['10:30', '임장', '#6940a5', '고덕그라시움 101동 3501호 · 김민준'], ['15:00', '계약금 입금 확인', '#d9730d', '고덕아르테온 305동 1202호 · 이서연']],
+  '2026-11-25': [['14:00', '본계약', '#1b64b1', '고덕아르테온 305동 1202호 · 이서연']],
+  '2026-11-26': [['12:00', '임장', '#6940a5', '고덕그라시움 102동 3401호 · 최도윤']],
+  '2026-11-27': [['11:00', '임장', '#6940a5', '고덕그라시움 102동 1801호 · 정수민']],
+  '2026-11-28': [['10:00', '잔금', '#0f7b6c', '올림픽파크포레온 312동 1701호 · 정하윤'], ['14:00', '임장', '#6940a5', '고덕그라시움 102동 2203호 · 박매수']],
+  '2026-12-01': [['16:00', '입주 점검', '#d9730d', '리센츠 221동 1504호 · 박도윤']],
+};
+const DEAL_STAGES = [['계약 준비', 'gray'], ['가계약', 'violet'], ['본계약', 'info'], ['중도금/잔금', 'orange'], ['잔금 완료', 'success']];
+const deals = [
+  { title: '올림픽파크포레온 312동 1701호', tx: 'sale', amt: '19억 2,000만', who: '정하윤', stage: 3, next: ['잔금', '11. 28. (토)'] },
+  { title: '고덕아르테온 305동 1202호', tx: 'jeonse', amt: '8억', who: '이서연', stage: 1, next: ['본계약', '11. 25. (수)'] },
+  { title: '고덕그라시움 101동 3501호', tx: 'sale', amt: '26억 8,000만', who: '김민준', stage: 2, next: ['잔금', '12. 20. (일)'] },
+  { title: '잠실엘스 115동 803호', tx: 'jeonse', amt: '8억 2,000만', who: '한지우', stage: 0, next: null },
+];
+const consults = [
+  ['김민준', '통화', '오늘 09:12', '토요일 임장 뒤 배우자와 다시 보기로. 잔금은 3월 중순부터 가능하다고 함.'],
+  ['이서연', '방문', '어제', '역까지 거리는 만족. 수납이 적어 고민 중이라 리센츠와 견주어 보기로.'],
+  ['최도윤', '통화', '11. 21.', '한강뷰 고층만 본다. 34억까지 가능, 12월 안에 결정 원함.'],
+];
+const notices = [
+  { must: true, unread: true, t: '12월 2일(수) 새벽 정기 점검 안내', when: '11. 21.' },
+  { unread: true, t: '주택 매매 계약서 서식이 바뀌었습니다', when: '11. 18.' },
+  { t: '연말 고객 인사 문자 템플릿을 추가했습니다', when: '11. 14.' },
+  { t: '희망매물 화면이 새로워졌습니다', when: '11. 10.' },
+];
+const news = [
+  ['서울 아파트 매매가격 3주째 보합, 강동 · 송파는 소폭 상승', '예시 일보', '2시간 전'],
+  ['전세 대출 한도 내년 1월부터 조정… 달라지는 점', '예시 경제', '5시간 전'],
+  ['둔촌 · 고덕 일대 입주 2년 차 단지 전세 만기 몰린다', '예시 부동산', '어제'],
+  ['중개보수 현금영수증 의무 발행, 놓치기 쉬운 경우', '예시 세무', '11. 21.'],
+];
+const ui = { tab: 'overdue', expanded: false, day: '2026-11-23', feed: 'notice' };
+const TODAY = '2026-11-23';
+
+// ── 계산 ────────────────────────────────────────────────────────────────
+const bucket = (t) => (t.due < 0 ? 'overdue' : t.due === 0 ? 'today' : 'soon');
+const inTab = (tab) => todos.filter((t) => !t.gone && bucket(t) === tab).sort((a, b) => a.due - b.due);
+const duePill = (t) => t.due < 0 ? `<span class="pill p-red num"><i></i>${t.due === -1 ? '어제' : `${-t.due}일 지남`}</span>`
+  : t.due === 0 ? '<span class="pill p-amber"><i></i>오늘</span>' : `<span class="pill p-gray num"><i></i>${t.due === 1 ? '내일' : `${t.due}일 뒤`}</span>`;
+const dayLabel = (key) => { const d = new Date(key + 'T00:00'); return `${d.getMonth() + 1}월 ${d.getDate()}일 (${'일월화수목금토'[d.getDay()]})`; };
+const shortDay = (key) => { const d = new Date(key + 'T00:00'); return `${d.getMonth() + 1}. ${d.getDate()}. (${'일월화수목금토'[d.getDay()]})`; };
+
+// ── 그리기 ──────────────────────────────────────────────────────────────
+function renderHero() {
+  document.getElementById('hero-pills').innerHTML =
+    `<span class="hpill">${ic('cal')}오늘 일정 <b class="num">${(events[TODAY] ?? []).length}</b></span>` +
+    `<span class="hpill">${ic('list')}남은 업무 <b class="num">${todos.filter((t) => !t.gone).length}</b></span>` +
+    `<span class="hpill">${ic('clock')}기한 지남 <b class="num red">${inTab('overdue').length}</b></span>`;
+}
+
+function renderLeft() {
+  // 2026년 11월: 1일이 일요일
+  const cells = [];
+  for (let d = 1; d <= 30; d += 1) cells.push({ key: `2026-11-${String(d).padStart(2, '0')}`, n: d });
+  for (let d = 1; d <= 5; d += 1) cells.push({ key: `2026-12-${String(d).padStart(2, '0')}`, n: d, out: true });
+  const dayEvents = events[ui.day] ?? [];
+  const upcoming = Object.keys(events).filter((k) => k > ui.day).sort().slice(0, 4);
+  document.getElementById('col-left').innerHTML = `<section class="card" aria-label="일정">
+    <div class="cal-head"><b>2026년 11월</b><span class="cal-nav"><button type="button" aria-label="이전 달">${ic('left')}</button><button type="button" data-day="${TODAY}">오늘</button><button type="button" aria-label="다음 달">${ic('chev')}</button></span></div>
+    <div class="cal">${'일월화수목금토'.split('').map((d) => `<span>${d}</span>`).join('')}
+      ${cells.map((c) => `<button type="button" data-day="${c.key}" class="num${c.out ? ' out' : ''}${events[c.key] ? ' has' : ''}${c.key === TODAY ? ' today' : ''}${c.key === ui.day ? ' sel' : ''}"${c.key === ui.day ? ' aria-current="date"' : ''}>${c.n}</button>`).join('')}</div>
+    <div class="rule"></div>
+    <div class="day-head"><b>${dayLabel(ui.day)}</b><span>${ui.day === TODAY ? '오늘 · ' : ''}${dayEvents.length}건</span><button type="button" class="more">캘린더${ic('chev')}</button></div>
+    <div class="card-body">${dayEvents.length ? dayEvents.map(([time, t, color, s]) => `<div class="ev"><time class="num">${time}</time><div><div class="t"><i style="background:${color}"></i><span class="trunc">${t}</span></div><div class="s trunc">${s}</div></div></div>`).join('') : '<div class="empty" style="padding:8px">잡힌 일정이 없습니다.</div>'}</div>
+    <div class="rule"></div>
+    <div class="sub-head"><b>다가오는 일정</b><span class="num">${upcoming.reduce((n, k) => n + events[k].length, 0)}건</span></div>
+    <div class="card-body">${upcoming.map((k) => events[k].map(([time, t, color, s], i) => `<div class="ev"><time class="num">${i === 0 ? shortDay(k).replace(/ \(.+\)/, '') : ''}</time><div><div class="t"><i style="background:${color}"></i><span class="trunc">${t} <span style="color:var(--fg-muted);font-weight:400" class="num">${time}</span></span></div><div class="s trunc">${s}</div></div></div>`).join('')).join('')}</div>
+  </section>`;
+}
+
+function renderMid() {
+  const counts = { overdue: inTab('overdue').length, today: inTab('today').length, soon: inTab('soon').length };
+  const list = inTab(ui.tab);
+  const LIMIT = 7;
+  const shown = ui.expanded ? list : list.slice(0, LIMIT);
+  const TAB = [['overdue', '지남'], ['today', '오늘'], ['soon', '다가옴']];
+  document.getElementById('col-mid').innerHTML = `<section class="card" aria-label="할 일">
+    <div class="card-head">${ic('list')}<h2>할 일</h2>
+      <span class="tabs" role="group" aria-label="할 일 나누기">${TAB.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${ui.tab === k}">${l}<span class="num">${counts[k]}</span></button>`).join('')}</span>
+      <button type="button" class="more">업무${ic('chev')}</button></div>
+    <div class="card-body">
+      ${shown.length ? shown.map((t) => `<div class="todo" data-id="${t.id}">
+        <button type="button" class="box" data-done="${t.id}" aria-label="${esc(t.title)} 완료">${ic('check')}</button>
+        <div class="line"><span class="title trunc">${esc(t.title)}</span><span class="meta trunc">${esc(t.meta)}</span></div>
+        <div class="right"><button type="button" class="snooze" data-snooze="${t.id}">내일로</button>${duePill(t)}</div>
+      </div>`).join('') : `<div class="empty">${ui.tab === 'overdue' ? '기한이 지난 일이 없습니다.' : ui.tab === 'today' ? '오늘 할 일을 모두 마쳤습니다.' : '다가오는 일이 없습니다.'}</div>`}
+      ${list.length > LIMIT ? `<button type="button" class="show-more" data-expand>${ic('down')}${ui.expanded ? '접기' : `${list.length - LIMIT}건 더 보기`}</button>` : ''}
+      ${ui.tab === 'today' ? `<button type="button" class="add">${ic('plus')}할 일 추가</button>` : ''}
+    </div></section>
+
+    <section class="card" aria-label="최근 상담">
+      <div class="card-head">${ic('msg')}<h2>최근 상담</h2><span class="n num">${consults.length}</span><button type="button" class="more">상담분석${ic('chev')}</button></div>
+      <div class="card-body">${consults.map(([who, kind, when, text]) => `<div class="consult"><span class="who"><span class="avatar">${who[0]}</span><b>${who}</b><span class="kind">${kind}</span></span><span class="when num">${when}</span><p class="trunc">${text}</p></div>`).join('')}</div>
+    </section>`;
+}
+
+function renderRight() {
+  const feed = ui.feed === 'notice'
+    ? notices.map((n) => `<div class="row${n.unread ? ' unread' : ''}">${n.must ? '<span class="tag must">필독</span>' : ''}<span class="t trunc">${n.t}</span><span class="when num">${n.when}</span></div>`).join('')
+    : news.map(([t, src, when]) => `<div class="row"><span class="t trunc">${t}</span><span class="src">${src}</span><span class="when num" style="margin-left:0">· ${when}</span></div>`).join('');
+  const unread = notices.filter((n) => n.unread).length;
+  document.getElementById('col-right').innerHTML = `<section class="card" aria-label="진행 중인 거래">
+      <div class="card-head">${ic('deal')}<h2>진행 중인 거래</h2><span class="n num">${deals.length}</span><button type="button" class="more">거래관리${ic('chev')}</button></div>
+      <div class="card-body">${deals.map((d) => `<div class="deal">
+        <div class="l1"><b class="trunc">${d.title}</b><span class="tag ${d.tx}">${{ sale: '매매', jeonse: '전세', monthly: '월세' }[d.tx]}</span><span class="amt num">${d.amt}</span></div>
+        <div class="band" role="list" aria-label="거래 단계">${DEAL_STAGES.map(([label, tone], i) => `<div role="listitem" class="${i < d.stage ? 'd' : i === d.stage ? `c c-${tone}` : ''}"${i === d.stage ? ' aria-current="step"' : ''}>${label}</div>`).join('')}</div>
+        <div class="l2"><span class="chip-name"><span class="avatar">${d.who[0]}</span>${d.who}</span><span class="next num">${d.next ? `${d.next[0]} <b>${d.next[1]}</b>` : '다음 일정 없음'}</span></div>
+      </div>`).join('')}</div>
+    </section>
+    <section class="card" aria-label="소식">
+      <div class="card-head">${ic('news')}<h2>소식</h2>
+        <span class="seg2" role="group" aria-label="소식 나누기"><button type="button" data-feed="notice" aria-pressed="${ui.feed === 'notice'}">공지사항${unread ? ` <span class="num" style="color:var(--destructive-strong)">${unread}</span>` : ''}</button><button type="button" data-feed="news" aria-pressed="${ui.feed === 'news'}">부동산 뉴스</button></span></div>
+      <div class="card-body">${feed}</div>
+    </section>`;
+}
+
+function render() { renderHero(); renderLeft(); renderMid(); renderRight(); }
+
+// ── 동작 ────────────────────────────────────────────────────────────────
+let undo = null, toastTimer;
+function toast(text, onUndo) {
+  undo = onUndo;
+  document.getElementById('toast-text').textContent = text;
+  const el = document.getElementById('toast'); el.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.classList.remove('on'); undo = null; }, 4000);
+}
+document.getElementById('toast-undo').addEventListener('click', () => { if (undo) undo(); undo = null; document.getElementById('toast').classList.remove('on'); render(); });
+
+document.addEventListener('click', (event) => {
+  const el = event.target.closest('[data-tab], [data-done], [data-snooze], [data-expand], [data-day], [data-feed]');
+  if (!el) return;
+  const d = el.dataset;
+  if (d.tab) { ui.tab = d.tab; ui.expanded = false; render(); }
+  else if (d.expand !== undefined) { ui.expanded = !ui.expanded; renderMid(); }
+  else if (d.day) { ui.day = d.day; renderLeft(); }
+  else if (d.feed) { ui.feed = d.feed; renderRight(); }
+  else if (d.done) {
+    const t = todos.find((x) => x.id === d.done);
+    if (t.gone) return; // 사라지는 중인 줄을 다시 누른 경우
+    // 값은 바로 바꾸고, 화면만 사라지는 움직임이 끝난 뒤에 다시 그린다(체크가 채워지는 것이 보이게).
+    // 값을 나중에 바꾸면, 그 전에 누른 "되돌리기"가 늦게 온 완료 처리에 덮어써진다.
+    t.gone = true;
+    el.closest('.todo').classList.add('done');
+    setTimeout(render, 220);
+    toast(`완료: ${t.title}`, () => { t.gone = false; });
+  } else if (d.snooze) {
+    const t = todos.find((x) => x.id === d.snooze);
+    const before = t.due; t.due = 1; render();
+    toast(`내일로 미뤘습니다: ${t.title}`, () => { t.due = before; });
+  }
+});
+document.getElementById('why-btn').addEventListener('click', (event) => {
+  const on = document.getElementById('why').classList.toggle('on');
+  event.currentTarget.setAttribute('aria-expanded', on); event.currentTarget.textContent = on ? '바꾼 점 접기' : '바꾼 점 보기';
+});
+render();
+</script>
+</body>
+</html>

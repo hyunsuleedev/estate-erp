@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>연락처 상세 — 첫 화면 재배치 시안</title>
+<link rel="stylesheet" href="../../../node_modules/pretendard/dist/web/variable/pretendardvariable.css">
+<style>
+/* 색·치수는 지금 연락처 상세(contacts/$id.tsx, properties/-detail/ui.tsx)의 값을 그대로 옮겼다.
+   시안에서 새로 넣은 글자만 app.css 토큰의 보조색(#5f5e59)과 강한 경고색(#bb3430)을 쓴다. */
+:root{
+  --ink:#37352f; --ink-65:rgba(55,53,47,.65); --ink-45:rgba(55,53,47,.45); --ink-25:rgba(55,53,47,.25);
+  --line:#e9e9e7; --hover:rgba(55,53,47,.06); --blue:#2383e2;
+  --sub:#5f5e59; --danger:#bb3430; --side:#f9f8f7; --side-line:#f0efed; --side-ink:#5f5e59; --side-icon:#8e8b86;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;
+  -webkit-font-smoothing:antialiased;color:var(--ink);background:#fff;font-size:14px;display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+a{color:inherit;text-decoration:none}
+svg{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+:focus-visible{outline:2px solid rgba(35,131,226,.55);outline-offset:1px;border-radius:4px}
+::selection{background:rgba(35,131,226,.22)}
+.num{font-variant-numeric:tabular-nums}
+
+/* 시안 조작 띠 (앱의 일부가 아님) */
+.mock{flex:none;display:flex;align-items:center;gap:18px;height:40px;padding:0 14px;background:#2c2c2b;color:#fff;font-size:13px}
+.mock b{font-weight:600}
+.mock .grp{display:flex;align-items:center;gap:6px}
+.mock .lbl{color:rgba(255,255,255,.62)}
+.seg{display:inline-flex;background:rgba(255,255,255,.1);border-radius:6px;padding:2px}
+.seg button{height:24px;padding:0 10px;border-radius:4px;color:rgba(255,255,255,.75)}
+.seg button[aria-pressed="true"]{background:#fff;color:#2c2c2b;font-weight:600}
+.mock .what{margin-left:auto;color:rgba(255,255,255,.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 앱 틀 */
+.app{flex:1;min-height:0;display:flex}
+.side{flex:none;width:228px;background:var(--side);border-right:1px solid var(--side-line);display:flex;flex-direction:column;padding:6px 8px;color:var(--side-ink)}
+.side .brand{height:32px;display:flex;align-items:center;padding:0 6px;font-weight:600;color:#2c2c2b}
+.side .search{height:30px;display:flex;align-items:center;gap:8px;padding:0 6px;margin:4px 0 6px}
+.side .search kbd{margin-left:auto;font:inherit;font-size:11px;background:#fff;border:1px solid var(--side-line);border-radius:4px;padding:0 5px}
+.side h6{margin:12px 6px 4px;font-size:12px;font-weight:500;color:#79766f}
+.side a{height:32px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:6px}
+.side a svg{color:var(--side-icon);width:16px;height:16px}
+.side a.on{background:#eeedec;color:#2c2c2b;font-weight:500}
+.side .me{margin-top:auto;display:flex;align-items:center;gap:8px;padding:8px 6px;font-size:13px;color:#2c2c2b}
+.side .me small{display:block;font-size:12px;color:#79766f}
+
+.work{flex:1;min-width:0;display:flex;flex-direction:column}
+.tabs{flex:none;height:32px;background:var(--side);border-bottom:1px solid var(--side-line);display:flex;align-items:stretch;padding-left:12px}
+.tabs .tab{width:178px;background:#fff;border-right:1px solid var(--side-line);border-left:1px solid var(--side-line);display:flex;align-items:center;gap:8px;padding:0 12px;font-size:13px}
+.head{flex:none;height:46px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding:0 20px 0 16px}
+.head nav{flex:1;min-width:0;display:flex;align-items:center;gap:2px}
+.head nav .sep{color:var(--ink-25)}
+.head nav .here{padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acts{display:flex;align-items:center;gap:4px;position:relative}
+
+/* 단추 (nb) · 꼬리표 (Tag) */
+.nb{display:inline-flex;height:28px;flex:none;align-items:center;justify-content:center;gap:6px;white-space:nowrap;border-radius:4px;padding:0 8px;font-size:14px;color:var(--ink-65);transition:background-color .12s,color .12s}
+.nb:hover{background:var(--hover);color:var(--ink)}
+.nb:active{background:rgba(55,53,47,.1)}
+.nb.line{color:var(--ink);box-shadow:inset 0 0 0 1px rgba(55,53,47,.16)}
+.nb.solid{background:var(--blue);color:#fff;font-weight:500;padding:0 10px}
+.nb.solid:hover{background:#0570de;color:#fff}
+.nb.icon{width:28px;padding:0}
+.tag{display:inline-flex;height:20px;flex:none;align-items:center;gap:5px;white-space:nowrap;border-radius:3px;padding:0 6px;font-size:13px;line-height:20px;background:rgba(227,226,224,.6);color:rgb(50,48,44)}
+.tag.red{background:rgb(255,226,221);color:rgb(93,23,21)} .tag.blue{background:rgb(211,229,239);color:rgb(24,51,71)}
+.tag.green{background:rgb(219,237,219);color:rgb(28,56,41)} .tag.orange{background:rgb(250,222,201);color:rgb(73,41,14)}
+.tag.brown{background:rgb(238,224,218);color:rgb(68,42,30)} .tag.purple{background:rgb(232,222,238);color:rgb(65,36,84)}
+.tag.dot::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.6}
+
+.body{flex:1;min-height:0;display:flex}
+.scroll{flex:1;min-width:0;overflow-y:auto}
+.doc{max-width:900px;margin:0 auto;padding:8px 36px 64px}
+.rail{flex:none;width:344px;border-left:1px solid var(--line);overflow-y:auto;padding:12px 18px 56px}
+h1{margin:20px 0 0;font-size:32px;font-weight:700;line-height:1.25;letter-spacing:-.028em;overflow-wrap:anywhere}
+
+/* 시안: 이름 아래 "걸린 일" 한 줄 */
+.stake{display:flex;flex-wrap:wrap;gap:2px 4px;margin:6px 0 0 -6px}
+.stake a{display:inline-flex;align-items:baseline;gap:6px;height:28px;line-height:28px;padding:0 6px;border-radius:4px;font-size:14px;color:var(--sub)}
+.stake a:hover{background:var(--hover)}
+.stake a b{font-weight:600;color:var(--ink)}
+.stake a .st{color:var(--ink)}
+.stake .dot{align-self:center;color:var(--ink-25)}
+
+dl{margin:12px 0 0}
+.prop{display:grid;grid-template-columns:150px minmax(0,1fr);min-height:34px;align-items:center}
+.prop.start{align-items:start}
+.prop dt{display:flex;align-items:center;gap:8px;color:var(--ink-65)}
+.prop.start dt{height:34px}
+.prop dt svg{color:var(--ink-45)}
+.prop dd{margin:0 0 0 -6px;display:flex;align-items:center;gap:6px;min-width:0;line-height:22px;padding:0 6px}
+.prop.start dd{flex-direction:column;align-items:flex-start;gap:4px;padding-top:6px;padding-bottom:6px}
+.faint{color:var(--ink-45)}
+.minor{display:flex;gap:8px;font-size:12px;padding-top:2px}
+.minor button{color:rgba(55,53,47,.6);display:inline-flex;align-items:center;gap:4px;font-weight:500}
+.minor button + button{color:rgba(55,53,47,.5);font-weight:400}
+.minor button:hover{color:var(--ink);text-decoration:underline}
+.minor svg{width:12px;height:12px}
+.copy{border-radius:4px;padding:0 4px;margin-left:-4px}
+.copy:hover{background:var(--hover)}
+
+/* 시안: 다음 연락 · 마지막 상담 줄 */
+.due{color:var(--danger);font-weight:600}
+.sub{color:var(--sub)}
+.last{display:block;width:100%;text-align:left;border-radius:4px;padding:2px 6px;margin:-2px -6px}
+.last:hover{background:var(--hover)}
+.last .t{display:block}
+.last .q{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--sub);word-break:keep-all}
+
+.memo{margin-top:12px;border-top:1px solid var(--line);padding-top:12px;font-size:15px;line-height:1.65;white-space:pre-wrap;word-break:keep-all}
+
+.h2{display:flex;align-items:center;gap:8px;min-height:32px;margin:32px 0 8px}
+.h2 h2{margin:0;font-size:19px;font-weight:600;line-height:1.3;letter-spacing:-.01em}
+.h2 .cnt{font-size:15px;font-weight:500;color:var(--ink-45)}
+.h2 .hint{font-size:13px;color:var(--ink-65)}
+.h2 .act{margin-left:auto;display:flex;align-items:center;gap:2px}
+
+/* 지금: 빈 세대·법인 소속 구역 */
+.party{margin-top:24px;border-top:1px solid var(--line);padding-top:20px}
+.party .h2{margin-top:32px}
+.partybox{display:flex;align-items:center;gap:12px;background:#f7f6f3;border:1px solid var(--line);border-radius:6px;padding:12px 16px}
+.partybox p{margin:0;flex:1;font-size:13px;line-height:1.5;color:var(--ink-65);word-break:keep-all}
+.partybox .btns{display:flex;gap:6px;flex:none}
+
+.rows{list-style:none;margin:0;padding:0}
+.row{display:flex;align-items:center;gap:8px;min-height:34px;margin:0 -6px;padding:0 6px;border-radius:4px}
+.row:hover{background:var(--hover)}
+.row > svg{color:var(--ink-45)}
+.row b{font-weight:600}
+.row .role{font-size:13px;color:var(--ink-65)}
+.row .right{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-65)}
+.row .right .d{color:var(--ink-45);min-width:62px;text-align:right}
+.late{color:rgb(203,107,31);font-weight:500}
+
+.cards{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:12px}
+.card{border:1px solid var(--line);border-radius:6px;padding:12px 16px}
+.card .top{display:flex;align-items:center;gap:6px}
+.card .top .meta{margin-left:auto;font-size:12.5px;color:var(--ink-45)}
+.card .big{margin-top:8px;font-size:17px;font-weight:700}
+.card .cond{margin-top:4px;font-size:13px;color:var(--ink-65)}
+.card .note{margin-top:10px;border-top:1px solid var(--line);padding-top:10px;line-height:1.55;white-space:pre-wrap}
+
+.empty{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:6px;padding:12px 16px;margin-top:24px}
+.empty p{margin:0;flex:1;font-size:13px;color:var(--ink-65);word-break:keep-all}
+.empty .btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+
+.day{margin:14px 0 6px;font-size:13px;color:var(--ink-65)}
+.talk{display:flex;gap:10px;margin:0 -6px;padding:6px;border-radius:4px}
+.talk .ic{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:#eef3f9;color:#3a78c2}
+.talk .ic svg{width:13px;height:13px}
+.talk .hd{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.talk .who{color:var(--ink-65)}
+.talk .tm{margin-left:auto;font-size:13px;color:var(--ink-45)}
+.talk .tx{margin-top:4px;line-height:1.65;white-space:pre-wrap;word-break:keep-all}
+.talk > div{flex:1;min-width:0}
+
+/* 시안: 맨 아래로 내린 등록 줄 */
+.foot{margin-top:40px;border-top:1px solid var(--line);padding-top:12px;font-size:13px;color:var(--sub)}
+
+.rail h3{display:flex;align-items:center;gap:6px;margin:0 0 6px;height:28px;font-size:13px;font-weight:600}
+.rail h3 .cnt{font-weight:500;color:var(--ink-45)}
+.rail h3 .nb{margin-left:auto;font-size:13px}
+.proj{display:block;margin:0 -6px;padding:6px;border-radius:4px}
+.proj:hover{background:var(--hover)}
+.proj .n{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
+.proj .n .tag{margin-left:auto}
+.proj .s{margin-top:2px;font-size:12px;color:var(--ink-65)}
+.railempty{margin:0;background:#f7f6f3;border-radius:4px;padding:10px;font-size:12px;line-height:1.6;color:var(--ink-65);word-break:keep-all}
+
+/* 메뉴 · 알림 */
+.menu{position:absolute;right:0;top:32px;width:192px;background:#fff;border-radius:6px;padding:4px;z-index:30;
+  box-shadow:0 0 0 1px rgba(15,15,15,.06),0 4px 14px rgba(15,15,15,.12)}
+.menu button{display:flex;align-items:center;gap:8px;width:100%;height:30px;padding:0 8px;border-radius:4px;font-size:14px;text-align:left}
+.menu button:hover,.menu button:focus-visible{background:var(--hover);outline:none}
+.menu button svg{width:14px;height:14px;color:var(--ink-65)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.menu .danger,.menu .danger svg{color:var(--danger)}
+.menu .new{margin-left:auto;font-size:11px;font-weight:600;color:var(--blue)}
+.toast{position:fixed;right:20px;bottom:20px;background:#2c2c2b;color:#fff;font-size:13px;padding:9px 12px;border-radius:6px;z-index:40;
+  box-shadow:0 6px 20px rgba(15,15,15,.2);max-width:360px}
+.flash{animation:flash 1.1s ease-out}
+@keyframes flash{0%{background:rgba(35,131,226,.14)}100%{background:transparent}}
+@media (prefers-reduced-motion:reduce){.flash{animation:none}.nb{transition:none}}
+@media (max-width:1335px){.rail{display:none}.inrail{display:block}}
+@media (min-width:1336px){.inrail{display:none}}
+@media (max-width:900px){.side{display:none}.mock .what{display:none}}
+</style>
+</head>
+<body>
+<div class="mock" role="region" aria-label="시안 조작">
+  <b>연락처 상세 · 첫 화면 재배치</b>
+  <span class="grp"><span class="lbl">보기</span>
+    <span class="seg" data-seg="view">
+      <button type="button" data-v="now" aria-pressed="false">지금</button>
+      <button type="button" data-v="new" aria-pressed="true">시안</button>
+    </span></span>
+  <span class="grp"><span class="lbl">손님</span>
+    <span class="seg" data-seg="who">
+      <button type="button" data-v="rich" aria-pressed="true">일이 걸린 손님</button>
+      <button type="button" data-v="sparse" aria-pressed="false">처음 등록한 손님</button>
+    </span></span>
+  <span class="what" id="what"></span>
+</div>
+
+<div class="app">
+  <aside class="side" aria-label="메뉴">
+    <div class="brand">Estaitt</div>
+    <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>검색<kbd>⌘K</kbd></div>
+    <h6>시작</h6><a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>대시보드</a>
+    <h6>매물·공간</h6>
+    <a href="#"><svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></svg>매물관리</a>
+    <a href="#"><svg viewBox="0 0 24 24"><path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0zM15 5.764v15M9 3.236v15"/></svg>관리단지</a>
+    <a href="#"><svg viewBox="0 0 24 24"><path d="m3 11 18-5v12L3 14v-3zM11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>광고관리</a>
+    <h6>고객·상담</h6>
+    <a href="#"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>프로젝트</a>
+    <a href="#" class="on" aria-current="page"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="2.5"/><path d="M8 17a4 4 0 0 1 8 0"/></svg>연락처</a>
+    <a href="#"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>상담분석</a>
+    <h6>거래·계약</h6>
+    <a href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>희망매물</a>
+    <a href="#"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>거래관리</a>
+    <a href="#"><svg viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7zM14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8"/></svg>계약서 관리</a>
+    <a href="#"><svg viewBox="0 0 24 24"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>수수료/정산</a>
+    <h6>업무·운영</h6>
+    <a href="#"><svg viewBox="0 0 24 24"><path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/></svg>업무</a>
+    <a href="#"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>캘린더</a>
+    <div class="me"><span class="tag">H</span><span>Hyunsu Lee<small>대표</small></span></div>
+  </aside>
+
+  <div class="work">
+    <div class="tabs"><div class="tab"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="2.5"/><path d="M8 17a4 4 0 0 1 8 0"/></svg><span id="tabname"></span></div></div>
+    <header class="head">
+      <nav aria-label="위치"><a href="#" class="nb"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="2.5"/><path d="M8 17a4 4 0 0 1 8 0"/></svg>연락처</a><span class="sep">/</span><span class="here" id="here"></span></nav>
+      <div class="acts">
+        <a href="#" class="nb" data-say="전화 걸기"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>전화</a>
+        <button type="button" class="nb line" data-say="연락처 수정 창"><svg viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497zM15 5l4 4"/></svg>수정</button>
+        <button type="button" class="nb solid" data-say="상담 적기 창"><svg viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>상담 적기</button>
+        <button type="button" class="nb icon" id="more" aria-haspopup="menu" aria-expanded="false" aria-label="작업 메뉴"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+        <div class="menu" id="menu" role="menu" hidden></div>
+      </div>
+    </header>
+    <div class="body">
+      <div class="scroll" id="scroll"><div class="doc" id="doc"></div></div>
+      <aside class="rail" id="rail" aria-label="관련 프로젝트"></aside>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+const I = {
+  phone:'<svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  mail:'<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>',
+  users:'<svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  tag:'<svg viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5"/></svg>',
+  clock:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+  bell:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M12 14v3l2 1"/></svg>',
+  talk:'<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  plus:'<svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg>',
+  task:'<svg viewBox="0 0 24 24"><path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/></svg>',
+  deal:'<svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>',
+  home:'<svg viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  target:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  bldg:'<svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/></svg>',
+  globe:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+  merge:'<svg viewBox="0 0 24 24"><path d="M10 18H5a3 3 0 0 1-3-3v-1M14 2a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2M20 2a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2M7 21l3-3-3-3"/><rect x="14" y="14" width="8" height="8" rx="2"/><rect x="2" y="2" width="8" height="8" rx="2"/></svg>',
+  trash:'<svg viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+};
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* 검수 환경에서 찍은 두 손님의 내용 그대로 (오늘은 2026.11.24) */
+const PEOPLE = {
+  rich: {
+    name:'김민준', phone:'010-2001-0001', email:'01020010001@demo.test', groups:[], tags:[['매수고객','red'],['갈아타기','purple']],
+    created:'2026.11.16', updated:'11.16 (월) 02:12', memo:'[DEMO] 김민준 더미',
+    tasks:[{t:'[DEMO] 김민준 매도인 확인 전화 회신', pri:'높음', who:'Hyunsu Lee', due:'11.14 (토)', late:true}],
+    deals:[
+      {place:'고덕그라시움 101동 3403호', short:'101동 3403호', role:'매도인', type:'매매', tone:'red', price:'13억 2,000만', stage:'가계약', fee:'수수료 받는 중', d:'11.22 (일)'},
+      {place:'고덕그라시움 101동 3404호', short:'101동 3404호', role:'임대인', type:'전세', tone:'blue', price:'10억 8,000만', stage:'본계약', fee:'수수료 받는 중', d:'11.19 (목)'},
+    ],
+    reqs:[
+      {type:'매매', tone:'red', range:'28억 ~ 33억', cond:'34평 ~ 40평 · 강동구, 송파구, 고덕그라시움', reg:'2026.11.16', next:'2026.11.21', nextShort:'11.21 (토)', over:3,
+       note:'[DEMO] 실거주 주택 1채 매도 후 40평대로 갈아타기\n매도 잔금과 매수 잔금 일정 연동 필수'},
+      {type:'전세', tone:'blue', range:'12억 ~ 15억', cond:'25평 ~ 34평 · 강동구, 고덕동, 고덕그라시움', reg:'2026.11.16', next:'2026.11.17', nextShort:'11.17 (화)', over:7,
+       note:'[DEMO] 가족 거주용 전세 별도 확보\n갈아타기 매수 의뢰와 분리해 즉시 입주 가능한 전세 탐색'},
+    ],
+    matches:[
+      {place:'고덕그라시움 101동 3501호', type:'매매', price:'26억 8,000만', stage:'고객 검토', tone:'orange', d:'11.23 (월)'},
+      {place:'고덕그라시움 101동 3501호', type:'매매', price:'26억 8,000만', stage:'임장', tone:'blue', d:'11.23 (월)'},
+    ],
+    owned:[
+      {place:'고덕그라시움 101동 3501호', addr:'서울시 강동구 고덕동 · 지분 100%', note:'[DEMO] owner link · Property #1'},
+      {place:'고덕그라시움 101동 3404호', addr:'서울시 강동구 고덕동 · 지분 100%', note:'[DEMO] owner link · Property #7'},
+    ],
+    talks:[
+      {day:'11.16 (월)', kind:'문자·온라인', icon:'globe', who:'Hyunsu Lee', tags:[['고덕그라시움 101동 3404호','']], time:'05:27', text:'', chip:['매물 확인 · 유효함','green']},
+      {day:'11.15 (일)', kind:'전화', icon:'phone', who:'Hyunsu Lee', tags:[['고덕그라시움 101동 3501호',''],['매매','red']], time:'20:12', text:'[DEMO] 집주인 전화 — 급매 가격 조정 수락. 26.8억으로 인하.'},
+      {day:'11.10 (화)', kind:'방문', icon:'bldg', who:'Hyunsu Lee', tags:[], time:'02:12', text:'[DEMO] 갈아타기 상담 — 현재 집 매도 잔금과 새 집 잔금을 같은 주로 맞추기로 함.'},
+    ],
+    project:{name:'김민준 실거주 갈아타기', state:'진행 중', sub:'0/2 다음 · 고덕그라시움 3501 매도'},
+  },
+  sparse: {
+    name:'정민호', phone:'010-0000-0079', email:'', groups:[], tags:[], created:'2026.11.09', updated:'11.9 (월) 07:00',
+    memo:'[DEMO-CALL] 통화 분석 데모 연락처', tasks:[], deals:[], reqs:[], matches:[], owned:[],
+    talks:[{day:'11.7 (토)', kind:'전화', icon:'phone', who:'Hyunsu Lee', tags:[], time:'15:30',
+      text:'1503호 집주인 정민호 님이 매매가를 15억 5천에서 15억 2천까지 낮출 수 있다고 함. 잔금은 내년 2월 28일 이후 희망하고 실거주 중이라 세입자는 없음. 1504호(형님 소유)도 매물로 나올 수 있어 오늘 저녁 연락처를 받기로 함.\n· 매매가 15억 5천 → 15억 2천까지 조정 가능 (그 아래는 어려움)\n· 잔금은 내년 2월 28일 이후 희망 — 이사 갈 집 입주 일정\n· 실거주 중, 세입자 없음\n· 1504호(형님 소유)도 매물 가능 — 오늘 저녁 연락처 문자'}],
+    project:null,
+  },
+};
+
+const state = { view:'new', who:'rich' };
+const $ = (id) => document.getElementById(id);
+
+function props(p, isNew){
+  const row = (icon,label,inner,start) => `<div class="prop${start?' start':''}"><dt>${icon}${label}</dt><dd>${inner}</dd></div>`;
+  const phone = row(I.phone,'전화',
+    `<button type="button" class="copy num" data-copy="${esc(p.phone)}" aria-label="${esc(p.phone)} 복사">${esc(p.phone)}</button>
+     <span class="minor"><button type="button" data-say="번호 추가">${I.plus}번호 추가</button><button type="button" data-say="연락처 수정 창">수정</button></span>`, true);
+  let lead = '';
+  if (isNew) {
+    const due = p.reqs.filter((r) => r.next);
+    if (due.length) lead += row(I.bell,'다음 연락',
+      due.slice().sort((a,b) => a.next.localeCompare(b.next)).map((r) =>
+        `<span><a href="#requirements" data-jump="requirements" class="num"><span class="${r.over>0?'due':''}">${esc(r.nextShort)}${r.over>0?` · ${r.over}일 지남`:''}</span> <span class="sub">· ${esc(r.type)} ${esc(r.range)}</span></a></span>`).join(''), due.length>1);
+    const t = p.talks[0];
+    if (t) lead += row(I.talk,'마지막 상담',
+      `<button type="button" class="last" data-jump="talks"><span class="t num">${esc(t.day)} ${esc(t.time)} · ${esc(t.kind)} <span class="sub">· ${esc(t.who)}</span></span>
+       <span class="q">${esc(t.text || (t.chip ? `${t.chip[0]} — ${t.tags[0]?.[0] ?? ''}` : ''))}</span></button>`, true);
+  }
+  const email = row(I.mail,'이메일', p.email ? `<a href="#" data-say="메일 쓰기">${esc(p.email)}</a>` : '<span class="faint">없음</span>');
+  const group = row(I.users,'그룹','<span class="faint">속한 그룹 없음</span>');
+  const tags = row(I.tag,'태그', p.tags.length ? p.tags.map(([n,t]) => `<span class="tag ${t}">${esc(n)}</span>`).join('') : '<span class="faint">태그 없음</span>');
+  const reg = isNew ? '' : row(I.clock,'등록',`<span class="num">${esc(p.created)}<span class="faint"> · 마지막 수정 ${esc(p.updated)}</span></span>`);
+  return `<dl>${phone}${lead}${email}${group}${tags}${reg}</dl>`;
+}
+
+function stake(p){
+  const items = [
+    ...p.deals.map((d) => `<a href="#deals" data-jump="deals"><b>${esc(d.role)}</b><span>${esc(d.short)}</span><span class="st">${esc(d.stage)}</span></a>`),
+    ...p.reqs.map((r) => `<a href="#requirements" data-jump="requirements"><b>찾는 집</b><span>${esc(r.type)} ${esc(r.range)}</span></a>`),
+  ];
+  if (!items.length) return '';
+  return `<div class="stake" aria-label="이 손님에게 걸린 일">${items.join('<span class="dot" aria-hidden="true">·</span>')}</div>`;
+}
+
+function partyEmpty(){
+  return `<section class="party"><div class="h2"><h2>세대 · 법인 소속</h2><div class="act"><button type="button" class="nb" data-say="세대 · 법인 추가 창">${I.plus}새 파티</button></div></div>
+    <div class="partybox"><p>연결된 세대·법인 소속이 없습니다. 다른 사람을 먼저 찾지 않아도 1인 세대나 새 법인 파티를 만들 수 있습니다.</p>
+    <div class="btns"><button type="button" class="nb solid" data-say="세대 · 법인 추가 창">+ 새 세대 만들기</button><button type="button" class="nb line" data-say="세대 · 법인 추가 창">+ 새 법인 만들기</button><button type="button" class="nb line" data-say="세대 · 법인 추가 창">기존 소속 연결</button></div></div></section>`;
+}
+
+function sections(p){
+  let h = '';
+  if (p.tasks.length) h += `<section id="tasks"><div class="h2"><h2>업무</h2><span class="cnt">${p.tasks.length}</span><span class="hint">끝내지 않은 것</span><div class="act"><button type="button" class="nb" data-say="업무 추가 창">${I.plus}업무 추가</button></div></div>
+    <ul class="rows">${p.tasks.map((t) => `<li class="row">${I.task}<b>${esc(t.t)}</b><span class="tag red">${esc(t.pri)}</span><span class="right"><span>${esc(t.who)}</span><span class="${t.late?'late':''} num">${esc(t.due)}${t.late?' · 지남':''}</span></span></li>`).join('')}</ul></section>`;
+  if (p.deals.length) h += `<section id="deals"><div class="h2"><h2>거래</h2><span class="cnt">${p.deals.length}</span></div>
+    <ul class="rows">${p.deals.map((d) => `<li class="row">${I.deal}<b>${esc(d.place)}</b><span class="role">${esc(d.role)}</span><span class="tag ${d.tone}">${esc(d.type)}</span><span class="num">${esc(d.price)}</span><span class="right"><span class="tag blue">${esc(d.stage)}</span><span>${esc(d.fee)}</span><span class="d num">${esc(d.d)}</span></span></li>`).join('')}</ul></section>`;
+  if (!p.reqs.length && !p.owned.length && !p.deals.length && !p.matches.length) h += `<section class="empty"><p>찾는 집이 있으면 희망 조건을, 내놓는 집이 있으면 매물을 등록해 두세요.</p><div class="btns"><button type="button" class="nb line" data-say="희망매물 만들기 화면">${I.target}희망매물 만들기</button><button type="button" class="nb line" data-say="매물 등록 화면">${I.home}매물 등록</button><button type="button" class="nb line" data-say="소유 매물 연결 창">${I.bldg}소유 매물 연결</button></div></section>`;
+  if (p.reqs.length) h += `<section id="requirements"><div class="h2"><h2>희망 조건</h2><span class="cnt">${p.reqs.length}</span><span class="hint">이 손님이 찾는 집</span><div class="act"><button type="button" class="nb" data-say="희망매물 만들기 화면">${I.plus}희망매물 만들기</button></div></div>
+    <ul class="cards">${p.reqs.map((r) => `<li class="card"><div class="top"><span class="tag ${r.tone}">${esc(r.type)}</span><span class="tag green dot">활성</span><span class="tag red">급</span><span class="meta num">등록 ${esc(r.reg)} · 다음 연락 ${esc(r.next)}</span></div><div class="big num">${esc(r.type)} ${esc(r.range)}</div><div class="cond">${esc(r.cond)}</div><div class="note">${esc(r.note)}</div></li>`).join('')}</ul></section>`;
+  if (p.matches.length) h += `<section id="matches"><div class="h2"><h2>연결한 매물</h2><span class="cnt">${p.matches.length}</span><span class="hint">보여 주는 중인 집</span></div>
+    <ul class="rows">${p.matches.map((m) => `<li class="row">${I.home}<b>${esc(m.place)}</b><span class="tag red">${esc(m.type)}</span><span class="num">${esc(m.price)}</span><span class="right"><span class="tag ${m.tone}">${esc(m.stage)}</span><span class="d num">${esc(m.d)}</span></span></li>`).join('')}</ul></section>`;
+  if (p.owned.length) h += `<section id="properties"><div class="h2"><h2>소유 · 관리 매물</h2><span class="cnt">${p.owned.length}</span><span class="hint">소유자 · 대리인으로 연결된 매물</span><div class="act"><button type="button" class="nb" data-say="소유 매물 연결 창">${I.plus}소유 매물 연결</button></div></div>
+    <ul class="cards">${p.owned.map((o) => `<li class="card"><div class="top"><b style="font-size:15px">${esc(o.place)}</b><span class="tag brown">소유자</span><span class="tag">주 연락처</span></div><div class="cond">${esc(o.addr)}</div><div class="note">${esc(o.note)}</div></li>`).join('')}</ul></section>`;
+  return h;
+}
+
+function projectBlock(p){
+  return `<h3>프로젝트${p.project?'<span class="cnt">1</span>':''}<button type="button" class="nb" data-say="새 프로젝트 문서">${I.plus}프로젝트 열기</button></h3>` +
+    (p.project ? `<a href="#" class="proj" data-say="프로젝트 문서"><span class="n">${esc(p.project.name)}<span class="tag green dot">${esc(p.project.state)}</span></span><span class="s">${esc(p.project.sub)}</span></a>`
+      : `<p class="railempty">이 손님의 프로젝트가 없습니다. 집을 팔고 새로 사는 갈아타기처럼 의뢰가 여럿 물려 있거나 오래 챙길 손님이면 프로젝트를 여세요.</p>`);
+}
+
+function talks(p){
+  return `<section id="talks"><div class="h2"><h2>상담 기록</h2><span class="cnt">${p.talks.length}</span><div class="act"><button type="button" class="nb" data-say="상담분석 화면">상담분석에서 보기</button><button type="button" class="nb" data-say="상담 적기 창">${I.plus}상담 적기</button></div></div>
+    ${p.talks.map((t) => `<div class="day num">${esc(t.day)}</div><div class="talk"><span class="ic">${I[t.icon]}</span><div><div class="hd"><b>${esc(t.kind)}</b><span class="who">${esc(t.who)}</span>${t.tags.map(([n,c]) => `<span class="tag ${c}">${esc(n)}</span>`).join('')}<span class="tm num">${esc(t.time)}</span></div>${t.chip?`<div style="margin-top:4px"><span class="tag ${t.chip[1]}">${esc(t.chip[0])}</span></div>`:''}${t.text?`<div class="tx">${esc(t.text)}</div>`:''}</div></div>`).join('')}</section>`;
+}
+
+function menuItems(isNew){
+  const it = (icon,label,say,cls='',extra='') => `<button type="button" role="menuitem" class="${cls}" data-say="${say}">${icon}${label}${extra}</button>`;
+  return it(I.clock,'업무 추가','업무 추가 창') + it(I.target,'희망매물 만들기','희망매물 만들기 화면') + it(I.home,'매물 등록','매물 등록 화면') + it(I.bldg,'소유 매물 연결','소유 매물 연결 창') +
+    it(I.users,'세대 · 법인 추가','세대 · 법인 추가 창','', isNew ? '<span class="new">여기로</span>' : '') + '<hr>' + it(I.merge,'다른 연락처와 합치기','합치기 창') + it(I.trash,'삭제','삭제 확인 창','danger');
+}
+
+function render(){
+  const p = PEOPLE[state.who], isNew = state.view === 'new';
+  $('tabname').textContent = p.name; $('here').textContent = p.name;
+  $('doc').innerHTML = `<h1>${esc(p.name)}</h1>${isNew ? stake(p) : ''}${props(p,isNew)}<div class="memo">${esc(p.memo)}</div>${isNew ? '' : partyEmpty()}${sections(p)}<div class="inrail" style="margin-top:24px">${projectBlock(p)}</div>${talks(p)}${isNew ? `<p class="foot num">등록 ${esc(p.created)} · 마지막 수정 ${esc(p.updated)}</p>` : ''}`;
+  $('rail').innerHTML = projectBlock(p);
+  $('menu').innerHTML = menuItems(isNew);
+  $('what').textContent = isNew
+    ? '바뀐 것: ① 이름 아래 걸린 일 한 줄 ② 다음 연락 · 마지막 상담을 위로 ③ 빈 세대·법인 구역 숨김(⋮ 메뉴에 남음) ④ 등록 줄은 맨 아래'
+    : '지금 앱의 배치 그대로';
+  document.querySelectorAll('[data-seg] button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === state[b.closest('[data-seg]').dataset.seg])));
+  $('scroll').scrollTop = 0;
+}
+
+/* 알림: 누르기가 끝난 뒤에, 새것으로 바꿔 띄운다 */
+let toastTimer;
+function toast(text){ const t = $('toast'); t.textContent = text; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2200); }
+
+function closeMenu(focusBack){ const m = $('menu'); if (m.hidden) return; m.hidden = true; $('more').setAttribute('aria-expanded','false'); if (focusBack) $('more').focus(); }
+function openMenu(){ const m = $('menu'); m.hidden = false; $('more').setAttribute('aria-expanded','true'); m.querySelector('button').focus(); }
+
+document.addEventListener('click', (e) => {
+  const seg = e.target.closest('[data-seg] button');
+  if (seg) { state[seg.closest('[data-seg]').dataset.seg] = seg.dataset.v; closeMenu(false); render(); return; }
+  if (e.target.closest('#more')) { $('menu').hidden ? openMenu() : closeMenu(true); return; }
+  const jump = e.target.closest('[data-jump]');
+  if (jump) { e.preventDefault(); const el = $(jump.dataset.jump); if (el) { el.scrollIntoView({block:'start', behavior: matchMedia('(prefers-reduced-motion:reduce)').matches ? 'auto' : 'smooth'}); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } return; }
+  const copy = e.target.closest('[data-copy]');
+  if (copy) { navigator.clipboard?.writeText(copy.dataset.copy).catch(() => {}); toast(`${copy.dataset.copy} 복사했습니다`); return; }
+  const say = e.target.closest('[data-say]');
+  if (say) { e.preventDefault(); const inMenu = say.closest('#menu'); closeMenu(Boolean(inMenu)); toast(`시안이라 열리지 않습니다 — ${say.dataset.say}`); return; }
+  if (e.target.closest('a[href="#"]')) e.preventDefault();
+  if (!e.target.closest('#menu')) closeMenu(false);
+});
+document.addEventListener('keydown', (e) => {
+  const m = $('menu'); if (m.hidden) return;
+  const items = [...m.querySelectorAll('button')], i = items.indexOf(document.activeElement);
+  if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+  else if (e.key === 'Tab') { closeMenu(false); }
+});
+
+const q = new URLSearchParams(location.search);
+if (q.get('view') === 'now') state.view = 'now';
+if (q.get('who') === 'sparse') state.who = 'sparse';
+render();
+</script>
+</body>
+</html>

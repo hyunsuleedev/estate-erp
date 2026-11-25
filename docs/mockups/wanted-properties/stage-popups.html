@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>희망매물 — 단계 띠 팝업 개선 시안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+  /* 색은 apps/desktop/src/renderer/app.css 토큰 값 그대로. 띠 색은 앱에 적용한 값(-match-board.tsx)과 같다. */
+  :root {
+    --fg: #2c2c2b; --fg-sub: #5f5e59; --fg-muted: #79766f; --icon: #8e8b86;
+    --line: #f0efed; --input: #e6e5e3; --muted: #f9f8f7; --ring: #2383e2;
+    --info-strong: #1b64b1; --success: #0f7b6c; --violet: #6940a5; --pink: #ad1a72;
+    --warning-soft: #fdecc8; --warning-strong: #8a5a13;
+    --destructive-soft: #ffe2dd; --destructive-strong: #bb3430;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
+    -webkit-font-smoothing: antialiased; color: var(--fg); background: #fff; font-size: 14px; line-height: 21px; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  button:disabled { cursor: default; }
+  input { font: inherit; color: inherit; }
+  :is(button, input):focus-visible { outline: 2px solid rgba(35,131,226,.5); outline-offset: 1px; }
+  svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .demo-bar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 16px; padding: 8px 16px; background: #2c2c2b; color: #d9d7d2; font-size: 12px; }
+  .demo-bar b { color: #fff; font-weight: 600; font-size: 14px; }
+  .demo-note { margin-left: auto; color: #a3a09a; }
+  main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 120px; }
+  h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+  .lead { margin: 0 0 16px; font-size: 13px; color: var(--fg-muted); }
+  section + section { margin-top: 44px; }
+
+  /* ── 단계 띠 (앱과 같은 모양) ── */
+  .band { display: flex; gap: 3px; }
+  .step { flex: 1; min-width: 0; height: 36px; display: flex; align-items: center; gap: 2px; padding: 0 10px 0 16px; font-size: 13px; white-space: nowrap;
+    clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%, 9px 50%); transition: background-color .15s ease, scale .15s var(--ease-out); }
+  .step:first-child { padding-left: 12px; border-radius: 8px 0 0 8px; clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 50%, calc(100% - 9px) 100%, 0 100%); }
+  .step:last-child { border-radius: 0 8px 8px 0; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 9px 50%); }
+  .step svg { width: 12px; height: 12px; stroke-width: 2.4; }
+  .step.pending { background: #efeeec; color: var(--fg-sub); }
+  .step.done { background: #cfe6d2; color: #0a5c51; font-weight: 500; }
+  .step.current { color: #fff; font-weight: 600; }
+  button.step.pending:hover { background: #e4e3e0; color: var(--fg); }
+  button.step.done:hover { background: #bfdcc3; }
+  button.step:active { scale: .98; }
+  .step.open { filter: brightness(.93); }
+  .c-gray { background: #5f5e59; } .c-info { background: #1b64b1; } .c-orange { background: #c2650b; } .c-violet { background: #6940a5; }
+  .c-pink { background: #ad1a72; } .c-warning { background: #a8721a; } .c-success { background: #0f7b6c; }
+
+  /* ── 눌러 보기 ── */
+  .stage { position: relative; padding: 16px 16px 260px; border-radius: 12px; background: var(--muted); }
+  .stage .band { max-width: 760px; }
+  .anchor { position: absolute; top: 58px; z-index: 5; }
+
+  /* ── 견주어 보기 ── */
+  .cases { display: grid; grid-template-columns: 1fr 1fr; gap: 28px 24px; }
+  .case { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; gap: 0 24px; }
+  .case h3 { grid-column: 1 / -1; margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .case h3 span { margin-left: 8px; font-weight: 400; color: var(--fg-muted); }
+  .pane { padding: 14px 16px 18px; border-radius: 12px; background: var(--muted); }
+  .pane > em { display: block; margin-bottom: 10px; font-style: normal; font-size: 11.5px; color: var(--fg-muted); letter-spacing: .02em; }
+  .pane .band { margin-bottom: 8px; }
+  .pane .band .step { height: 28px; font-size: 11.5px; padding: 0 4px 0 12px; overflow: hidden; }
+  .pane .band .step:first-child { padding-left: 8px; }
+  .pane .band .step svg { width: 10px; height: 10px; }
+  .why { grid-column: 1 / -1; margin: 8px 0 0; font-size: 12.5px; color: var(--fg-sub); }
+
+  /* ── 지금 팝업 (앱의 StageActionPopoverContent를 옮김) ── */
+  .old { width: 320px; padding: 12px; border-radius: 6px; background: #fff; border: 1px solid var(--line); box-shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -2px rgba(0,0,0,.1); }
+  .old .t { font-size: 14px; font-weight: 600; }
+  .old .d { margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--fg-muted); }
+  .old .info { margin-top: 12px; padding: 8px 12px; border-radius: 6px; background: #d3e5ef; color: #2383e2; font-size: 12px; }
+  .old .warn { margin-top: 12px; display: flex; gap: 8px; padding: 8px 12px; border-radius: 6px; background: var(--warning-soft); color: #cb912f; font-size: 12px; line-height: 16px; }
+  .old .warn svg { width: 14px; height: 14px; margin-top: 1px; }
+  .old label { display: block; margin-top: 12px; font-size: 12px; font-weight: 500; color: var(--fg-muted); }
+  .old input { display: block; width: 100%; height: 36px; margin-top: 4px; padding: 0 12px; border: 1px solid var(--input); border-radius: 6px; font-size: 14px; }
+  .old .btns { display: grid; gap: 8px; margin-top: 12px; }
+  .old .b { display: flex; justify-content: center; align-items: center; gap: 6px; height: 32px; border-radius: 6px; font-size: 13px; font-weight: 500; }
+  .old .b.p { background: var(--fg); color: #fff; }
+  .old .b.o { border: 1px solid var(--input); }
+  .old .b.x { border: 1px solid var(--input); color: #e03e3e; }
+  .old .b:disabled { opacity: .5; }
+
+  /* ── 개선안 팝업 ──
+     매물관리 매칭 펼침의 "진행" 카드와 같은 문법: 머리(단계 알약 + 몇 번째) → 속성 줄 → 선으로 나눈 버튼 줄.
+     설명 문장을 없애고, 무엇이 어떻게 바뀌는지를 "지금 → 옮길 곳" 한 줄로 보여 준다. */
+  .pop { width: 304px; overflow: hidden; border-radius: 10px; background: #fff; font-size: 13px; line-height: 20px;
+    box-shadow: 0 0 0 1px rgba(42,28,0,.07), 0 5px 8px rgba(25,25,25,.027), 0 20px 24px rgba(25,25,25,.05); }
+  .anchor .pop { transform-origin: top left; animation: pop-in 150ms var(--ease-out); }
+  @keyframes pop-in { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .anchor .pop { animation: none; } button.step:active { scale: 1; } }
+  .pop-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; }
+  .pop-head .ord { font-size: 12px; color: var(--fg-muted); }
+  .pop-head .state { margin-left: auto; font-size: 12px; color: var(--fg-muted); }
+  .chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 9px 0 7px; border-radius: 10px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+  .k-gray { background: #f1f1ef; color: #5f5e59; } .k-info { background: #d3e5ef; color: #1b64b1; } .k-orange { background: #fadec9; color: #b85f0a; }
+  .k-violet { background: #e8deee; color: #6940a5; } .k-pink { background: #f5e0e9; color: #ad1a72; } .k-warning { background: #fdecc8; color: #8a5a13; } .k-success { background: #dbeddb; color: #0f7b6c; }
+  .props { margin: 0; padding: 0 6px 8px; }
+  .prop { display: grid; grid-template-columns: 94px minmax(0,1fr); align-items: center; min-height: 30px; border-radius: 6px; }
+  .prop dt { display: flex; align-items: center; gap: 7px; padding: 0 6px; color: var(--fg-muted); white-space: nowrap; }
+  .prop dt svg { width: 14px; height: 14px; color: var(--icon); }
+  .prop dd { margin: 0; padding: 0 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+  .prop dd .arrow { color: var(--icon); width: 12px; height: 12px; }
+  .hint { padding: 0 12px 8px; margin-top: -2px; font-size: 12px; line-height: 17px; color: var(--fg-muted); }
+  .quiet { height: 28px; margin: 0 -6px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .quiet:hover { background: rgba(44,44,43,.05); }
+  .quiet:focus { background: #fff; outline: 2px solid rgba(35,131,226,.4); outline-offset: 0; }
+  .alert { display: flex; gap: 8px; margin: 0 8px 8px; padding: 7px 10px; border-radius: 6px; background: var(--warning-soft); color: var(--warning-strong); font-size: 12px; line-height: 17px; }
+  .alert svg { width: 14px; height: 14px; margin-top: 1.5px; }
+  .foot { display: flex; align-items: center; gap: 4px; padding: 6px 8px; border-top: 1px solid var(--line); background: rgba(249,248,247,.6); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; background: var(--fg); color: #fff; font-size: 13px; font-weight: 500; transition: background-color .12s ease, scale .14s var(--ease-out); }
+  .btn:hover { background: #454543; } .btn:active { scale: .97; }
+  .btn:disabled { opacity: .4; scale: 1; }
+  .btn svg { width: 14px; height: 14px; }
+  .btn-quiet { height: 28px; padding: 0 8px; border-radius: 6px; color: var(--fg-muted); transition: background-color .12s ease, color .12s ease; }
+  .btn-quiet:hover { background: rgba(44,44,43,.05); color: var(--fg); }
+  .btn-quiet.danger { margin-left: auto; }
+  .btn-quiet.danger:hover { background: var(--destructive-soft); color: var(--destructive-strong); }
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+  <b>희망매물 · 단계 띠 팝업</b>
+  <span class="demo-note">위쪽 띠는 눌러 볼 수 있습니다 · 아래는 경우별로 지금 팝업과 개선안을 나란히 둔 것입니다 (시안용 가짜 데이터)</span>
+</div>
+
+<main>
+  <section>
+    <h2>눌러 보기</h2>
+    <p class="lead">띠의 칸을 누르면 개선안 팝업이 뜹니다. 팝업의 버튼으로 단계를 옮기면 띠가 따라 바뀝니다.</p>
+    <div class="stage" id="stage"></div>
+  </section>
+
+  <section>
+    <h2>경우별 견주어 보기</h2>
+    <p class="lead">왼쪽이 지금 앱, 오른쪽이 개선안입니다. 밝기가 내려간 칸이 누른 칸입니다.</p>
+    <div class="cases" id="cases"></div>
+  </section>
+</main>
+
+<script>
+const ICON = {
+  check: '<path d="M5 12.5l4.500 4.500L19 7.500"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>', back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  dashed: '<circle cx="12" cy="12" r="9" stroke-dasharray="3.5 3.5"/>', cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.500v5M12 16v.5"/>', route: '<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h6a4 4 0 0 0 0-8h-4a4 4 0 0 1 0-8h6" transform="translate(0 4) scale(1 .78)"/>',
+  off: '<circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/>',
+};
+const ic = (n, c = '') => `<svg viewBox="0 0 24 24" aria-hidden="true"${c ? ` class="${c}"` : ''}>${ICON[n]}</svg>`;
+
+const STAGES = ['suggested', 'buyerInterested', 'viewingConfirmed', 'viewing', 'buyerReviewing', 'negotiating', 'dealCreated'];
+const META = {
+  suggested: { label: '내부 후보', tone: 'gray', next: '매물 제안하기', go: '고객에게 제안', close: '후보에서 제외 · 종료' },
+  buyerInterested: { label: '고객 관심', tone: 'info', next: '고객 답변 확인', go: '관심 있음 · 임장 조율로', close: '관심 없음 · 종료' },
+  viewingConfirmed: { label: '임장 조율', tone: 'orange', next: '집주인 확인', go: '조율 완료 · 임장으로', close: '임장 불가 · 종료' },
+  viewing: { label: '임장', tone: 'violet', next: '임장 진행', go: '임장 완료 · 고객 검토로', close: '임장 취소 · 종료' },
+  buyerReviewing: { label: '고객 검토', tone: 'pink', next: '고객 반응 확인', go: '검토 후 관심 있음 · 협상으로', close: '검토 후 관심 없음 · 종료' },
+  negotiating: { label: '협상', tone: 'warning', next: '가격·입주일 협의', go: '조건 합의 · 거래로 전환', close: '협상 결렬 · 종료' },
+  dealCreated: { label: '거래 전환', tone: 'success' },
+};
+const SIBLING = '같은 집의 전세 의뢰가 다른 손님과 거래 중입니다(가계약). 그 거래가 끝나기 전에는 이 매칭을 거래로 넘길 수 없습니다.';
+const idx = (s) => STAGES.indexOf(s);
+const chip = (s) => `<span class="chip k-${META[s].tone}"><i></i>${META[s].label}</span>`;
+const fmt = (v) => { if (!v) return ''; const d = new Date(v); return `${d.getMonth() + 1}. ${d.getDate()}. (${'일월화수목금토'[d.getDay()]}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+
+function band(m, open, interactive) {
+  return `<div class="band" role="list">${STAGES.map((s) => {
+    const st = idx(s) < idx(m.stage) ? 'done' : s === m.stage ? `current c-${META[s].tone}` : 'pending';
+    const inner = `${st === 'done' ? ic('check') : ''}<span>${META[s].label}</span>`;
+    const cls = `step ${st}${s === open ? ' open' : ''}`;
+    return interactive ? `<button type="button" role="listitem" class="${cls}" data-step="${s}">${inner}</button>` : `<div role="listitem" class="${cls}">${inner}</div>`;
+  }).join('')}</div>`;
+}
+
+// ── 지금 팝업 ───────────────────────────────────────────────────────────
+function oldPopup(m, s) {
+  const state = idx(s) < idx(m.stage) ? 'completed' : s === m.stage ? 'current' : 'pending';
+  const block = (state === 'current' ? STAGES[idx(s) + 1] : s) === 'dealCreated' && m.sibling ? SIBLING : null;
+  const warn = block ? `<div class="warn">${ic('alert')}<span>${block}</span></div>` : '';
+  if (s === 'viewing') {
+    return `<div class="old"><div class="t">임장</div><div class="d">임장 일정을 캘린더에 남기고, 다녀오면 고객 검토 단계로 넘깁니다.</div>
+      ${m.viewingAt ? `<div class="info">예정된 임장: ${fmt(m.viewingAt)}</div>` : ''}${warn}
+      <label>임장 일시<input type="datetime-local" value="${m.viewingAt ?? '2026-11-23T14:00'}" tabindex="-1"></label>
+      <div class="btns"><div class="b p">${ic('cal')}${m.viewingAt ? '임장 일정 변경' : m.stage === 'viewing' ? '임장 일정 잡기' : '일정 잡고 임장 단계로 이동'}</div>
+      ${m.stage === 'viewing' ? `<div class="b o">${ic('check')}${META.viewing.go}</div><div class="b x">${ic('off')}${META.viewing.close}</div>` : '<div class="b o">임장 단계로 이동</div>'}</div></div>`;
+  }
+  const d = s === 'viewingConfirmed' ? '집주인·점유자와 임장 일정을 조율한 뒤 다음 단계로 진행합니다.'
+    : state === 'current' ? '업무 결과를 선택해 다음 단계로 진행하거나 이 단계에서 종료합니다.'
+    : state === 'completed' ? '이미 지난 단계입니다. 필요하면 이 단계로 되돌립니다.' : '앞 단계를 건너뛰고 이 단계로 바로 옮길 수 있습니다.';
+  const btns = state === 'current'
+    ? `<div class="b p"${block ? ' style="opacity:.5"' : ''}>${META[s].go}${ic('arrow')}</div><div class="b x">${ic('off')}${META[s].close}</div>`
+    : `<div class="b o"${block ? ' style="opacity:.5"' : ''}>${s === 'dealCreated' ? '거래 전환…' : state === 'completed' ? '이 단계로 되돌리기' : '이 단계로 이동'}</div>`;
+  return `<div class="old"><div class="t">${META[s].label}</div><div class="d">${d}</div>${warn}<div class="btns">${btns}</div></div>`;
+}
+
+// ── 개선안 팝업 ─────────────────────────────────────────────────────────
+const prop = (icon, label, value) => `<div class="prop"><dt>${ic(icon)}${label}</dt><dd>${value}</dd></div>`;
+function newPopup(m, s, live) {
+  const i = idx(s), c = idx(m.stage);
+  const state = i < c ? 'completed' : i === c ? 'current' : 'pending';
+  const target = state === 'current' ? STAGES[i + 1] : s;
+  const block = target === 'dealCreated' && m.sibling ? SIBLING : null;
+  const act = (to, extra = '') => (live ? ` data-go="${to}"${extra}` : ' tabindex="-1"');
+  const rows = [], foot = [];
+  let hint = '';
+
+  if (state === 'current') {
+    rows.push(prop('dashed', '다음 할 일', META[s].next));
+    if (s === 'viewing') rows.push(prop('cal', '임장 일시', `<input class="quiet num" type="datetime-local" value="${m.viewingAt ?? ''}" data-viewing aria-label="임장 일시"${live ? '' : ' tabindex="-1"'}>`));
+    foot.push(`<button type="button" class="btn"${act(target)}${block ? ' disabled' : ''}>${ic('check')}${META[s].go}</button>`);
+    foot.push(`<button type="button" class="btn-quiet danger"${act('closed')}>${META[s].close.split(' · ')[0]}</button>`);
+  } else {
+    // 무엇이 어떻게 바뀌는지를 문장 대신 "지금 → 옮길 곳" 한 줄로
+    rows.push(prop('route', '이동', `${chip(m.stage)}${ic('arrow', 'arrow')}${chip(s)}`));
+    if (s === 'viewing') {
+      rows.push(prop('cal', '임장 일시', `<input class="quiet num" type="datetime-local" value="${m.viewingAt ?? ''}" data-viewing aria-label="임장 일시"${live ? '' : ' tabindex="-1"'}>`));
+      foot.push(`<button type="button" class="btn"${act(s, ' data-need-viewing')}${m.viewingAt ? '' : ' disabled'}>${ic('cal')}일정 잡고 임장으로</button>`);
+      foot.push(`<button type="button" class="btn-quiet"${act(s)}>일정 없이 이동</button>`);
+    } else {
+      foot.push(`<button type="button" class="btn"${act(s)}${block ? ' disabled' : ''}>${state === 'completed' ? `${ic('back')}이 단계로 되돌리기` : s === 'dealCreated' ? `${ic('check')}거래 전환…` : `${ic('arrow')}이 단계로 이동`}</button>`);
+    }
+    const skipped = state === 'pending' ? STAGES.slice(c + 1, i).map((x) => META[x].label) : [];
+    if (skipped.length) hint = `${skipped.join(' · ')} 단계를 건너뜁니다.`;
+  }
+  const stateText = state === 'current' ? '지금 단계' : state === 'completed' ? '끝낸 단계' : '남은 단계';
+  return `<div class="pop" role="dialog" aria-label="${META[s].label} 단계">
+    <div class="pop-head">${chip(s)}<span class="ord num">${i + 1}/${STAGES.length}</span><span class="state">${stateText}</span></div>
+    <dl class="props">${rows.join('')}</dl>
+    ${hint ? `<div class="hint">${hint}</div>` : ''}
+    ${block ? `<div class="alert" role="alert">${ic('alert')}<span>${block}</span></div>` : ''}
+    <div class="foot">${foot.join('')}</div>
+  </div>`;
+}
+
+// ── 경우별 ──────────────────────────────────────────────────────────────
+const CASES = [
+  { title: '지금 단계를 누름', sub: '고객 관심 단계에서 "고객 관심"', m: { stage: 'buyerInterested' }, s: 'buyerInterested',
+    why: '설명 문장 대신 "다음 할 일" 한 줄. 버튼은 한 줄에 놓고, 종료는 오른쪽 끝의 조용한 글자 버튼으로 물려 실수로 누르기 어렵게 했습니다(올리면 빨갛게).' },
+  { title: '끝낸 단계를 누름 (되돌리기)', sub: '협상 단계에서 "고객 관심"', m: { stage: 'negotiating' }, s: 'buyerInterested',
+    why: '"이미 지난 단계입니다" 대신 지금 단계와 옮길 단계를 알약 두 개와 화살표로 보여 줍니다. 어디서 어디로 가는지가 문장을 읽지 않아도 보입니다.' },
+  { title: '남은 단계를 누름 (건너뛰기)', sub: '내부 후보 단계에서 "고객 검토"', m: { stage: 'suggested' }, s: 'buyerReviewing',
+    why: '건너뛰는 단계 이름을 적어 줍니다. 지금은 "앞 단계를 건너뛴다"고만 해서 무엇을 건너뛰는지 알 수 없습니다.' },
+  { title: '임장 칸을 누름 (일정 잡기)', sub: '임장 조율 단계에서 "임장"', m: { stage: 'viewingConfirmed' }, s: 'viewing',
+    why: '날짜 칸을 속성 줄 안에 넣어 팝업 높이를 줄였습니다. 날짜를 고르기 전에는 "일정 잡고 임장으로"가 눌리지 않고, 일정 없이 옮기는 길은 옆에 따로 둡니다.' },
+  { title: '임장 중에 임장 칸을 누름', sub: '예정된 임장이 있음', m: { stage: 'viewing', viewingAt: '2026-11-24T14:00' }, s: 'viewing',
+    why: '지금은 "예정된 임장" 상자와 날짜 입력칸에 같은 날짜가 두 번 나오고 버튼이 세 개입니다. 날짜를 한 번만 보여 주고(칸에서 바로 고침) 버튼을 둘로 줄였습니다.' },
+  { title: '막힌 이동', sub: '같은 집이 거래 중일 때 "거래 전환"', m: { stage: 'negotiating', sibling: true }, s: 'dealCreated',
+    why: '경고 글씨를 노란 바탕 위의 진한 갈색으로 바꿔 읽히게 했습니다(지금은 노란 바탕에 노란 글씨). 막힌 버튼은 흐리게 두되 이유가 바로 위에 붙습니다.' },
+];
+document.getElementById('cases').innerHTML = CASES.map((c) => `<div class="case"><h3>${c.title}<span>${c.sub}</span></h3>
+  <div class="pane"><em>지금</em>${band(c.m, c.s)}${oldPopup(c.m, c.s)}</div>
+  <div class="pane"><em>개선안</em>${band(c.m, c.s)}${newPopup(c.m, c.s, false)}</div>
+  <p class="why">${c.why}</p></div>`).join('');
+
+// ── 눌러 보기 ───────────────────────────────────────────────────────────
+const live = { stage: 'buyerInterested', viewingAt: '', open: null };
+const stageEl = document.getElementById('stage');
+function renderLive() {
+  stageEl.innerHTML = band(live, live.open, true) + (live.open ? `<div class="anchor" id="anchor">${newPopup(live, live.open, true)}</div>` : '');
+  if (!live.open) return;
+  const stepEl = stageEl.querySelector(`[data-step="${live.open}"]`);
+  const anchor = document.getElementById('anchor');
+  const left = Math.min(stepEl.offsetLeft, stageEl.clientWidth - 304 - 16);
+  anchor.style.left = `${Math.max(16, left)}px`;
+}
+stageEl.addEventListener('click', (event) => {
+  const step = event.target.closest('[data-step]');
+  if (step) { live.open = live.open === step.dataset.step ? null : step.dataset.step; renderLive(); return; }
+  const go = event.target.closest('[data-go]');
+  if (go && !go.disabled) {
+    live.stage = go.dataset.go === 'closed' ? 'suggested' : go.dataset.go; // 시안에서는 종료하면 처음으로 돌려 둔다
+    if (idx(live.stage) < idx('viewing')) live.viewingAt = '';
+    live.open = null; renderLive();
+  }
+});
+stageEl.addEventListener('input', (event) => {
+  if (!event.target.matches('[data-viewing]')) return;
+  live.viewingAt = event.target.value;
+  // 화면을 다시 그리면 고르던 날짜 칸이 닫힌다 — 버튼만 켜고 끈다
+  const need = stageEl.querySelector('[data-need-viewing]');
+  if (need) need.disabled = !live.viewingAt;
+});
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && live.open) { live.open = null; renderLive(); } });
+live.open = 'buyerInterested';
+renderLive();
+</script>
+</body>
+</html>

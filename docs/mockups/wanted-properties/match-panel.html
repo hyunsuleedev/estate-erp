@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>희망매물 — 연결 매물 영역 재디자인 시안</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/pretendardvariable.min.css">
+<style>
+  /* 색은 apps/desktop/src/renderer/app.css 토큰 값 그대로. 치수는 매물관리의 "연결 구매고객" 패널
+     (properties/-components/property-match-panel.tsx)에서 옮겼다. */
+  :root {
+    --fg: #2c2c2b; --fg-sub: #5f5e59; --fg-muted: #79766f; --icon: #8e8b86;
+    --line: #f0efed; --input: #e6e5e3; --muted: #f9f8f7; --ring: #2383e2;
+    --info: #2383e2; --info-soft: #d3e5ef; --info-strong: #1b64b1;
+    --success: #0f7b6c; --success-soft: #dbeddb;
+    --warning: #cb912f; --warning-soft: #fdecc8; --warning-strong: #8a5a13;
+    --violet: #6940a5; --violet-soft: #e8deee;
+    --pink: #ad1a72; --pink-soft: #f5e0e9;
+    --orange: #d9730d; --orange-soft: #fadec9;
+    --destructive: #e03e3e; --destructive-soft: #ffe2dd; --destructive-strong: #bb3430;
+    --neutral-soft: #f1f1ef;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont,
+      "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: var(--fg); background: #fff; font-size: 14px; line-height: 21px;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  button:disabled { cursor: default; }
+  input, textarea { font: inherit; color: inherit; }
+  :is(button, input, textarea, a):focus-visible { outline: 2px solid rgba(35,131,226,.5); outline-offset: 1px; }
+  svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .num { font-variant-numeric: tabular-nums; }
+  .trunc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { color: rgba(121,118,111,.7); }
+
+  /* ── 시안 조작 띠 (앱 화면이 아님) ── */
+  .demo-bar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 16px; padding: 8px 16px; background: #2c2c2b; color: #d9d7d2; font-size: 12px; }
+  .demo-bar b { color: #fff; font-weight: 600; font-size: 14px; }
+  .demo-seg { display: inline-flex; gap: 2px; background: rgba(255,255,255,.1); border-radius: 6px; padding: 2px; }
+  .demo-seg button { padding: 2px 10px; border-radius: 4px; color: #d9d7d2; }
+  .demo-seg button[aria-pressed="true"] { background: #fff; color: #2c2c2b; font-weight: 600; }
+  .demo-note { margin-left: auto; color: #a3a09a; }
+
+  /* ── 주변 화면: 희망매물 표 (지금 앱과 같은 칸) ── */
+  .scroller { overflow-x: auto; }
+  .sheet { min-width: 1204px; padding-bottom: 80px; }
+  .bgrid { display: grid; grid-template-columns: 40px 28px 148px 122px 100px 104px minmax(156px,200px) minmax(140px,1fr) 106px 68px 80px 112px; }
+  .bhead { height: 36px; border-bottom: 1px solid var(--line); }
+  .bhead > div, .brow > div { display: flex; align-items: center; min-width: 0; padding: 0 10px; border-right: 1px solid var(--line); }
+  .bhead > div:first-child, .brow > div:first-child { border-right: 0; justify-content: center; padding: 0; }
+  .bhead > div:nth-child(2), .brow > div:nth-child(2) { justify-content: center; padding: 0; }
+  .bhead > div:last-child, .brow > div:last-child { border-right: 0; }
+  .hlabel { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; color: var(--fg-muted); }
+  .hlabel svg { color: var(--icon); }
+  .group { border-bottom: 1px solid var(--line); }
+  .brow { min-height: 40px; font-size: 13px; }
+  .group.open > .brow { border-bottom: 1px solid var(--line); }
+  .box { width: 16px; height: 16px; border: 1px solid #d3d1cb; border-radius: 4px; }
+  .icon-btn { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 5px; color: var(--fg-muted); }
+  .icon-btn:hover { background: rgba(33,27,23,.06); color: var(--fg); }
+  .icon-btn svg, .chev svg { transition: transform .15s ease; }
+  [aria-expanded="true"] > svg.rot { transform: rotate(90deg); }
+  .name-chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 2px 8px 2px 2px; border-radius: 12px; font-size: 14px; font-weight: 450; min-width: 0; }
+  .name-chip:hover { background: rgba(211,229,239,.4); }
+  .avatar { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--info-soft); color: var(--info-strong); font-size: 11px; font-weight: 500; flex: none; }
+  .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; font-size: 12px; line-height: 20px; white-space: nowrap; }
+  .tag.sale { background: #fdebec; color: #8f4b46; }
+  .tag.jeonse { background: var(--info-soft); color: var(--info-strong); }
+  .tag.ok { background: var(--success-soft); color: var(--success); }
+  .tag.urgent { background: var(--destructive-soft); color: var(--destructive-strong); }
+  .tag.plain { background: var(--neutral-soft); color: var(--fg-sub); }
+  .count { padding: 2px 6px; border-radius: 6px; font-size: 11.5px; font-weight: 500; }
+  .count.go { background: var(--info-soft); color: var(--info-strong); }
+  .count.deal { background: var(--success-soft); color: var(--success); }
+  .count.end { background: var(--destructive-soft); color: var(--destructive-strong); }
+  .bmemo { display: grid; grid-template-columns: 56px minmax(0,1fr); gap: 0 8px; padding: 6px 12px 6px 78px; font-size: 12px; line-height: 20px; border-bottom: 1px solid var(--line); }
+  .bmemo dt { color: var(--fg-muted); } .bmemo dd { margin: 0; color: rgba(44,44,43,.8); }
+
+  /* ── 재디자인: 연결 매물 패널 ── */
+  .panel { margin-left: 78px; padding: 10px 16px 12px 0; }
+  .ptools { display: flex; align-items: center; gap: 4px; height: 28px; margin-bottom: 4px; font-size: 13px; }
+  .ptab { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 14px; background: rgba(44,44,43,.07); font-weight: 500; }
+  .ptab svg { width: 14px; height: 14px; color: rgba(44,44,43,.7); }
+  .ptab span { color: var(--fg-muted); font-weight: 400; }
+  .ptools .aside { font-size: 12px; color: rgba(121,118,111,.7); }
+  .ptools .sort { margin-left: auto; height: 26px; padding: 0 6px; border-radius: 5px; color: var(--fg-muted); display: inline-flex; align-items: center; gap: 4px; }
+  .ptools .sort:hover { background: rgba(44,44,43,.05); color: var(--fg); }
+  .ptools .sort svg { width: 14px; height: 14px; }
+
+  .mgrid { display: grid; grid-template-columns: 26px minmax(236px,1.25fr) 72px 196px 124px 150px minmax(170px,1fr) 172px; align-items: center; }
+  .mhead { height: 36px; border-bottom: 1px solid var(--line); }
+  .mhead > div { padding: 0 10px; min-width: 0; }
+  .mrow { min-height: 37px; border-bottom: 1px solid var(--line); font-weight: 450; cursor: pointer; }
+  .mrow:hover { background: var(--muted); }
+  .mrow > div { min-width: 0; }
+  .mrow > div:not(:first-child) { align-self: stretch; display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; }
+  .mrow > div:not(:first-child):not(:last-child) { border-right: 1px solid var(--line); }
+  .mrow .chev { display: grid; place-items: center; width: 24px; height: 36px; border-radius: 4px; color: var(--fg-muted); }
+  .mrow .chev svg { width: 14px; height: 14px; }
+  .mrow .chev:hover { background: rgba(44,44,43,.06); color: var(--fg); }
+  .mrow.dim, .mrow.dim .title { color: var(--fg-muted); }
+  .title { font-weight: 500; }
+  .title:hover { text-decoration: underline; }
+  .fit { font-size: 12px; color: var(--fg-muted); flex-shrink: 999; }
+  .fit.over { color: var(--destructive); }
+  .mrow.dim .fit.over { color: var(--fg-muted); }
+  .warn-dot { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--warning-soft); color: var(--warning-strong); font-size: 12px; white-space: nowrap; flex: none; }
+  .memo2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; padding: 7.5px 0; white-space: normal; word-break: break-word; }
+  .when { font-size: 13px; color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .when b { font-weight: 450; color: var(--fg); }
+
+  .chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 9px 0 7px; border-radius: 10px; font-size: 14px; font-weight: 450; line-height: 20px; white-space: nowrap; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: none; }
+  .chip.sm { font-size: 12px; }
+  .ord { font-size: 12px; color: var(--fg-muted); }
+  .t-gray { background: var(--neutral-soft); color: var(--fg-sub); }
+  .t-info { background: var(--info-soft); color: var(--info); }
+  .t-orange { background: var(--orange-soft); color: var(--orange); }
+  .t-violet { background: var(--violet-soft); color: var(--violet); }
+  .t-pink { background: var(--pink-soft); color: var(--pink); }
+  .t-warning { background: var(--warning-soft); color: var(--warning); }
+  .t-success { background: var(--success-soft); color: var(--success); }
+  .t-destructive { background: var(--destructive-soft); color: var(--destructive); }
+  .t-dim { background: var(--neutral-soft); color: var(--fg-muted); }
+  .t-dim i { background: rgba(121,118,111,.4); }
+
+  .subnote { display: flex; align-items: flex-end; height: 30px; padding: 0 0 6px 32px; border-bottom: 1px solid var(--line); font-size: 11.5px; color: rgba(121,118,111,.7); }
+  .addrow { display: flex; align-items: center; gap: 6px; width: 100%; height: 36px; padding-left: 34px; border-radius: 4px; font-size: 13px; color: var(--fg-muted); }
+  .addrow:hover { background: var(--muted); color: var(--fg); }
+  .addrow svg { width: 12px; height: 12px; }
+  .closed-toggle { display: flex; align-items: center; gap: 6px; height: 32px; padding-left: 4px; font-size: 13px; color: var(--fg-muted); }
+  .closed-toggle:hover { color: var(--fg); }
+  .closed-toggle svg { width: 12px; height: 12px; transition: transform .15s ease; }
+
+  /* 줄 아래 펼침: 단계 띠 + 카드 두 장 */
+  .detail { padding: 8px 10px 20px 34px; border-bottom: 1px solid var(--line); }
+  .path { display: flex; gap: 2px; max-width: 940px; }
+  .step { flex: 1; min-width: 0; height: 44px; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 0 14px 0 22px; font-size: 12px;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%); }
+  .step:first-child { padding-left: 12px; border-radius: 5px 0 0 5px; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%); }
+  .step:last-child { border-radius: 0 5px 5px 0; clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 10px 50%); }
+  button.step:hover { filter: brightness(.95); }
+  .step .nm { display: flex; align-items: center; gap: 4px; max-width: 100%; }
+  .step .nm svg { width: 12px; height: 12px; stroke-width: 2.4; }
+  .step .sub { min-height: 13px; font-size: 11px; line-height: 13px; font-weight: 400; opacity: .8; white-space: nowrap; }
+  .step.pending { background: rgba(44,44,43,.035); color: rgba(121,118,111,.6); }
+  .step.skipped { background: rgba(44,44,43,.035); color: var(--fg-muted); }
+  .step.done { background: rgba(219,237,219,.6); color: var(--success); }
+  .step.done.gray { background: rgba(44,44,43,.07); color: var(--fg-muted); }
+  .step.current { font-weight: 600; }
+  .step.failed { background: var(--destructive-soft); color: var(--destructive); font-weight: 600; }
+  .step.blocked { opacity: .55; cursor: not-allowed; }
+  .path.deal { max-width: 600px; }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; max-width: 940px; margin-top: 14px; }
+  .card { min-width: 0; overflow: hidden; border-radius: 10px; background: #fff;
+    box-shadow: 0 0 0 1px rgba(42,28,0,.09), 0 2px 4px rgba(25,25,25,.04), 0 10px 20px -12px rgba(25,25,25,.12); }
+  .card-head { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 10px 14px 4px; }
+  .card-head strong { font-weight: 600; }
+  .card-head .kind { font-size: 12px; color: var(--fg-muted); flex: none; }
+  .card-head .open { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; height: 26px; padding: 0 6px; border-radius: 5px; font-size: 12px; color: var(--fg-muted); }
+  .card-head .open:hover { background: rgba(44,44,43,.05); color: var(--fg); }
+  .card-head .open svg { width: 12px; height: 12px; }
+  .props { margin: 0; padding: 0 6px 8px; }
+  .prop { display: grid; grid-template-columns: 112px minmax(0,1fr); align-items: start; border-radius: 6px; }
+  .prop:hover { background: rgba(44,44,43,.03); }
+  .prop dt { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; color: var(--fg-muted); }
+  .prop dt svg { color: var(--icon); }
+  .prop dd { margin: 0; min-height: 32px; padding: 5.5px 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .prop dd.multi { display: block; white-space: pre-wrap; word-break: break-word; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 12px; }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .pill.in { background: var(--success-soft); color: var(--success); }
+  .pill.over { background: var(--destructive-soft); color: var(--destructive-strong); }
+  .quiet { height: 28px; margin: -3.5px -6px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; font-variant-numeric: tabular-nums; }
+  .quiet:hover { background: rgba(44,44,43,.05); }
+  .quiet:focus { background: #fff; outline: 2px solid rgba(35,131,226,.4); outline-offset: 0; }
+  .quiet::placeholder { color: rgba(121,118,111,.7); }
+  .echo { font-size: 12px; color: var(--fg-muted); }
+  .memo-btn { display: block; width: calc(100% + 12px); margin: -4px -6px; padding: 4px 6px; border-radius: 6px; white-space: pre-wrap; word-break: break-word; }
+  .memo-btn:hover { background: rgba(44,44,43,.05); }
+  .memo-edit { display: block; width: calc(100% + 12px); margin: -4px -6px; padding: 4px 6px; border: 0; border-radius: 6px; resize: none; line-height: 21px; outline: 2px solid rgba(35,131,226,.4); }
+  .others { list-style: none; margin: 0; padding: 0; width: 100%; }
+  .others li { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+  .others .p { color: var(--fg-muted); flex: none; }
+  .alert { display: flex; gap: 8px; margin: 6px 8px 4px; padding: 8px 12px; border-radius: 6px; background: var(--warning-soft); color: var(--warning-strong); font-size: 12px; line-height: 18px; }
+  .alert svg { width: 14px; height: 14px; margin-top: 2px; }
+  .card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 12px; border-top: 1px solid var(--line); background: rgba(249,248,247,.5); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; background: var(--fg); color: #fff; font-size: 13px; font-weight: 500; }
+  .btn:hover { background: #454543; }
+  .btn:disabled { opacity: .45; }
+  .btn svg { width: 14px; height: 14px; }
+  .btn-quiet { height: 28px; padding: 0 8px; border-radius: 6px; color: var(--fg-muted); }
+  .btn-quiet:hover { background: var(--destructive-soft); color: var(--destructive-strong); }
+
+  /* ── 비교용: 지금 화면의 가지 모양 (간단히 옮김) ── */
+  .branches { position: relative; margin: 8px 12px 12px 78px; padding-left: 48px; }
+  .branches::before { content: ""; position: absolute; left: 0; top: -8px; bottom: 28px; width: 1px; background: var(--line); }
+  .lane { position: relative; display: grid; grid-template-columns: minmax(260px,.8fr) minmax(520px,1.6fr) auto; gap: 12px; align-items: center; padding: 10px 8px; border-radius: 6px; }
+  .lane:hover { background: rgba(249,248,247,.6); }
+  .lane::before { content: ""; position: absolute; left: -48px; top: calc(50% - 32px); width: 32px; height: 32px; border-left: 1.5px solid var(--line); border-bottom: 1.5px solid var(--line); border-bottom-left-radius: 28px; }
+  .lane .t { font-size: 13px; font-weight: 600; }
+  .lane .meta { margin-top: 4px; font-size: 12px; color: var(--fg-muted); }
+  .lane .meta b { color: var(--fg); font-weight: 500; }
+  .dots { display: flex; align-items: flex-start; }
+  .dots div { flex: 1; text-align: center; font-size: 11px; color: var(--fg-muted); position: relative; }
+  .dots div::before { content: ""; display: block; width: 10px; height: 10px; margin: 0 auto 4px; border-radius: 50%; border: 1.5px solid #d3d1cb; background: #fff; position: relative; z-index: 1; }
+  .dots div::after { content: ""; position: absolute; top: 5px; left: -50%; width: 100%; height: 1.5px; background: var(--line); }
+  .dots div:first-child::after { display: none; }
+  .dots div.d::before { background: var(--fg); border-color: var(--fg); }
+  .dots div.c { color: var(--fg); font-weight: 600; }
+  .dots div.c::before { border-color: var(--info); box-shadow: 0 0 0 3px var(--info-soft); }
+  .lane .foot { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; color: var(--fg-muted); }
+
+  /* ── 카드형: 지금 화면의 가지 모양 + 매칭 한 건 = 카드 한 장, 단계는 매물관리와 같은 띠 ── */
+  .cbranches { position: relative; margin: 12px 16px 12px 78px; padding-left: 48px; }
+  /* 카드는 매물 정보만 감싼다. 단계 띠는 그 자체가 모양이라 상자에 넣지 않고 옆 바탕에 둔다. */
+  .mcard { position: relative; display: grid; grid-template-columns: minmax(280px, 340px) minmax(600px, 1fr) 28px; gap: 4px 16px; align-items: start; margin-bottom: 12px; }
+  .cinfo { padding: 10px 14px 11px; border-radius: 10px; background: #fff;
+    box-shadow: 0 0 0 1px rgba(42,28,0,.09), 0 2px 4px rgba(25,25,25,.04); transition: box-shadow .15s ease; }
+  .mcard:hover .cinfo { box-shadow: 0 0 0 1px rgba(42,28,0,.14), 0 2px 4px rgba(25,25,25,.05), 0 10px 20px -12px rgba(25,25,25,.14); }
+  .cflow { min-width: 0; }
+  /* 가지 선은 카드가 제 몫을 그린다: 위에서 내려와 꺾이는 선 + (마지막 카드가 아니면) 아래로 이어지는 선 */
+  .mcard:not(:last-of-type)::after { content: ""; position: absolute; left: -48px; top: 16px; bottom: -10px; width: 1px; background: var(--input); pointer-events: none; }
+  .mcard::before { content: ""; position: absolute; left: -48px; top: -12px; width: 47px; height: 42px; border-left: 1px solid var(--input); border-bottom: 1px solid var(--input); border-bottom-left-radius: 14px; pointer-events: none; }
+  .mcard.dim .cinfo { background: var(--muted); box-shadow: 0 0 0 1px rgba(42,28,0,.06); }
+  .mcard .path { max-width: none; }
+  /* 카드형의 띠는 한눈에 읽히게 진하게: 지금 단계는 단계 색을 꽉 채우고 흰 글씨, 끝낸 단계는 진한 초록, 남은 단계도 회색 바탕에 읽히는 글씨 */
+  .mcard .step { height: 44px; overflow: hidden; font-size: 13px; }
+  .mcard .step .sub { opacity: 1; font-size: 11.5px; }
+  .mcard .step.pending, .mcard .step.skipped { background: #efeeec; color: var(--fg-sub); }
+  .mcard .step.done { background: #cfe6d2; color: #0a5c51; font-weight: 500; }
+  .mcard .step.done.gray { background: #e3e2df; color: var(--fg-sub); }
+  .mcard .step.current { color: #fff; }
+  .mcard .step.current.t-gray { background: #5f5e59; }
+  .mcard .step.current.t-info { background: #1b64b1; }
+  .mcard .step.current.t-orange { background: #c2650b; }
+  .mcard .step.current.t-violet { background: #6940a5; }
+  .mcard .step.current.t-pink { background: #ad1a72; }
+  .mcard .step.current.t-warning { background: #a8721a; }
+  .mcard .step.current.t-success { background: #0f7b6c; }
+  .mcard .step.failed { background: #d13a3a; color: #fff; }
+  .mcard.dim .step { opacity: .8; }
+  .mcard.dim .ctitle, .mcard.dim .cprice { color: var(--fg-muted); }
+  .chead { display: flex; align-items: center; gap: 6px; min-height: 24px; flex-wrap: wrap; }
+  .ctitle { font-size: 14px; font-weight: 600; }
+  .ctitle:hover { text-decoration: underline; }
+  .cmeta { margin-top: 4px; display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--fg-muted); min-width: 0; }
+  .cprice { color: var(--fg); font-weight: 500; flex: none; }
+  .cmeta .fit { font-size: 12px; flex: none; }
+  .cmeta2 { margin-top: 2px; font-size: 12px; color: var(--fg-muted); }
+  /* 띠 아래의 작은 카드: 왼쪽에 일정(임장 일시 · 거래관리 단계 · 종료 사유), 그 옆에 눌러서 고치는 매칭 메모 */
+  .cbox { display: flex; align-items: stretch; margin-top: 8px; border-radius: 8px; background: #fff; font-size: 13px; line-height: 20px;
+    box-shadow: 0 0 0 1px rgba(42,28,0,.09), 0 1px 2px rgba(25,25,25,.03); }
+  .mcard.dim .cbox { background: var(--muted); box-shadow: 0 0 0 1px rgba(42,28,0,.06); }
+  .cbox-date { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 14px 7px 12px; border-right: 1px solid var(--line); color: var(--fg-sub); white-space: nowrap; }
+  .cbox-date svg { width: 14px; height: 14px; color: var(--icon); }
+  .cbox-date b { font-weight: 500; color: var(--fg); }
+  .cbox-memo { flex: 1; min-width: 0; display: flex; gap: 8px; padding: 7px 12px; color: var(--fg-sub); }
+  .cbox-memo > svg { width: 14px; height: 14px; margin-top: 3px; color: var(--icon); }
+  .cbox-memo > span { flex: 1; min-width: 0; }
+  .cwarn { grid-column: 1 / -1; display: flex; gap: 8px; margin-top: 6px; padding: 6px 10px; border-radius: 6px; background: var(--warning-soft); color: var(--warning-strong); font-size: 12px; line-height: 18px; }
+  .cwarn svg { width: 14px; height: 14px; margin-top: 2px; }
+  .cadd { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 6px; font-size: 13px; color: var(--fg-muted); }
+  .cadd:hover { background: var(--muted); color: var(--fg); }
+  .cadd svg { width: 12px; height: 12px; }
+
+  /* ── 카드형 다듬기 ──────────────────────────────────────────────────────
+     · 높이: 매물 카드와 오른쪽(띠 + 아래 카드)이 같은 높이로 맞는다
+     · 모서리·그림자: 카드 12px, 아래 카드 10px, 띠 끝 8px. 테두리는 옅은 선 한 겹 + 아주 얕은 그림자
+     · 움직임: 누를 때 살짝 눌리고(140ms), 단계를 옮기면 새 단계 칸만 짧게 들어온다(240ms). 자주 보는 화면이라 그 밖에는 움직이지 않는다 */
+  :root { --ease-out: cubic-bezier(0.23, 1, 0.32, 1); }
+  .cbranches { margin-top: 14px; }
+  .mcard { align-items: stretch; gap: 0 16px; margin-bottom: 14px; }
+  .mcard::before { top: -14px; height: 57px; }
+  .mcard:not(:last-of-type)::after { bottom: -14px; }
+  .cinfo { display: flex; flex-direction: column; justify-content: center; padding: 12px 16px; border-radius: 12px;
+    box-shadow: 0 0 0 1px rgba(42,28,0,.08), 0 1px 2px rgba(25,25,25,.04); transition: box-shadow 160ms ease; }
+  .chead { gap: 6px; }
+  .ctitle { font-size: 14.5px; letter-spacing: -0.01em; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  .cmeta { margin-top: 3px; align-items: center; gap: 8px; }
+  .cprice { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+  .cmeta .fit { display: inline-flex; align-items: center; gap: 4px; }
+  .cmeta .fit::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--success); opacity: .7; }
+  .cmeta .fit.over::before { background: var(--destructive); opacity: 1; }
+  .mcard.dim .cmeta .fit::before { background: var(--fg-muted); opacity: .5; }
+  .cmeta2 { margin-top: 3px; }
+  .cflow { display: flex; flex-direction: column; }
+  .mcard .path { gap: 3px; }
+  .mcard .step { height: 46px; transition: filter 120ms ease, transform 140ms var(--ease-out); }
+  .mcard .step:first-child { border-radius: 8px 0 0 8px; }
+  .mcard .step:last-child { border-radius: 0 8px 8px 0; }
+  .mcard .step .nm { letter-spacing: -0.005em; }
+  .mcard .step.current .sub { opacity: .92; }
+  .mcard button.step:active { transform: scale(.98); }
+  .mcard button.step.blocked:active { transform: none; }
+  @media (hover: hover) and (pointer: fine) {
+    .mcard button.step.pending:hover, .mcard button.step.skipped:hover { filter: none; background: #e4e3e0; color: var(--fg); }
+    .mcard button.step.done:hover { filter: none; background: #bfdcc3; }
+    .mcard:hover .cinfo { box-shadow: 0 0 0 1px rgba(42,28,0,.12), 0 2px 4px rgba(25,25,25,.05), 0 12px 24px -14px rgba(25,25,25,.16); }
+    .mcard > .icon-btn { opacity: 0; transition: opacity 120ms ease; }
+    .mcard:hover > .icon-btn, .mcard > .icon-btn:focus-visible { opacity: 1; }
+  }
+  .cbox { flex: 1; margin-top: 8px; border-radius: 10px; box-shadow: 0 0 0 1px rgba(42,28,0,.08), 0 1px 2px rgba(25,25,25,.04); }
+  .cbox-date { padding: 7px 14px 7px 12px; }
+  .cbox-date.viewing svg { color: var(--violet); }
+  .cbox-date.deal svg { color: var(--success); }
+  .cbox-date.closed svg { color: var(--destructive); }
+  .cbox-memo { align-items: center; padding: 7px 12px; }
+  .cbox-memo > svg { margin-top: 0; }
+  .cbox-memo .memo-btn { transition: background-color 120ms ease; }
+  .cbox-memo .memo-edit { background: #fff; }
+  .cadd { margin-left: -8px; transition: background-color 120ms ease, color 120ms ease, transform 140ms var(--ease-out); }
+  .cadd:active { transform: scale(.97); }
+  /* ── Notion 카드 모양 (앱의 DetailCard와 같은 값) ──
+     흰 판 + 옅은 테두리 한 겹 + 얕은 그림자, 모서리 10px. 안은 제목 한 줄 + "아이콘 · 값" 속성 줄.
+     올려도 떠오르지 않고 바탕만 아주 옅게 물든다. 꼬리표는 모서리 4px의 네모. */
+  .cinfo { padding: 10px 12px 11px; border-radius: 10px; box-shadow: 0 0 0 1px rgba(42,28,0,.09), 0 2px 4px rgba(25,25,25,.04); transition: background-color 120ms ease; }
+  .chead { min-height: 24px; padding: 0 2px; }
+  .ctitle { font-size: 14px; font-weight: 600; letter-spacing: 0; }
+  .cprop { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 2px; font-size: 12.5px; color: var(--fg-sub); min-width: 0; }
+  .cprop > svg { width: 14px; height: 14px; color: var(--icon); }
+  .cprop .cprice { font-size: 13px; font-weight: 500; letter-spacing: 0; color: var(--fg); }
+  .cprop .tag { height: 18px; line-height: 18px; padding: 0 5px; font-size: 11.5px; }
+  .mcard.dim .cprop .cprice { color: var(--fg-muted); }
+  .cbox { border-radius: 8px; box-shadow: 0 0 0 1px rgba(42,28,0,.09), 0 2px 4px rgba(25,25,25,.04); }
+  @media (hover: hover) and (pointer: fine) {
+    .mcard:hover .cinfo { box-shadow: 0 0 0 1px rgba(42,28,0,.09), 0 2px 4px rgba(25,25,25,.04); background: #fbfaf9; }
+    .mcard.dim:hover .cinfo { background: var(--muted); }
+  }
+
+  /* 단계를 옮긴 카드에서만: 새 단계 칸과 아래 카드가 짧게 들어온다 */
+  .mcard.flash .step.current { animation: step-in 240ms var(--ease-out); }
+  .mcard.flash .cbox-date { animation: fade-in 200ms ease-out; }
+  @keyframes step-in { from { opacity: .4; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+  @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .mcard.flash .step.current { animation: fade-in 160ms ease-out; }
+    .mcard button.step:active, .cadd:active { transform: none; }
+  }
+
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 8px); padding: 8px 14px; border-radius: 8px; background: #2c2c2b; color: #fff; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 160ms ease, transform 220ms cubic-bezier(0.23, 1, 0.32, 1); z-index: 40; box-shadow: 0 8px 24px -8px rgba(0,0,0,.3); }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+  <b>희망매물 · 연결 매물 영역</b>
+  <div class="demo-seg" role="group" aria-label="시안 전환">
+    <button type="button" data-mode="card" aria-pressed="true">카드형</button>
+    <button type="button" data-mode="new" aria-pressed="false">표 + 펼침</button>
+    <button type="button" data-mode="old" aria-pressed="false">지금 화면</button>
+  </div>
+  <span class="demo-note">단계 띠를 누르면 그 단계로 옮겨집니다 · 메모는 눌러서 고칩니다 (시안용 가짜 데이터)</span>
+</div>
+
+<div class="scroller"><div class="sheet" id="app"></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+// ── 아이콘 ────────────────────────────────────────────────────────────────
+const ICON = {
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+  phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2"/>',
+  tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1"/>',
+  ruler: '<rect x="2" y="8" width="20" height="8" rx="1.5"/><path d="M7 8v3M12 8v4M17 8v3"/>',
+  won: '<circle cx="12" cy="12" r="9"/><path d="M8 9l1.5 6L12 10l2.5 5L16 9"/>',
+  pin: '<path d="M12 21s7-6.2 7-11a7 7 0 0 0-14 0c0 4.800 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+  cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  dashed: '<circle cx="12" cy="12" r="9" stroke-dasharray="3.5 3.5"/>',
+  siren: '<path d="M7 18v-6a5 5 0 0 1 10 0v6M5 21h14M12 3v2M4 8l1.500 1M20 8l-1.500 1"/>',
+  branch: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 5"/>',
+  home: '<path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16M15 10h4a1 1 0 0 1 1 1v10M3 21h18M8 8h3M8 12h3M8 16h3"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  check: '<path d="M5 12.5l4.500 4.500L19 7.500"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  msg: '<path d="M4 5h16v11H9l-5 4z"/>',
+  lines: '<path d="M4 6h16M4 12h16M4 18h10"/>',
+  alert: '<circle cx="12" cy="12" r="9"/><path d="M12 7.500v5M12 16v.5"/>',
+  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16zM13.500 6.500l4 4"/>',
+  sort: '<path d="M7 5v14M4 16l3 3 3-3M17 19V5M14 8l3-3 3 3"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>',
+};
+const ic = (name, cls = '') => `<svg viewBox="0 0 24 24" aria-hidden="true"${cls ? ` class="${cls}"` : ''}>${ICON[name]}</svg>`;
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ── 단계 (packages/shared/src/enums.ts · lib/status-config.ts와 같은 이름·색) ──
+const STAGES = ['suggested', 'buyerInterested', 'viewingConfirmed', 'viewing', 'buyerReviewing', 'negotiating', 'dealCreated'];
+const META = {
+  suggested: { label: '내부 후보', tone: 'gray', next: '매물 제안하기', confirm: '내부 후보 확정', close: '후보에서 제외 · 종료', reason: '후보에서 제외' },
+  buyerInterested: { label: '고객 관심', tone: 'info', next: '고객 답변 확인', confirm: '고객 관심 확정', close: '관심 없음 · 종료', reason: '관심 없음' },
+  viewingConfirmed: { label: '임장 조율', tone: 'orange', next: '집주인 확인', confirm: '임장 일정 확정', close: '임장 불가 · 종료', reason: '임장 불가' },
+  viewing: { label: '임장', tone: 'violet', next: '임장 진행', confirm: '임장 완료', close: '임장 취소 · 종료', reason: '임장 취소' },
+  buyerReviewing: { label: '고객 검토', tone: 'pink', next: '고객 반응 확인', confirm: '검토 후 관심 있음 · 협상으로', close: '검토 후 관심 없음 · 종료', reason: '검토 후 관심 없음' },
+  negotiating: { label: '협상', tone: 'warning', next: '가격·입주일 협의', confirm: '조건 합의 · 거래 전환', close: '협상 결렬 · 종료', reason: '협상 결렬' },
+  dealCreated: { label: '거래 전환', tone: 'success' },
+  closed: { label: '종료', tone: 'destructive' },
+};
+const DEAL_STAGES = ['계약 준비', '가계약', '본계약', '중도금/잔금', '잔금 완료'];
+const TODAY = '11. 22.';
+
+// ── 시안 데이터 ───────────────────────────────────────────────────────────
+const buyers = [
+  {
+    id: 'b1', name: '김민준', phone: '010-2345-6789', types: '아파트', area: '30평 ~ 34평', tx: 'sale',
+    budget: '매매 25억 ~ 28억', places: '강동구 고덕동 · 고덕그라시움, 고덕아르테온', moveIn: '2027. 3. 15.',
+    urgent: true, memo: '초등학교 가까운 동 선호. 대출 승인 완료, 잔금은 3월 중순부터 가능.', open: true, showClosed: false,
+    matches: [
+      { id: 'm1', title: '고덕그라시움 101동 3501호', tx: 'sale', price: '26억 8,000만', addr: '서울시 강동구 고덕동', area: '84.9㎡ · 25.7평', floor: '35층 / 35층', dir: '남동향',
+        avail: '2027. 2. 이후', owner: '최영호', lmemo: '세입자 2월 만기. 집 보기는 주말 오후만 가능.', fit: { label: '예산 안' },
+        stage: 'suggested', entered: { suggested: '11. 17.' }, days: 5, memo: '', updated: '2026. 11. 17.',
+        sibling: { short: '같은 집 거래 중', text: '같은 집의 전세 의뢰가 다른 손님과 거래 중입니다(가계약). 그 거래가 끝나기 전에는 이 매칭을 거래로 넘길 수 없습니다.' } },
+      { id: 'm2', title: '고덕아르테온 305동 1202호', tx: 'sale', price: '27억 5,000만', addr: '서울시 강동구 상일동', area: '84.9㎡ · 25.7평', floor: '12층 / 29층', dir: '남향',
+        avail: '즉시', owner: '박선희', lmemo: '공실. 비밀번호는 사무소 보관.', fit: { label: '예산 안' },
+        stage: 'viewing', entered: { suggested: '11. 10.', buyerInterested: '11. 12.', viewingConfirmed: '11. 14.', viewing: '11. 19.' }, days: 3,
+        memo: '남향 거실을 마음에 들어 함. 배우자와 함께 다시 보기로.', viewingAt: '2026-11-24T14:00', updated: '2026. 11. 19.' },
+      { id: 'm3', title: '고덕래미안힐스테이트 207동 904호', tx: 'sale', price: '28억 6,000만', addr: '서울시 강동구 고덕동', area: '84.8㎡ · 25.7평', floor: '9층 / 35층', dir: '남향',
+        avail: '2027. 3. 협의', owner: '이정훈', lmemo: '올수리 2024년. 가격 조정 여지 있음.', fit: { label: '6,000만 초과', over: true },
+        stage: 'negotiating', entered: { suggested: '11. 3.', buyerInterested: '11. 4.', viewing: '11. 9.', buyerReviewing: '11. 11.', negotiating: '11. 18.' }, days: 4,
+        memo: '집주인이 28억까지 조정 의사. 잔금일은 3월 중순 요청.', agreedPrice: '28억', agreedMoveIn: '', updated: '2026. 11. 18.' },
+      { id: 'm4', title: '고덕센트럴아이파크 102동 501호', tx: 'sale', price: '24억 9,000만', addr: '서울시 강동구 상일동', area: '84.7㎡ · 25.6평', floor: '5층 / 29층', dir: '동향',
+        avail: '즉시', owner: '정미란', lmemo: '', fit: { label: '예산 안' },
+        stage: 'closed', closedFrom: 'buyerInterested', closedReason: '관심 없음', entered: { suggested: '11. 5.', buyerInterested: '11. 8.' }, days: null,
+        memo: '저층이라 채광이 아쉽다고 함.', updated: '2026. 11. 8.' },
+    ],
+  },
+  {
+    id: 'b2', name: '이서연', phone: '010-9876-5432', types: '아파트 · 오피스텔', area: '24평 ~ 27평', tx: 'jeonse',
+    budget: '전세 7억 ~ 8억 5,000만', places: '송파구 잠실동 · 잠실엘스, 리센츠', moveIn: '2027. 1. 10.',
+    urgent: false, memo: '', open: true, showClosed: false,
+    matches: [
+      { id: 'm5', title: '잠실엘스 115동 803호', tx: 'jeonse', price: '8억 2,000만', addr: '서울시 송파구 잠실동', area: '59.9㎡ · 18.1평', floor: '8층 / 34층', dir: '남서향',
+        avail: '2027. 1. 5. 이후', owner: '한지수', lmemo: '반려동물 불가.', fit: { label: '예산 안' },
+        stage: 'buyerReviewing', entered: { suggested: '11. 9.', buyerInterested: '11. 10.', viewingConfirmed: '11. 12.', viewing: '11. 16.', buyerReviewing: '11. 20.' }, days: 2,
+        memo: '역까지 거리는 만족. 수납이 적어 고민.', updated: '2026. 11. 20.' },
+      { id: 'm6', title: '리센츠 221동 1504호', tx: 'jeonse', price: '8억 5,000만', addr: '서울시 송파구 잠실동', area: '59.9㎡ · 18.1평', floor: '15층 / 33층', dir: '남향',
+        avail: '즉시', owner: '오세진', lmemo: '', fit: { label: '예산 안' },
+        stage: 'viewing', entered: { suggested: '11. 15.', buyerInterested: '11. 16.', viewingConfirmed: '11. 18.', viewing: '11. 21.' }, days: 1,
+        memo: '', viewingAt: '2026-11-23T11:00', updated: '2026. 11. 21.' },
+    ],
+  },
+  {
+    id: 'b3', name: '정하윤', phone: '010-5555-0142', types: '아파트', area: '33평 ~ 40평', tx: 'sale',
+    budget: '매매 18억 ~ 20억', places: '강동구 둔촌동 · 올림픽파크포레온', moveIn: '2027. 2. 1.',
+    urgent: false, memo: '', open: true, showClosed: false,
+    matches: [
+      { id: 'm7', title: '올림픽파크포레온 312동 1701호', tx: 'sale', price: '19억 4,000만', addr: '서울시 강동구 둔촌동', area: '84.9㎡ · 25.7평', floor: '17층 / 35층', dir: '남향',
+        avail: '2027. 1. 20. 이후', owner: '강민서', lmemo: '', fit: { label: '예산 안' },
+        stage: 'dealCreated', entered: { suggested: '10. 28.', buyerInterested: '10. 29.', viewingConfirmed: '10. 31.', viewing: '11. 2.', buyerReviewing: '11. 4.', negotiating: '11. 7.', dealCreated: '11. 13.' }, days: 9,
+        memo: '계약금 10% 11월 25일 입금 예정.', agreedPrice: '19억 2,000만', agreedMoveIn: '2027-01-25', deal: 1, updated: '2026. 11. 13.' },
+      { id: 'm8', title: '올림픽파크포레온 104동 902호', tx: 'sale', price: '19억 8,000만', addr: '서울시 강동구 둔촌동', area: '84.9㎡ · 25.7평', floor: '9층 / 35층', dir: '동향',
+        avail: '즉시', owner: '윤태경', lmemo: '', fit: { label: '예산 안' },
+        stage: 'buyerReviewing', entered: { suggested: '10. 30.', buyerInterested: '10. 31.', viewing: '11. 3.', buyerReviewing: '11. 5.' }, days: 17,
+        memo: '', updated: '2026. 11. 5.' },
+    ],
+  },
+  {
+    id: 'b4', name: '박도윤', phone: '010-3131-7788', types: '오피스텔', area: '10평 ~ 15평', tx: 'jeonse',
+    budget: '전세 2억 ~ 3억', places: '강동구 천호동', moveIn: '',
+    urgent: false, memo: '', open: false, showClosed: false, matches: [],
+  },
+];
+
+const ui = { mode: 'card', openMatch: 'm1', drafts: {} };
+const findMatch = (id) => { for (const b of buyers) for (const m of b.matches) if (m.id === id) return { b, m }; return null; };
+
+// ── 표시 계산 ─────────────────────────────────────────────────────────────
+const txTag = (tx) => `<span class="tag ${tx}">${tx === 'sale' ? '매매' : '전세'}</span>`;
+const stageChip = (stage, { dim = false, sm = false } = {}) =>
+  `<span class="chip ${sm ? 'sm ' : ''}${dim ? 't-dim' : 't-' + META[stage].tone}"><i></i>${META[stage].label}</span>`;
+const fmtViewing = (v) => {
+  if (!v) return '';
+  const d = new Date(v);
+  const day = '일월화수목금토'[d.getDay()];
+  return `${d.getMonth() + 1}. ${d.getDate()}. (${day}) ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+const fmtDate = (v) => { if (!v) return ''; const [y, mo, d] = v.split('-').map(Number); return `${y}. ${mo}. ${d}.`; };
+const elapsed = (days) => (days == null ? '' : days === 0 ? '오늘' : `${days}일째`);
+function nodeState(m, s) {
+  const i = STAGES.indexOf(s);
+  if (m.stage === 'closed') {
+    const f = STAGES.indexOf(m.closedFrom);
+    return i < f ? 'completed' : i === f ? 'failed' : 'pending';
+  }
+  const c = STAGES.indexOf(m.stage);
+  if (m.stage === 'dealCreated') return i === c ? 'current' : 'completed';
+  return i < c ? 'completed' : i === c ? 'current' : 'pending';
+}
+/** 거래로 넘길 수 없는 이유. 없으면 null */
+const blockReason = (m, target) => (target === 'dealCreated' && m.sibling ? m.sibling.text : null);
+
+// ── 그리기: 고객 줄 ───────────────────────────────────────────────────────
+const HEADERS = [['user', '고객'], ['phone', '연락처'], ['tag', '매물 유형'], ['ruler', '희망 평형'], ['won', '예산'], ['pin', '희망 지역·단지'], ['cal', '입주 희망일'], ['dashed', '상태'], ['siren', '긴급도'], ['branch', '매칭']];
+
+function buyerRow(b) {
+  const active = b.matches.filter((m) => m.stage !== 'closed' && m.stage !== 'dealCreated').length;
+  const deal = b.matches.filter((m) => m.stage === 'dealCreated').length;
+  const end = b.matches.filter((m) => m.stage === 'closed').length;
+  const has = b.matches.length > 0 || b.memo;
+  return `<div class="bgrid brow">
+    <div><span class="box"></span></div>
+    <div>${has ? `<button type="button" class="icon-btn" data-act="toggle-buyer" data-id="${b.id}" aria-expanded="${b.open}" aria-label="${esc(b.name)} 매칭 ${b.open ? '접기' : '펼치기'}">${ic('chev', 'rot')}</button>` : ''}</div>
+    <div><span class="name-chip"><span class="avatar">${esc(b.name[0])}</span><span class="trunc">${esc(b.name)}</span></span></div>
+    <div class="num">${b.phone}</div>
+    <div><span class="trunc">${b.types}</span></div>
+    <div class="num">${b.area}</div>
+    <div class="num" style="font-weight:500"><span class="trunc">${b.budget}</span></div>
+    <div style="padding-top:8px;padding-bottom:8px;line-height:20px;word-break:keep-all">${b.places}</div>
+    <div class="num">${b.moveIn || '<span class="empty">-</span>'}</div>
+    <div><span class="tag ok">진행 중</span></div>
+    <div>${b.urgent ? '<span class="tag urgent">긴급</span>' : '<span class="tag plain">보통</span>'}</div>
+    <div style="gap:4px;flex-wrap:wrap" class="num">
+      ${b.matches.length === 0 ? `<span style="font-size:11.5px;color:var(--fg-muted)">매칭 없음</span><button type="button" class="icon-btn" data-act="add" aria-label="${esc(b.name)} 매물 연결">${ic('plus')}</button>` : ''}
+      ${active ? `<span class="count go">진행 ${active}</span>` : ''}${deal ? `<span class="count deal">거래 ${deal}</span>` : ''}${end ? `<span class="count end">종료 ${end}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+// ── 그리기: 재디자인 (연결 매물 표 + 펼침) ────────────────────────────────
+const M_HEADERS = [['home', '매물'], ['tag', '거래'], ['won', '가격'], ['ruler', '면적'], ['dashed', '단계'], ['pencil', '매칭 메모'], ['cal', '일정']];
+
+function whenCell(m) {
+  if (m.stage === 'closed') return `<span class="when">${esc(m.closedReason)}</span>`;
+  if (m.stage === 'dealCreated') return `<span class="when">거래관리 · ${DEAL_STAGES[m.deal]}</span>`;
+  if (m.viewingAt && (m.stage === 'viewing' || m.stage === 'viewingConfirmed')) return `<span class="when num"><b>임장 ${fmtViewing(m.viewingAt)}</b></span>`;
+  return `<span class="when num">${elapsed(m.days)}</span>`;
+}
+
+function matchRow(m, dim) {
+  const open = ui.openMatch === m.id;
+  const idx = STAGES.indexOf(m.stage);
+  return `<div class="mgrid mrow${dim ? ' dim' : ''}" role="row" data-act="toggle-match" data-id="${m.id}">
+    <div role="cell"><button type="button" class="chev" aria-expanded="${open}" aria-controls="detail-${m.id}" aria-label="${esc(m.title)} 상세 ${open ? '접기' : '펼치기'}">${ic('chev', 'rot')}</button></div>
+    <div role="cell"><span class="title trunc" title="${esc(m.title)} · ${esc(m.addr)}">${esc(m.title)}</span>${m.sibling && m.stage !== 'closed' ? `<span class="warn-dot" title="${esc(m.sibling.text)}">${m.sibling.short}</span>` : ''}</div>
+    <div role="cell">${dim ? `<span>${m.tx === 'sale' ? '매매' : '전세'}</span>` : txTag(m.tx)}</div>
+    <div role="cell" class="num"><span class="trunc">${m.price}</span><span class="fit trunc${m.fit.over ? ' over' : ''}">${m.fit.label}</span></div>
+    <div role="cell" class="num"><span class="trunc">${m.area}</span></div>
+    <div role="cell">${stageChip(m.stage, { dim })}${idx >= 0 ? `<span class="ord num" aria-label="${STAGES.length}단계 중 ${idx + 1}단계">${idx + 1}/${STAGES.length}</span>` : ''}</div>
+    <div role="cell"><span class="memo2" data-row-memo="${m.id}">${esc(m.memo)}</span></div>
+    <div role="cell">${whenCell(m)}</div>
+  </div>${open ? matchDetail(m) : ''}`;
+}
+
+function stagePath(m) {
+  const closed = m.stage === 'closed';
+  return `<div class="path" role="list" aria-label="매칭 진행 경로">${STAGES.map((s) => {
+    const state = nodeState(m, s);
+    const current = s === m.stage;
+    const date = m.entered[s] ?? '';
+    const skipped = state === 'completed' && !date;
+    const block = closed || current ? null : blockReason(m, s);
+    const sub = skipped ? '건너뜀'
+      : state === 'current' && m.stage !== 'dealCreated' ? [date, elapsed(m.days)].filter(Boolean).join(' · ')
+      : state === 'failed' ? [date, ui.mode === 'card' ? '종료' : '여기서 종료'].filter(Boolean).join(' · ') : date; // 카드형은 칸이 좁아 짧게 쓴다
+    const cls = current ? `current t-${META[s].tone}` : skipped ? 'skipped' : state === 'completed' ? `done${closed ? ' gray' : ''}` : state === 'failed' ? 'failed' : 'pending';
+    // 거래로 넘어간 매칭은 거래관리가 맡는다. 여기서 앞 단계로 되돌리지 못한다.
+    const converted = m.stage === 'dealCreated';
+    const title = block ?? (closed ? '' : converted ? (current ? '현재 단계' : '거래로 넘어간 매칭은 거래관리에서 다룹니다') : current ? '현재 단계' : state === 'completed' ? '이 단계로 되돌리기' : '이 단계로 이동');
+    const inner = `<span class="nm">${state === 'completed' && !skipped ? ic('check') : ''}<span class="trunc">${META[s].label}</span></span><span class="sub num">${sub}</span>`;
+    return closed || current || converted
+      ? `<div role="listitem" class="step ${cls}"${current ? ' aria-current="step"' : ''} title="${esc(title)}">${inner}</div>`
+      : `<button type="button" role="listitem" class="step ${cls}${block ? ' blocked' : ''}" data-act="stage" data-id="${m.id}" data-stage="${s}" title="${esc(title)}">${inner}</button>`;
+  }).join('')}</div>`;
+}
+
+const prop = (icon, label, value, multi = false) =>
+  `<div class="prop"><dt>${ic(icon)}${label}</dt><dd${multi ? ' class="multi"' : ''}>${value}</dd></div>`;
+
+function memoField(m) {
+  const draft = ui.drafts[m.id];
+  if (draft === undefined) {
+    return `<button type="button" class="memo-btn" data-act="memo-open" data-id="${m.id}" aria-label="${esc(m.title)} 매칭 메모${m.memo ? '' : ' 추가'}">${m.memo ? esc(m.memo) : `<span class="empty">${ui.mode === 'card' ? '메모 추가' : '비어 있음'}</span>`}</button>`;
+  }
+  return `<textarea class="memo-edit" data-memo="${m.id}" rows="${Math.min(6, Math.max(2, draft.split('\n').length))}" aria-label="${esc(m.title)} 매칭 메모" placeholder="이 집에 대한 고객의 반응, 약속한 것">${esc(draft)}</textarea>`;
+}
+
+function progressCard(m, b) {
+  const closed = m.stage === 'closed';
+  const converted = m.stage === 'dealCreated';
+  const next = closed ? null : STAGES[STAGES.indexOf(m.stage) + 1];
+  const block = next && !converted ? blockReason(m, next) : null;
+  const rows = [];
+
+  const nextTask = closed ? null : converted ? `거래관리 · ${DEAL_STAGES[m.deal]}` : m.stage === 'viewing' && !m.viewingAt ? '임장 마무리' : META[m.stage].next;
+  if (nextTask) rows.push(prop('dashed', '다음 할 일', nextTask));
+  if (closed) rows.push(prop('alert', '종료 사유', esc(m.closedReason) || '<span class="empty">비어 있음</span>'));
+  if (m.stage === 'viewingConfirmed' || m.stage === 'viewing') {
+    rows.push(prop('cal', '임장 일시', `<input class="quiet" type="datetime-local" data-field="viewingAt" data-id="${m.id}" value="${m.viewingAt ?? ''}" aria-label="임장 일시">`));
+  }
+  if (m.stage === 'buyerReviewing') {
+    const others = b.matches.filter((o) => o.id !== m.id && ['viewing', 'buyerReviewing', 'negotiating'].includes(o.stage));
+    rows.push(prop('branch', '다른 매물', others.length
+      ? `<ul class="others">${others.map((o) => `<li><span class="trunc" style="flex:1">${esc(o.title)}</span><span class="p">${o.price}</span>${stageChip(o.stage, { sm: true })}</li>`).join('')}</ul>`
+      : '<span class="empty">이 매물만 보고 있습니다</span>'));
+  }
+  if (m.stage === 'negotiating') {
+    rows.push(prop('won', '합의 가격', `<input class="quiet" style="width:120px" data-field="agreedPrice" data-id="${m.id}" value="${esc(m.agreedPrice ?? '')}" placeholder="예: 28억 5천" autocomplete="off" aria-label="합의 가격"><span class="echo" data-echo="${m.id}"></span>`));
+    rows.push(prop('cal', '합의 입주일', `<input class="quiet" type="date" style="width:150px" data-field="agreedMoveIn" data-id="${m.id}" value="${m.agreedMoveIn ?? ''}" aria-label="합의 입주일">`));
+  }
+  if (converted) {
+    const terms = [m.agreedPrice, m.agreedMoveIn ? `입주 ${fmtDate(m.agreedMoveIn)}` : null].filter(Boolean).join(' · ');
+    if (terms) rows.push(prop('won', '합의 조건', terms));
+  }
+  rows.push(prop('msg', '매칭 메모', `<span data-memo-slot="${m.id}" style="display:block">${memoField(m)}</span>`, true));
+  if (converted) {
+    rows.push(`<div style="padding:6px 8px 4px"><div class="path deal" role="list" aria-label="거래 진행 경로">${DEAL_STAGES.map((label, i) =>
+      `<div role="listitem" class="step ${i === m.deal ? 'current t-success' : i < m.deal ? 'done gray' : 'pending'}" title="거래관리에서 변경"><span class="nm"><span class="trunc">${label}</span></span><span class="sub"></span></div>`).join('')}</div></div>`);
+  }
+  // 같은 집이 거래 중이면 협상 끝에서야 알지 않게 처음 단계부터 알린다
+  const warning = block ?? (!closed && !converted && m.sibling ? m.sibling.text : null);
+  if (warning) rows.push(`<div class="alert" role="alert">${ic('alert')}<span>${esc(warning)}</span></div>`);
+
+  let foot;
+  if (closed) foot = `<button type="button" class="btn" data-act="stage" data-id="${m.id}" data-stage="${m.closedFrom}">${META[m.closedFrom].label}에서 다시 진행</button>`;
+  else if (converted) foot = `<button type="button" class="btn" data-act="open-deal">거래관리 열기${ic('arrow')}</button>`;
+  else {
+    const needDate = m.stage === 'viewingConfirmed' && !m.viewingAt;
+    foot = `<button type="button" class="btn" data-act="stage" data-id="${m.id}" data-stage="${next}" data-confirm="${m.id}"${block || needDate ? ' disabled' : ''}${needDate ? ' title="임장 일시를 먼저 정해 주세요"' : ''}>${ic('check')}${META[m.stage].confirm}</button>
+      <button type="button" class="btn-quiet" data-act="stage" data-id="${m.id}" data-stage="closed">${META[m.stage].close}</button>`;
+  }
+
+  return `<section class="card" aria-label="진행">
+    <div class="card-head"><strong>진행</strong>${stageChip(m.stage, { sm: true })}${!closed && !converted ? `<span class="kind num">${elapsed(m.days)}</span>` : ''}</div>
+    <dl class="props">${rows.join('')}</dl>
+    <div class="card-foot">${foot}</div>
+  </section>`;
+}
+
+function listingCard(m) {
+  return `<section class="card" aria-label="매물 조건">
+    <div class="card-head"><strong class="trunc">${esc(m.title)}</strong><span class="kind">매물 조건</span>
+      <button type="button" class="open" data-act="open-listing">매물 열기${ic('chev')}</button></div>
+    <dl class="props">
+      ${prop('tag', '거래', txTag(m.tx))}
+      ${prop('won', '가격', `${m.price}<span class="pill ${m.fit.over ? 'over' : 'in'}">${m.fit.label}</span>`)}
+      ${prop('ruler', '면적', `${m.area} · ${m.dir}`)}
+      ${prop('home', '층', m.floor)}
+      ${prop('key', '입주', m.avail)}
+      ${prop('pin', '주소', esc(m.addr))}
+      ${prop('user', '소유자', `<span class="name-chip" style="margin:-2px 0 -2px -2px"><span class="avatar">${esc(m.owner[0])}</span>${esc(m.owner)}</span>`)}
+      ${m.lmemo ? prop('lines', '매물 메모', esc(m.lmemo), true) : ''}
+    </dl>
+  </section>`;
+}
+
+function matchDetail(m) {
+  const { b } = findMatch(m.id);
+  return `<div class="detail" id="detail-${m.id}">${stagePath(m)}<div class="cards">${progressCard(m, b)}${listingCard(m)}</div></div>`;
+}
+
+function panel(b) {
+  const won = b.matches.filter((m) => m.stage === 'dealCreated');
+  const rest = b.matches.filter((m) => m.stage !== 'dealCreated' && m.stage !== 'closed');
+  const closed = b.matches.filter((m) => m.stage === 'closed');
+  return `<div class="panel" role="region" aria-label="${esc(b.name)} 연결 매물">
+    <div class="ptools">
+      <span class="ptab">${ic('branch')}연결 매물 <span class="num">${won.length + rest.length}</span></span>
+      ${won.length ? `<span class="aside">· 거래 진행 ${won.length}</span>` : ''}
+      <button type="button" class="sort" data-act="noop">${ic('sort')}정렬</button>
+    </div>
+    <div role="table" aria-label="연결 매물 표">
+      <div class="mgrid mhead" role="row"><div></div>${M_HEADERS.map(([i, l]) => `<div role="columnheader"><span class="hlabel">${ic(i)}<span class="trunc">${l}</span></span></div>`).join('')}</div>
+      ${won.map((m) => matchRow(m, false)).join('')}
+      ${won.length && rest.length ? `<div class="subnote">다른 매물 ${rest.length}건 · 이 고객은 거래 진행 중</div>` : ''}
+      ${rest.map((m) => matchRow(m, won.length > 0)).join('')}
+      <button type="button" class="addrow" data-act="add">${ic('plus')}매물 연결</button>
+      ${closed.length ? `<button type="button" class="closed-toggle" data-act="toggle-closed" data-id="${b.id}" aria-expanded="${b.showClosed}">${ic('chev', 'rot')}종료 ${closed.length}건</button>${b.showClosed ? closed.map((m) => matchRow(m, true)).join('') : ''}` : ''}
+    </div>
+  </div>`;
+}
+
+// ── 그리기: 카드형 ────────────────────────────────────────────────────────
+/** 띠 아래 카드의 일정 칸. 적을 것이 없으면 빈 글 */
+function cardDate(m) {
+  const [kind, html] = m.stage === 'closed' ? ['closed', `${ic('alert')}종료 · <b>${esc(m.closedReason)}</b>`]
+    : m.stage === 'dealCreated' ? ['deal', `${ic('arrow')}거래관리 · <b>${DEAL_STAGES[m.deal]}</b>`]
+    : m.viewingAt && (m.stage === 'viewing' || m.stage === 'viewingConfirmed') ? ['viewing', `${ic('cal')}임장 예정 <b>${fmtViewing(m.viewingAt)}</b>`]
+    : ['', ''];
+  return html ? `<div class="cbox-date ${kind} num">${html}</div>` : '';
+}
+
+function matchCard(m, dim) {
+  const live = m.stage !== 'closed' && m.stage !== 'dealCreated';
+  return `<article class="mcard${dim ? ' dim' : ''}${ui.flash === m.id ? ' flash' : ''}" aria-label="${esc(m.title)} 매칭">
+    <div class="cinfo">
+      <div class="chead"><button type="button" class="ctitle" data-act="open-detail">${esc(m.title)}</button>${txTag(m.tx)}
+        ${m.sibling && live ? `<span class="warn-dot" title="${esc(m.sibling.text)}">${m.sibling.short}</span>` : ''}</div>
+      <div class="cprop num">${ic('won')}<span class="cprice">${m.price}</span><span class="tag ${dim ? 'plain' : m.fit.over ? 'urgent' : 'ok'}">${m.fit.label}</span></div>
+      <div class="cprop num">${ic('pin')}<span class="trunc">${esc(m.addr)} · ${m.area} · ${m.floor}</span></div>
+    </div>
+    <div class="cflow">${stagePath(m)}
+      <div class="cbox">${cardDate(m)}<div class="cbox-memo">${ic('msg')}<span data-memo-slot="${m.id}">${memoField(m)}</span></div></div>
+    </div>
+    <button type="button" class="icon-btn" data-act="menu" aria-label="${esc(m.title)} 더 보기" style="font-weight:700;justify-self:end;margin-top:10px">⋮</button>
+  </article>`;
+}
+
+function cardBranches(b) {
+  const won = b.matches.filter((m) => m.stage === 'dealCreated');
+  const rest = b.matches.filter((m) => m.stage !== 'dealCreated' && m.stage !== 'closed');
+  const closed = b.matches.filter((m) => m.stage === 'closed');
+  return `<div class="cbranches">
+    ${won.map((m) => matchCard(m, false)).join('')}
+    ${rest.map((m) => matchCard(m, won.length > 0)).join('')}
+    ${closed.map((m) => matchCard(m, true)).join('')}
+    <button type="button" class="cadd" data-act="add" aria-label="${esc(b.name)}에게 매물 더 연결">${ic('plus')}매물 연결</button>
+  </div>`;
+}
+
+// ── 그리기: 지금 화면 (비교용) ────────────────────────────────────────────
+function oldBranches(b) {
+  return `<div class="branches">${b.matches.map((m) => {
+    const cur = m.stage === 'closed' ? STAGES.indexOf(m.closedFrom) : STAGES.indexOf(m.stage);
+    return `<article class="lane"><div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="t">${esc(m.title)}</span>${txTag(m.tx)}
+        ${m.stage === 'closed' ? '<span class="tag urgent">종료</span>' : ''}${m.stage === 'dealCreated' ? '<span class="tag ok">거래 전환</span>' : ''}
+        ${m.sibling && m.stage !== 'closed' ? `<span class="warn-dot">${m.sibling.short}</span>` : ''}</div>
+      <div class="meta num"><b>${m.price}</b> · ${esc(m.addr)}</div></div>
+      <div><div class="dots">${STAGES.map((s, i) => `<div class="${i < cur ? 'd' : i === cur ? 'c' : ''}">${META[s].label}</div>`).join('')}</div>
+        <div class="foot"><span${m.memo ? '' : ' style="font-style:italic;opacity:.7"'}>${esc(m.memo) || '메모 추가'}</span>
+        <span class="num">${m.stage === 'closed' ? `종료 · ${esc(m.closedReason)} · ${m.updated}` : m.viewingAt ? `임장 ${fmtViewing(m.viewingAt)}` : `${m.updated} 수정`}</span></div></div>
+      <span class="icon-btn" aria-hidden="true" style="font-weight:700">⋮</span></article>`;
+  }).join('')}<button type="button" class="addrow" style="width:auto;padding:0 8px;margin-left:8px;height:28px;font-size:12px" data-act="add">${ic('plus')}매물 연결</button></div>`;
+}
+
+function render() {
+  document.getElementById('app').innerHTML =
+    `<div class="bgrid bhead"><div><span class="box"></span></div><div></div>${HEADERS.map(([i, l]) => `<div><span class="hlabel">${ic(i)}<span class="trunc">${l}</span></span></div>`).join('')}</div>` +
+    buyers.map((b) => {
+      const open = b.open && (b.matches.length > 0 || b.memo);
+      return `<section class="group${open ? ' open' : ''}" aria-label="${esc(b.name)} 매칭 그룹">${buyerRow(b)}
+        ${open && b.memo ? `<dl class="bmemo" style="margin:0${b.matches.length ? '' : ';border-bottom:0'}"><dt>고객 메모</dt><dd>${esc(b.memo)}</dd></dl>` : ''}
+        ${open && b.matches.length ? (ui.mode === 'card' ? cardBranches(b) : ui.mode === 'new' ? panel(b) : oldBranches(b)) : ''}</section>`;
+    }).join('');
+  document.querySelectorAll('[data-echo]').forEach((el) => updateEcho(el.dataset.echo));
+}
+
+// ── 동작 ──────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(text) {
+  const el = document.getElementById('toast');
+  el.textContent = text; el.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2200);
+}
+
+/** "28억 5천" → "= 28억 5,000만". 읽지 못하면 null */
+function readManwon(raw) {
+  const t = raw.replace(/[\s,]/g, '');
+  if (!t) return 0;
+  const m = t.match(/^(?:(\d+(?:\.\d+)?)억)?(?:(\d+)천)?(?:(\d+)만?)?$/);
+  if (!m || (!m[1] && !m[2] && !m[3])) return null;
+  return Math.round(Number(m[1] ?? 0) * 10000) + Number(m[2] ?? 0) * 1000 + Number(m[3] ?? 0);
+}
+const fmtManwon = (v) => { const e = Math.floor(v / 10000), r = v % 10000; return [e ? `${e}억` : '', r ? `${r.toLocaleString()}만` : ''].filter(Boolean).join(' ') || '0'; };
+function updateEcho(id) {
+  const el = document.querySelector(`[data-echo="${id}"]`);
+  const input = document.querySelector(`[data-field="agreedPrice"][data-id="${id}"]`);
+  if (!el || !input) return;
+  const v = readManwon(input.value);
+  const bad = v === null;
+  el.textContent = bad ? '금액을 읽을 수 없습니다 (예: 28억 5천)' : v && input.value.trim() !== fmtManwon(v) ? `= ${fmtManwon(v)}` : '';
+  el.style.color = bad ? 'var(--destructive-strong)' : '';
+  input.setAttribute('aria-invalid', bad);
+  const btn = document.querySelector(`[data-confirm="${id}"]`);
+  const { m } = findMatch(id);
+  if (btn && m.stage === 'negotiating') btn.disabled = bad || Boolean(blockReason(m, 'dealCreated'));
+}
+
+function changeStage(id, target) {
+  const { m } = findMatch(id);
+  if (target === m.stage) return;
+  if (m.stage === 'dealCreated') { toast('거래로 넘어간 매칭은 거래관리에서 다룹니다.'); return; }
+  const block = blockReason(m, target);
+  if (block) { toast('단계 이동 전 확인이 필요합니다 — ' + block); return; }
+  if (target === 'dealCreated' && readManwon(m.agreedPrice ?? '') === null) { toast('합의 가격을 읽을 수 없습니다.'); return; }
+  if (target === 'closed') {
+    m.closedFrom = m.stage; m.closedReason = META[m.stage].reason; m.stage = 'closed'; m.days = null;
+    toast('매칭을 종료했습니다.');
+  } else {
+    // 되돌리면 그 뒤 단계의 날짜는 더 이상 유효하지 않다
+    const ti = STAGES.indexOf(target);
+    STAGES.forEach((s, i) => { if (i > ti) delete m.entered[s]; });
+    m.stage = target; m.entered[target] = TODAY; m.days = 0;
+    if (target === 'dealCreated') m.deal = 0;
+    toast(`${META[target].label} 단계로 변경했습니다.`);
+  }
+  ui.flash = id;
+  render();
+  ui.flash = null;
+}
+
+/**
+ * 쓰던 메모를 저장하고 그 칸만 바꾼다. 화면 전체를 다시 그리면 지금 누르려던 버튼이 사라진다.
+ * 값은 바로 저장하되, 마우스를 누르고 있는 동안에는 칸을 바꾸지 않는다 — 입력칸이 글로 바뀌면서
+ * 높이가 줄면 아래·옆의 버튼이 움직여, 누른 자리와 뗀 자리가 달라지고 그 클릭이 사라진다.
+ */
+let pointerIsDown = false;
+const pendingMemoSwaps = new Set();
+function swapMemoField(id) {
+  const found = findMatch(id);
+  if (!found || ui.drafts[id] !== undefined) return; // 그 사이 다시 고치기 시작했으면 입력칸을 둔다
+  const slot = document.querySelector(`[data-memo-slot="${id}"]`);
+  if (slot) slot.innerHTML = memoField(found.m);
+  const cell = document.querySelector(`[data-row-memo="${id}"]`);
+  if (cell) cell.textContent = found.m.memo;
+}
+function commitMemo(id, cancel = false) {
+  if (ui.drafts[id] === undefined) return;
+  const { m } = findMatch(id);
+  if (!cancel) m.memo = ui.drafts[id].trim();
+  delete ui.drafts[id];
+  if (pointerIsDown) pendingMemoSwaps.add(id);
+  else swapMemoField(id);
+}
+document.addEventListener('pointerdown', () => { pointerIsDown = true; }, true);
+['pointerup', 'pointercancel'].forEach((type) => document.addEventListener(type, () => {
+  pointerIsDown = false;
+  // 클릭이 처리된 뒤에 바꾼다 (click은 pointerup 바로 뒤, 타이머보다 먼저 온다)
+  setTimeout(() => { pendingMemoSwaps.forEach(swapMemoField); pendingMemoSwaps.clear(); }, 0);
+}, true));
+
+document.getElementById('app').addEventListener('click', (event) => {
+  const el = event.target.closest('[data-act]');
+  if (!el) return;
+  // 줄 안의 입력·버튼은 줄 펼침으로 번지지 않는다
+  if (el.dataset.act === 'toggle-match' && event.target.closest('.title')) { toast('매물 상세가 옆 패널로 열립니다 (시안에서는 생략)'); return; }
+  const { act, id } = el.dataset;
+  if (act === 'toggle-buyer') { const b = buyers.find((x) => x.id === id); b.open = !b.open; render(); }
+  else if (act === 'toggle-closed') { const b = buyers.find((x) => x.id === id); b.showClosed = !b.showClosed; render(); }
+  else if (act === 'toggle-match') { ui.openMatch = ui.openMatch === id ? null : id; render(); }
+  else if (act === 'stage') { if (!el.disabled) changeStage(id, el.dataset.stage); }
+  else if (act === 'memo-open') {
+    const { m } = findMatch(id);
+    ui.drafts[id] = m.memo;
+    const slot = document.querySelector(`[data-memo-slot="${id}"]`);
+    slot.innerHTML = memoField(m);
+    const ta = slot.querySelector('textarea'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  }
+  else if (act === 'open-detail') toast('매칭 상세 창이 열립니다 (시안에서는 생략)');
+  else if (act === 'menu') toast('상세 보기 · 삭제 메뉴가 열립니다 (시안에서는 생략)');
+  else if (act === 'add') toast('매물 연결 창이 열립니다 (시안에서는 생략)');
+  else if (act === 'open-deal') toast('거래관리로 이동합니다 (시안에서는 생략)');
+  else if (act === 'open-listing') toast('매물 상세가 열립니다 (시안에서는 생략)');
+});
+
+document.getElementById('app').addEventListener('input', (event) => {
+  const t = event.target;
+  if (t.dataset.memo) { ui.drafts[t.dataset.memo] = t.value; return; }
+  if (!t.dataset.field) return;
+  const { m } = findMatch(t.dataset.id);
+  m[t.dataset.field] = t.value;
+  if (t.dataset.field === 'agreedPrice') updateEcho(m.id);
+  if (t.dataset.field === 'viewingAt') {
+    const btn = document.querySelector(`[data-confirm="${m.id}"]`);
+    if (btn && m.stage === 'viewingConfirmed') { btn.disabled = !t.value; btn.title = t.value ? '' : '임장 일시를 먼저 정해 주세요'; }
+    const row = document.querySelector(`[data-act="toggle-match"][data-id="${m.id}"] > div:last-child`);
+    if (row) row.innerHTML = whenCell(m);
+  }
+});
+document.getElementById('app').addEventListener('focusout', (event) => {
+  if (event.target.dataset.memo) commitMemo(event.target.dataset.memo);
+});
+document.getElementById('app').addEventListener('keydown', (event) => {
+  const id = event.target.dataset.memo;
+  if (!id || event.isComposing) return;
+  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); commitMemo(id); }
+  else if (event.key === 'Escape') { event.preventDefault(); commitMemo(id, true); }
+});
+
+document.querySelectorAll('.demo-seg button').forEach((button) => button.addEventListener('click', () => {
+  ui.mode = button.dataset.mode;
+  document.querySelectorAll('.demo-seg button').forEach((b) => b.setAttribute('aria-pressed', b === button));
+  render();
+}));
+
+render();
+</script>
+</body>
+</html>

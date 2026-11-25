@@ -10,12 +10,29 @@ special server queue or execution model.
 - `claim_task({ id })`: atomically changes `pending` to `in_progress` and assigns
   the current ERP user if the Task was unassigned. A conflict means stop.
 - `update_task({ id, status, content? })`
+- `list_office_cp_accounts({ channel? })`
+- `find_advertisement_change_requests({ includeClosed?: false, ... })`
+- `update_advertisement_change_request({ id, status: "in_progress" | "executed" | "failed", failureReason? })`
 
 Relevant read/import tools include `find_listing_advertisements`,
-`get_listing_advertisement`, `begin_listing_advertisement_snapshot`,
-`submit_listing_advertisement_snapshot_item`, and
+`get_listing_advertisement`, `begin_listing_advertisement_snapshot` (requires
+`accountKey`), `submit_listing_advertisement_snapshot_item`, and
 `complete_listing_advertisement_snapshot`. Use the exact current MCP schemas;
 do not invent fields from this summary.
+
+## AdvertisementChangeRequest lifecycle
+
+- One `Task` (`category="advertisement"`) may link 1..N
+  `AdvertisementChangeRequest` rows (`publish`, `update`, `readvertise`,
+  `takedown`), each carrying `cpAccount` (`accountKey`), `baseSnapshot`, and
+  `targetValue` (`{ price?, deposit?, monthlyRent?, floorExposure? }`, 만원
+  units; jeonse uses `deposit`).
+- Request statuses: `requested -> in_progress -> executed -> verified | failed | cancelled`.
+- The runner sets `in_progress` on start, `executed` after CP write succeeds, or
+  `failed` with `failureReason`.
+- Only `complete_listing_advertisement_snapshot` transitions a request to
+  `verified` after re-reading live CP state (and auto-completes the parent `Task`
+  when all linked requests are verified).
 
 ## Interpretation
 

@@ -52,8 +52,12 @@ test("builds begin metadata and one raw item without changing it", async () => {
   });
 
   try {
-    const begin = await buildOutput(file, "begin");
+    const begin = await buildOutput(file, "begin", [
+      "--account-key",
+      "esiljang-user-1",
+    ]);
     assert.equal(begin.channel, "esiljang");
+    assert.equal(begin.accountKey, "esiljang-user-1");
     assert.equal(begin.manifestHash, snapshot.manifestHash);
     assert.match(begin.fileSha256, /^[0-9a-f]{64}$/);
 

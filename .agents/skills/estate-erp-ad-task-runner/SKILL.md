@@ -36,7 +36,12 @@ or an explicitly isolated profile with `ESTATE_ERP_AD_TASK_DB_PATH`.
 2. Call `claim_task` immediately before execution. This atomically assigns the
    Task to the current ERP user and changes it to `in_progress`. If it conflicts,
    stop; another executor or employee owns it.
-3. Start the local run:
+3. Load the linked `AdvertisementChangeRequest` items for this Task via
+   `find_advertisement_change_requests({ includeClosed: false })` (matching the
+   requests whose `task.id` equals the claimed Task ID) and inspect the
+   office's CP accounts with `list_office_cp_accounts`. A single batch Task may
+   contain multiple `publish` / `update` / `readvertise` / `takedown` requests.
+4. Start the local run:
 
    ```bash
    node scripts/run-state.mjs begin --task-id <task-id> --task-json '<task-json>'
@@ -44,19 +49,28 @@ or an explicitly isolated profile with `ESTATE_ERP_AD_TASK_DB_PATH`.
 
    A reused active run means this Task is already running locally. Resume it
    after inspecting `show`; do not start a duplicate provider session.
-4. Translate the Task into an exact local plan. Resolve every target by stable
-   identifiers such as `listingAdvertisementId`, provider, and provider article
-   number. Read the current CP state with the appropriate reader and import a
-   complete snapshot with `estate-erp-cp-ad-importer` before proposing changes.
-5. Only when explicitly requested, pass the completed Esiljang Reader JSON to
+5. Translate the Task and its `AdvertisementChangeRequest` rows into an exact
+   local plan. Verify each target by `listingAdvertisementId` (or `listingId`
+   for `publish`), `channel`, `cpAccount.accountKey`, `externalAdId`,
+   `baseSnapshot`, and `targetValue` (prices in 만원; jeonse uses `deposit`).
+   Confirm the active login account matches the request's `accountKey` before
+   mutating any CP record. Read the current CP state with the appropriate reader
+   and import a complete snapshot with `estate-erp-cp-ad-importer` (passing
+   `--account-key <accountKey>`) before proposing changes.
+6. Only when explicitly requested, pass the completed Esiljang Reader JSON to
    `naver-real-estate-reader` and save its raw duplicate-ad JSON to the selected
    local path. Do not compare rows, classify ownership, or upload that Naver
    snapshot to ERP.
-6. Present the exact provider changes to the user: target, current value, new
-   value, and whether save, exposure end, or republish is involved. Obtain clear
-   confirmation in the current conversation before the first provider write.
-7. Invoke the provider manager Skill with the confirmed local plan. Record each
-   detailed transition locally:
+7. Present the exact provider changes to the user: target, CP account
+   (`accountKey`), action (`publish`/`update`/`readvertise`/`takedown`), current
+   value, and `targetValue`. Obtain clear confirmation in the current
+   conversation before the first provider write.
+8. Invoke the provider manager Skill with the confirmed local plan. Transition
+   each `AdvertisementChangeRequest` through MCP and record detailed transitions
+   in local SQLite:
+   - Before writing: `update_advertisement_change_request({ id, status: "in_progress" })`
+   - Right after confirmed UI write: `update_advertisement_change_request({ id, status: "executed" })`
+   - On block/failure: `update_advertisement_change_request({ id, status: "failed", failureReason })`
 
    ```bash
    node scripts/run-state.mjs step --run-id <run-id> --key target_confirm --status running
@@ -65,19 +79,26 @@ or an explicitly isolated profile with `ESTATE_ERP_AD_TASK_DB_PATH`.
 
    The provider manager owns its necessary UI sequence. Do not mirror those
    steps into ERP Task content.
-8. Re-read the provider's persisted state. Import the complete post-change CP
-   snapshot. Mark success only when observed state matches the confirmed plan.
-9. Finish the local run and then call `update_task` with `status="completed"`:
+9. Re-read the provider's persisted state with the reader and import the complete
+   post-change CP snapshot via `estate-erp-cp-ad-importer`. Never mark a request
+   `verified` directly — `complete_listing_advertisement_snapshot` automatically
+   verifies matching `AdvertisementChangeRequest` rows when observed values
+   match `targetValue` (and auto-completes the parent `Task` once every request
+   in the batch is verified). Mark success only when observed state matches
+   the confirmed plan.
+10. Finish the local run and verify `update_task` with `status="completed"`
+    (unless already auto-completed by snapshot verification) once provider
+    persistence is re-read and verified:
 
-   ```bash
-   node scripts/run-state.mjs finish --run-id <run-id> --status completed \
-     --result-json '{"verified":true}'
-   ```
+    ```bash
+    node scripts/run-state.mjs finish --run-id <run-id> --status completed \
+      --result-json '{"verified":true}'
+    ```
 
-   Keep any user-facing result short, for example “광고 수정 완료 및 재조회
-   검증”. Do not replace the original request or its stable target identifiers;
-   update only the status, or append a one-line `실행 메모` to the existing
-   content.
+    Keep any user-facing result short, for example “광고 수정 완료 및 재조회
+    검증”. Do not replace the original request or its stable target identifiers;
+    update only the status, or append a one-line `실행 메모` to the existing
+    content.
 
 ## Failure and resume
 

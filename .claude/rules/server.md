@@ -13,6 +13,9 @@ paths:
 - 역할 제한이 필요한 곳만 `RolesGuard` + `@Roles(...)`를 쓴다. 역할은 `owner / manager / agent`.
 - 서비스 메서드는 `officeId`를 인자로 받아 조회·수정 범위를 직접 좁힌다. 요청 맥락(`common/request-context`)을 보고 `PrismaService`가 격리 대상 모델에 `officeId`를 넣어 주지만, 그것에만 기대지 않는다.
 - 입력 검증은 서비스에서 한다. 형식이 틀리면 `BadRequestException`, 없으면 `NotFoundException`, 상태가 맞지 않으면 `ConflictException`. 사용자에게 보일 수 있는 메시지는 한국어로 쓴다.
+- **요청 본문을 통째로 `data`에 넘기지 않는다.** 받을 칸을 하나씩 골라 넣는다. `{ officeId, ...dto }`는 본문의 `officeId`가 앞의 값을 덮으므로 쓰지 않는다. 중첩 쓰기(`connectOrCreate` 등)도 본문의 객체를 그대로 넘기지 않는다 — 법정동 마스터 같은 공용 표에 줄이 생긴다.
+- **다른 표를 가리키는 id는 같은 사무소 것인지 서비스에서 검사한다.** 연락처·매물·매칭·거래를 가리키는 칸의 FK는 대부분 id만 가리켜 DB가 막지 못한다. 업무·일정·상담의 연결 칸은 `tasks/linked-records.ts`의 검사를 쓴다.
+- 날·달의 경계는 한국 시각으로 자른다(`new Date()`의 날짜를 그대로 쓰지 않는다). 서버는 UTC로 돈다.
 - 여러 표를 함께 바꾸는 일은 `prisma.$transaction` 안에서 한다. 읽은 값과 비교해 쓰는 갱신은 DB의 한 문장(`updateMany` + 조건)으로 한다. 동시에 들어온 요청이 서로 덮어쓰지 않게 하기 위해서다.
 
 ## 변경 기록

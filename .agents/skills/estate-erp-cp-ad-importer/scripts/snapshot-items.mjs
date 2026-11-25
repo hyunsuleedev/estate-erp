@@ -194,9 +194,11 @@ export async function buildOutput(filePath, action, args = []) {
   }
 
   if (action === "begin") {
+    const accountKey = option(args, "--account-key")?.trim();
     return {
       channel: snapshot.provider,
       provider: snapshot.provider,
+      ...(accountKey ? { accountKey } : {}),
       scope: snapshot.scope,
       observedAt: snapshot.observedAt,
       expectedTotal: snapshot.expectedTotal,

@@ -1,0 +1,2768 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>연락처 다중 전화번호 · 인라인 소속 · 구성도 UX 데모 — EstaitFlow</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #37352f;
+    --fg-strong: #2c2c2b;
+    --fg-muted: rgba(55, 53, 47, 0.65);
+    --fg-subtle: rgba(55, 53, 47, 0.45);
+    --surface: #f7f6f3;
+    --surface-hover: rgba(55, 53, 47, 0.04);
+    --border: #e9e9e7;
+    --border-strong: #d3d1cb;
+    --accent: #2383e2;
+    --accent-soft: #e8f1fa;
+    --accent-strong: #1b64b1;
+    --brown-soft: #f4eeee;
+    --brown-fg: #64473a;
+    --green-soft: #edf3ec;
+    --green-fg: #2b6e3f;
+    --violet-soft: #f3eef8;
+    --violet-fg: #6940a5;
+    --gray-soft: #f1f1ef;
+    --gray-fg: #5f5e59;
+    --danger: #d44c47;
+    --danger-soft: #ffe2dd;
+    --shadow-sm: 0 1px 2px rgba(15, 15, 15, 0.05);
+    --shadow-md: 0 8px 28px rgba(15, 15, 15, 0.12), 0 0 0 1px rgba(15, 15, 15, 0.06);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Pretendard", "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Noto Sans KR", sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button, input, textarea, select {
+    font: inherit;
+    color: inherit;
+  }
+  button { cursor: pointer; }
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* ── Top Prototype Bar ─────────────────────────────────── */
+  .proto-bar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    padding: 8px 16px;
+    background: #f9f8f7;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+  .proto-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .proto-label {
+    font-weight: 600;
+    color: var(--fg-muted);
+    margin-right: 2px;
+  }
+  .seg {
+    display: inline-flex;
+    align-items: center;
+    background: #eeedec;
+    padding: 2px;
+    border-radius: 6px;
+    gap: 2px;
+  }
+  .seg button {
+    border: 0;
+    background: transparent;
+    padding: 4px 9px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-muted);
+    transition: background 0.12s, color 0.12s;
+    white-space: nowrap;
+  }
+  .seg button:hover { color: var(--fg); }
+  .seg button.active {
+    background: #ffffff;
+    color: var(--fg);
+    box-shadow: var(--shadow-sm);
+    font-weight: 600;
+  }
+  .proto-spacer { flex: 1; }
+
+  /* ── EstaitFlow Shell ──────────────────────────────────── */
+  .app-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 45px);
+    background: var(--bg);
+  }
+  .detail-header {
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 20px 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    font-size: 14px;
+  }
+  .breadcrumb-sep { color: rgba(55, 53, 47, 0.28); }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  /* ── Notion Buttons & Tags ─────────────────────────────── */
+  .nb {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--fg);
+    white-space: nowrap;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .nb:hover { background: var(--surface-hover); }
+  .nb svg { width: 14px; height: 14px; stroke-width: 1.8; flex-shrink: 0; }
+  .nb-sm { height: 24px; padding: 0 8px; font-size: 12px; }
+  .nb-icon {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    color: var(--fg-muted);
+  }
+  .nb-icon:hover { background: var(--surface-hover); color: var(--fg); }
+  .nb-icon svg { width: 14px; height: 14px; }
+  .nb-line {
+    border-color: var(--border);
+    background: #fff;
+  }
+  .nb-line:hover { background: var(--surface); border-color: var(--border-strong); }
+  .nb-solid {
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  .nb-solid:hover { background: #1c74cb; }
+  .nb-primary-soft {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    font-weight: 600;
+  }
+  .nb-primary-soft:hover { background: #dceafb; }
+  .nb-danger { color: var(--danger); }
+  .nb-danger:hover { background: var(--danger-soft); }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 3px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .tag-gray { background: var(--gray-soft); color: var(--gray-fg); }
+  .tag-brown { background: var(--brown-soft); color: var(--brown-fg); }
+  .tag-blue { background: var(--accent-soft); color: var(--accent-strong); }
+  .tag-green { background: var(--green-soft); color: var(--green-fg); }
+  .tag-violet { background: var(--violet-soft); color: var(--violet-fg); }
+
+  /* ── Two-Column Workspace ──────────────────────────────── */
+  .workspace {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+  .doc-scroller {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+  }
+  .doc-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 16px 36px 64px;
+  }
+  .rail-aside {
+    width: 316px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border);
+    background: var(--bg);
+    overflow-y: auto;
+    padding: 12px 18px 56px;
+  }
+
+  /* ── Main Document Header & Props ──────────────────────── */
+  .doc-title-row {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+  .doc-title {
+    margin: 0;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.25;
+  }
+  .props-list {
+    margin: 14px 0 0;
+    display: grid;
+    gap: 4px;
+  }
+  .prop-row {
+    display: grid;
+    grid-template-columns: 136px minmax(0, 1fr);
+    align-items: start;
+    min-height: 30px;
+    padding: 3px 0;
+    font-size: 13.5px;
+  }
+  .prop-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--fg-muted);
+    font-size: 13px;
+    padding-top: 2px;
+  }
+  .prop-label svg { width: 14px; height: 14px; color: var(--fg-subtle); }
+  .prop-val {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    min-width: 0;
+  }
+  .phone-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+  }
+  .phone-item-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .copy-btn {
+    border: 0;
+    background: transparent;
+    padding: 1px 4px;
+    margin: -1px -4px;
+    border-radius: 4px;
+    font-weight: 500;
+    color: var(--fg);
+  }
+  .copy-btn:hover { background: var(--surface-hover); text-decoration: underline; }
+
+  .doc-memo {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: var(--fg);
+  }
+
+  .section-block {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+  }
+  .section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .section-title-wrap {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .section-h2 {
+    margin: 0;
+    font-size: 15.5px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .section-count {
+    font-size: 13px;
+    color: var(--fg-subtle);
+    font-weight: 500;
+  }
+  .section-hint {
+    font-size: 12.5px;
+    color: var(--fg-muted);
+  }
+
+  /* ── Inline Compact Party Rows (Main Doc) ──────────────── */
+  .inline-party-list {
+    display: grid;
+    gap: 8px;
+  }
+  .inline-party-row {
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: #fff;
+    padding: 10px 12px;
+    display: grid;
+    gap: 8px;
+    transition: border-color 0.12s;
+  }
+  .inline-party-row:hover { border-color: var(--border-strong); }
+  .inline-party-row.is-active {
+    border-color: #b7d5f4;
+    background: #fcfdff;
+  }
+  .inline-party-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .inline-party-title-area {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+  }
+  .inline-party-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--fg);
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+  .inline-party-name.clickable:hover { text-decoration: underline; }
+  .inline-party-sub {
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+  .inline-party-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .member-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .member-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #faf9f7;
+    font-size: 12.5px;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .member-chip:hover {
+    background: #f2f1ed;
+    border-color: var(--border-strong);
+  }
+  .member-chip.is-self {
+    background: var(--accent-soft);
+    border-color: #c2dcf7;
+  }
+  .member-chip-meta {
+    color: var(--fg-muted);
+    font-size: 11.5px;
+  }
+
+  /* ── Summary Cards (Assets / Deals) ────────────────────── */
+  .asset-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .asset-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 11px 13px;
+    background: #fff;
+  }
+  .asset-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .asset-card-title { font-weight: 600; font-size: 13.5px; }
+  .asset-card-sub { font-size: 12.5px; color: var(--fg-muted); }
+
+  /* ── Consultations ─────────────────────────────────────── */
+  .consult-list { display: grid; gap: 8px; }
+  .consult-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+  }
+  .consult-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--fg-muted);
+    flex-wrap: wrap;
+  }
+  .consult-body { font-size: 13.5px; }
+
+  /* ── Lean Right Rail ───────────────────────────────────── */
+  .rail-section + .rail-section {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .rail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    min-height: 26px;
+    margin-bottom: 8px;
+  }
+  .rail-title {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .rail-card {
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: #fff;
+    padding: 10px 12px;
+  }
+  .rail-card + .rail-card { margin-top: 8px; }
+  .rail-card-title { font-size: 13px; font-weight: 600; }
+  .rail-card-sub { font-size: 12px; color: var(--fg-muted); margin-top: 2px; }
+
+  /* ── Avatar ────────────────────────────────────────────── */
+  .avatar {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--fg-muted);
+    flex-shrink: 0;
+  }
+  .avatar-lg { width: 30px; height: 30px; font-size: 12px; }
+  .avatar-org {
+    border-radius: 6px;
+    background: var(--violet-soft);
+    border-color: #dfd2ee;
+    color: var(--violet-fg);
+  }
+  .avatar-hh {
+    border-radius: 6px;
+    background: var(--green-soft);
+    border-color: #cfe0cd;
+    color: var(--green-fg);
+  }
+  .avatar-self {
+    background: var(--accent-soft);
+    border-color: #bfd9f4;
+    color: var(--accent-strong);
+  }
+
+  /* ── Visual Org/Party Structure Diagram (Modal & Optional Inline Expand) ── */
+  .diagram-shell {
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fcfcfb;
+    overflow: hidden;
+  }
+  .diagram-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: #fff;
+  }
+  .party-pills {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .party-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: #fff;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--fg-muted);
+  }
+  .party-pill:hover { border-color: var(--border-strong); color: var(--fg); }
+  .party-pill.active {
+    background: var(--fg);
+    border-color: var(--fg);
+    color: #fff;
+  }
+  .party-pill.active .pill-count {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+  }
+  .pill-count {
+    font-size: 11px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--gray-soft);
+    color: var(--fg-muted);
+  }
+  .diagram-canvas {
+    position: relative;
+    padding: 24px 20px 22px;
+    min-height: 240px;
+    overflow-x: auto;
+  }
+  .diagram-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .diagram-layers {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 34px;
+    min-width: fit-content;
+  }
+  .diagram-row {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: nowrap;
+  }
+  .tier-label-row {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--fg-subtle);
+    letter-spacing: 0.02em;
+    margin-bottom: -22px;
+  }
+  .node-card {
+    position: relative;
+    background: #fff;
+    border: 1px solid var(--border-strong);
+    border-radius: 7px;
+    padding: 10px 12px;
+    min-width: 184px;
+    max-width: 220px;
+    text-align: left;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.14s, box-shadow 0.14s, transform 0.12s;
+  }
+  .node-card:hover { border-color: #9e9b93; transform: translateY(-1px); }
+  .node-card.is-hub {
+    min-width: 280px;
+    max-width: 360px;
+    background: #fff;
+    border-width: 1.5px;
+    text-align: center;
+  }
+  .node-card.is-hub.hub-hh { border-color: #7eb07e; background: #fafdf9; }
+  .node-card.is-hub.hub-org { border-color: #9b7ec8; background: #fbf9fe; }
+  .node-card.is-self {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.14);
+  }
+  .node-card.is-selected {
+    border-color: var(--fg);
+    box-shadow: 0 0 0 2px rgba(55, 53, 47, 0.16);
+  }
+  .node-card-add {
+    min-width: 140px;
+    border: 1.5px dashed var(--border-strong);
+    background: rgba(255, 255, 255, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--fg-muted);
+    font-size: 12.5px;
+    font-weight: 500;
+    box-shadow: none;
+  }
+  .node-card-add:hover {
+    border-color: var(--accent);
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+  }
+  .node-top { display: flex; align-items: center; gap: 8px; }
+  .node-hub-top { display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .node-name { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node-badges { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .node-hub-badges { justify-content: center; }
+  .node-meta { margin-top: 6px; font-size: 12px; color: var(--fg-muted); line-height: 1.4; }
+  .node-stats {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11.5px;
+    color: var(--fg-muted);
+  }
+
+  .inspector-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 16px;
+    padding: 11px 14px;
+    border-top: 1px solid var(--border);
+    background: #fff;
+  }
+  .inspector-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .inspector-sub { font-size: 12.5px; color: var(--fg-muted); }
+  .inspector-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+
+  /* ── Modals ────────────────────────────────────────────── */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(15, 15, 15, 0.38);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal-panel {
+    width: 100%;
+    max-width: 560px;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    flex-direction: column;
+  }
+  .modal-panel.modal-wide { max-width: 920px; }
+  .modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-title { margin: 0; font-size: 16px; font-weight: 600; }
+  .modal-desc { margin: 3px 0 0; font-size: 13px; color: var(--fg-muted); }
+  .modal-body { padding: 16px 20px; display: grid; gap: 14px; }
+  .modal-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 20px 16px;
+    border-top: 1px solid var(--border);
+    background: #fcfcfb;
+  }
+
+  .tabs-bar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 3px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+  }
+  .tab-btn {
+    border: 0;
+    background: transparent;
+    padding: 7px 8px;
+    border-radius: 5px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--fg-muted);
+    text-align: center;
+  }
+  .tab-btn.active { background: #fff; color: var(--fg); font-weight: 600; box-shadow: var(--shadow-sm); }
+
+  .field { display: grid; gap: 5px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field-label { font-size: 12.5px; font-weight: 600; }
+  .field-hint { font-size: 11.5px; color: var(--fg-muted); }
+  .input, .textarea, .select {
+    width: 100%;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 13.5px;
+    background: #fff;
+    outline: none;
+  }
+  .input:focus, .textarea:focus, .select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.14);
+  }
+  .preset-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .preset-chip {
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+  .preset-chip:hover { border-color: var(--border-strong); color: var(--fg); }
+  .preset-chip.active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    font-weight: 600;
+  }
+
+  /* Multi-phone editor inside Contact Edit Modal */
+  .phone-editor-list { display: grid; gap: 8px; }
+  .phone-editor-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .phone-primary-btn {
+    border: 1px solid var(--border-strong);
+    background: #fff;
+    border-radius: 5px;
+    padding: 6px 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--fg-muted);
+    flex-shrink: 0;
+  }
+  .phone-primary-btn.active {
+    border-color: transparent;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+  }
+
+  .callout-warn {
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: #fbf3db;
+    color: #402c1b;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .callout-info {
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--fg-muted);
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .draft-list { display: grid; gap: 6px; }
+  .draft-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #faf9f7;
+    font-size: 12.5px;
+  }
+  .candidate-list {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+  .candidate-item {
+    width: 100%;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: #fff;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+    font-size: 13px;
+  }
+  .candidate-item:last-child { border-bottom: 0; }
+  .candidate-item:hover { background: var(--surface); }
+  .candidate-item.selected { background: var(--accent-soft); }
+
+  .toast {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 90;
+    padding: 9px 14px;
+    border-radius: 7px;
+    background: #2c2c2b;
+    color: #fff;
+    font-size: 13px;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    transform: translateY(8px);
+    pointer-events: none;
+    transition: opacity 0.16s, transform 0.16s;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  @media (max-width: 960px) {
+    .workspace { flex-direction: column; }
+    .rail-aside { width: 100%; border-left: 0; border-top: 1px solid var(--border); }
+    .doc-container { padding: 14px 20px 36px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <div class="proto-group">
+    <span class="proto-label">시나리오</span>
+    <div class="seg" id="scenarioSeg">
+      <button type="button" data-contact="c-kim">김철수 (다중번호 · 다중소속)</button>
+      <button type="button" data-contact="c-hangang">(주)한강개발 (법인)</button>
+      <button type="button" data-contact="c-han">한지민 (소속 없음)</button>
+    </div>
+  </div>
+  <div class="proto-group">
+    <span class="proto-label">인라인 구성도</span>
+    <div class="seg" id="inlineDiagramSeg">
+      <button type="button" data-inline="closed">기본: 버튼 (접힘)</button>
+      <button type="button" data-inline="open">인라인 펼침</button>
+    </div>
+  </div>
+  <div class="proto-spacer"></div>
+  <button type="button" class="nb nb-line" id="quickEditContactBtn">연락처·전화 수정</button>
+  <button type="button" class="nb nb-solid" id="quickCreatePartyBtn">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>
+    새 파티 만들기
+  </button>
+</div>
+
+<div class="app-shell">
+  <header class="detail-header">
+    <nav class="breadcrumb" aria-label="위치">
+      <button type="button" class="nb nb-sm" id="navBackBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+        연락처
+      </button>
+      <span class="breadcrumb-sep">/</span>
+      <span id="headerContactName" style="font-weight:500;">김철수</span>
+    </nav>
+    <div class="header-actions">
+      <button type="button" class="nb" id="headerPhoneBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        전화
+      </button>
+      <button type="button" class="nb nb-line" id="headerEditBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        수정
+      </button>
+      <button type="button" class="nb nb-line" id="headerAddPartyBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+        파티 추가
+      </button>
+      <button type="button" class="nb nb-solid" onclick="showToast('상담 적기 동작 예시입니다.')">
+        상담 적기
+      </button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <main class="doc-scroller">
+      <div class="doc-container" id="mainDoc"></div>
+    </main>
+    <aside class="rail-aside" id="rightRail"></aside>
+  </div>
+</div>
+
+<!-- ── 구성도 모달 ── -->
+<div class="modal-backdrop" id="structureModal" role="dialog" aria-modal="true" aria-labelledby="structureModalTitle">
+  <div class="modal-panel modal-wide">
+    <div class="modal-head">
+      <div>
+        <h2 class="modal-title" id="structureModalTitle">소속 파티 구성도</h2>
+        <p class="modal-desc">세대 구성원과 소속 법인·담당자 계층을 한눈에 보고, 노드를 클릭해 수정하거나 해당 연락처로 이동합니다.</p>
+      </div>
+      <button type="button" class="nb-icon" id="closeStructureModalBtn" aria-label="닫기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="structureModalBody" style="padding:14px 20px 18px;"></div>
+  </div>
+</div>
+
+<!-- ── 연락처 수정 + 다중 전화번호 모달 ── -->
+<div class="modal-backdrop" id="editContactModal" role="dialog" aria-modal="true">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <div>
+        <h2 class="modal-title">연락처 수정</h2>
+        <p class="modal-desc">기본 정보와 메모, 라벨별 다중 전화번호를 수정합니다.</p>
+      </div>
+      <button type="button" class="nb-icon" onclick="closeModal('editContactModal')" aria-label="닫기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="editContactBody"></div>
+    <div class="modal-foot">
+      <button type="button" class="nb nb-line" onclick="closeModal('editContactModal')">취소</button>
+      <button type="button" class="nb nb-solid" id="saveEditContactBtn">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 새 파티 · 소속 만들기 모달 ── -->
+<div class="modal-backdrop" id="createPartyModal" role="dialog" aria-modal="true">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <div>
+        <h2 class="modal-title">새 파티 · 소속 만들기</h2>
+        <p class="modal-desc">현재 연락처를 기준으로 새 세대·법인을 만들거나 기존 파티에 연결합니다.</p>
+      </div>
+      <button type="button" class="nb-icon" onclick="closeModal('createPartyModal')" aria-label="닫기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="createPartyBody"></div>
+    <div class="modal-foot" id="createPartyFoot"></div>
+  </div>
+</div>
+
+<!-- ── 파티 정보 수정 모달 ── -->
+<div class="modal-backdrop" id="editPartyModal" role="dialog" aria-modal="true">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <div>
+        <h2 class="modal-title">파티 정보 수정</h2>
+        <p class="modal-desc">파티 이름, 대표/집 전화번호, 메모를 수정합니다.</p>
+      </div>
+      <button type="button" class="nb-icon" onclick="closeModal('editPartyModal')" aria-label="닫기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="editPartyBody"></div>
+    <div class="modal-foot">
+      <button type="button" class="nb nb-line" onclick="closeModal('editPartyModal')">취소</button>
+      <button type="button" class="nb nb-solid" id="saveEditPartyBtn">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 구성원 추가 모달 ── -->
+<div class="modal-backdrop" id="addMemberModal" role="dialog" aria-modal="true">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <div>
+        <h2 class="modal-title" id="addMemberTitle">구성원 추가</h2>
+        <p class="modal-desc">선택한 파티에 새 구성원이나 기존 연락처를 연결합니다.</p>
+      </div>
+      <button type="button" class="nb-icon" onclick="closeModal('addMemberModal')" aria-label="닫기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="addMemberBody"></div>
+    <div class="modal-foot">
+      <button type="button" class="nb nb-line" onclick="closeModal('addMemberModal')">취소</button>
+      <button type="button" class="nb nb-solid" id="saveAddMemberBtn">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 구성원 소속 수정 모달 ── -->
+<div class="modal-backdrop" id="editMemberModal" role="dialog" aria-modal="true">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <div>
+        <h2 class="modal-title">구성원 소속 수정</h2>
+        <p class="modal-desc" id="editMemberDesc">역할, 대표 연락 여부, 메모를 수정합니다.</p>
+      </div>
+      <button type="button" class="nb-icon" onclick="closeModal('editMemberModal')" aria-label="닫기">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="editMemberBody"></div>
+    <div class="modal-foot">
+      <button type="button" class="nb nb-line" onclick="closeModal('editMemberModal')">취소</button>
+      <button type="button" class="nb nb-solid" id="saveEditMemberBtn">저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const HOUSEHOLD_ROLE_PRESETS = ['남편', '아내', '아버지', '어머니', '아들', '딸', '형제·자매'];
+const ORG_ROLE_PRESETS = ['대표이사', '임원', '실무 담당자', '관리소장', '회계·정산'];
+const PHONE_LABEL_PRESETS = ['휴대폰', '사무실', '집', '비서', '팩스'];
+
+const state = {
+  currentContactId: 'c-kim',
+  inlineDiagramOpen: false, // 기본은 접힌 상태(버튼만 표시)
+  consultScope: 'self',
+  selectedPartyId: null,
+  selectedNodeMemberId: null,
+  contacts: [
+    {
+      id: 'c-kim', kind: 'person', name: '김철수',
+      phones: [
+        { id: 'ph-1', phone: '010-2345-6789', label: '휴대폰', isPrimary: true },
+        { id: 'ph-2', phone: '02-554-8801', label: '사무실 직통', isPrimary: false },
+      ],
+      email: 'chulsoo@hangangdev.co.kr', businessRegNo: null,
+      memo: '잠실/강남 핵심 투자자. 세대 명의로 주거용, 법인 명의로 꼬마빌딩 검토 중.',
+      propertyCount: 2, dealCount: 1,
+      properties: [
+        { title: '고덕그라시움 102동 2203호', role: '소유자', price: '매매 19억 5,000' },
+        { title: '역삼동 근린생활시설 712-4', role: '법인 대리', price: '매매 68억' }
+      ]
+    },
+    {
+      id: 'c-park', kind: 'person', name: '박영희',
+      phones: [{ id: 'ph-3', phone: '010-8765-4321', label: '휴대폰', isPrimary: true }],
+      email: 'yh.park@naver.com', businessRegNo: null,
+      memo: '김철수님 배우자. 실거주 평형·학군 조건을 주로 확인함.',
+      propertyCount: 1, dealCount: 0,
+      properties: [{ title: '고덕그라시움 102동 2203호', role: '공동소유', price: '매매 19억 5,000' }]
+    },
+    {
+      id: 'c-kimjr', kind: 'person', name: '김민준',
+      phones: [{ id: 'ph-4', phone: '010-4455-1122', label: '휴대폰', isPrimary: true }],
+      email: null, businessRegNo: null,
+      memo: '장남. 신혼집 전세 7억대 조건 별도 탐색 중.',
+      propertyCount: 0, dealCount: 0, properties: []
+    },
+    {
+      id: 'c-hangang', kind: 'organization', name: '(주)한강개발',
+      phones: [
+        { id: 'ph-5', phone: '02-554-8800', label: '대표번호', isPrimary: true },
+        { id: 'ph-6', phone: '02-554-8809', label: '팩스', isPrimary: false },
+      ],
+      email: 'asset@hangangdev.co.kr', businessRegNo: '211-88-40912',
+      memo: '강남/서초 중소형 상업용 빌딩 매입·임대 법인.',
+      propertyCount: 4, dealCount: 2,
+      properties: [
+        { title: '역삼동 근린생활시설 712-4', role: '소유자', price: '매매 68억' },
+        { title: '논현동 한강타워 3층 301호', role: '임대인', price: '보증 5,000 / 월 420' }
+      ]
+    },
+    {
+      id: 'c-lee', kind: 'person', name: '이서연',
+      phones: [
+        { id: 'ph-7', phone: '010-3321-7788', label: '휴대폰', isPrimary: true },
+        { id: 'ph-8', phone: '02-554-8812', label: '내선', isPrimary: false },
+      ],
+      email: 'sy.lee@hangangdev.co.kr', businessRegNo: null,
+      memo: '(주)한강개발 임대차 계약 및 세금계산서 실무 총괄.',
+      propertyCount: 0, dealCount: 1, properties: []
+    },
+    {
+      id: 'c-jung', kind: 'person', name: '정현우',
+      phones: [{ id: 'ph-9', phone: '010-9910-2040', label: '휴대폰', isPrimary: true }],
+      email: 'hw.jung@hangangdev.co.kr', businessRegNo: null,
+      memo: '재무·정산 검토 및 계약서 법인인감 날인 담당.',
+      propertyCount: 0, dealCount: 0, properties: []
+    },
+    {
+      id: 'c-gangnam', kind: 'organization', name: '강남자산관리(주)',
+      phones: [{ id: 'ph-10', phone: '02-6010-3300', label: '대표번호', isPrimary: true }],
+      email: 'pm@gnasset.kr', businessRegNo: '120-87-61904',
+      memo: '위탁 건물 시설·임대 관리 법인.',
+      propertyCount: 2, dealCount: 0,
+      properties: [{ title: '대치동 은마상가 B1층 12호', role: '관리', price: '보증 3,000 / 월 250' }]
+    },
+    {
+      id: 'c-choi', kind: 'person', name: '최도윤',
+      phones: [{ id: 'ph-11', phone: '010-7123-9090', label: '휴대폰', isPrimary: true }],
+      email: 'dy.choi@gnasset.kr', businessRegNo: null,
+      memo: '강남자산관리(주) 현장 관리소장.',
+      propertyCount: 0, dealCount: 0, properties: []
+    },
+    {
+      id: 'c-han', kind: 'person', name: '한지민',
+      phones: [{ id: 'ph-12', phone: '010-5050-8282', label: '휴대폰', isPrimary: true }],
+      email: 'jimin.han@gmail.com', businessRegNo: null,
+      memo: '아직 세대나 법인이 연결되지 않은 신규 매수 고객. 성수동 아파트 30평대 문의.',
+      propertyCount: 0, dealCount: 0, properties: []
+    },
+    {
+      id: 'c-oh', kind: 'person', name: '오세훈',
+      phones: [{ id: 'ph-13', phone: '010-6100-7400', label: '휴대폰', isPrimary: true }],
+      email: 'sh.oh@seoul.kr', businessRegNo: null,
+      memo: '기존 연락처 풀 (구성원 검색 시 선택 가능)',
+      propertyCount: 1, dealCount: 0, properties: []
+    },
+    {
+      id: 'c-seoulbiz', kind: 'organization', name: '(주)서울프라퍼티',
+      phones: [{ id: 'ph-14', phone: '02-778-9000', label: '대표번호', isPrimary: true }],
+      email: 'info@seoulprop.co.kr', businessRegNo: '104-86-55231',
+      memo: '여의도/마포 오피스 투자 법인.',
+      propertyCount: 3, dealCount: 1, properties: []
+    }
+  ],
+  parties: [
+    {
+      id: 'p-hh-kim',
+      kind: 'household',
+      name: '김철수 · 박영희 세대',
+      organizationContactId: null,
+      homePhone: '02-415-8820',
+      memo: '고덕그라시움 실거주. 자녀 신혼집 별도 매수/전세 병행.',
+      members: [
+        { id: 'm-1', contactId: 'c-kim', roleLabel: '남편', isPrimary: true, memo: '주 의사결정 및 자금 총괄' },
+        { id: 'm-2', contactId: 'c-park', roleLabel: '아내', isPrimary: false, memo: '현장 답사 및 내부 조건 확인' },
+        { id: 'm-3', contactId: 'c-kimjr', roleLabel: '아들', isPrimary: false, memo: '신혼집 전세 희망' }
+      ]
+    },
+    {
+      id: 'p-org-hangang',
+      kind: 'organization',
+      name: '(주)한강개발',
+      organizationContactId: 'c-hangang',
+      homePhone: '02-554-8800',
+      memo: '임대·매입 의사결정은 김철수 대표, 계약 행정은 이서연 과장 경유.',
+      members: [
+        { id: 'm-4', contactId: 'c-kim', roleLabel: '대표이사', isPrimary: true, memo: '최종 승인권자' },
+        { id: 'm-5', contactId: 'c-lee', roleLabel: '실무 담당자', isPrimary: false, memo: '계약서·현장 실사 일정 조율' },
+        { id: 'm-6', contactId: 'c-jung', roleLabel: '회계·정산', isPrimary: false, memo: '중개보수 세금계산서·입금 처리' }
+      ]
+    },
+    {
+      id: 'p-org-gangnam',
+      kind: 'organization',
+      name: '강남자산관리(주)',
+      organizationContactId: 'c-gangnam',
+      homePhone: '02-6010-3300',
+      memo: '사옥·상가 시설 위탁관리.',
+      members: [
+        { id: 'm-7', contactId: 'c-choi', roleLabel: '관리소장', isPrimary: true, memo: '시설 점검 및 임차인 민원 응대' },
+        { id: 'm-8', contactId: 'c-kim', roleLabel: '임원', isPrimary: false, memo: '수선비 500만원 이상 승인' }
+      ]
+    },
+    {
+      id: 'p-org-seoulbiz',
+      kind: 'organization',
+      name: '(주)서울프라퍼티',
+      organizationContactId: 'c-seoulbiz',
+      homePhone: '02-778-9000',
+      memo: '기존 연결 가능 법인 예시.',
+      members: [
+        { id: 'm-9', contactId: 'c-oh', roleLabel: '실무 담당자', isPrimary: true, memo: '여의도 오피스 담당' }
+      ]
+    }
+  ],
+  consultations: [
+    { id: 'cs-1', contactId: 'c-kim', type: '전화', date: '2026-11-24 14:20', content: '역삼동 빌딩 잔금 일정 및 법인 등기 서류 준비 요청.' },
+    { id: 'cs-2', contactId: 'c-park', type: '방문', date: '2026-11-22 11:05', content: '고덕동 34평 남향 로열층 시세 문의 및 주말 답사 예약.' },
+    { id: 'cs-3', contactId: 'c-lee', type: '문자·온라인', date: '2026-11-20 16:45', content: '한강타워 301호 임대차 계약서 특약 초안 메일 발송.' },
+    { id: 'cs-4', contactId: 'c-kimjr', type: '전화', date: '2026-11-18 19:10', content: '잠실새내역 도보권 신축 전세 7.5억 이내 매물 알림 요청.' },
+    { id: 'cs-5', contactId: 'c-han', type: '방문', date: '2026-11-23 15:30', content: '성수동 서울숲 인근 30평대 매수 예산 18억 상담.' }
+  ]
+};
+
+let uidSeq = 200;
+function nextId(prefix) { uidSeq += 1; return `${prefix}-${uidSeq}`; }
+
+function getContact(id) { return state.contacts.find((c) => c.id === id) || null; }
+
+function orderedPhonesOf(contact) {
+  if (!contact || !Array.isArray(contact.phones)) return [];
+  return contact.phones.slice().sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
+}
+
+function primaryPhoneOf(contact) {
+  const phones = orderedPhonesOf(contact);
+  return phones[0]?.phone || null;
+}
+
+function formatPhoneText(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.startsWith('02')) {
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 5) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+    if (digits.length <= 9) return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+  }
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  if (digits.length <= 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`;
+}
+
+function getPartiesForContact(contactId) {
+  const contact = getContact(contactId);
+  if (!contact) return [];
+  if (contact.kind === 'organization') {
+    return state.parties.filter((p) => p.kind === 'organization' && p.organizationContactId === contactId);
+  }
+  return state.parties.filter((p) => p.members.some((m) => m.contactId === contactId));
+}
+
+function getHouseholdOf(contactId) {
+  return state.parties.find((p) => p.kind === 'household' && p.members.some((m) => m.contactId === contactId)) || null;
+}
+
+function getParty(id) { return state.parties.find((p) => p.id === id) || null; }
+
+function esc(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function navigateToContact(contactId) {
+  if (!getContact(contactId)) return;
+  state.currentContactId = contactId;
+  state.selectedPartyId = null;
+  state.selectedNodeMemberId = null;
+  state.consultScope = 'self';
+  renderAll();
+  showToast(`${getContact(contactId).name} 상세 화면으로 이동했습니다.`);
+}
+
+/* ── Main Render ───────────────────────────────────────── */
+function renderAll() {
+  const contact = getContact(state.currentContactId);
+  const parties = getPartiesForContact(contact.id);
+
+  document.querySelectorAll('#scenarioSeg button').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.contact === state.currentContactId);
+  });
+  document.querySelectorAll('#inlineDiagramSeg button').forEach((btn) => {
+    btn.classList.toggle('active', (btn.dataset.inline === 'open') === state.inlineDiagramOpen);
+  });
+  document.getElementById('headerContactName').textContent = contact.name;
+
+  if (!state.selectedPartyId || !parties.some((p) => p.id === state.selectedPartyId)) {
+    state.selectedPartyId = parties[0]?.id || null;
+    state.selectedNodeMemberId = null;
+  }
+
+  renderMainDoc(contact, parties);
+  renderRightRail(contact, parties);
+
+  requestAnimationFrame(() => {
+    drawAllDiagrams();
+  });
+}
+
+function renderMainDoc(contact, parties) {
+  const container = document.getElementById('mainDoc');
+  const isOrg = contact.kind === 'organization';
+  const phones = orderedPhonesOf(contact);
+
+  const partyMemberIds = new Set();
+  const memberRoleMap = new Map();
+  parties.forEach((p) => {
+    p.members.forEach((m) => {
+      partyMemberIds.add(m.contactId);
+      if (m.contactId !== contact.id && !memberRoleMap.has(m.contactId)) {
+        memberRoleMap.set(m.contactId, `${p.name} · ${m.roleLabel || (p.kind === 'household' ? '세대원' : '담당자')}`);
+      }
+    });
+  });
+
+  const filteredConsults = state.consultations.filter((cs) => {
+    if (state.consultScope === 'self') return cs.contactId === contact.id;
+    return cs.contactId === contact.id || partyMemberIds.has(cs.contactId);
+  });
+
+  container.innerHTML = `
+    <div class="doc-title-row">
+      <h1 class="doc-title">${esc(contact.name)}</h1>
+      ${isOrg ? '<span class="tag tag-violet">법인·단체</span>' : '<span class="tag tag-gray">개인</span>'}
+    </div>
+
+    <dl class="props-list">
+      <div class="prop-row">
+        <dt class="prop-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          전화번호
+        </dt>
+        <dd class="prop-val">
+          <div class="phone-rows">
+            ${phones.length === 0 ? `
+              <div class="phone-item-line">
+                <span style="color:var(--fg-subtle);">등록된 전화번호 없음</span>
+                <button type="button" class="nb nb-line nb-sm" onclick="openEditContactModal('add-phone')">+ 전화번호 추가</button>
+              </div>
+            ` : `
+              ${phones.map((ph) => `
+                <div class="phone-item-line">
+                  <button type="button" class="copy-btn tabular" onclick="showToast('${esc(ph.phone)} 복사 완료')">${esc(ph.phone)}</button>
+                  ${ph.label ? `<span class="tag tag-gray">${esc(ph.label)}</span>` : ''}
+                  ${ph.isPrimary && phones.length > 1 ? '<span class="tag tag-blue">주 번호</span>' : ''}
+                </div>
+              `).join('')}
+              <div style="margin-top:2px;">
+                <button type="button" class="nb nb-sm" style="color:var(--fg-muted);padding-left:0;" onclick="openEditContactModal('add-phone')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>
+                  번호 추가 · 수정 (${phones.length})
+                </button>
+              </div>
+            `}
+          </div>
+        </dd>
+      </div>
+      ${isOrg ? `
+      <div class="prop-row">
+        <dt class="prop-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h6M7 16h4"/></svg>
+          사업자등록번호
+        </dt>
+        <dd class="prop-val tabular">${contact.businessRegNo ? esc(contact.businessRegNo) : '<span style="color:var(--fg-subtle)">없음</span>'}</dd>
+      </div>` : ''}
+      <div class="prop-row">
+        <dt class="prop-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          이메일
+        </dt>
+        <dd class="prop-val">${contact.email ? esc(contact.email) : '<span style="color:var(--fg-subtle)">없음</span>'}</dd>
+      </div>
+    </dl>
+
+    <div class="doc-memo">
+      ${contact.memo ? esc(contact.memo) : '<span style="color:var(--fg-subtle)">메모가 없습니다. [수정]을 눌러 입력하세요.</span>'}
+    </div>
+
+    ${renderInlineAffiliationsSection(contact, parties)}
+
+    <section class="section-block">
+      <div class="section-head">
+        <div class="section-title-wrap">
+          <h2 class="section-h2">소유 · 관리 매물</h2>
+          <span class="section-count">${contact.properties.length}</span>
+          <span class="section-hint">소유자 · 대리인으로 연결된 매물</span>
+        </div>
+      </div>
+      ${contact.properties.length > 0 ? `
+        <div class="asset-grid">
+          ${contact.properties.map((prop) => `
+            <div class="asset-card">
+              <div class="asset-card-top">
+                <span class="asset-card-title">${esc(prop.title)}</span>
+                <span class="tag tag-brown">${esc(prop.role)}</span>
+              </div>
+              <div class="asset-card-sub tabular">${esc(prop.price)}</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : '<div class="callout-info">연결된 매물이 아직 없습니다.</div>'}
+    </section>
+
+    <section class="section-block">
+      <div class="section-head">
+        <div class="section-title-wrap">
+          <h2 class="section-h2">상담 기록</h2>
+          <span class="section-count">${filteredConsults.length}</span>
+        </div>
+        ${parties.length > 0 ? `
+          <div class="seg" role="group" aria-label="상담 보기 범위">
+            <button type="button" class="${state.consultScope === 'self' ? 'active' : ''}" onclick="setConsultScope('self')">본인만</button>
+            <button type="button" class="${state.consultScope === 'party' ? 'active' : ''}" onclick="setConsultScope('party')">세대·법인 전체</button>
+          </div>
+        ` : ''}
+      </div>
+      <div class="consult-list">
+        ${filteredConsults.length > 0 ? filteredConsults.map((cs) => {
+          const author = getContact(cs.contactId);
+          const isOther = cs.contactId !== contact.id;
+          return `
+            <div class="consult-item">
+              <div class="consult-meta">
+                <span class="tag tag-gray">${esc(cs.type)}</span>
+                <span class="tabular">${esc(cs.date)}</span>
+                ${isOther && author ? `<span class="tag tag-blue">${esc(author.name)} (${esc(memberRoleMap.get(author.id) || '소속')})</span>` : ''}
+              </div>
+              <div class="consult-body">${esc(cs.content)}</div>
+            </div>
+          `;
+        }).join('') : '<div class="callout-info">표시할 상담 기록이 없습니다.</div>'}
+      </div>
+    </section>
+  `;
+}
+
+/* ── Inline Affiliation Section (Default: Compact Rows + Buttons; Optional Inline Expand + Modal) ── */
+function renderInlineAffiliationsSection(contact, parties) {
+  const isOrg = contact.kind === 'organization';
+  const totalMembers = parties.reduce((sum, p) => sum + p.members.length, 0);
+
+  return `
+    <section class="section-block" data-inline-affiliations>
+      <div class="section-head">
+        <div class="section-title-wrap">
+          <h2 class="section-h2">${isOrg ? '법인 파티 · 담당자' : '세대 · 법인 소속'}</h2>
+          <span class="section-count">${parties.length > 0 ? `${parties.length}개 · ${totalMembers}명` : '0'}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          ${parties.length > 0 ? `
+            <button type="button" class="nb nb-line nb-sm" onclick="toggleInlineDiagram()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="${state.inlineDiagramOpen ? 'm18 15-6-6-6 6' : 'm6 9 6 6 6-6'}"/></svg>
+              ${state.inlineDiagramOpen ? '인라인 구성도 접기' : '인라인 구성도 펼치기'}
+            </button>
+            <button type="button" class="nb nb-primary-soft nb-sm" onclick="openStructureModal()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="9" y="3" width="6" height="4" rx="1"/><rect x="3" y="17" width="6" height="4" rx="1"/><rect x="15" y="17" width="6" height="4" rx="1"/><path d="M12 7v5M6 17v-5h12v5"/></svg>
+              구성도 모달 보기
+            </button>
+          ` : ''}
+          <button type="button" class="nb nb-line nb-sm" onclick="openCreatePartyModal()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>
+            새 파티 만들기
+          </button>
+        </div>
+      </div>
+
+      ${parties.length === 0 ? `
+        <div class="callout-info" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px;">
+          <div>
+            <strong style="color:var(--fg);">연결된 세대·법인 소속이 없습니다.</strong>
+            <div style="margin-top:2px;">
+              ${isOrg
+                ? '이 법인의 대표자·담당자를 묶어 관리할 법인 파티를 만들 수 있습니다.'
+                : '다른 사람을 먼저 찾지 않아도 1인 세대를 만들거나 새 법인·기존 파티를 연결할 수 있습니다.'}
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${!isOrg ? '<button type="button" class="nb nb-solid nb-sm" onclick="openCreatePartyModal(\'new-household\')">+ 새 세대 만들기</button>' : ''}
+            <button type="button" class="nb nb-primary-soft nb-sm" onclick="openCreatePartyModal(\'new-org\')">+ 새 법인 만들기</button>
+            <button type="button" class="nb nb-line nb-sm" onclick="openCreatePartyModal(\'join-existing\')">기존 소속 연결</button>
+          </div>
+        </div>
+      ` : `
+        <div class="inline-party-list">
+          ${parties.map((p) => {
+            const orgContact = p.organizationContactId ? getContact(p.organizationContactId) : null;
+            const isActive = state.inlineDiagramOpen && p.id === state.selectedPartyId;
+            return `
+              <div class="inline-party-row ${isActive ? 'is-active' : ''}">
+                <div class="inline-party-top">
+                  <div class="inline-party-title-area">
+                    <span>${p.kind === 'household' ? '🏠' : '🏢'}</span>
+                    ${orgContact && orgContact.id !== contact.id ? `
+                      <button type="button" class="inline-party-name clickable" onclick="navigateToContact('${orgContact.id}')">${esc(p.name)}</button>
+                    ` : `<span class="inline-party-name">${esc(p.name)}</span>`}
+                    <span class="tag ${p.kind === 'household' ? 'tag-green' : 'tag-violet'}">${p.kind === 'household' ? '세대' : '법인'}</span>
+                    <span class="tag tag-gray">${p.members.length}명</span>
+                    <span class="inline-party-sub tabular">
+                      ${orgContact?.businessRegNo ? `사업자 ${esc(orgContact.businessRegNo)} · ` : ''}
+                      ${p.homePhone ? esc(p.homePhone) : ''}
+                    </span>
+                  </div>
+                  <div class="inline-party-actions">
+                    <button type="button" class="nb nb-sm" onclick="openEditPartyModal('${p.id}')">파티 수정</button>
+                    <button type="button" class="nb nb-sm" onclick="openAddMemberModal('${p.id}')">+ 구성원</button>
+                    <button type="button" class="nb nb-primary-soft nb-sm" onclick="openStructureModal('${p.id}')">구성도</button>
+                  </div>
+                </div>
+
+                <div class="member-chips">
+                  ${p.members.map((m) => {
+                    const mc = getContact(m.contactId);
+                    if (!mc) return '';
+                    const isSelf = mc.id === contact.id;
+                    const primaryPhone = primaryPhoneOf(mc);
+                    const extraPhoneCount = Math.max(0, (mc.phones?.length || 0) - 1);
+                    return `
+                      <div class="member-chip ${isSelf ? 'is-self' : ''}">
+                        <span class="avatar ${isSelf ? 'avatar-self' : ''}">${esc(mc.name.slice(0, 1))}</span>
+                        ${isSelf ? `<strong>${esc(mc.name)}</strong>` : `
+                          <button type="button" class="inline-party-name clickable" style="font-size:12.5px;" onclick="navigateToContact('${mc.id}')">${esc(mc.name)}</button>
+                        `}
+                        <span class="member-chip-meta">${esc(m.roleLabel || (p.kind === 'household' ? '세대원' : '담당자'))}</span>
+                        ${m.isPrimary ? '<span class="tag tag-brown" style="height:17px;font-size:10.5px;">대표</span>' : ''}
+                        ${isSelf ? '<span class="tag tag-blue" style="height:17px;font-size:10.5px;">본인</span>' : ''}
+                        ${primaryPhone ? `<span class="member-chip-meta tabular">${esc(primaryPhone)}${extraPhoneCount > 0 ? ` +${extraPhoneCount}` : ''}</span>` : ''}
+                        <button type="button" class="nb-icon" style="width:20px;height:20px;" title="역할 수정" onclick="openEditMemberModal('${p.id}', '${m.id}')">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width:12px;height:12px;"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                        </button>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        ${state.inlineDiagramOpen ? renderInteractiveDiagram(contact, parties, 'inline-diagram') : ''}
+      `}
+    </section>
+  `;
+}
+
+function toggleInlineDiagram() {
+  state.inlineDiagramOpen = !state.inlineDiagramOpen;
+  renderAll();
+}
+
+function setConsultScope(scope) {
+  state.consultScope = scope;
+  renderAll();
+}
+
+/* ── Lean Right Rail (No bloated party tree!) ─────────── */
+function renderRightRail(contact, parties) {
+  const rail = document.getElementById('rightRail');
+  const totalMembers = parties.reduce((sum, p) => sum + p.members.length, 0);
+
+  rail.innerHTML = `
+    <section class="rail-section" style="margin-top:0;padding-top:0;border-top:0;">
+      <div class="rail-head">
+        <div class="rail-title">
+          <span>지금 챙길 것</span>
+          <span class="section-count">1</span>
+        </div>
+      </div>
+      <div class="rail-card" style="background:var(--surface);">
+        <div class="rail-card-title">소속 및 연락처 상태</div>
+        <div class="rail-card-sub">
+          ${parties.length > 0
+            ? `연결된 파티 ${parties.length}개 · 구성원 ${totalMembers}명`
+            : '아직 연결된 세대·법인이 없습니다.'}
+        </div>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+          ${parties.length > 0 ? `<button type="button" class="nb nb-primary-soft nb-sm" onclick="openStructureModal()">구성도 모달 열기</button>` : ''}
+          <button type="button" class="nb nb-line nb-sm" onclick="openEditContactModal()">번호·정보 수정</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="rail-section">
+      <div class="rail-head">
+        <div class="rail-title">
+          <span>이 손님의 프로젝트</span>
+          <span class="section-count">1</span>
+        </div>
+      </div>
+      <div class="rail-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <span class="rail-card-title">${esc(contact.name)} 자산 검토</span>
+          <span class="tag tag-green">진행 중</span>
+        </div>
+        <div class="rail-card-sub">진행 단계 3 · 담당 홍길동</div>
+      </div>
+    </section>
+
+    <section class="rail-section">
+      <div class="rail-head">
+        <div class="rail-title">
+          <span>다가오는 일정</span>
+          <span class="section-count">1</span>
+        </div>
+      </div>
+      <div class="rail-card">
+        <div class="rail-card-title">현장 임장 및 조건 확인</div>
+        <div class="rail-card-sub tabular">2026-11-26 14:00 · 담당 홍길동</div>
+      </div>
+    </section>
+  `;
+}
+
+/* ── Shared Visual Diagram (Used by Modal & Optional Inline Expand) ── */
+function renderInteractiveDiagram(contact, parties, scopeId) {
+  const activeParty = parties.find((p) => p.id === state.selectedPartyId) || parties[0];
+  if (!activeParty) return '';
+
+  const isOrg = activeParty.kind === 'organization';
+  const totalProps = activeParty.members.reduce((sum, m) => sum + (getContact(m.contactId)?.propertyCount || 0), 0);
+  const orgContact = activeParty.organizationContactId ? getContact(activeParty.organizationContactId) : null;
+
+  let tier1 = [];
+  let tier2 = [];
+  if (isOrg) {
+    tier1 = activeParty.members.filter((m) => m.isPrimary || (m.roleLabel && m.roleLabel.includes('대표')));
+    if (tier1.length === 0 && activeParty.members.length > 0) tier1 = [activeParty.members[0]];
+    const tier1Ids = new Set(tier1.map((m) => m.id));
+    tier2 = activeParty.members.filter((m) => !tier1Ids.has(m.id));
+  }
+
+  const selectedMember = activeParty.members.find((m) => m.id === state.selectedNodeMemberId) || null;
+  const selectedContact = selectedMember ? getContact(selectedMember.contactId) : null;
+
+  const renderMemberNode = (m, rowType) => {
+    const mc = getContact(m.contactId);
+    if (!mc) return '';
+    const isSelf = mc.id === contact.id;
+    const isSel = m.id === state.selectedNodeMemberId;
+    const primaryPhone = primaryPhoneOf(mc);
+    const extraCount = Math.max(0, (mc.phones?.length || 0) - 1);
+    return `
+      <button
+        type="button"
+        class="node-card ${isSelf ? 'is-self' : ''} ${isSel ? 'is-selected' : ''}"
+        data-node-id="${m.id}"
+        data-tier="${rowType}"
+        onclick="selectDiagramNode('${activeParty.id}', '${m.id}')"
+      >
+        <div class="node-top">
+          <span class="avatar ${isSelf ? 'avatar-self' : ''}">${esc(mc.name.slice(0, 1))}</span>
+          <div style="min-width:0;flex:1;">
+            <div class="node-name">${esc(mc.name)}</div>
+          </div>
+        </div>
+        <div class="node-badges">
+          <span class="tag tag-gray">${esc(m.roleLabel || (isOrg ? '담당자' : '세대원'))}</span>
+          ${m.isPrimary ? '<span class="tag tag-brown">대표</span>' : ''}
+          ${isSelf ? '<span class="tag tag-blue">본인</span>' : ''}
+        </div>
+        <div class="node-meta tabular">
+          ${primaryPhone ? `${esc(primaryPhone)}${extraCount > 0 ? ` <span class="tag tag-gray" style="height:16px;font-size:10.5px;">+${extraCount}</span>` : ''}` : '전화번호 없음'}
+        </div>
+        <div class="node-stats tabular">
+          <span>매물 ${mc.propertyCount || 0}건</span>
+          <span>거래 ${mc.dealCount || 0}건</span>
+        </div>
+      </button>
+    `;
+  };
+
+  return `
+    <div class="diagram-shell" data-diagram-scope="${scopeId}">
+      <div class="diagram-toolbar">
+        <div class="party-pills">
+          ${parties.map((p) => `
+            <button
+              type="button"
+              class="party-pill ${p.id === activeParty.id ? 'active' : ''}"
+              onclick="selectDiagramParty('${p.id}')"
+            >
+              <span>${p.kind === 'household' ? '🏠' : '🏢'}</span>
+              <span>${esc(p.name)}</span>
+              <span class="pill-count">${p.members.length}</span>
+            </button>
+          `).join('')}
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button type="button" class="nb nb-line nb-sm" onclick="openEditPartyModal('${activeParty.id}')">파티 수정</button>
+          <button type="button" class="nb nb-primary-soft nb-sm" onclick="openAddMemberModal('${activeParty.id}')">+ 구성원 추가</button>
+        </div>
+      </div>
+
+      <div class="diagram-canvas" data-diagram-canvas>
+        <svg class="diagram-svg" data-diagram-svg></svg>
+        <div class="diagram-layers">
+          <div class="diagram-row">
+            <div class="node-card is-hub ${isOrg ? 'hub-org' : 'hub-hh'}" data-hub-node="true">
+              <div class="node-hub-top">
+                <span class="avatar avatar-lg ${isOrg ? 'avatar-org' : 'avatar-hh'}">${isOrg ? '법' : '세'}</span>
+                <span style="font-size:14.5px;font-weight:700;">${esc(activeParty.name)}</span>
+              </div>
+              <div class="node-badges node-hub-badges">
+                <span class="tag ${isOrg ? 'tag-violet' : 'tag-green'}">${isOrg ? '법인·단체 파티' : '세대·가족 파티'}</span>
+                <span class="tag tag-gray">구성원 ${activeParty.members.length}명</span>
+                <span class="tag tag-gray">합산 매물 ${totalProps}건</span>
+              </div>
+              <div class="node-meta tabular">
+                ${isOrg && orgContact?.businessRegNo ? `사업자 ${esc(orgContact.businessRegNo)} · ` : ''}
+                ${activeParty.homePhone ? `대표/집 ${esc(activeParty.homePhone)}` : '대표번호 미등록'}
+              </div>
+              ${activeParty.memo ? `<div class="node-meta" style="margin-top:4px;color:var(--fg-subtle);">${esc(activeParty.memo)}</div>` : ''}
+            </div>
+          </div>
+
+          ${!isOrg ? `
+            <div class="tier-label-row">세대 구성원</div>
+            <div class="diagram-row" data-tier-row="1">
+              ${activeParty.members.map((m) => renderMemberNode(m, '1')).join('')}
+              <button type="button" class="node-card node-card-add" onclick="openAddMemberModal('${activeParty.id}')">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                <span>세대원 추가</span>
+              </button>
+            </div>
+          ` : `
+            <div class="tier-label-row">대표 · 의사결정</div>
+            <div class="diagram-row" data-tier-row="1">
+              ${tier1.map((m) => renderMemberNode(m, '1')).join('')}
+              ${tier2.length === 0 ? `
+                <button type="button" class="node-card node-card-add" onclick="openAddMemberModal('${activeParty.id}')">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                  <span>담당자 추가</span>
+                </button>
+              ` : ''}
+            </div>
+            ${tier2.length > 0 ? `
+              <div class="tier-label-row">임원 · 실무 담당자</div>
+              <div class="diagram-row" data-tier-row="2">
+                ${tier2.map((m) => renderMemberNode(m, '2')).join('')}
+                <button type="button" class="node-card node-card-add" onclick="openAddMemberModal('${activeParty.id}')">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                  <span>담당자 추가</span>
+                </button>
+              </div>
+            ` : ''}
+          `}
+        </div>
+      </div>
+
+      ${selectedMember && selectedContact ? `
+        <div class="inspector-bar">
+          <div class="inspector-main">
+            <span class="avatar avatar-lg ${selectedContact.id === contact.id ? 'avatar-self' : ''}">${esc(selectedContact.name.slice(0, 1))}</span>
+            <div style="min-width:0;">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <strong style="font-size:13.5px;">${esc(selectedContact.name)}</strong>
+                <span class="tag tag-gray">${esc(selectedMember.roleLabel || '구성원')}</span>
+                ${selectedMember.isPrimary ? '<span class="tag tag-brown">대표</span>' : ''}
+              </div>
+              <div class="inspector-sub tabular">
+                ${orderedPhonesOf(selectedContact).map((p) => `${p.phone}${p.label ? `(${p.label})` : ''}`).join(', ') || '번호 없음'}
+                ${selectedMember.memo ? ` · ${esc(selectedMember.memo)}` : ''}
+              </div>
+            </div>
+          </div>
+          <div class="inspector-actions">
+            <button type="button" class="nb nb-line nb-sm" onclick="openEditMemberModal('${activeParty.id}', '${selectedMember.id}')">역할·메모 수정</button>
+            <button type="button" class="nb nb-danger nb-sm" onclick="removeMember('${activeParty.id}', '${selectedMember.id}')">소속 제외</button>
+            ${selectedContact.id !== contact.id ? `
+              <button type="button" class="nb nb-solid nb-sm" onclick="navigateFromDiagram('${selectedContact.id}')">이 연락처로 이동 →</button>
+            ` : '<span class="tag tag-blue">현재 보고 있는 연락처</span>'}
+          </div>
+        </div>
+      ` : `
+        <div class="inspector-bar" style="color:var(--fg-muted);font-size:12.5px;">
+          <span>구성원 카드를 클릭하면 역할 수정, 소속 제외, 해당 연락처 화면 이동을 바로 실행할 수 있습니다.</span>
+          ${isOrg && orgContact && orgContact.id !== contact.id ? `
+            <button type="button" class="nb nb-line nb-sm" onclick="navigateFromDiagram('${orgContact.id}')">법인 연락처(${esc(orgContact.name)})로 이동 →</button>
+          ` : ''}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function drawAllDiagrams() {
+  document.querySelectorAll('[data-diagram-canvas]').forEach((canvas) => {
+    const svg = canvas.querySelector('[data-diagram-svg]');
+    const hub = canvas.querySelector('[data-hub-node]');
+    if (!svg || !hub) return;
+
+    const cRect = canvas.getBoundingClientRect();
+    const w = canvas.scrollWidth;
+    const h = canvas.scrollHeight;
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    svg.style.width = `${w}px`;
+    svg.style.height = `${h}px`;
+
+    const relBox = (el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        cx: r.left - cRect.left + canvas.scrollLeft + r.width / 2,
+        top: r.top - cRect.top + canvas.scrollTop,
+        bottom: r.bottom - cRect.top + canvas.scrollTop,
+      };
+    };
+
+    const hubBox = relBox(hub);
+    const tier1Nodes = Array.from(canvas.querySelectorAll('[data-node-id][data-tier="1"]'));
+    const tier2Nodes = Array.from(canvas.querySelectorAll('[data-node-id][data-tier="2"]'));
+
+    let paths = '';
+    const connectParentToChildren = (parentBox, childEls) => {
+      if (childEls.length === 0) return;
+      const childBoxes = childEls.map((el) => ({ id: el.dataset.nodeId, box: relBox(el) }));
+      const midY = Math.round((parentBox.bottom + childBoxes[0].box.top) / 2);
+      const minX = Math.min(...childBoxes.map((c) => c.box.cx), parentBox.cx);
+      const maxX = Math.max(...childBoxes.map((c) => c.box.cx), parentBox.cx);
+
+      paths += `<path d="M ${parentBox.cx} ${parentBox.bottom} V ${midY}" fill="none" stroke="#d3d1cb" stroke-width="1.5"/>`;
+      if (childBoxes.length > 1 || minX !== maxX) {
+        paths += `<path d="M ${minX} ${midY} H ${maxX}" fill="none" stroke="#d3d1cb" stroke-width="1.5"/>`;
+      }
+      childBoxes.forEach(({ id, box }) => {
+        const isSelected = id === state.selectedNodeMemberId;
+        paths += `<path d="M ${box.cx} ${midY} V ${box.top}" fill="none" stroke="${isSelected ? '#2383e2' : '#d3d1cb'}" stroke-width="${isSelected ? '2' : '1.5'}"/>`;
+      });
+    };
+
+    if (tier1Nodes.length > 0) connectParentToChildren(hubBox, tier1Nodes);
+    if (tier2Nodes.length > 0 && tier1Nodes.length > 0) connectParentToChildren(relBox(tier1Nodes[0]), tier2Nodes);
+    svg.innerHTML = paths;
+  });
+}
+
+window.addEventListener('resize', () => requestAnimationFrame(drawAllDiagrams));
+
+function selectDiagramParty(partyId) {
+  state.selectedPartyId = partyId;
+  state.selectedNodeMemberId = null;
+  renderAll();
+  if (document.getElementById('structureModal').classList.contains('open')) renderStructureModal();
+}
+
+function selectDiagramNode(partyId, memberId) {
+  state.selectedPartyId = partyId;
+  state.selectedNodeMemberId = state.selectedNodeMemberId === memberId ? null : memberId;
+  renderAll();
+  if (document.getElementById('structureModal').classList.contains('open')) renderStructureModal();
+}
+
+function navigateFromDiagram(contactId) {
+  closeModal('structureModal');
+  navigateToContact(contactId);
+}
+
+/* ── Structure Modal ───────────────────────────────────── */
+function openStructureModal(partyId) {
+  const parties = getPartiesForContact(state.currentContactId);
+  if (parties.length === 0) return;
+  if (partyId) state.selectedPartyId = partyId;
+  else if (!state.selectedPartyId) state.selectedPartyId = parties[0].id;
+  state.selectedNodeMemberId = null;
+  renderStructureModal();
+  openModal('structureModal');
+  requestAnimationFrame(drawAllDiagrams);
+}
+
+function renderStructureModal() {
+  const contact = getContact(state.currentContactId);
+  const parties = getPartiesForContact(contact.id);
+  document.getElementById('structureModalBody').innerHTML =
+    renderInteractiveDiagram(contact, parties, 'modal-diagram');
+  requestAnimationFrame(drawAllDiagrams);
+}
+
+/* ── Edit Contact + Multi-Phone Modal ──────────────────── */
+let editContactDraft = null;
+
+function openEditContactModal(mode) {
+  const contact = getContact(state.currentContactId);
+  if (!contact) return;
+  const phones = orderedPhonesOf(contact).map((p) => ({
+    id: p.id || nextId('ph'),
+    phone: p.phone,
+    label: p.label || '',
+    isPrimary: Boolean(p.isPrimary),
+  }));
+  if (phones.length === 0 || mode === 'add-phone') {
+    phones.push({
+      id: nextId('ph'),
+      phone: '',
+      label: phones.length === 0 ? '휴대폰' : '사무실',
+      isPrimary: phones.length === 0,
+    });
+  }
+  editContactDraft = {
+    kind: contact.kind,
+    name: contact.name,
+    businessRegNo: contact.businessRegNo || '',
+    email: contact.email || '',
+    memo: contact.memo || '',
+    phones,
+    focusLastPhone: mode === 'add-phone',
+  };
+  renderEditContactModal();
+  openModal('editContactModal');
+  if (mode === 'add-phone') {
+    requestAnimationFrame(() => {
+      const inputs = document.querySelectorAll('#editContactBody [data-phone-input]');
+      const last = inputs[inputs.length - 1];
+      last?.focus();
+    });
+  }
+}
+
+function renderEditContactModal() {
+  const d = editContactDraft;
+  const isOrg = d.kind === 'organization';
+  document.getElementById('editContactBody').innerHTML = `
+    <div class="field">
+      <label class="field-label">구분</label>
+      <div class="preset-chips">
+        <button type="button" class="preset-chip ${d.kind === 'person' ? 'active' : ''}" onclick="editContactDraft.kind='person';renderEditContactModal()">개인</button>
+        <button type="button" class="preset-chip ${d.kind === 'organization' ? 'active' : ''}" onclick="editContactDraft.kind='organization';renderEditContactModal()">법인·단체</button>
+      </div>
+    </div>
+
+    <div class="${isOrg ? 'field-row' : ''}">
+      <div class="field">
+        <label class="field-label">${isOrg ? '법인·단체명 *' : '이름 *'}</label>
+        <input class="input" value="${esc(d.name)}" oninput="editContactDraft.name=this.value">
+      </div>
+      ${isOrg ? `
+        <div class="field">
+          <label class="field-label">사업자등록번호</label>
+          <input class="input tabular" value="${esc(d.businessRegNo)}" oninput="editContactDraft.businessRegNo=this.value" placeholder="123-45-67890">
+        </div>
+      ` : ''}
+    </div>
+
+    <div class="field">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <label class="field-label">전화번호 (다중 등록 · 라벨 구분)</label>
+        <button type="button" class="nb nb-primary-soft nb-sm" onclick="addContactPhoneRow()">+ 번호 추가</button>
+      </div>
+      <div class="phone-editor-list">
+        ${d.phones.map((row, idx) => `
+          <div class="phone-editor-row">
+            <button type="button" class="phone-primary-btn ${row.isPrimary ? 'active' : ''}" onclick="setPrimaryContactPhone(${idx})" title="주 번호로 지정">
+              ${row.isPrimary ? '주 번호' : '주 지정'}
+            </button>
+            <input
+              class="input tabular"
+              data-phone-input
+              style="flex:1;min-width:130px;"
+              value="${esc(row.phone)}"
+              oninput="this.value=formatPhoneText(this.value);editContactDraft.phones[${idx}].phone=this.value"
+              placeholder="010-1234-5678"
+            >
+            <input
+              class="input"
+              style="width:118px;"
+              list="phoneLabelPresets"
+              value="${esc(row.label)}"
+              oninput="editContactDraft.phones[${idx}].label=this.value"
+              placeholder="라벨(휴대폰 등)"
+            >
+            <button type="button" class="nb-icon" title="삭제" onclick="removeContactPhoneRow(${idx})">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        `).join('')}
+      </div>
+      <datalist id="phoneLabelPresets">
+        ${PHONE_LABEL_PRESETS.map((l) => `<option value="${l}">`).join('')}
+      </datalist>
+      <div class="field-hint">휴대폰·사무실 직통·비서·집 전화 등을 라벨과 함께 여러 개 저장할 수 있습니다.</div>
+    </div>
+
+    <div class="field">
+      <label class="field-label">이메일</label>
+      <input class="input" type="email" value="${esc(d.email)}" oninput="editContactDraft.email=this.value" placeholder="name@example.com">
+    </div>
+
+    <div class="field">
+      <label class="field-label">메모</label>
+      <textarea class="textarea" rows="3" oninput="editContactDraft.memo=this.value">${esc(d.memo)}</textarea>
+    </div>
+  `;
+}
+
+function addContactPhoneRow() {
+  editContactDraft.phones.push({
+    id: nextId('ph'),
+    phone: '',
+    label: '사무실',
+    isPrimary: editContactDraft.phones.length === 0,
+  });
+  renderEditContactModal();
+  requestAnimationFrame(() => {
+    const inputs = document.querySelectorAll('#editContactBody [data-phone-input]');
+    inputs[inputs.length - 1]?.focus();
+  });
+}
+
+function setPrimaryContactPhone(idx) {
+  editContactDraft.phones.forEach((row, i) => { row.isPrimary = i === idx; });
+  renderEditContactModal();
+}
+
+function removeContactPhoneRow(idx) {
+  editContactDraft.phones.splice(idx, 1);
+  if (editContactDraft.phones.length === 0) {
+    editContactDraft.phones.push({ id: nextId('ph'), phone: '', label: '휴대폰', isPrimary: true });
+  } else if (!editContactDraft.phones.some((r) => r.isPrimary)) {
+    editContactDraft.phones[0].isPrimary = true;
+  }
+  renderEditContactModal();
+}
+
+document.getElementById('saveEditContactBtn').addEventListener('click', () => {
+  const contact = getContact(state.currentContactId);
+  const d = editContactDraft;
+  if (!contact || !d) return;
+
+  const cleanedPhones = [];
+  for (const row of d.phones) {
+    const raw = row.phone.trim();
+    if (!raw) continue;
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length < 7 || digits.length > 12) {
+      showToast(`전화번호 "${raw}"의 자릿수를 확인해 주세요.`);
+      return;
+    }
+    cleanedPhones.push({
+      id: row.id,
+      phone: formatPhoneText(raw),
+      label: row.label.trim() || '휴대폰',
+      isPrimary: row.isPrimary,
+    });
+  }
+  if (cleanedPhones.length > 0 && !cleanedPhones.some((p) => p.isPrimary)) {
+    cleanedPhones[0].isPrimary = true;
+  }
+  if (!d.name.trim() && cleanedPhones.length === 0) {
+    showToast('이름이나 전화번호 중 하나는 입력해야 합니다.');
+    return;
+  }
+
+  contact.kind = d.kind;
+  contact.name = d.name.trim() || `미등록 (${cleanedPhones[0].phone.slice(-4)})`;
+  contact.businessRegNo = d.kind === 'organization' ? (d.businessRegNo.trim() || null) : null;
+  contact.email = d.email.trim() || null;
+  contact.memo = d.memo.trim() || '';
+  contact.phones = cleanedPhones;
+
+  closeModal('editContactModal');
+  renderAll();
+  if (document.getElementById('structureModal').classList.contains('open')) renderStructureModal();
+  showToast('연락처 정보와 전화번호를 저장했습니다.');
+});
+
+/* ── Create Party Modal (Direct Party Creation!) ───────── */
+let createPartyDraft = null;
+
+function openCreatePartyModal(defaultTab) {
+  const contact = getContact(state.currentContactId);
+  const existingHh = contact.kind === 'person' ? getHouseholdOf(contact.id) : null;
+  const existingOrgParty = contact.kind === 'organization' ? getPartiesForContact(contact.id)[0] || null : null;
+
+  let tab = defaultTab;
+  if (!tab) {
+    if (contact.kind === 'organization') tab = existingOrgParty ? 'join-existing' : 'new-org';
+    else tab = existingHh ? 'new-org' : 'new-household';
+  }
+
+  createPartyDraft = {
+    tab,
+    hhName: `${contact.name} 님 세대`,
+    hhPhone: '',
+    hhMemo: '',
+    hhSelfRole: '남편',
+    hhSelfPrimary: true,
+    hhExtraMembers: [],
+    orgName: contact.kind === 'organization' && !existingOrgParty ? contact.name : '',
+    orgBizNo: contact.kind === 'organization' && !existingOrgParty ? (contact.businessRegNo || '') : '',
+    orgPhone: contact.kind === 'organization' && !existingOrgParty ? (primaryPhoneOf(contact) || '') : '',
+    orgMemo: '',
+    orgSelfRole: '대표이사',
+    orgSelfPrimary: true,
+    joinPartyId: '',
+    joinMemberContactId: '',
+    joinRole: '',
+    joinPrimary: false
+  };
+
+  const joinCandidates = getJoinableParties(contact);
+  if (joinCandidates.length > 0) {
+    createPartyDraft.joinPartyId = joinCandidates[0].id;
+    createPartyDraft.joinRole = joinCandidates[0].kind === 'household' ? '아내' : '실무 담당자';
+  }
+
+  renderCreatePartyModal();
+  openModal('createPartyModal');
+}
+
+function getJoinableParties(contact) {
+  if (contact.kind === 'organization') return getPartiesForContact(contact.id);
+  const myPartyIds = new Set(getPartiesForContact(contact.id).map((p) => p.id));
+  const myHh = getHouseholdOf(contact.id);
+  return state.parties.filter((p) => {
+    if (p.kind === 'household') return !myHh && !myPartyIds.has(p.id);
+    return !myPartyIds.has(p.id);
+  });
+}
+
+function renderCreatePartyModal() {
+  const contact = getContact(state.currentContactId);
+  const existingHh = contact.kind === 'person' ? getHouseholdOf(contact.id) : null;
+  const existingOrgParty = contact.kind === 'organization' ? getPartiesForContact(contact.id)[0] || null : null;
+  const d = createPartyDraft;
+  const body = document.getElementById('createPartyBody');
+  const foot = document.getElementById('createPartyFoot');
+
+  const tabsHtml = `
+    <div class="tabs-bar">
+      <button type="button" class="tab-btn ${d.tab === 'new-household' ? 'active' : ''}" onclick="switchCreateTab('new-household')">새 세대 만들기</button>
+      <button type="button" class="tab-btn ${d.tab === 'new-org' ? 'active' : ''}" onclick="switchCreateTab('new-org')">새 법인·단체 만들기</button>
+      <button type="button" class="tab-btn ${d.tab === 'join-existing' ? 'active' : ''}" onclick="switchCreateTab('join-existing')">기존 파티에 연결</button>
+    </div>
+  `;
+
+  let contentHtml = '';
+  let submitLabel = '만들기';
+  let submitDisabled = false;
+
+  if (d.tab === 'new-household') {
+    if (contact.kind === 'organization') {
+      contentHtml = `<div class="callout-warn">법인 연락처는 세대·가족 파티에 속할 수 없습니다. <strong>새 법인·단체 만들기</strong> 또는 <strong>기존 파티에 연결</strong>을 이용해 주세요.</div>`;
+      submitDisabled = true;
+    } else if (existingHh) {
+      contentHtml = `
+        <div class="callout-warn">
+          <strong>${esc(contact.name)}</strong>님은 이미 <strong>${esc(existingHh.name)}</strong> 세대에 속해 있습니다 (1인 1세대 원칙).
+          <div style="margin-top:8px;">
+            <button type="button" class="nb nb-line nb-sm" onclick="closeModal('createPartyModal');openAddMemberModal('${existingHh.id}')">기존 세대에 구성원 추가하기 →</button>
+          </div>
+        </div>
+      `;
+      submitDisabled = true;
+    } else {
+      contentHtml = `
+        <div class="callout-info">
+          다른 사람을 함께 넣지 않고 <strong>1인 세대</strong>로 먼저 만든 뒤, 나중에 구성도를 보면서 가족을 추가할 수 있습니다.
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label class="field-label">세대 이름 *</label>
+            <input class="input" value="${esc(d.hhName)}" oninput="createPartyDraft.hhName=this.value" placeholder="예: 김철수 님 세대">
+          </div>
+          <div class="field">
+            <label class="field-label">집 전화 (선택)</label>
+            <input class="input tabular" value="${esc(d.hhPhone)}" oninput="this.value=formatPhoneText(this.value);createPartyDraft.hhPhone=this.value" placeholder="예: 02-415-8820">
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">${esc(contact.name)} 님의 세대 내 역할</label>
+          <div class="preset-chips">
+            ${HOUSEHOLD_ROLE_PRESETS.map((r) => `
+              <button type="button" class="preset-chip ${d.hhSelfRole === r ? 'active' : ''}" onclick="createPartyDraft.hhSelfRole='${r}';renderCreatePartyModal()">${r}</button>
+            `).join('')}
+          </div>
+          <input class="input" value="${esc(d.hhSelfRole)}" oninput="createPartyDraft.hhSelfRole=this.value" placeholder="직접 입력 (선택)">
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+          <input type="checkbox" ${d.hhSelfPrimary ? 'checked' : ''} onchange="createPartyDraft.hhSelfPrimary=this.checked">
+          <span>이 세대의 대표 연락자로 지정</span>
+        </label>
+        <div class="field">
+          <label class="field-label">함께 등록할 가족 (선택 · 0명 이상)</label>
+          ${d.hhExtraMembers.length > 0 ? `
+            <div class="draft-list">
+              ${d.hhExtraMembers.map((em, idx) => `
+                <div class="draft-row">
+                  <span><strong>${esc(em.name)}</strong> · ${esc(em.roleLabel || '세대원')} <span class="tabular" style="color:var(--fg-muted)">${esc(em.phone || '번호 없음')}</span></span>
+                  <button type="button" class="nb nb-danger nb-sm" onclick="createPartyDraft.hhExtraMembers.splice(${idx},1);renderCreatePartyModal()">제외</button>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<div class="field-hint">지금은 비워 두어도 세대가 생성됩니다.</div>'}
+          <div style="display:grid;grid-template-columns:1fr 1fr 90px auto;gap:6px;margin-top:4px;">
+            <input class="input" id="extraMemberName" placeholder="이름 (예: 이영수)">
+            <input class="input tabular" id="extraMemberPhone" oninput="this.value=formatPhoneText(this.value)" placeholder="휴대폰 (선택)">
+            <input class="input" id="extraMemberRole" placeholder="역할" value="배우자">
+            <button type="button" class="nb nb-line" onclick="addDraftFamilyMember()">추가</button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">세대 메모 (선택)</label>
+          <textarea class="textarea" rows="2" oninput="createPartyDraft.hhMemo=this.value" placeholder="예: 실거주 아파트 + 자녀 전세 동시 진행">${esc(d.hhMemo)}</textarea>
+        </div>
+      `;
+      submitLabel = '새 세대 만들기';
+    }
+  } else if (d.tab === 'new-org') {
+    if (contact.kind === 'organization' && existingOrgParty) {
+      contentHtml = `
+        <div class="callout-warn">
+          이 법인 연락처에는 이미 <strong>${esc(existingOrgParty.name)}</strong> 법인 파티가 생성되어 있습니다.
+          <div style="margin-top:8px;">
+            <button type="button" class="nb nb-line nb-sm" onclick="closeModal('createPartyModal');openAddMemberModal('${existingOrgParty.id}')">담당자 추가하기 →</button>
+          </div>
+        </div>
+      `;
+      submitDisabled = true;
+    } else {
+      const isPerson = contact.kind === 'person';
+      contentHtml = `
+        <div class="callout-info">
+          ${isPerson
+            ? `새 법인·단체 연락처와 법인 파티를 함께 생성하고, <strong>${esc(contact.name)}</strong>님을 소속 구성원으로 연결합니다.`
+            : `<strong>${esc(contact.name)}</strong> 법인의 담당자·임원 구조를 담을 법인 파티를 바로 생성합니다.`}
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label class="field-label">법인·단체명 *</label>
+            <input class="input" value="${esc(d.orgName)}" oninput="createPartyDraft.orgName=this.value" placeholder="예: (주)미래리츠">
+          </div>
+          <div class="field">
+            <label class="field-label">사업자등록번호 (선택)</label>
+            <input class="input tabular" value="${esc(d.orgBizNo)}" oninput="createPartyDraft.orgBizNo=this.value" placeholder="예: 123-45-67890">
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">법인 대표번호 (선택)</label>
+          <input class="input tabular" value="${esc(d.orgPhone)}" oninput="this.value=formatPhoneText(this.value);createPartyDraft.orgPhone=this.value" placeholder="예: 02-500-1234">
+        </div>
+        ${isPerson ? `
+          <div class="field">
+            <label class="field-label">${esc(contact.name)} 님의 법인 내 직책·역할</label>
+            <div class="preset-chips">
+              ${ORG_ROLE_PRESETS.map((r) => `
+                <button type="button" class="preset-chip ${d.orgSelfRole === r ? 'active' : ''}" onclick="createPartyDraft.orgSelfRole='${r}';renderCreatePartyModal()">${r}</button>
+              `).join('')}
+            </div>
+            <input class="input" value="${esc(d.orgSelfRole)}" oninput="createPartyDraft.orgSelfRole=this.value" placeholder="직접 입력">
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" ${d.orgSelfPrimary ? 'checked' : ''} onchange="createPartyDraft.orgSelfPrimary=this.checked">
+            <span>이 법인의 대표 연락 담당자로 지정</span>
+          </label>
+        ` : ''}
+        <div class="field">
+          <label class="field-label">법인 메모 (선택)</label>
+          <textarea class="textarea" rows="2" oninput="createPartyDraft.orgMemo=this.value" placeholder="예: 매입 승인 및 세금계산서 처리 기준">${esc(d.orgMemo)}</textarea>
+        </div>
+      `;
+      submitLabel = '법인 파티 만들기';
+    }
+  } else {
+    const joinables = getJoinableParties(contact);
+    if (joinables.length === 0) {
+      contentHtml = `<div class="callout-info">현재 추가로 연결할 수 있는 기존 세대·법인이 없습니다. 새 세대 또는 새 법인을 만들어 보세요.</div>`;
+      submitDisabled = true;
+    } else if (contact.kind === 'organization') {
+      const orgParty = joinables[0];
+      const personPool = state.contacts.filter((c) => c.kind === 'person' && !orgParty.members.some((m) => m.contactId === c.id));
+      contentHtml = `
+        <div class="callout-info">법인 파티 <strong>${esc(orgParty.name)}</strong>에 기존 개인 연락처를 담당자로 연결합니다.</div>
+        <div class="field">
+          <label class="field-label">연결할 담당자</label>
+          <select class="select" onchange="createPartyDraft.joinMemberContactId=this.value">
+            <option value="">연락처를 선택하세요</option>
+            ${personPool.map((c) => `<option value="${c.id}" ${d.joinMemberContactId === c.id ? 'selected' : ''}>${esc(c.name)} (${esc(primaryPhoneOf(c) || '번호 없음')})</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">직책·역할</label>
+          <input class="input" value="${esc(d.joinRole)}" oninput="createPartyDraft.joinRole=this.value" placeholder="예: 실무 담당자">
+        </div>
+      `;
+      submitLabel = '담당자 연결';
+    } else {
+      contentHtml = `
+        <div class="field">
+          <label class="field-label">연결할 기존 파티 선택</label>
+          <select class="select" onchange="createPartyDraft.joinPartyId=this.value">
+            ${joinables.map((p) => `<option value="${p.id}" ${d.joinPartyId === p.id ? 'selected' : ''}>${p.kind === 'household' ? '🏠 ' : '🏢 '}${esc(p.name)} (${p.members.length}명)</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">${esc(contact.name)} 님의 역할</label>
+          <input class="input" value="${esc(d.joinRole)}" oninput="createPartyDraft.joinRole=this.value" placeholder="예: 실무 담당자, 배우자">
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+          <input type="checkbox" ${d.joinPrimary ? 'checked' : ''} onchange="createPartyDraft.joinPrimary=this.checked">
+          <span>대표 연락 담당자로 지정</span>
+        </label>
+      `;
+      submitLabel = '기존 파티에 연결';
+    }
+  }
+
+  body.innerHTML = tabsHtml + contentHtml;
+  foot.innerHTML = `
+    <button type="button" class="nb nb-line" onclick="closeModal('createPartyModal')">취소</button>
+    <button type="button" class="nb nb-solid" ${submitDisabled ? 'disabled style="opacity:0.45;cursor:not-allowed;"' : ''} onclick="submitCreateParty()">${submitLabel}</button>
+  `;
+}
+
+function switchCreateTab(tab) { createPartyDraft.tab = tab; renderCreatePartyModal(); }
+
+function addDraftFamilyMember() {
+  const name = document.getElementById('extraMemberName').value.trim();
+  const phone = document.getElementById('extraMemberPhone').value.trim();
+  const roleLabel = document.getElementById('extraMemberRole').value.trim();
+  if (!name) { showToast('추가할 가족 이름을 입력해 주세요.'); return; }
+  createPartyDraft.hhExtraMembers.push({ name, phone: phone || null, roleLabel: roleLabel || '세대원' });
+  renderCreatePartyModal();
+}
+
+function submitCreateParty() {
+  const contact = getContact(state.currentContactId);
+  const d = createPartyDraft;
+
+  if (d.tab === 'new-household') {
+    if (!d.hhName.trim()) { showToast('세대 이름을 입력해 주세요.'); return; }
+    const members = [
+      { id: nextId('m'), contactId: contact.id, roleLabel: d.hhSelfRole.trim() || null, isPrimary: d.hhSelfPrimary, memo: null }
+    ];
+    d.hhExtraMembers.forEach((em) => {
+      const ncId = nextId('c');
+      state.contacts.push({
+        id: ncId, kind: 'person', name: em.name,
+        phones: em.phone ? [{ id: nextId('ph'), phone: em.phone, label: '휴대폰', isPrimary: true }] : [],
+        email: null, businessRegNo: null, memo: `${d.hhName.trim()} 등록 시 추가됨.`,
+        propertyCount: 0, dealCount: 0, properties: []
+      });
+      members.push({ id: nextId('m'), contactId: ncId, roleLabel: em.roleLabel, isPrimary: false, memo: null });
+    });
+    const newParty = {
+      id: nextId('p-hh'),
+      kind: 'household',
+      name: d.hhName.trim(),
+      organizationContactId: null,
+      homePhone: d.hhPhone.trim() || null,
+      memo: d.hhMemo.trim() || null,
+      members
+    };
+    state.parties.push(newParty);
+    state.selectedPartyId = newParty.id;
+    closeModal('createPartyModal');
+    renderAll();
+    showToast(`'${newParty.name}' 세대 파티를 만들었습니다.`);
+    return;
+  }
+
+  if (d.tab === 'new-org') {
+    if (!d.orgName.trim()) { showToast('법인·단체명을 입력해 주세요.'); return; }
+    let orgContactId = contact.id;
+    const members = [];
+
+    if (contact.kind === 'person') {
+      orgContactId = nextId('c-org');
+      state.contacts.push({
+        id: orgContactId,
+        kind: 'organization',
+        name: d.orgName.trim(),
+        phones: d.orgPhone.trim() ? [{ id: nextId('ph'), phone: d.orgPhone.trim(), label: '대표번호', isPrimary: true }] : [],
+        email: null,
+        businessRegNo: d.orgBizNo.trim() || null,
+        memo: d.orgMemo.trim() || `${contact.name}님의 연락처에서 새 법인으로 생성.`,
+        propertyCount: 0, dealCount: 0, properties: []
+      });
+      members.push({
+        id: nextId('m'),
+        contactId: contact.id,
+        roleLabel: d.orgSelfRole.trim() || '담당자',
+        isPrimary: d.orgSelfPrimary,
+        memo: null
+      });
+    } else {
+      contact.name = d.orgName.trim();
+      if (d.orgBizNo.trim()) contact.businessRegNo = d.orgBizNo.trim();
+      if (d.orgPhone.trim() && contact.phones.length === 0) {
+        contact.phones.push({ id: nextId('ph'), phone: d.orgPhone.trim(), label: '대표번호', isPrimary: true });
+      }
+    }
+
+    const newParty = {
+      id: nextId('p-org'),
+      kind: 'organization',
+      name: d.orgName.trim(),
+      organizationContactId: orgContactId,
+      homePhone: d.orgPhone.trim() || null,
+      memo: d.orgMemo.trim() || null,
+      members
+    };
+    state.parties.push(newParty);
+    state.selectedPartyId = newParty.id;
+    closeModal('createPartyModal');
+    renderAll();
+    showToast(`'${newParty.name}' 법인 파티를 만들었습니다.`);
+    return;
+  }
+
+  if (d.tab === 'join-existing') {
+    if (contact.kind === 'organization') {
+      const party = getPartiesForContact(contact.id)[0];
+      if (!party || !d.joinMemberContactId) { showToast('연결할 담당자를 선택해 주세요.'); return; }
+      party.members.push({
+        id: nextId('m'),
+        contactId: d.joinMemberContactId,
+        roleLabel: d.joinRole.trim() || '담당자',
+        isPrimary: party.members.length === 0,
+        memo: null
+      });
+      state.selectedPartyId = party.id;
+      closeModal('createPartyModal');
+      renderAll();
+      showToast('담당자를 법인 파티에 연결했습니다.');
+      return;
+    }
+
+    const targetParty = getParty(d.joinPartyId);
+    if (!targetParty) return;
+    if (d.joinPrimary) targetParty.members.forEach((m) => { m.isPrimary = false; });
+    targetParty.members.push({
+      id: nextId('m'),
+      contactId: contact.id,
+      roleLabel: d.joinRole.trim() || (targetParty.kind === 'household' ? '세대원' : '실무 담당자'),
+      isPrimary: d.joinPrimary || targetParty.members.length === 0,
+      memo: null
+    });
+    state.selectedPartyId = targetParty.id;
+    closeModal('createPartyModal');
+    renderAll();
+    showToast(`'${targetParty.name}'에 연결했습니다.`);
+  }
+}
+
+/* ── Edit Party Info Modal ─────────────────────────────── */
+let editingPartyId = null;
+
+function openEditPartyModal(partyId) {
+  const party = getParty(partyId);
+  if (!party) return;
+  editingPartyId = partyId;
+  document.getElementById('editPartyBody').innerHTML = `
+    <div class="field">
+      <label class="field-label">파티 이름</label>
+      <input class="input" id="epName" value="${esc(party.name || '')}">
+    </div>
+    <div class="field">
+      <label class="field-label">${party.kind === 'household' ? '집 전화번호' : '대표 전화번호'}</label>
+      <input class="input tabular" id="epPhone" oninput="this.value=formatPhoneText(this.value)" value="${esc(party.homePhone || '')}" placeholder="예: 02-415-8820">
+    </div>
+    <div class="field">
+      <label class="field-label">파티 메모</label>
+      <textarea class="textarea" rows="3" id="epMemo">${esc(party.memo || '')}</textarea>
+    </div>
+  `;
+  openModal('editPartyModal');
+}
+
+document.getElementById('saveEditPartyBtn').addEventListener('click', () => {
+  const party = getParty(editingPartyId);
+  if (!party) return;
+  const name = document.getElementById('epName').value.trim();
+  if (!name) { showToast('파티 이름을 입력해 주세요.'); return; }
+  party.name = name;
+  party.homePhone = document.getElementById('epPhone').value.trim() || null;
+  party.memo = document.getElementById('epMemo').value.trim() || null;
+  closeModal('editPartyModal');
+  renderAll();
+  if (document.getElementById('structureModal').classList.contains('open')) renderStructureModal();
+  showToast('파티 정보를 저장했습니다.');
+});
+
+/* ── Add Member Modal ──────────────────────────────────── */
+let addMemberDraft = null;
+
+function openAddMemberModal(partyId) {
+  const party = getParty(partyId);
+  if (!party) return;
+  addMemberDraft = {
+    partyId,
+    search: '',
+    selectedContactId: null,
+    newName: '',
+    newPhone: '',
+    roleLabel: party.kind === 'household' ? '아내' : '실무 담당자',
+    isPrimary: party.members.length === 0,
+    memo: ''
+  };
+  renderAddMemberModal();
+  openModal('addMemberModal');
+}
+
+function renderAddMemberModal() {
+  const d = addMemberDraft;
+  const party = getParty(d.partyId);
+  const existingIds = new Set(party.members.map((m) => m.contactId));
+  const presets = party.kind === 'household' ? HOUSEHOLD_ROLE_PRESETS : ORG_ROLE_PRESETS;
+  const q = d.search.trim().toLowerCase();
+
+  const candidates = state.contacts.filter((c) => {
+    if (c.kind !== 'person') return false;
+    if (existingIds.has(c.id)) return false;
+    if (party.kind === 'household' && getHouseholdOf(c.id)) return false;
+    if (!q) return true;
+    return c.name.toLowerCase().includes(q) || orderedPhonesOf(c).some((p) => p.phone.includes(q));
+  });
+
+  document.getElementById('addMemberTitle').textContent = `${party.name} · 구성원 추가`;
+  document.getElementById('addMemberBody').innerHTML = `
+    <div class="field">
+      <label class="field-label">기존 연락처 고르기</label>
+      <input class="input" value="${esc(d.search)}" oninput="addMemberDraft.search=this.value;renderAddMemberModal()" placeholder="이름 또는 전화번호 검색">
+      ${candidates.length > 0 ? `
+        <div class="candidate-list">
+          ${candidates.map((c) => `
+            <button type="button" class="candidate-item ${d.selectedContactId === c.id ? 'selected' : ''}" onclick="addMemberDraft.selectedContactId=(addMemberDraft.selectedContactId==='${c.id}'?null:'${c.id}');renderAddMemberModal()">
+              <span><strong>${esc(c.name)}</strong></span>
+              <span class="tabular" style="font-size:12px;color:var(--fg-muted);">${esc(primaryPhoneOf(c) || '번호 없음')}</span>
+            </button>
+          `).join('')}
+        </div>
+      ` : '<div class="field-hint">선택 가능한 기존 연락처가 없거나 검색 결과가 없습니다. 아래에서 바로 새로 만들 수 있습니다.</div>'}
+    </div>
+
+    ${!d.selectedContactId ? `
+      <div class="field-row" style="padding:10px;border:1px dashed var(--border-strong);border-radius:6px;background:var(--surface);">
+        <div class="field">
+          <label class="field-label">새 연락처 이름</label>
+          <input class="input" value="${esc(d.newName)}" oninput="addMemberDraft.newName=this.value" placeholder="예: 홍길동">
+        </div>
+        <div class="field">
+          <label class="field-label">휴대폰 (선택)</label>
+          <input class="input tabular" value="${esc(d.newPhone)}" oninput="this.value=formatPhoneText(this.value);addMemberDraft.newPhone=this.value" placeholder="예: 010-1234-5678">
+        </div>
+      </div>
+    ` : ''}
+
+    <div class="field">
+      <label class="field-label">역할</label>
+      <div class="preset-chips">
+        ${presets.map((r) => `
+          <button type="button" class="preset-chip ${d.roleLabel === r ? 'active' : ''}" onclick="addMemberDraft.roleLabel='${r}';renderAddMemberModal()">${r}</button>
+        `).join('')}
+      </div>
+      <input class="input" value="${esc(d.roleLabel)}" oninput="addMemberDraft.roleLabel=this.value">
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+      <input type="checkbox" ${d.isPrimary ? 'checked' : ''} onchange="addMemberDraft.isPrimary=this.checked">
+      <span>대표 연락 담당자로 지정</span>
+    </label>
+
+    <div class="field">
+      <label class="field-label">메모 (선택)</label>
+      <input class="input" value="${esc(d.memo)}" oninput="addMemberDraft.memo=this.value" placeholder="예: 계약 서류 담당">
+    </div>
+  `;
+}
+
+document.getElementById('saveAddMemberBtn').addEventListener('click', () => {
+  const d = addMemberDraft;
+  const party = getParty(d.partyId);
+  if (!party) return;
+
+  let contactId = d.selectedContactId;
+  if (!contactId) {
+    if (!d.newName.trim() && !d.newPhone.trim()) {
+      showToast('기존 연락처를 선택하거나 새 이름·전화번호를 입력해 주세요.');
+      return;
+    }
+    contactId = nextId('c');
+    state.contacts.push({
+      id: contactId,
+      kind: 'person',
+      name: d.newName.trim() || `${d.roleLabel || '구성원'} (${d.newPhone.slice(-4)})`,
+      phones: d.newPhone.trim() ? [{ id: nextId('ph'), phone: d.newPhone.trim(), label: '휴대폰', isPrimary: true }] : [],
+      email: null, businessRegNo: null, memo: `${party.name} 구성원으로 등록됨.`,
+      propertyCount: 0, dealCount: 0, properties: []
+    });
+  }
+
+  if (d.isPrimary) party.members.forEach((m) => { m.isPrimary = false; });
+  const newMember = {
+    id: nextId('m'),
+    contactId,
+    roleLabel: d.roleLabel.trim() || null,
+    isPrimary: d.isPrimary || party.members.length === 0,
+    memo: d.memo.trim() || null
+  };
+  party.members.push(newMember);
+  state.selectedPartyId = party.id;
+  state.selectedNodeMemberId = newMember.id;
+  closeModal('addMemberModal');
+  renderAll();
+  if (document.getElementById('structureModal').classList.contains('open')) renderStructureModal();
+  showToast('구성원을 추가했습니다.');
+});
+
+/* ── Edit / Remove Member ──────────────────────────────── */
+let editingMemberRef = null;
+
+function openEditMemberModal(partyId, memberId) {
+  const party = getParty(partyId);
+  const member = party?.members.find((m) => m.id === memberId);
+  const mc = member ? getContact(member.contactId) : null;
+  if (!party || !member || !mc) return;
+
+  editingMemberRef = { partyId, memberId, roleLabel: member.roleLabel || '', isPrimary: member.isPrimary, memo: member.memo || '' };
+  renderEditMemberModal(party, mc);
+  openModal('editMemberModal');
+}
+
+function renderEditMemberModal(party, mc) {
+  const presets = party.kind === 'household' ? HOUSEHOLD_ROLE_PRESETS : ORG_ROLE_PRESETS;
+  document.getElementById('editMemberDesc').textContent = `${party.name} · ${mc.name} 님의 역할과 대표 여부를 수정합니다.`;
+  document.getElementById('editMemberBody').innerHTML = `
+    <div class="field">
+      <label class="field-label">역할</label>
+      <div class="preset-chips">
+        ${presets.map((r) => `
+          <button type="button" class="preset-chip ${editingMemberRef.roleLabel === r ? 'active' : ''}" onclick="editingMemberRef.roleLabel='${r}';renderEditMemberModal(getParty('${party.id}'),getContact('${mc.id}'))">${r}</button>
+        `).join('')}
+      </div>
+      <input class="input" id="emRole" value="${esc(editingMemberRef.roleLabel)}" oninput="editingMemberRef.roleLabel=this.value" placeholder="비워 두면 기본 표시">
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+      <input type="checkbox" ${editingMemberRef.isPrimary ? 'checked' : ''} onchange="editingMemberRef.isPrimary=this.checked">
+      <span>대표 연락 담당자로 지정</span>
+    </label>
+    <div class="field">
+      <label class="field-label">메모</label>
+      <textarea class="textarea" rows="2" oninput="editingMemberRef.memo=this.value">${esc(editingMemberRef.memo)}</textarea>
+    </div>
+  `;
+}
+
+document.getElementById('saveEditMemberBtn').addEventListener('click', () => {
+  const party = getParty(editingMemberRef.partyId);
+  const member = party?.members.find((m) => m.id === editingMemberRef.memberId);
+  if (!party || !member) return;
+  if (editingMemberRef.isPrimary) party.members.forEach((m) => { m.isPrimary = false; });
+  member.roleLabel = editingMemberRef.roleLabel.trim() || null;
+  member.isPrimary = editingMemberRef.isPrimary;
+  member.memo = editingMemberRef.memo.trim() || null;
+  closeModal('editMemberModal');
+  renderAll();
+  if (document.getElementById('structureModal').classList.contains('open')) renderStructureModal();
+  showToast('구성원 정보를 수정했습니다.');
+});
+
+function removeMember(partyId, memberId) {
+  const party = getParty(partyId);
+  if (!party) return;
+  const idx = party.members.findIndex((m) => m.id === memberId);
+  if (idx === -1) return;
+  const [removed] = party.members.splice(idx, 1);
+  if (removed.isPrimary && party.members.length > 0) party.members[0].isPrimary = true;
+  if (party.kind === 'household' && party.members.length === 0) {
+    state.parties = state.parties.filter((p) => p.id !== partyId);
+  }
+  if (state.selectedNodeMemberId === memberId) state.selectedNodeMemberId = null;
+  renderAll();
+  if (document.getElementById('structureModal').classList.contains('open')) {
+    if (getPartiesForContact(state.currentContactId).length === 0) closeModal('structureModal');
+    else renderStructureModal();
+  }
+  showToast('소속에서 제외했습니다.');
+}
+
+/* ── Top Switchers & Event Listeners ───────────────────── */
+document.querySelectorAll('#scenarioSeg button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    state.currentContactId = btn.dataset.contact;
+    state.selectedPartyId = null;
+    state.selectedNodeMemberId = null;
+    state.consultScope = 'self';
+    renderAll();
+  });
+});
+
+document.querySelectorAll('#inlineDiagramSeg button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    state.inlineDiagramOpen = btn.dataset.inline === 'open';
+    renderAll();
+  });
+});
+
+document.getElementById('quickEditContactBtn').addEventListener('click', () => openEditContactModal());
+document.getElementById('quickCreatePartyBtn').addEventListener('click', () => openCreatePartyModal());
+document.getElementById('headerEditBtn').addEventListener('click', () => openEditContactModal());
+document.getElementById('headerAddPartyBtn').addEventListener('click', () => openCreatePartyModal());
+document.getElementById('headerPhoneBtn').addEventListener('click', () => {
+  const ph = primaryPhoneOf(getContact(state.currentContactId));
+  showToast(ph ? `${ph} 로 발신 요청` : '등록된 전화번호가 없습니다.');
+});
+document.getElementById('closeStructureModalBtn').addEventListener('click', () => closeModal('structureModal'));
+document.getElementById('navBackBtn').addEventListener('click', () => showToast('연락처 목록 이동 동작 예시입니다.'));
+
+document.querySelectorAll('.modal-backdrop').forEach((backdrop) => {
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) backdrop.classList.remove('open');
+  });
+});
+
+renderAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>연락처 상세 — 2판: 일의 흐름</title>
+<link rel="stylesheet" href="../../../node_modules/pretendard/dist/web/variable/pretendardvariable.css">
+<style>
+/* 2판. 화면의 물음 순서대로 짠다: ① 지금 챙길 것 ② 걸린 일이 어디까지 왔나(단계 띠) ③ 마지막에 무슨 이야기를 했나(오른쪽 열).
+   색은 app.css 토큰: 본문 #2c2c2b · 보조 #5f5e59 · 흐림 #79766f · 선 #f0efed/#e6e5e3 · 파랑 #2383e2 · 경고 #bb3430. */
+:root{
+  --ink:#2c2c2b; --sub:#5f5e59; --mute:#79766f; --line:#ebeae8; --line2:#e6e5e3; --hover:rgba(44,44,43,.055);
+  --blue:#2383e2; --blue-strong:#1b64b1; --danger:#bb3430; --danger-soft:#fdf1ef; --side:#f9f8f7; --side-line:#f0efed; --track:#e3e2df;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif;-webkit-font-smoothing:antialiased;
+  color:var(--ink);background:#fff;font-size:14px;line-height:1.5;display:flex;flex-direction:column;overflow:hidden}
+button,textarea{font:inherit;color:inherit}
+button{background:none;border:0;padding:0;cursor:pointer}
+a{color:inherit;text-decoration:none}
+svg{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+:focus-visible{outline:2px solid rgba(35,131,226,.6);outline-offset:1px;border-radius:4px}
+::selection{background:rgba(35,131,226,.22)}
+.num{font-variant-numeric:tabular-nums}
+ul{list-style:none;margin:0;padding:0}
+
+.mock{flex:none;display:flex;align-items:center;gap:18px;height:40px;padding:0 14px;background:#2c2c2b;color:#fff;font-size:13px}
+.mock .lbl{color:rgba(255,255,255,.62);margin-right:6px}
+.seg{display:inline-flex;background:rgba(255,255,255,.1);border-radius:6px;padding:2px}
+.seg button{height:24px;padding:0 10px;border-radius:4px;color:rgba(255,255,255,.78)}
+.seg button[aria-pressed="true"]{background:#fff;color:#2c2c2b;font-weight:600}
+.mock a{margin-left:auto;color:rgba(255,255,255,.78);text-decoration:underline;text-underline-offset:3px}
+
+.app{flex:1;min-height:0;display:flex}
+.side{flex:none;width:228px;background:var(--side);border-right:1px solid var(--side-line);display:flex;flex-direction:column;padding:6px 8px;color:var(--sub)}
+.side .brand{height:32px;display:flex;align-items:center;padding:0 6px;font-weight:600;color:var(--ink)}
+.side h6{margin:12px 6px 4px;font-size:12px;font-weight:500;color:var(--mute)}
+.side a{height:32px;display:flex;align-items:center;padding:0 8px;border-radius:6px}
+.side a.on{background:#eeedec;color:var(--ink);font-weight:500}
+.work{flex:1;min-width:0;display:flex;flex-direction:column}
+.head{flex:none;height:46px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding:0 20px 0 16px}
+.head nav{flex:1;min-width:0;display:flex;align-items:center;gap:2px;color:var(--sub)}
+.head nav b{font-weight:400;color:var(--ink);padding:0 8px}
+.acts{display:flex;gap:4px}
+
+.nb{display:inline-flex;height:28px;flex:none;align-items:center;justify-content:center;gap:6px;white-space:nowrap;border-radius:4px;padding:0 8px;color:var(--sub);transition:background-color .12s}
+.nb:hover{background:var(--hover);color:var(--ink)}
+.nb.line{color:var(--ink);box-shadow:inset 0 0 0 1px rgba(44,44,43,.16)}
+.nb.solid{background:var(--blue-strong);color:#fff;font-weight:500;padding:0 10px}
+.nb.solid:hover{background:#17569a;color:#fff}
+.nb.sm{height:24px;font-size:13px;padding:0 7px}
+.tag{display:inline-flex;height:20px;flex:none;align-items:center;white-space:nowrap;border-radius:3px;padding:0 6px;font-size:13px;line-height:20px;background:rgba(227,226,224,.6);color:rgb(50,48,44)}
+.tag.red{background:rgb(255,226,221);color:rgb(93,23,21)} .tag.blue{background:rgb(211,229,239);color:rgb(24,51,71)}
+.tag.purple{background:rgb(232,222,238);color:rgb(65,36,84)} .tag.green{background:rgb(219,237,219);color:rgb(28,56,41)}
+
+.body{flex:1;min-height:0;display:flex}
+.scroll{flex:1;min-width:0;overflow-y:auto}
+.doc{max-width:900px;margin:0 auto;padding:8px 36px 64px}
+.rail{flex:none;width:372px;border-left:1px solid var(--line);overflow-y:auto;padding:16px 18px 56px;background:#fff}
+
+/* 머리: 이름 + 역할, 그 아래 연락 한 줄 */
+.who{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:20px}
+h1{margin:0;font-size:32px;font-weight:700;line-height:1.25;letter-spacing:-.028em;overflow-wrap:anywhere}
+.roles{display:flex;gap:4px}
+.idline{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin-top:8px;color:var(--sub)}
+.idline .phone{font-size:16px;font-weight:600;color:var(--ink);border-radius:4px;padding:0 4px;margin-left:-4px}
+.idline .phone:hover{background:var(--hover)}
+.idline .tags{display:flex;gap:4px}
+.memo{margin:8px 0 0;color:var(--sub);white-space:pre-wrap;word-break:keep-all}
+
+.h2{display:flex;align-items:baseline;gap:8px;margin:30px 0 10px}
+.h2 h2{margin:0;font-size:19px;font-weight:600;line-height:1.3;letter-spacing:-.01em}
+.h2 .cnt{font-size:15px;font-weight:600;color:var(--mute)}
+.h2 .cnt.hot{color:var(--danger)}
+.h2 .act{margin-left:auto;align-self:center}
+
+/* ① 챙길 것 */
+.due{border-radius:8px;background:var(--danger-soft);padding:4px}
+.due li{display:flex;align-items:center;gap:10px;min-height:38px;padding:4px 6px 4px 10px;border-radius:6px}
+.due li + li{box-shadow:0 -1px 0 rgba(187,52,48,.12)}
+.due .late{flex:none;width:76px;font-weight:700;color:var(--danger)}
+.due .what{flex:1;min-width:0}
+.due .what b{font-weight:600}
+.due .what span{color:var(--sub)}
+.due .nb{color:var(--ink);background:#fff;box-shadow:inset 0 0 0 1px rgba(44,44,43,.14)}
+.due .nb:hover{background:#f6f5f3}
+
+/* ② 걸린 일 — 단계 띠 */
+.grp{display:flex;align-items:center;gap:6px;margin:16px 0 4px;font-size:13px;font-weight:600;color:var(--sub)}
+.grp:first-of-type{margin-top:0}
+.grp .n{font-weight:500;color:var(--mute)}
+.job{border-top:1px solid var(--line)}
+.job:last-child{border-bottom:1px solid var(--line)}
+.jr{display:grid;grid-template-columns:minmax(0,1fr) 300px;align-items:center;gap:16px;min-height:44px;padding:6px 6px;margin:0 -6px;border-radius:4px}
+a.jr:hover{background:var(--hover)}
+.jr .l{display:flex;align-items:center;gap:8px;min-width:0}
+.jr .l .place{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jr .l .price{white-space:nowrap}
+.jr .l .role{color:var(--sub);white-space:nowrap}
+.jr.req .l{flex-wrap:wrap;row-gap:2px}
+.jr.req .big{font-size:17px;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+.jr.req .cond{color:var(--sub)}
+.jr .r{display:flex;align-items:center;gap:10px;justify-content:flex-end;white-space:nowrap}
+.child{padding-left:26px;position:relative}
+.child::before{content:"";position:absolute;left:11px;top:0;bottom:50%;width:10px;border-left:1.5px solid var(--line2);border-bottom:1.5px solid var(--line2);border-bottom-left-radius:5px}
+.child .jr{min-height:38px}
+.none{padding:6px 0 10px 26px;color:var(--mute)}
+.none button{color:var(--blue-strong);font-weight:500}
+.none button:hover{text-decoration:underline}
+.note{padding:0 0 10px 0;color:var(--sub);font-size:13px;white-space:pre-wrap;word-break:keep-all}
+.track{display:inline-flex;gap:3px;flex:none}
+.track i{width:16px;height:5px;border-radius:3px;background:var(--track)}
+.track i.d{background:#8f8d88}
+.track i.c{background:var(--blue)}
+.stage{font-weight:600;min-width:66px}
+.when{color:var(--mute);min-width:64px;text-align:right}
+.overdue{color:var(--danger);font-weight:600}
+
+.owned .jr{grid-template-columns:minmax(0,1fr) auto}
+.start{display:flex;align-items:center;gap:12px;border:1px solid var(--line2);border-radius:8px;padding:12px 16px;margin-top:24px}
+.start p{margin:0;flex:1;color:var(--sub);word-break:keep-all}
+.start .btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.foot{margin-top:40px;font-size:13px;color:var(--mute)}
+
+/* ③ 오른쪽 열: 상담 — 그 자리에서 적고 읽는다 */
+.rail h3{display:flex;align-items:baseline;gap:6px;margin:0 0 8px;font-size:15px;font-weight:600}
+.rail h3 .cnt{font-weight:600;color:var(--mute)}
+.rail h3 .nb{margin-left:auto;align-self:center}
+.write{border:1px solid var(--line2);border-radius:8px;padding:8px 10px 8px;transition:border-color .12s,box-shadow .12s}
+.write:focus-within{border-color:var(--blue);box-shadow:0 0 0 3px rgba(35,131,226,.14)}
+.write textarea{display:block;width:100%;min-height:44px;resize:none;border:0;outline:0;background:none;padding:0;line-height:1.55}
+.write textarea::placeholder{color:var(--mute)}
+.write .bar{display:flex;align-items:center;gap:4px;margin-top:6px}
+.kind{height:24px;padding:0 8px;border-radius:12px;font-size:13px;color:var(--sub)}
+.kind:hover{background:var(--hover)}
+.kind[aria-pressed="true"]{background:#eeedec;color:var(--ink);font-weight:600}
+.write .nb{margin-left:auto}
+.err{margin:6px 2px 0;font-size:13px;color:var(--danger)}
+.tl{margin-top:14px}
+.tl li{position:relative;padding:0 0 16px 22px}
+.tl li::before{content:"";position:absolute;left:4px;top:7px;width:7px;height:7px;border-radius:50%;background:#b9b7b2}
+.tl li:first-child::before{background:var(--blue)}
+.tl li::after{content:"";position:absolute;left:7px;top:18px;bottom:0;width:1.5px;background:var(--line2)}
+.tl li:last-child::after{display:none}
+.tl .hd{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.tl .hd b{font-weight:600}
+.tl .hd .by{color:var(--mute);font-size:13px}
+.tl .hd .t{margin-left:auto;color:var(--mute);font-size:13px}
+.tl .about{margin-top:3px;display:flex;gap:4px;flex-wrap:wrap}
+.tl .tx{margin-top:3px;white-space:pre-wrap;word-break:keep-all}
+.tl .tx.clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.more{margin-top:2px;font-size:13px;color:var(--blue-strong);font-weight:500}
+.more:hover{text-decoration:underline}
+.sep{border:0;border-top:1px solid var(--line);margin:8px 0 16px}
+.proj{display:block;margin:0 -6px;padding:6px;border-radius:4px}
+.proj:hover{background:var(--hover)}
+.proj .n{display:flex;align-items:center;gap:8px;font-weight:600}
+.proj .n .tag{margin-left:auto}
+.proj .s{font-size:13px;color:var(--sub)}
+.railempty{margin:0;font-size:13px;color:var(--sub);word-break:keep-all}
+
+.toast{position:fixed;right:20px;bottom:20px;display:flex;align-items:center;gap:12px;background:#2c2c2b;color:#fff;font-size:13px;padding:9px 12px;border-radius:6px;z-index:40;box-shadow:0 6px 20px rgba(15,15,15,.2);max-width:400px}
+.toast[hidden]{display:none}
+.toast button{color:#9ccaf5;font-weight:600}
+.flash{animation:flash 1.1s ease-out}
+@keyframes flash{0%{background:rgba(35,131,226,.14)}100%{background:transparent}}
+@media (prefers-reduced-motion:reduce){.flash{animation:none}.nb,.write{transition:none}}
+@media (max-width:1335px){.body{display:block;overflow-y:auto}.scroll{overflow:visible}.rail{width:auto;border-left:0;border-top:1px solid var(--line);max-width:900px;margin:0 auto;padding:24px 36px 56px;overflow:visible}.doc{padding-bottom:24px}}
+@media (max-width:1000px){.side{display:none}.jr{grid-template-columns:minmax(0,1fr);gap:4px}.jr .r{justify-content:flex-start}}
+</style>
+</head>
+<body>
+<div class="mock" role="region" aria-label="시안 조작">
+  <b>연락처 상세 · 2판 — 일의 흐름</b>
+  <span><span class="lbl">손님</span><span class="seg" id="whoSeg">
+    <button type="button" data-who="rich" aria-pressed="true">일이 걸린 손님</button>
+    <button type="button" data-who="sparse" aria-pressed="false">처음 등록한 손님</button></span></span>
+  <a href="first-screen.html?view=now">지금 앱 · 1판 보기</a>
+</div>
+<div class="app">
+  <aside class="side" aria-label="메뉴">
+    <div class="brand">Estaitt</div>
+    <h6>시작</h6><a href="#">대시보드</a>
+    <h6>매물·공간</h6><a href="#">매물관리</a><a href="#">관리단지</a><a href="#">광고관리</a>
+    <h6>고객·상담</h6><a href="#">프로젝트</a><a href="#" class="on" aria-current="page">연락처</a><a href="#">상담분석</a>
+    <h6>거래·계약</h6><a href="#">희망매물</a><a href="#">거래관리</a><a href="#">계약서 관리</a><a href="#">수수료/정산</a>
+    <h6>업무·운영</h6><a href="#">업무</a><a href="#">캘린더</a>
+  </aside>
+  <div class="work">
+    <header class="head">
+      <nav aria-label="위치"><a href="#" class="nb">연락처</a><span>/</span><b id="here"></b></nav>
+      <div class="acts">
+        <button type="button" class="nb" data-say="전화 걸기"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>전화</button>
+        <button type="button" class="nb line" data-say="연락처 수정 창">수정</button>
+        <button type="button" class="nb" aria-label="작업 메뉴" data-say="작업 메뉴 (업무 추가 · 희망매물 만들기 · 매물 등록 · 소유 매물 연결 · 세대 · 법인 추가 · 합치기 · 삭제)"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button>
+      </div>
+    </header>
+    <div class="body" id="body">
+      <div class="scroll" id="scroll"><div class="doc" id="doc"></div></div>
+      <aside class="rail" id="rail" aria-label="상담과 프로젝트"></aside>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $ = (id) => document.getElementById(id);
+/* 단계 이름은 앱의 lib/status-config.ts 그대로 */
+const DEAL = ['계약 준비','가계약','본계약','중도금/잔금','잔금 완료','정산 종료'];
+const MATCH = ['내부 후보','고객 관심','임장 조율','임장','고객 검토','협상','거래 전환'];
+
+/* 검수 환경의 두 손님을 바탕으로 한 예시 (오늘은 2026.11.24). 보여 준 집은 찾는 집 아래에 단다.
+   검수 데이터는 3501호가 이 사람의 소유 매물이면서 매수 후보(매칭)로도 걸려 있어 그대로 옮기면 틀린 그림이 된다.
+   그래서 가진 집은 내놓은 두 집(3403 · 3404호)으로, 보여 준 집은 남의 집(예산 안)으로 바꿔 적었다.
+   실제 화면에서도 본인이 소유자인 매물은 '보여 준 집'에 넣지 않는다. */
+const PEOPLE = {
+  rich:{ name:'김민준', roles:['매도인','임대인','집 찾는 중'], phone:'010-2001-0001', email:'01020010001@demo.test', tags:[['매수고객','red'],['갈아타기','purple']],
+    memo:'[DEMO] 김민준 더미', created:'2026.11.16', updated:'11.16 (월) 02:12',
+    tasks:[{id:'t1', t:'[DEMO] 김민준 매도인 확인 전화 회신', who:'Hyunsu Lee', due:'11.14 (토)', over:10}],
+    deals:[
+      {place:'고덕그라시움 101동 3403호', role:'매도인', type:'매매', tone:'red', price:'13억 2,000만', stage:1, d:'11.22 (일)'},
+      {place:'고덕그라시움 101동 3404호', role:'임대인', type:'전세', tone:'blue', price:'10억 8,000만', stage:2, d:'11.19 (목)'},
+    ],
+    reqs:[
+      {id:'r1', type:'매매', tone:'red', range:'28억 ~ 33억', cond:'34평 ~ 40평 · 강동구, 송파구, 고덕그라시움', next:'11.21 (토)', over:3,
+       note:'실거주 주택 1채 매도 후 40평대로 갈아타기 · 매도 잔금과 매수 잔금 일정 연동 필수',
+       shown:[{place:'고덕아르테온 305동 1802호', price:'31억 5,000만', stage:4, d:'11.23 (월)'}]},
+      {id:'r2', type:'전세', tone:'blue', range:'12억 ~ 15억', cond:'25평 ~ 34평 · 강동구, 고덕동, 고덕그라시움', next:'11.17 (화)', over:7,
+       note:'가족 거주용 전세 별도 확보 · 즉시 입주 가능한 전세 탐색', shown:[]},
+    ],
+    owned:[{place:'고덕그라시움 101동 3403호', sub:'소유자 · 지분 100% · 매매 거래 중'},{place:'고덕그라시움 101동 3404호', sub:'소유자 · 지분 100% · 전세 거래 중'}],
+    talks:[
+      {day:'11.16 (월)', time:'05:27', kind:'문자·온라인', who:'Hyunsu Lee', about:['고덕그라시움 101동 3404호'], text:'매물 확인 · 유효함'},
+      {day:'11.15 (일)', time:'20:12', kind:'전화', who:'Hyunsu Lee', about:['고덕그라시움 101동 3403호','매매'], text:'집주인 전화 — 급매 가격 조정 수락. 13.2억으로 인하.'},
+      {day:'11.10 (화)', time:'02:12', kind:'방문', who:'Hyunsu Lee', about:[], text:'갈아타기 상담 — 현재 집 매도 잔금과 새 집 잔금을 같은 주로 맞추기로 함.'},
+    ],
+    project:{name:'김민준 실거주 갈아타기', state:'진행 중', sub:'0/2 다음 · 고덕그라시움 3403 매도'} },
+  sparse:{ name:'정민호', roles:[], phone:'010-0000-0079', email:'', tags:[], memo:'[DEMO-CALL] 통화 분석 데모 연락처', created:'2026.11.09', updated:'11.9 (월) 07:00',
+    tasks:[], deals:[], reqs:[], owned:[],
+    talks:[{day:'11.7 (토)', time:'15:30', kind:'전화', who:'Hyunsu Lee', about:[],
+      text:'1503호 집주인 정민호 님이 매매가를 15억 5천에서 15억 2천까지 낮출 수 있다고 함. 잔금은 내년 2월 28일 이후 희망하고 실거주 중이라 세입자는 없음. 1504호(형님 소유)도 매물로 나올 수 있어 오늘 저녁 연락처를 받기로 함.\n· 매매가 15억 5천 → 15억 2천까지 조정 가능 (그 아래는 어려움)\n· 잔금은 내년 2월 28일 이후 희망 — 이사 갈 집 입주 일정\n· 실거주 중, 세입자 없음\n· 1504호(형님 소유)도 매물 가능 — 오늘 저녁 연락처 문자'}],
+    project:null },
+};
+
+/* 적는 중인 글 · 고른 종류 · 끝낸 업무 · 펼친 글은 손님마다 따로 들고, 다시 그려도 남긴다 */
+const state = { who:'rich', ui:{ rich:{draft:'', kind:'전화', done:[], open:[], err:''}, sparse:{draft:'', kind:'전화', done:[], open:[], err:''} } };
+
+const track = (steps, i) => `<span class="track" role="img" aria-label="${steps.length}단계 중 ${i+1}단계 ${esc(steps[i])}" title="${esc(steps.map((s,k) => (k===i?'▶ ':'')+s).join('  ›  '))}">${steps.map((_,k) => `<i class="${k<i?'d':k===i?'c':''}"></i>`).join('')}</span>`;
+
+function dueList(p, ui){
+  const rows = [
+    ...p.reqs.filter((r) => r.over>0).map((r) => ({over:r.over, html:`<span class="late num">${r.over}일 지남</span><span class="what"><b>다음 연락</b> <span class="num">${esc(r.next)}</span> <span>· 찾는 집 ${esc(r.type)} ${esc(r.range)}</span></span><button type="button" class="nb sm" data-write>상담 적기</button>`})),
+    ...p.tasks.filter((t) => t.over>0 && !ui.done.includes(t.id)).map((t) => ({over:t.over, html:`<span class="late num">${t.over}일 지남</span><span class="what"><b>업무</b> ${esc(t.t)} <span>· ${esc(t.who)} · <span class="num">${esc(t.due)}</span></span></span><button type="button" class="nb sm" data-done="${t.id}">끝내기</button>`})),
+  ].sort((a,b) => b.over - a.over);
+  if (!rows.length) return '';
+  return `<section id="due"><div class="h2"><h2>챙길 것</h2><span class="cnt hot num">${rows.length}</span></div><ul class="due">${rows.map((r) => `<li>${r.html}</li>`).join('')}</ul></section>`;
+}
+
+function jobs(p){
+  if (!p.deals.length && !p.reqs.length) return '';
+  let h = `<section id="jobs"><div class="h2"><h2>걸린 일</h2><span class="cnt num">${p.deals.length + p.reqs.length}</span></div>`;
+  if (p.deals.length) h += `<div class="grp">내놓은 집 <span class="n num">${p.deals.length}</span></div><ul>${p.deals.map((d) => `<li class="job"><a href="#" class="jr" data-say="거래 화면">
+      <span class="l"><span class="tag ${d.tone}">${esc(d.type)}</span><span class="place">${esc(d.place)}</span><span class="price num">${esc(d.price)}</span><span class="role">${esc(d.role)}</span></span>
+      <span class="r">${track(DEAL,d.stage)}<span class="stage">${esc(DEAL[d.stage])}</span><span class="when num">${esc(d.d)}</span></span></a></li>`).join('')}</ul>`;
+  const mine = new Set(p.owned.map((o) => o.place)); /* 본인 소유 매물은 매수 후보가 아니다 */
+  if (p.reqs.length) h += `<div class="grp">찾는 집 <span class="n num">${p.reqs.length}</span></div><ul>${p.reqs.map((r) => ({...r, shown:r.shown.filter((m) => !mine.has(m.place))})).map((r) => `<li class="job">
+      <a href="#" class="jr req" data-say="희망 조건 화면"><span class="l"><span class="tag ${r.tone}">${esc(r.type)}</span><span class="big num">${esc(r.range)}</span><span class="cond">${esc(r.cond)}</span></span>
+        <span class="r"><span class="${r.over>0?'overdue':''} num">다음 연락 ${esc(r.next)}</span></span></a>
+      ${r.shown.length ? `<ul class="child">${r.shown.map((m) => `<li><a href="#" class="jr" data-say="매칭 화면"><span class="l"><span class="place">${esc(m.place)}</span><span class="price num">${esc(m.price)}</span><span class="role">보여 준 집</span></span>
+        <span class="r">${track(MATCH,m.stage)}<span class="stage">${esc(MATCH[m.stage])}</span><span class="when num">${esc(m.d)}</span></span></a></li>`).join('')}</ul>`
+        : `<p class="none" style="margin:0">아직 보여 준 집이 없습니다 · <button type="button" data-say="맞는 매물 찾기">맞는 매물 찾기</button></p>`}
+      <p class="note" style="margin:0">${esc(r.note)}</p></li>`).join('')}</ul>`;
+  return h + '</section>';
+}
+
+function owned(p){
+  if (!p.owned.length) return '';
+  return `<section id="owned" class="owned"><div class="h2"><h2>가진 집</h2><span class="cnt num">${p.owned.length}</span><span class="act"><button type="button" class="nb sm" data-say="소유 매물 연결 창">+ 소유 매물 연결</button></span></div>
+    <ul>${p.owned.map((o) => `<li class="job"><a href="#" class="jr" data-say="매물 화면"><span class="l"><span class="place">${esc(o.place)}</span></span><span class="r" style="color:var(--sub)">${esc(o.sub)}</span></a></li>`).join('')}</ul></section>`;
+}
+
+function rail(p, ui){
+  const talks = p.talks;
+  return `<h3>상담 <span class="cnt num">${talks.length}</span><button type="button" class="nb sm" data-say="상담분석 화면">상담분석에서 보기</button></h3>
+    <div class="write"><textarea id="draft" rows="2" placeholder="${esc(p.name)} 님과 나눈 이야기를 적어 두세요" aria-label="상담 내용">${esc(ui.draft)}</textarea>
+      <div class="bar" role="group" aria-label="상담 종류">${['전화','방문','문자·온라인'].map((k) => `<button type="button" class="kind" data-kind="${k}" aria-pressed="${ui.kind===k}">${k}</button>`).join('')}<button type="button" class="nb solid sm" id="save">적기</button></div></div>
+    ${ui.err ? `<p class="err" role="alert">${esc(ui.err)}</p>` : ''}
+    <ul class="tl">${talks.map((t,i) => { const long = t.text.length > 120, open = ui.open.includes(i); return `<li><div class="hd"><b>${esc(t.kind)}</b><span class="num">${esc(t.day)}</span><span class="by">${esc(t.who)}</span><span class="t num">${esc(t.time)}</span></div>
+      ${t.about.length ? `<div class="about">${t.about.map((a) => `<span class="tag">${esc(a)}</span>`).join('')}</div>` : ''}
+      <div class="tx${long && !open ? ' clamp' : ''}">${esc(t.text)}</div>${long ? `<button type="button" class="more" data-open="${i}" aria-expanded="${open}">${open ? '접기' : '끝까지 보기'}</button>` : ''}</li>`; }).join('')}</ul>
+    <hr class="sep">
+    <h3>프로젝트<button type="button" class="nb sm" data-say="새 프로젝트 문서">+ 프로젝트 열기</button></h3>
+    ${p.project ? `<a href="#" class="proj" data-say="프로젝트 문서"><span class="n">${esc(p.project.name)}<span class="tag green">${esc(p.project.state)}</span></span><span class="s">${esc(p.project.sub)}</span></a>`
+      : `<p class="railempty">갈아타기처럼 의뢰가 여럿 물려 있거나 오래 챙길 손님이면 프로젝트를 여세요.</p>`}`;
+}
+
+function render(keep){
+  const p = PEOPLE[state.who], ui = state.ui[state.who];
+  const focusId = keep && document.activeElement?.id, sel = focusId === 'draft' ? [$('draft').selectionStart, $('draft').selectionEnd] : null;
+  $('here').textContent = p.name;
+  const nothing = !p.deals.length && !p.reqs.length && !p.owned.length;
+  $('doc').innerHTML = `<div class="who"><h1>${esc(p.name)}</h1>${p.roles.length ? `<span class="roles">${p.roles.map((r) => `<span class="tag">${esc(r)}</span>`).join('')}</span>` : ''}</div>
+    <div class="idline"><button type="button" class="phone num" data-copy="${esc(p.phone)}" aria-label="${esc(p.phone)} 복사">${esc(p.phone)}</button>${p.email ? `<a href="#" data-say="메일 쓰기">${esc(p.email)}</a>` : ''}${p.tags.length ? `<span class="tags">${p.tags.map(([n,t]) => `<span class="tag ${t}">${esc(n)}</span>`).join('')}</span>` : ''}</div>
+    <p class="memo">${esc(p.memo)}</p>
+    ${dueList(p, ui)}${jobs(p)}
+    ${nothing ? `<section class="start"><p>찾는 집이 있으면 희망 조건을, 내놓는 집이 있으면 매물을 등록해 두세요.</p><div class="btns"><button type="button" class="nb line" data-say="희망매물 만들기 화면">희망매물 만들기</button><button type="button" class="nb line" data-say="매물 등록 화면">매물 등록</button><button type="button" class="nb line" data-say="소유 매물 연결 창">소유 매물 연결</button></div></section>` : ''}
+    ${owned(p)}<p class="foot num">등록 ${esc(p.created)} · 마지막 수정 ${esc(p.updated)}</p>`;
+  $('rail').innerHTML = rail(p, ui);
+  document.querySelectorAll('#whoSeg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.who === state.who)));
+  if (focusId && $(focusId)) { $(focusId).focus(); if (sel) $('draft').setSelectionRange(sel[0], sel[1]); }
+}
+
+let toastTimer;
+function toast(text, undo){
+  const t = $('toast'); t.innerHTML = `<span>${esc(text)}</span>${undo ? '<button type="button" id="undo">되돌리기</button>' : ''}`; t.hidden = false;
+  t._undo = undo || null; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; t._undo = null; }, undo ? 6000 : 2200);
+}
+
+document.addEventListener('input', (e) => { if (e.target.id === 'draft') { const ui = state.ui[state.who]; ui.draft = e.target.value; if (ui.err) { ui.err = ''; render(true); } } });
+document.addEventListener('keydown', (e) => { if (e.target.id === 'draft' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); } });
+
+function save(){
+  const p = PEOPLE[state.who], ui = state.ui[state.who], text = ui.draft.trim();
+  if (!text) { ui.err = '적을 내용을 먼저 넣어 주세요.'; render(true); $('draft').focus(); return; }
+  const entry = {day:'11.24 (화)', time:'지금', kind:ui.kind, who:'Hyunsu Lee', about:[], text};
+  const before = {talks:p.talks.slice(), draft:ui.draft, open:ui.open.slice()};
+  p.talks.unshift(entry); ui.open = ui.open.map((i) => i + 1); ui.draft = ''; ui.err = '';
+  render(false); $('draft').focus();
+  toast('상담을 적었습니다', () => { if (p.talks[0] !== entry) return; p.talks = before.talks; ui.open = before.open; if (!ui.draft) ui.draft = before.draft; render(false); });
+}
+
+document.addEventListener('click', (e) => {
+  const who = e.target.closest('#whoSeg button');
+  if (who) { state.who = who.dataset.who; render(false); $('scroll').scrollTop = 0; return; }
+  if (e.target.id === 'undo') { const t = $('toast'); const fn = t._undo; t.hidden = true; t._undo = null; fn?.(); return; }
+  if (e.target.closest('#save')) { save(); return; }
+  const kind = e.target.closest('[data-kind]');
+  if (kind) { state.ui[state.who].kind = kind.dataset.kind; render(false); document.querySelector(`[data-kind="${kind.dataset.kind}"]`).focus(); return; }
+  const open = e.target.closest('[data-open]');
+  if (open) { const ui = state.ui[state.who], i = Number(open.dataset.open); ui.open = ui.open.includes(i) ? ui.open.filter((x) => x !== i) : [...ui.open, i]; render(false); document.querySelector(`[data-open="${i}"]`)?.focus(); return; }
+  if (e.target.closest('[data-write]')) { const d = $('draft'); d.scrollIntoView({block:'center'}); d.focus(); return; }
+  const done = e.target.closest('[data-done]');
+  if (done) { const ui = state.ui[state.who], id = done.dataset.done; ui.done.push(id); render(false);
+    toast('업무를 끝냈습니다', () => { ui.done = ui.done.filter((x) => x !== id); render(false); }); return; }
+  const copy = e.target.closest('[data-copy]');
+  if (copy) { navigator.clipboard?.writeText(copy.dataset.copy).catch(() => {}); toast(`${copy.dataset.copy} 복사했습니다`); return; }
+  const say = e.target.closest('[data-say]');
+  if (say) { e.preventDefault(); toast(`시안이라 열리지 않습니다 — ${say.dataset.say}`); return; }
+  if (e.target.closest('a[href="#"]')) e.preventDefault();
+});
+
+if (new URLSearchParams(location.search).get('who') === 'sparse') state.who = 'sparse';
+render(false);
+</script>
+</body>
+</html>
