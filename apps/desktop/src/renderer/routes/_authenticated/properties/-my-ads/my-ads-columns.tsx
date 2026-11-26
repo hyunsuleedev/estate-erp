@@ -9,6 +9,7 @@ import {
   ChevronUp,
   ClipboardCheck,
   ClipboardList,
+  CircleArrowDown,
   DoorOpen,
   Eye,
   Hash,
@@ -16,6 +17,7 @@ import {
   Layers3,
   Link2,
   Megaphone,
+  RotateCw,
   Ruler,
   ShieldCheck,
   Sparkles,
@@ -52,6 +54,7 @@ import {
   LinkStatusCell,
   NaverAdvertisementCell,
   PropertyTableTransactionBadge,
+  RequestFlagCell,
   TableHeaderLabel,
   VerificationMethodCell,
   WonCircleIcon,
@@ -59,6 +62,9 @@ import {
 import { myAdsRankingPendingLabel } from "./my-ads-manual-ad-state";
 import { useMyAdsTableState } from "./my-ads-table-context";
 import { RowOpenButton } from "@/components/domain";
+
+/** 재광고 · 내리기 칸: 머리글(아이콘 16 + 간격 6 + 세 글자 39, 좌우 여백 20)이 잘리지 않는 너비 */
+const REQUEST_FLAG_COLUMN_WIDTH = 84;
 
 /** 열 기본 너비·최소·최대는 저장값 검사(my-ads-table-state.ts)와 한곳에서 정한다. */
 function columnWidth(id: MyAdsResizableColumnId) {
@@ -213,6 +219,25 @@ export function buildColumns({
   hasMultipleCpAccounts?: boolean;
 }): ColumnDef<ListingAdvertisementWithListing, unknown>[] {
   return [
+    // 재광고 · 내리기 체크박스. 단지 왼쪽 맨 앞에 두고 단지 · 동 · 층 · 호와 함께 고정한다.
+    // 체크박스만 들어가는 칸이라 너비를 끌지 않고 정렬도 하지 않는다.
+    ...(["readvertise", "takedown"] as const).map(
+      (flag): ColumnDef<ListingAdvertisementWithListing, unknown> => ({
+        id: flag,
+        size: REQUEST_FLAG_COLUMN_WIDTH,
+        minSize: REQUEST_FLAG_COLUMN_WIDTH,
+        maxSize: REQUEST_FLAG_COLUMN_WIDTH,
+        enableResizing: false,
+        enableSorting: false,
+        header: () =>
+          flag === "readvertise" ? (
+            <TableHeaderLabel icon={<RotateCw className="size-4" />} label="재광고" />
+          ) : (
+            <TableHeaderLabel icon={<CircleArrowDown className="size-4" />} label="내리기" />
+          ),
+        cell: ({ row }) => <RequestFlagCell advertisement={row.original} flag={flag} />,
+      }),
+    ),
     {
       id: "site",
       ...columnWidth("site"),

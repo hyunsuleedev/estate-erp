@@ -17,6 +17,7 @@ import type { ListingAdvertisementWithListing } from "@estate-erp/api-client";
 import { cn } from "@/lib/utils";
 import { formatDate, formatMoney } from "@/lib/format";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   PROPERTY_TABLE_PILL_TONES,
   PROPERTY_TABLE_STATUS_DOT_CLASS_NAME,
@@ -45,6 +46,7 @@ import {
   currentAmount,
   editBlockReason,
   fieldLabel,
+  flagBlockReason,
   isDraftEmpty,
   isValueAsked,
   requestedCellDisplay,
@@ -429,7 +431,55 @@ export function AdvertisementExposurePeriodCell({
   );
 }
 
-/** 층수노출은 읽기 정보다 — 스위치가 아니라 상태 알약으로 보인다. */
+const REQUEST_FLAG_LABELS = { readvertise: "재광고", takedown: "내리기" } as const;
+
+/**
+ * 재광고 · 내리기 칸. 체크박스는 늘 보이지만 "광고 요청"을 켰을 때만 누를 수 있다
+ * (평소에 눌리면 바로 내려가는 줄 안다 — 사용자 결정 2026-11-26).
+ * 체크는 요청 초안에 넣는 것이고 요청 탭의 "값 없이 요청"과 같은 값을 본다. 보내기 전에는 아무것도 바뀌지 않는다.
+ * 이미 보낸 요청이 걸려 있으면 체크된 채로 잠긴다(거두는 것은 요청 탭에서 한다).
+ */
+export function RequestFlagCell({
+  advertisement,
+  flag,
+}: {
+  advertisement: ListingAdvertisementWithListing;
+  flag: "readvertise" | "takedown";
+}) {
+  const { mode, drafts, onToggleDraftFlag } = useMyAdsTableState();
+  const drafted = Boolean(drafts[advertisement.id]?.[flag]);
+  const sent = pendingChangeRequests(advertisement).some(
+    (request) => request.action === flag,
+  );
+  const blocked =
+    mode === "request"
+      ? flagBlockReason(advertisement, flag)
+      : "위쪽의 \"광고 요청\"을 켜면 고를 수 있습니다.";
+  const label = REQUEST_FLAG_LABELS[flag];
+  return (
+    <span
+      title={sent ? `${label} 요청 중` : (blocked ?? undefined)}
+      className="flex w-full items-center justify-center"
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      <Checkbox
+        data-my-ads-request-flag={flag}
+        aria-label={`${advertisementLocationLabel(advertisement)} ${label} 요청`}
+        checked={drafted || sent}
+        disabled={blocked !== null}
+        onCheckedChange={() => onToggleDraftFlag(advertisement, flag)}
+        className="shadow-none"
+      />
+    </span>
+  );
+}
+
+/**
+ * 층수노출은 읽기 정보다 — 스위치가 아니라 상태 알약으로 보인다.
+ * 칸에 "불리"를 따로 적지 않는다(사용자 결정 2026-11-26). 경쟁 광고가 정확한 층을 공개했다는 사실은
+ * 올렸을 때의 설명과 "경쟁 대비" 칸에 남는다.
+ */
 export function FloorExposureCell({
   advertisement,
 }: {
@@ -481,7 +531,6 @@ export function FloorExposureCell({
         )}
       >
         {exposureLabel}
-        {disadvantage ? " · 불리" : ""}
       </span>
       <span
         data-my-ads-requested-value="floorExposure"
@@ -497,8 +546,8 @@ export function FloorExposureCell({
   ) : (
     <span
       title={baseTooltip}
-      // 칸이 좁으면 "불리"는 남기고 알약 글자를 말줄임한다(칸 밖으로 넘치지 않는다).
-      className="inline-flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden whitespace-nowrap"
+      // 칸이 좁으면 알약 글자를 말줄임한다(칸 밖으로 넘치지 않는다).
+      className="inline-flex min-w-0 max-w-full items-center overflow-hidden whitespace-nowrap"
     >
       <span
         className={cn(
@@ -510,16 +559,16 @@ export function FloorExposureCell({
         <span aria-hidden="true" className={PROPERTY_TABLE_STATUS_DOT_CLASS_NAME} />
         <span className="truncate">{exposureLabel}</span>
       </span>
-      {disadvantage && (
-        <span className="shrink-0 text-[12px] font-medium text-destructive">
-          불리
-        </span>
-      )}
     </span>
   );
   // 변경 요청 모드에서만 누를 수 있다. 기록 수정으로는 고치지 않는다(읽어 온 값이다).
   if (mode !== "request") return asked && !requested ? <span className={askedValueClassName}>{content}</span> : content;
-  const blocked = editBlockReason(advertisement, "floorExposure", "request");
+  const blocked = editBlockReason(
+    advertisement,
+    "floorExposure",
+    "request",
+    drafts[advertisement.id],
+  );
   if (blocked) {
     return (
       <span title={blocked} className="cursor-not-allowed opacity-60">
@@ -641,7 +690,7 @@ function MoneyCell({
     </span>
   );
   if (!mode) return text;
-  const blocked = editBlockReason(advertisement, field, mode);
+  const blocked = editBlockReason(advertisement, field, mode, drafts[advertisement.id]);
   if (blocked) {
     return (
       <span title={blocked} className="block cursor-not-allowed truncate opacity-60">

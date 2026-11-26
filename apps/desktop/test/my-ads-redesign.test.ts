@@ -88,7 +88,7 @@ describe("my ads Task-based workflow", () => {
 
     // 매물관리 메인 표와 같은 밀도: 37px 행 + 매물관리 머리·본문 규격
     assert.match(source, /propertyListTone\s+rowHeight=\{37\}/);
-    assert.match(source, /pinnedColumns=\{\["site", "dong", "floor", "ho"\]\}/);
+    assert.match(source, /pinnedColumns=\{\["readvertise", "takedown", "site", "dong", "floor", "ho"\]\}/);
     assert.match(source, /anchorColumnId: "monthlyRent"/);
     assert.match(source, /label: "광고 정보"/);
     assert.match(columns, /id: "price"[\s\S]*InlinePriceCell/);
@@ -227,7 +227,7 @@ describe("my ads Task-based workflow", () => {
     // 모드를 바꾸기 전에 고치던 칸을 먼저 확정하고, 작성한 요청이 있으면 묻는다
     assert.match(page, /if \(!\(await flushEditor\(\)\)\) return;\s*if \(\s*modeRef\.current === "request" &&\s*Object\.keys\(draftsRef\.current\)\.length > 0\s*\) \{\s*setIsConfirmingDiscard\(true\);/);
     // 칸을 그릴 때, 값을 받을 때, 보낼 때 모두 같은 함수로 막는다
-    assert.match(page, /const blocked = editBlockReason\(advertisement, field, current\);\s*if \(blocked\) return blocked;/);
+    assert.match(page, /const blocked = editBlockReason\(\s*advertisement,\s*field,\s*current,\s*draftsRef\.current\[advertisement\.id\],\s*\);\s*if \(blocked\) return blocked;/);
     assert.match(source, /editBlockReason\(advertisement, "primary", "request"\) === null/);
     // 보낸 초안은 누른 순간의 것을 넘기고, 보낸 뒤 손대지 않은 것만 지운다
     assert.match(page, /sent: draftsRef\.current,/);

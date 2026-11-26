@@ -124,6 +124,8 @@ export function editBlockReason(
   advertisement: ListingAdvertisementWithListing,
   field: MyAdsEditableField,
   mode: MyAdsMode,
+  /** 이 광고에 작성 중인 요청. 내리기를 골라 둔 줄은 값을 바꿔 달라고 할 수 없다 */
+  draft?: MyAdsRequestDraft,
 ): string | null {
   if (
     field === "monthlyRent" &&
@@ -143,6 +145,10 @@ export function editBlockReason(
   }
   if (pendingChangeRequests(advertisement).length > 0) {
     return "처리 중인 요청이 이미 있습니다. 펼쳐서 요청 탭에서 거둔 뒤 다시 요청하세요.";
+  }
+  // 내릴 광고의 가격 · 층 노출을 바꿔 달라는 것은 앞뒤가 맞지 않는다
+  if (draft?.takedown) {
+    return "내리기를 요청하는 광고입니다. 값을 바꾸려면 내리기 체크를 먼저 푸세요.";
   }
   return null;
 }

@@ -226,6 +226,12 @@ export interface DataTableProps<TData> {
    */
   propertyListTone?: boolean;
   /**
+   * 줄 바탕색으로 알릴 것이 있는 줄. 'warning'이면 옅은 노랑(고정 열 포함)으로 칠한다.
+   * 줄에 올리면 조금 짙어지고, 선택·키보드로 고른 줄의 색은 그대로 위에 온다.
+   * 지금은 propertyListTone 표에서만 그린다.
+   */
+  getRowTone?: (row: TData) => 'warning' | undefined;
+  /**
    * 열 너비(px, 열 id별). 넘기면 이 값으로 그리고, 드래그가 끝났을 때와 열 경계를
    * 더블클릭해 기본 너비로 되돌렸을 때 onColumnSizingChange로 새 값을 알린다.
    * 끄는 중 Esc를 누르면 끌기 전 너비로 돌아간다.

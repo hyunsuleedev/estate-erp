@@ -108,6 +108,7 @@ import {
 } from './-sites-panel';
 import { AddSiteDialog } from './-add-site-dialog';
 import { AddUnitDialog } from './-add-unit-dialog';
+import { AddManagedUnitDialog } from './-add-managed-unit-dialog';
 import { LandSiteProperties, WholeBuildingPropertiesStrip } from './-site-whole-properties';
 import { UnitLayoutBoard } from './-unit-layout-board';
 import { UnitDetailPanel } from './-unit-detail-dialog';
@@ -287,6 +288,7 @@ function SitesPage() {
   const [showAddSiteDialog, setShowAddSiteDialog] = useState(false);
   const [showAddDongDialog, setShowAddDongDialog] = useState(false);
   const [showAddUnitDialog, setShowAddUnitDialog] = useState(false);
+  const [showAddManagedUnitDialog, setShowAddManagedUnitDialog] = useState(false);
   const [newDongName, setNewDongName] = useState('');
 
   // ── Refs (키보드 단축키) ──────────────────────────────────────
@@ -1008,6 +1010,15 @@ function SitesPage() {
     if (units.length === 1) handleSelectUnit(first);
   };
 
+  // 방금 등록한 관리호수가 보이게 동 범위를 맞추고, 그 호를 열어 소유자 연결로 이어 간다
+  const handleManagedUnitAdded = (unit: Unit) => {
+    if (!selectedSiteId) return;
+    if (selectedDongIds.length > 0 && !selectedDongIds.includes(unit.dongId)) {
+      setDongScope({ siteId: selectedSiteId, dongIds: [unit.dongId] });
+    }
+    handleSelectUnit(unit);
+  };
+
   const resetUnitFilters = () => {
     if (selectedSiteId && siteDetail) {
       setDongScope({
@@ -1578,6 +1589,18 @@ function SitesPage() {
                   { value: 'expiry', label: '만기', icon: <CalendarClock /> },
                 ]}
               />
+              {/* 호실이 있는 단지에서만: 동·호를 골라 바로 관리호수로 등록한다 */}
+              {!siteHasNoUnits && (
+                <Button
+                  size="sm"
+                  className="h-[30px] shrink-0 rounded-[8px] px-3"
+                  aria-label="관리호수 추가"
+                  onClick={() => setShowAddManagedUnitDialog(true)}
+                >
+                  <Plus className="size-3.5" />
+                  관리호수
+                </Button>
+              )}
             </div>
           </section>
 
@@ -1946,6 +1969,18 @@ function SitesPage() {
         dongs={dongs}
         defaultDongId={selectedDongIds.length === 1 ? selectedDongIds[0] : undefined}
         onAdded={handleUnitsAdded}
+      />
+
+      {/* ─── Add Managed Unit Dialog ─────────────────────────── */}
+      <AddManagedUnitDialog
+        open={showAddManagedUnitDialog}
+        onOpenChange={setShowAddManagedUnitDialog}
+        siteId={selectedSiteId}
+        siteName={siteDetail?.name ?? selectedOfficeSite?.site?.name ?? ''}
+        dongs={dongs}
+        defaultDongId={selectedDongIds.length === 1 ? selectedDongIds[0] : undefined}
+        canAddUnits={canEditStructure}
+        onAdded={handleManagedUnitAdded}
       />
     </div>
   );

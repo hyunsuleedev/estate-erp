@@ -122,6 +122,7 @@ export function DataTable<TData extends { id: string }>({
   alwaysShowSelectionToolbar = false,
   renderStatusBar,
   expandedRowIds,
+  getRowTone,
   renderExpandedRow,
   estimateExpandedRowHeight,
   propertyListTone = false,
@@ -1064,10 +1065,13 @@ export function DataTable<TData extends { id: string }>({
               const renderMainRow = (
                 row: (typeof rows)[number],
                 rowIndex: number,
-              ) => (
+              ) => {
+                const rowTone = getRowTone?.(row.original);
+                return (
                   <tr
                     key={row.id}
                     data-state={row.getIsSelected() ? 'selected' : undefined}
+                    data-row-tone={rowTone}
                     className={cn("group", dropIndicator?.row === rowIndex && (dropIndicator.after
                       ? "[&>td]:shadow-[inset_0_-2px_var(--color-blue-400)]"
                       : "[&>td]:shadow-[inset_0_2px_var(--color-blue-400)]"))}
@@ -1096,7 +1100,10 @@ export function DataTable<TData extends { id: string }>({
                               'relative select-none border-b border-border px-2.5 align-middle text-[14px] font-[450] leading-[21px] text-foreground',
                               !isLastCol && 'border-r border-r-[#eeeeec]',
                               hoverSelectionGutter && cell.column.id === '_select' && 'border-0 px-0',
-                              'group-hover:bg-muted/70',
+                              // 알릴 것이 있는 줄은 옅은 노랑. 고정 열이 겹쳐도 비치지 않게 불투명한 색을 쓴다.
+                              rowTone === 'warning'
+                                ? 'bg-[#fff8e1] group-hover:bg-[#fdf0cc]'
+                                : 'group-hover:bg-muted/70',
                               'group-data-[state=selected]:bg-primary/5',
                               isFocused &&
                                 'bg-blue-50/40 outline outline-2 -outline-offset-2 outline-[#2383e2]',
@@ -1104,7 +1111,9 @@ export function DataTable<TData extends { id: string }>({
                               onRowClick &&
                                 (activateOnDoubleClick ? 'cursor-default' : 'cursor-pointer'),
                               isPinned &&
-                                'bg-white group-hover:bg-muted group-data-[state=selected]:bg-secondary',
+                                (rowTone === 'warning'
+                                  ? 'bg-[#fff8e1] group-hover:bg-[#fdf0cc] group-data-[state=selected]:bg-secondary'
+                                  : 'bg-white group-hover:bg-muted group-data-[state=selected]:bg-secondary'),
                               cell.column.columnDef.meta?.cellClassName,
                             )}
                             style={{
@@ -1260,7 +1269,8 @@ export function DataTable<TData extends { id: string }>({
                       );
                     })}
                   </tr>
-              );
+                );
+              };
               // 가상 스크롤 중이면 virtualIndex로 실제 높이를 잰다(펼친 내용은 나중에 자랄 수 있다).
               const renderExpandedRowElement = (
                 row: (typeof rows)[number],

@@ -97,6 +97,7 @@ import { MyAdsLocationAdDialog } from "./-my-ads/my-ads-location-ad-dialog";
 import {
   advertisementSite,
   changeRequestSummary,
+  pendingChangeRequests,
 } from "./-my-ads/my-ads-link";
 import {
   countAdvertisementsBySyncState,
@@ -139,6 +140,13 @@ export const Route = createFileRoute("/_authenticated/properties/naver-my-ads")(
 );
 
 /** 검색어를 글자마다 서버에 보내지 않는다. 멈춘 뒤 이만큼 기다렸다가 보낸다. */
+/** 보낸 요청이 걸려 있는 줄의 바탕색. 표가 줄마다 부르므로 화면 밖에 둔다 */
+function pendingRequestRowTone(
+  advertisement: ListingAdvertisementWithListing,
+): "warning" | undefined {
+  return pendingChangeRequests(advertisement).length > 0 ? "warning" : undefined;
+}
+
 const SEARCH_DEBOUNCE_MS = 250;
 /**
  * 펼친 네이버 비교 패널의 첫 추정 높이(펼친 광고가 없을 때). 펼친 광고가 있으면 비교 표 줄 수로
@@ -500,7 +508,12 @@ function NaverMyAdsPage() {
     ) => {
       const current = modeRef.current;
       if (!current) return;
-      const blocked = editBlockReason(advertisement, field, current);
+      const blocked = editBlockReason(
+        advertisement,
+        field,
+        current,
+        draftsRef.current[advertisement.id],
+      );
       if (blocked) {
         toast.info(blocked);
         return;
@@ -527,7 +540,12 @@ function NaverMyAdsPage() {
       const problem = amountProblem(advertisement, field, value);
       if (problem || value === null) return problem ?? "금액을 적어 주세요.";
       // 칸이 버튼이 아니어도 여기서 한 번 더 막는다
-      const blocked = editBlockReason(advertisement, field, current);
+      const blocked = editBlockReason(
+        advertisement,
+        field,
+        current,
+        draftsRef.current[advertisement.id],
+      );
       if (blocked) return blocked;
 
       if (current === "request") {
@@ -598,7 +616,12 @@ function NaverMyAdsPage() {
   const toggleFloorRequest = useCallback(
     (advertisement: ListingAdvertisementWithListing) => {
       if (modeRef.current !== "request") return;
-      const blocked = editBlockReason(advertisement, "floorExposure", "request");
+      const blocked = editBlockReason(
+        advertisement,
+        "floorExposure",
+        "request",
+        draftsRef.current[advertisement.id],
+      );
       if (blocked) {
         toast.info(blocked);
         return;
@@ -1235,7 +1258,7 @@ function NaverMyAdsPage() {
               )}
               columnSizing={preferences.widths}
               onColumnSizingChange={handleColumnSizingChange}
-              pinnedColumns={["site", "dong", "floor", "ho"]}
+              pinnedColumns={["readvertise", "takedown", "site", "dong", "floor", "ho"]}
               columnGroupControls={[
                 {
                   collapsed: areAdvertisementSourceColumnsCollapsed,
@@ -1255,6 +1278,8 @@ function NaverMyAdsPage() {
               ]}
               sorting={sorting}
               onSortingChange={handleSortingChange}
+              // 보낸 요청이 아직 걸려 있는 줄은 옅은 노랑으로 알린다(작성 중인 초안은 칠하지 않는다)
+              getRowTone={pendingRequestRowTone}
               expandedRowIds={expandedIds}
               estimateExpandedRowHeight={expandedPanelEstimate}
               renderExpandedRow={(advertisement) => (

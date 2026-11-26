@@ -274,7 +274,15 @@
     "호실을 나눠 관리하려면 호수를 추가하세요. 건물 전체를 내놓는 의뢰는 호수 없이 바로 매물 등록을 하면 됩니다.": "To manage units separately, add units. For a whole-building request, just add a listing without units.",
     "호실을 삭제하지 못했습니다. 다시 시도해 주세요.": "Couldn't delete the unit. Please try again.",
     "호실을 삭제했습니다": "Unit deleted",
-    "호실을 열어 ‘소유자·세입자’에서 세입자를 추가하고 계약 만료일을 적으면 가까운 순서로 나옵니다.": "Open a unit, add a tenant under ‘Owners & tenants’ and enter the lease end date. They appear here, soonest first."
+    "호실을 열어 ‘소유자·세입자’에서 세입자를 추가하고 계약 만료일을 적으면 가까운 순서로 나옵니다.": "Open a unit, add a tenant under ‘Owners & tenants’ and enter the lease end date. They appear here, soonest first.",
+    "관리호수 추가": "Add managed unit",
+    "호수를 불러오지 못했습니다": "Couldn't load units",
+    "동을 먼저 고르세요.": "Choose a building first.",
+    "호 찾기 · ↑↓ 이동 · Enter 선택": "Find unit · ↑↓ move · Enter select",
+    "이 동에 호수가 없습니다. 먼저 ‘호수 추가’로 넣으세요.": "This building has no units. Add them with “Add unit” first.",
+    "이 동에 호수가 없습니다.": "This building has no units.",
+    "결과 없음": "No results",
+    "선택한 호: {0}": "Selected: {0}"
   },
   "files": {
     "routes/_authenticated/sites/-add-site-dialog.tsx": {

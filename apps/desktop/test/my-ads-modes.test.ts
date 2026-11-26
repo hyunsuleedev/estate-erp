@@ -100,6 +100,13 @@ describe("my ads edit and request modes", () => {
     assert.equal(editBlockReason(manual, "primary", "request"), null);
     assert.equal(editBlockReason(manual, "primary", "edit"), null);
     assert.equal(flagBlockReason(manual, "takedown"), null);
+    // 내리기를 골라 둔 줄은 가격 · 층 노출을 바꿔 달라고 할 수 없다 (기록 수정은 그대로 된다)
+    assert.match(
+      editBlockReason(manual, "primary", "request", { takedown: true }) ?? "",
+      /내리기/,
+    );
+    assert.equal(editBlockReason(manual, "primary", "request", { readvertise: true }), null);
+    assert.equal(editBlockReason(manual, "primary", "edit", { takedown: true }), null);
     assert.deepEqual(
       draftToRequests(manual, { primary: 4000, takedown: true }, shared).map((r) => r.action),
       ["takedown"],
