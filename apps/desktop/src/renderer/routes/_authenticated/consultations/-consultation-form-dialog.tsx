@@ -1,6 +1,7 @@
 import { formatUnitName } from '@estate-erp/shared';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { buyerRequirementQueries } from '@/queries/buyer-requirements';
 import { toast } from 'sonner';
 import { Building2, Link2, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -598,8 +599,7 @@ function BuyerReqSelect({
   onChange: (value: string | null) => void;
 }) {
   const { data } = useQuery({
-    queryKey: ['consultation-form-buyer-reqs', contactId],
-    queryFn: () => api.buyerRequirements.findAll({ contactId, limit: 20 }),
+    ...buyerRequirementQueries.list({ contactId, limit: 20 }),
   });
   const options = (data?.items ?? []).map((req) => {
     const type = req.transactionType ? (transactionTypeLabels[req.transactionType] ?? req.transactionType) : '유형 미정';

@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { buyerRequirementQueries } from '@/queries/buyer-requirements';
 import { useRef } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -32,8 +33,7 @@ function EditBuyerRequirementPage() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['buyer-requirements', 'detail', id],
-    queryFn: () => api.buyerRequirements.findOne(id),
+    ...buyerRequirementQueries.detail(id),
   });
 
   const updateMutation = useMutation({

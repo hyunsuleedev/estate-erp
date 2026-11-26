@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { buyerRequirementQueries, refreshWantedRow } from './buyer-requirements';
+import { buyerRequirementQueries, refreshRequirementRow } from './buyer-requirements';
 
 /** 다시 받게 하는 쪽: 화면의 queryClient(다른 탭에도 알린다)이거나, 실시간 신호를 받은 쪽(이 화면만) */
 interface Invalidator {
@@ -16,7 +16,7 @@ interface Invalidator {
 export function invalidateMatchData(queryClient: Invalidator): Promise<unknown> {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: ['matches'] }),
-    queryClient.invalidateQueries({ queryKey: buyerRequirementQueries.wantedAll }),
+    queryClient.invalidateQueries({ queryKey: buyerRequirementQueries.withMatchesAll }),
   ]);
 }
 
@@ -34,6 +34,6 @@ export function refreshMatchData(
 ): Promise<unknown> {
   return Promise.all([
     invalidator.invalidateQueries({ queryKey: ['matches'] }),
-    refreshWantedRow(queryClient, buyerReqId),
+    refreshRequirementRow(queryClient, buyerReqId),
   ]);
 }

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { buyerRequirementQueries } from "@/queries/buyer-requirements";
 import type { BuyerRequirement } from "@estate-erp/api-client";
 import { EllipsisVertical, Loader2, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -57,7 +58,7 @@ export function CustomerDemandIntentActionMenu({
       setDeleteCandidate(null);
       onDeleted?.();
       queryClient.removeQueries({
-        queryKey: ["buyer-requirements", "detail", requirementId],
+        queryKey: buyerRequirementQueries.detail(requirementId).queryKey,
       });
       await invalidateCustomerLedger();
     },

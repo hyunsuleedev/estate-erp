@@ -60,11 +60,11 @@ import {
 import { api } from '@/lib/api';
 import {
   buyerRequirementQueries,
-  findWantedRow,
-  mergeWantedPages,
-  patchWantedMatch,
-  updateWantedRows,
-  type WantedListFilter,
+  findRequirementRow,
+  mergeRequirementPages,
+  patchRequirementMatch,
+  updateRequirementRows,
+  type RequirementListFilter,
 } from '@/queries/buyer-requirements';
 import { invalidateMatchData, refreshMatchData } from '@/queries/matches';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -78,7 +78,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
 /** 걸릴 조건이 없어 요청하지 않을 때 조회 정의에 넘기는 자리 채움 */
-const NO_LIST_FILTER: WantedListFilter = { status: 'active,hold' };
+const NO_LIST_FILTER: RequirementListFilter = { status: 'active,hold' };
 
 const TRANSACTION_TYPE_TABS = [
   { value: '', label: '전체' },
@@ -197,7 +197,7 @@ function WantedPropertiesPage() {
 
   // 필터의 선택지(지역 · 단지 · 담당자)는 서버가 모아 준다. 목록을 쪽 단위로 받으므로 받아 둔 줄에서는 모을 수 없다.
   const filterOptionsQuery = useQuery({
-    ...buyerRequirementQueries.wantedFilterOptions(getFilterOptionsStatus(requirementFilters)),
+    ...buyerRequirementQueries.filterOptions(getFilterOptionsStatus(requirementFilters)),
     placeholderData: keepPreviousData,
   });
   const activeRequirementFilters = useMemo(
@@ -226,7 +226,7 @@ function WantedPropertiesPage() {
     ],
   );
   const listQuery = useInfiniteQuery({
-    ...buyerRequirementQueries.wanted(listFilter ?? NO_LIST_FILTER),
+    ...buyerRequirementQueries.withMatches(listFilter ?? NO_LIST_FILTER),
     enabled: listFilter !== null,
     // 조건을 바꾸는 동안 표를 비우지 않는다.
     placeholderData: keepPreviousData,
@@ -234,7 +234,7 @@ function WantedPropertiesPage() {
   const { fetchNextPage, hasNextPage, isFetching, isFetchingNextPage, isFetchNextPageError } =
     listQuery;
   const listedRows = useMemo(
-    () => (listFilter === null ? [] : mergeWantedPages(listQuery.data?.pages)),
+    () => (listFilter === null ? [] : mergeRequirementPages(listQuery.data?.pages)),
     [listFilter, listQuery.data?.pages],
   );
   const totalRequirements =
@@ -252,7 +252,7 @@ function WantedPropertiesPage() {
   const editingId = editingRequirement?.id ?? null;
   const editingInList = editingId !== null && listedRows.some((row) => row.id === editingId);
   const pinnedRowQuery = useQuery({
-    ...buyerRequirementQueries.wantedRow(editingId),
+    ...buyerRequirementQueries.withMatchesRow(editingId),
     enabled: editingId !== null && !editingInList,
   });
   const pinnedRow = useMemo(() => {
@@ -387,7 +387,7 @@ function WantedPropertiesPage() {
       }),
     onSuccess: (updatedMatch) => {
       // 응답에서 고친 칸만 받아 둔 줄에 덮어 메모가 곧장 바뀌게 하고, 정확한 값은 뒤에서 다시 받는다
-      patchWantedMatch(queryClient, updatedMatch.id, {
+      patchRequirementMatch(queryClient, updatedMatch.id, {
         memo: updatedMatch.memo,
         updatedAt: updatedMatch.updatedAt,
       });
@@ -460,9 +460,9 @@ function WantedPropertiesPage() {
     const latest = await api.buyerRequirements.findOne(requirement.id);
     // 받아 오는 사이 목록이 더 새 값을 받아 왔으면(다른 탭의 저장) 그쪽이 지금 값이다.
     // 방금 받은 것으로 덮으면 화면이 예전으로 돌아가고, 편집기도 예전 값 위에서 판단하게 된다.
-    const listed = findWantedRow(queryClient, latest.id);
+    const listed = findRequirementRow(queryClient, latest.id);
     if (listed && listed.updatedAt > latest.updatedAt) return listed;
-    updateWantedRows(queryClient, (list) => mergeLatestRequirement(list, latest));
+    updateRequirementRows(queryClient, (list) => mergeLatestRequirement(list, latest));
     if (latest.updatedAt !== requirement.updatedAt) {
       // 목록이 예전 것이었다. 이 조건만이 아닐 수 있으니 뒤에서 다시 받는다
       void queryClient.invalidateQueries({ queryKey: ['buyer-requirements'] });
@@ -481,7 +481,7 @@ function WantedPropertiesPage() {
     // 응답에서 고친 칸만 받아 둔 목록에 덮어 칸이 곧장 바뀌게 하고, 정확한 목록은 뒤에서 다시 받는다.
     // (응답 전체를 덮으면 저장하는 사이 새로 온 목록의 손대지 않은 값이 응답의 예전 값으로 돌아간다.)
     // 매칭에 실려 오는 조건(매칭 상세)과 고객 원장도 같은 조건을 보여 준다.
-    updateWantedRows(queryClient, (list) => mergeSavedRequirement(list, saved, change));
+    updateRequirementRows(queryClient, (list) => mergeSavedRequirement(list, saved, change));
     // 저장 전에 받기 시작한 목록이 있어도 여기서 멈추고 다시 받으므로(invalidateQueries의 기본 동작),
     // 저장 전 값이 뒤늦게 도착해 고친 칸을 덮지 않는다.
     for (const queryKey of [['buyer-requirements'], ['matches'], ['projects']]) {

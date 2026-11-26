@@ -10,8 +10,8 @@ import type {
  * 캐시를 어떻게 고치는지만 여기 있어서 서버 없이 테스트한다.
  */
 
-type WantedListFilter = Omit<BuyerRequirementsFilter, 'page' | 'limit'>;
-type WantedListData = InfiniteData<PaginatedResponse<BuyerRequirementWithMatches>, number>;
+type RequirementListFilter = Omit<BuyerRequirementsFilter, 'page' | 'limit'>;
+type RequirementListData = InfiniteData<PaginatedResponse<BuyerRequirementWithMatches>, number>;
 
 /** 줄마다 가장 나중에 시작한 다시 받기의 번호. 늦게 도착한 예전 응답이 새 값을 덮지 않게 한다. */
 const rowRefreshSeq = new Map<string, number>();
@@ -35,17 +35,17 @@ function sortsAfter(row: BuyerRequirementWithMatches, last: BuyerRequirementWith
  *   (아직 받지 않은 쪽이 남아 있으면 그쪽에 있을 수 있으니 그대로 둔다).
  * 지금 화면에 없는 목록은 낡았다고만 표시해, 다시 볼 때 받게 한다.
  */
-export async function refreshWantedRowWith(
+export async function refreshRequirementRowWith(
   queryClient: QueryClient,
   requirementId: string,
   /** 그 목록의 조건으로 이 한 줄을 받는다. 조건에 맞지 않거나 지워졌으면 undefined */
   fetchRow: (
-    filter: WantedListFilter,
+    filter: RequirementListFilter,
     id: string,
   ) => Promise<BuyerRequirementWithMatches | undefined>,
 ) {
   const cache = queryClient.getQueryCache();
-  const lists = cache.findAll({ queryKey: ['buyer-requirements', 'wanted', 'list'] });
+  const lists = cache.findAll({ queryKey: ['buyer-requirements', 'with-matches', 'list'] });
 
   await Promise.all(
     lists.map(async (query) => {
@@ -53,7 +53,7 @@ export async function refreshWantedRowWith(
         query.invalidate();
         return;
       }
-      const filter = query.queryKey[3] as WantedListFilter;
+      const filter = query.queryKey[3] as RequirementListFilter;
       const seqKey = `${query.queryHash}:${requirementId}`;
       nextRefreshSeq += 1;
       const seq = nextRefreshSeq;
@@ -71,7 +71,7 @@ export async function refreshWantedRowWith(
       }
       if (rowRefreshSeq.get(seqKey) !== seq) return;
 
-      const data = query.state.data as WantedListData | undefined;
+      const data = query.state.data as RequirementListData | undefined;
       if (!data) return;
       const listed = data.pages.some((page) => page.items.some((item) => item.id === requirementId));
       const lastPage = data.pages.at(-1);
@@ -98,7 +98,7 @@ export async function refreshWantedRowWith(
         return;
       }
 
-      queryClient.setQueryData<WantedListData>(query.queryKey, (current) =>
+      queryClient.setQueryData<RequirementListData>(query.queryKey, (current) =>
         current && {
           ...current,
           pages: current.pages.map((page) => {
@@ -128,7 +128,7 @@ export async function refreshWantedRowWith(
 
   // 조건 없이 받아 둔 한 줄(칸 편집 중 남겨 둔 줄)과 필터 선택지는 가볍다 — 그냥 다시 받는다
   void queryClient.refetchQueries({
-    queryKey: ['buyer-requirements', 'wanted', 'row', requirementId],
+    queryKey: ['buyer-requirements', 'with-matches', 'row', requirementId],
     exact: true,
   });
 }

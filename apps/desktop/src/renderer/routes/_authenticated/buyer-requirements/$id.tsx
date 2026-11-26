@@ -9,6 +9,7 @@ import {
 } from "@estate-erp/shared";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { buyerRequirementQueries } from "@/queries/buyer-requirements";
 import { invalidateMatchData } from "@/queries/matches";
 import {
   AlertCircle,
@@ -337,8 +338,7 @@ function BuyerRequirementDetailPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["buyer-requirements", "detail", id],
-    queryFn: () => api.buyerRequirements.findOne(id),
+    ...buyerRequirementQueries.detail(id),
     // 없는 희망 조건(404)과 형식이 틀린 주소(400)는 다시 물어도 같다
     retry: (failureCount, caught) => !isMissingError(caught) && failureCount < 2,
   });

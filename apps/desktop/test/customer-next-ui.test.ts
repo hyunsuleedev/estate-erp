@@ -454,7 +454,7 @@ describe("customer next workspace", () => {
       matchCreateDialogSource,
       /enabled: open && scope\?\.kind !== "demand"/,
     );
-    assert.match(matchCreateDialogSource, /api\.buyerRequirements\.findOne/);
+    assert.match(matchCreateDialogSource, /buyerRequirementQueries\.detail\(fixedRequirementId\)/);
     assert.match(matchCreateDialogSource, /api\.listings\.findOne/);
   });
 

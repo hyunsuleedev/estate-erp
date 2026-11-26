@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { patchWantedMatch } from '@/queries/buyer-requirements';
+import { patchRequirementMatch } from '@/queries/buyer-requirements';
 import { refreshMatchData } from '@/queries/matches';
 import { AlertTriangle, CalendarPlus, MessageSquarePlus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -398,7 +398,7 @@ function AgreedTermsSection({ match }: { match: Match }) {
         current?.map((item) => (item.id === updated.id ? updated : item)),
       );
       // 희망매물 목록은 손님 줄 안에 매칭을 싣는다. 고친 칸만 덮어 곧장 바뀌게 한다
-      patchWantedMatch(queryClient, updated.id, {
+      patchRequirementMatch(queryClient, updated.id, {
         agreedPrice: updated.agreedPrice,
         agreedDeposit: updated.agreedDeposit,
         agreedMonthlyRent: updated.agreedMonthlyRent,

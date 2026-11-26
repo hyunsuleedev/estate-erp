@@ -5,6 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { buyerRequirementQueries } from '@/queries/buyer-requirements';
 import {
   useCallback,
   useDeferredValue,
@@ -1371,8 +1372,7 @@ function BuyerReqExpandedPanel({ contact }: { contact: Contact }) {
   const PANEL_LIMIT = 20;
   const [limit, setLimit] = useState(PANEL_LIMIT);
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['contact-buyer-requirements', contact.id, limit],
-    queryFn: () => api.buyerRequirements.findAll({ contactId: contact.id, limit }),
+    ...buyerRequirementQueries.list({ contactId: contact.id, limit }),
     placeholderData: (previous) => previous,
   });
   const items = data?.items ?? [];

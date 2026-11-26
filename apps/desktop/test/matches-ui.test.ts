@@ -523,7 +523,7 @@ describe('desktop matches workbench', () => {
     // 목록(서버 조건)에서 빠진 편집 중 조건은 그 한 줄만 조건 없이 다시 받아 남긴다
     assert.match(
       matchesPageSource,
-      /\.\.\.buyerRequirementQueries\.wantedRow\(editingId\),\s*enabled: editingId !== null && !editingInList,/,
+      /\.\.\.buyerRequirementQueries\.withMatchesRow\(editingId\),\s*enabled: editingId !== null && !editingInList,/,
     );
     // 남겨 둔 줄은 "편집기를 열 때의 값"이 아니라 목록에서 마지막으로 본 값으로 그린다.
     // 열 때의 값으로 그리면 편집기가 이미 본 값보다 예전으로 돌아가, 감지한 거래유형 충돌이 풀린다
@@ -643,7 +643,7 @@ describe('desktop matches workbench', () => {
     // 예전처럼 조건 전부와 매칭 전부를 따로 받아 화면에서 묶지 않는다.
     assert.match(
       matchesPageSource,
-      /useInfiniteQuery\(\{\s*\.\.\.buyerRequirementQueries\.wanted\(listFilter \?\? NO_LIST_FILTER\),/,
+      /useInfiniteQuery\(\{\s*\.\.\.buyerRequirementQueries\.withMatches\(listFilter \?\? NO_LIST_FILTER\),/,
     );
     assert.doesNotMatch(matchesPageSource, /api\.matches\.findAll|fetchBuyerRequirements/);
     assert.match(matchesPageSource, /<EndOfListSentinel onReach=\{handleEndReached\} \/>/);

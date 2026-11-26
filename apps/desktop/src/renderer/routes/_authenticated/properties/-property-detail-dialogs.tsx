@@ -9,6 +9,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { buyerRequirementQueries } from '@/queries/buyer-requirements';
 import { invalidateMatchData } from '@/queries/matches';
 import { toast } from 'sonner';
 import { Loader2, Search, UserPlus, Users } from 'lucide-react';
@@ -1208,13 +1209,11 @@ export function MatchCreateDialog({
   }, [open]);
 
   const { data: buyerData, isFetching } = useQuery({
-    queryKey: ['buyer-requirements', 'picker', buyerSearch],
-    queryFn: () =>
-      api.buyerRequirements.findAll({
-        search: buyerSearch.trim() || undefined,
-        status: 'active',
-        limit: 8,
-      }),
+    ...buyerRequirementQueries.list({
+      search: buyerSearch.trim() || undefined,
+      status: 'active',
+      limit: 8,
+    }),
     enabled: open,
   });
 

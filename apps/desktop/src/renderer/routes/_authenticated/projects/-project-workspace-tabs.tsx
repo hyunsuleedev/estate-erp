@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { buyerRequirementQueries } from "@/queries/buyer-requirements";
 import { invalidateMatchData } from "@/queries/matches";
 import { useState, type ReactNode } from "react";
 import type { CommissionPayment, Match, ProjectStep, ProjectStepDeal } from "@estate-erp/api-client";
@@ -320,8 +321,7 @@ function RequirementMatches({
   onStageChange: (match: Match, stage: string) => void;
 }) {
   const detailQuery = useQuery({
-    queryKey: ["buyer-requirements", "detail", requirementId],
-    queryFn: () => api.buyerRequirements.findOne(requirementId),
+    ...buyerRequirementQueries.detail(requirementId),
     ...FRESH_ON_RETURN,
   });
   const matchesQuery = useQuery({

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { formatPrice } from '@estate-erp/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { buyerRequirementQueries } from '@/queries/buyer-requirements';
 import { toast } from 'sonner';
 import {
   CalendarClock,
@@ -396,8 +397,7 @@ function RequirementBlock({ suggestion, labels, hasContact, renderEvidenceLink }
 
   // 고치는 제안은 지금 저장된 값을 읽어 와 나란히 보인다
   const currentQuery = useQuery({
-    queryKey: ['buyer-requirements', 'suggestion-current', isUpdate ? updatePayload.buyerReqId : null],
-    queryFn: () => api.buyerRequirements.findOne(updatePayload.buyerReqId),
+    ...buyerRequirementQueries.detail(isUpdate ? updatePayload.buyerReqId : null),
     enabled: isUpdate,
   });
   const current = (isUpdate ? (currentQuery.data ?? null) : null) as RequirementCurrentValues | null;

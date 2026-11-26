@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { buyerRequirementQueries } from "@/queries/buyer-requirements";
 import { refreshMatchData } from "@/queries/matches";
 import {
   AlertTriangle,
@@ -121,13 +122,7 @@ export function MatchCreateDialog({
   }, [open, initialListingMode]);
 
   const fixedRequirementQuery = useQuery({
-    queryKey: ["buyer-requirements", "match-create-fixed", fixedRequirementId],
-    queryFn: () => {
-      if (!fixedRequirementId) {
-        throw new Error("고객의 희망 조건을 찾을 수 없습니다.");
-      }
-      return api.buyerRequirements.findOne(fixedRequirementId);
-    },
+    ...buyerRequirementQueries.detail(fixedRequirementId),
     enabled: open && fixedRequirementId !== null,
   });
   const fixedRequirement =
@@ -153,13 +148,11 @@ export function MatchCreateDialog({
   });
 
   const buyerReqSearch = useQuery({
-    queryKey: ["buyer-requirements", "match-create-search", buyerQuery],
-    queryFn: () =>
-      api.buyerRequirements.findAll({
-        search: buyerQuery.trim() || undefined,
-        status: "active",
-        limit: 8,
-      }),
+    ...buyerRequirementQueries.list({
+      search: buyerQuery.trim() || undefined,
+      status: "active",
+      limit: 8,
+    }),
     enabled: open && scope?.kind !== "demand",
   });
 

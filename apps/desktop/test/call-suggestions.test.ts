@@ -188,7 +188,7 @@ describe('call suggestion UI wiring', () => {
     // 버튼에는 "반영"이 아니라 누르면 일어나는 일을 적는다
     assert.match(cards, /\{SUGGESTION_ACTION_LABEL\[suggestion\.type\]\}/);
     // 희망조건은 지금 값을 읽어 와 견주고, 체크한 항목만 보낸다
-    assert.match(cards, /api\.buyerRequirements\.findOne\(updatePayload\.buyerReqId\)/);
+    assert.match(cards, /buyerRequirementQueries\.detail\(isUpdate \? updatePayload\.buyerReqId : null\)/);
     assert.match(cards, /pickRequirementFields\(fields, rows, included\)/);
     // 값 고쳐서 반영도 체크한 줄에서만 시작한다
     assert.match(cards, /suggestion=\{\{ \.\.\.suggestion, payload: chosenPayload\(\) \}\}/);

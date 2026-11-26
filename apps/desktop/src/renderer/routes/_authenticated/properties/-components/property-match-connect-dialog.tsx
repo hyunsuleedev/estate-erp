@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { buyerRequirementQueries } from '@/queries/buyer-requirements';
 import { invalidateMatchData } from '@/queries/matches';
 import { toast } from 'sonner';
 import { Check, Loader2, Plus, Search } from 'lucide-react';
@@ -109,13 +110,11 @@ export function PropertyMatchConnectDialog({
 
   // 진행 중인 희망 조건만(완료·보류는 서버에서 뺀다). 맞는지 아닌지는 받아 와서 견준다.
   const buyers = useQuery({
-    queryKey: ['buyer-requirements', 'property-match-connect', deferredQuery],
-    queryFn: () =>
-      api.buyerRequirements.findAll({
-        search: deferredQuery || undefined,
-        status: 'active',
-        limit: 100,
-      }),
+    ...buyerRequirementQueries.list({
+      search: deferredQuery || undefined,
+      status: 'active',
+      limit: 100,
+    }),
     enabled: open && Boolean(listing),
   });
 

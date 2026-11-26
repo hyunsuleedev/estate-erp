@@ -1,4 +1,5 @@
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
+import { buyerRequirementQueries } from "@/queries/buyer-requirements";
 import { invalidateMatchData } from "@/queries/matches";
 import { Link } from "@tanstack/react-router";
 import { useState, type CSSProperties, type ReactNode } from "react";
@@ -259,8 +260,7 @@ export function BuyerStepTable({
   // 희망 조건 화면 · 매물·매칭 탭과 같은 이름표(읽어 둔 것을 함께 쓴다)
   const detailQueries = useQueries({
     queries: requirements.map((requirement) => ({
-      queryKey: ["buyer-requirements", "detail", requirement.id],
-      queryFn: () => api.buyerRequirements.findOne(requirement.id),
+      ...buyerRequirementQueries.detail(requirement.id),
       ...FRESH_ON_RETURN,
     })),
   });

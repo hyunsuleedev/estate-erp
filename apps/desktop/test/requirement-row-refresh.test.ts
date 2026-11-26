@@ -2,19 +2,19 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { QueryClient, InfiniteQueryObserver } from '@tanstack/react-query';
 
-type RefreshWantedRow = (
+type RefreshRequirementRow = (
   client: QueryClient,
   id: string,
   fetchRow: (filter: Record<string, unknown>, id: string) => Promise<unknown>,
 ) => Promise<void>;
 
-async function refreshWantedRow(...args: Parameters<RefreshWantedRow>) {
-  const loaded = (await import('../src/renderer/queries/wanted-row-cache.ts')) as unknown as Record<
+async function refreshRequirementRow(...args: Parameters<RefreshRequirementRow>) {
+  const loaded = (await import('../src/renderer/queries/requirement-row-cache.ts')) as unknown as Record<
     string,
     unknown
   >;
-  const module = (loaded.default ?? loaded) as { refreshWantedRowWith: RefreshWantedRow };
-  return module.refreshWantedRowWith(...args);
+  const module = (loaded.default ?? loaded) as { refreshRequirementRowWith: RefreshRequirementRow };
+  return module.refreshRequirementRowWith(...args);
 }
 
 type Row = {
@@ -36,7 +36,7 @@ const page = (items: Row[], pageNo = 1, totalPages = 1) => ({
 
 /** 받아 둔 목록 하나를 화면에 떠 있는 것처럼(지켜보는 쪽이 있게) 만든다 */
 function mountList(client: QueryClient, filter: Record<string, unknown>, pages: unknown[]) {
-  const queryKey = ['buyer-requirements', 'wanted', 'list', filter];
+  const queryKey = ['buyer-requirements', 'with-matches', 'list', filter];
   let listFetches = 0;
   client.setQueryData(queryKey, { pages, pageParams: pages.map((_, index) => index + 1) });
   const observer = new InfiniteQueryObserver(client, {
@@ -64,7 +64,7 @@ describe('희망매물: 매칭 하나가 바뀌면 그 손님 한 줄만 갈아 
     const list = mountList(client, { status: 'active,hold' }, [page([row('a'), untouched])]);
     const asked: unknown[] = [];
 
-    await refreshWantedRow(client, 'a', async (filter, id) => {
+    await refreshRequirementRow(client, 'a', async (filter, id) => {
       asked.push([filter, id]);
       return row('a', 'negotiating', '2');
     });
@@ -81,7 +81,7 @@ describe('희망매물: 매칭 하나가 바뀌면 그 손님 한 줄만 갈아 
     const client = new QueryClient();
     const list = mountList(client, { matchStages: 'viewing' }, [page([row('a'), row('b')])]);
 
-    await refreshWantedRow(client, 'a', async () => undefined);
+    await refreshRequirementRow(client, 'a', async () => undefined);
 
     assert.deepEqual(list.rows().map((item) => item.id), ['b']);
     const data = client.getQueryData(list.queryKey) as { pages: Array<{ pagination: { total: number } }> };
@@ -94,7 +94,7 @@ describe('희망매물: 매칭 하나가 바뀌면 그 손님 한 줄만 갈아 
     const client = new QueryClient();
     const list = mountList(client, { matchStages: 'negotiating' }, [page([row('b', 'negotiating')])]);
 
-    await refreshWantedRow(client, 'a', async () => row('a', 'negotiating'));
+    await refreshRequirementRow(client, 'a', async () => row('a', 'negotiating'));
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     assert.equal(list.listFetches(), 1);
@@ -105,7 +105,7 @@ describe('희망매물: 매칭 하나가 바뀌면 그 손님 한 줄만 갈아 
     const client = new QueryClient();
     const list = mountList(client, {}, [page([row('b', 'viewing', '1', '나')], 1, 3)]);
 
-    await refreshWantedRow(client, 'z', async () => row('z', 'viewing', '1', '하'));
+    await refreshRequirementRow(client, 'z', async () => row('z', 'viewing', '1', '하'));
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     assert.equal(list.listFetches(), 0);
@@ -117,7 +117,7 @@ describe('희망매물: 매칭 하나가 바뀌면 그 손님 한 줄만 갈아 
     // 51명 중 50명을 받은 채 한 명을 빼기만 하면, 다음 쪽의 시작 자리가 밀려 마지막 손님이 빠진다
     const leaving = new QueryClient();
     const left = mountList(leaving, { matchStages: 'viewing' }, [page([row('a'), row('b')], 1, 2)]);
-    await refreshWantedRow(leaving, 'a', async () => undefined);
+    await refreshRequirementRow(leaving, 'a', async () => undefined);
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(left.listFetches(), 1);
     left.stop();
@@ -125,7 +125,7 @@ describe('희망매물: 매칭 하나가 바뀌면 그 손님 한 줄만 갈아 
     // 받아 둔 범위 안으로 새로 들어온 손님
     const entering = new QueryClient();
     const entered = mountList(entering, {}, [page([row('b', 'viewing', '1', '나')], 1, 3)]);
-    await refreshWantedRow(entering, 'a', async () => row('a', 'viewing', '1', '가'));
+    await refreshRequirementRow(entering, 'a', async () => row('a', 'viewing', '1', '가'));
     await new Promise((resolve) => setTimeout(resolve, 10));
     assert.equal(entered.listFetches(), 1);
     entered.stop();
@@ -135,12 +135,12 @@ describe('희망매물: 매칭 하나가 바뀌면 그 손님 한 줄만 갈아 
     const client = new QueryClient();
     const list = mountList(client, {}, [page([row('a')])]);
     let releaseOld: (value: Row) => void = () => undefined;
-    const old = refreshWantedRow(
+    const old = refreshRequirementRow(
       client,
       'a',
       () => new Promise<Row>((resolve) => { releaseOld = resolve; }),
     );
-    await refreshWantedRow(client, 'a', async () => row('a', 'negotiating', '3'));
+    await refreshRequirementRow(client, 'a', async () => row('a', 'negotiating', '3'));
     releaseOld(row('a', 'buyerInterested', '2'));
     await old;
 
@@ -158,9 +158,9 @@ describe('희망매물: 매칭 하나가 바뀌면 그 손님 한 줄만 갈아 
     };
     const a = gate();
     const c = gate();
-    const first = refreshWantedRow(client, 'a', () => a.promise);
-    await refreshWantedRow(client, 'a', async () => row('a', 'buyerInterested', '2'));
-    const third = refreshWantedRow(client, 'a', () => c.promise);
+    const first = refreshRequirementRow(client, 'a', () => a.promise);
+    await refreshRequirementRow(client, 'a', async () => row('a', 'buyerInterested', '2'));
+    const third = refreshRequirementRow(client, 'a', () => c.promise);
     a.release(row('a', 'suggested', '1'));
     await first;
     c.release(row('a', 'negotiating', '3'));
@@ -172,11 +172,11 @@ describe('희망매물: 매칭 하나가 바뀌면 그 손님 한 줄만 갈아 
 
   it('지금 화면에 없는 목록은 요청하지 않고 낡았다고만 표시한다', async () => {
     const client = new QueryClient();
-    const queryKey = ['buyer-requirements', 'wanted', 'list', { transactionType: 'jeonse' }];
+    const queryKey = ['buyer-requirements', 'with-matches', 'list', { transactionType: 'jeonse' }];
     client.setQueryData(queryKey, { pages: [page([row('a')])], pageParams: [1] });
     let asked = 0;
 
-    await refreshWantedRow(client, 'a', async () => {
+    await refreshRequirementRow(client, 'a', async () => {
       asked += 1;
       return row('a');
     });
