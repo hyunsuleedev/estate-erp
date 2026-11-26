@@ -306,19 +306,6 @@ html[data-renderer-surface="native-tab"] [data-slot="sidebar"][data-preview="tru
 }
 
 /* Side peek stays alongside an interactive list. Keep content mounted until exit ends. */
-[data-property-registration] [data-registration-section] {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0;
-}
-[data-property-registration] [data-registration-step] {
-  display: none;
-}
-[data-property-registration] [data-registration-section] > header {
-  flex-wrap: wrap;
-  row-gap: 4px;
-}
 [data-properties-page] {
   overflow: hidden;
 }

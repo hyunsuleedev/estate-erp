@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ExternalLink, Lock, MoreVertical, PhoneCall, Trash2 } from 'lucide-react';
+import { ExternalLink, MoreVertical, PhoneCall, Trash2 } from 'lucide-react';
 import type { ListingIntake } from '@estate-erp/api-client';
 import {
   IntakeCheckResult,
@@ -518,14 +518,13 @@ export function PropertyBulkActions({ groups }: { groups: BulkActionGroup[] }) {
   );
 }
 
-// ── 비용 요약 (관리비/융자/권리금/내부메모) — 시트 거래 카드용 ──
+// ── 비용 요약 (관리비/융자/권리금) — 시트 거래 카드용 ──
 
 export interface ListingCostExtras {
   maintenanceFee?: number | null;
   maintenanceFeeIncludes?: string[];
   loanAmount?: number | null;
   premium?: number | null;
-  privateMemo?: string | null;
 }
 
 export function ListingCostSummary({ listing }: { listing: ListingCostExtras }) {
@@ -541,30 +540,17 @@ export function ListingCostSummary({ listing }: { listing: ListingCostExtras }) 
     listing.premium ? `권리금 ${formatMoney(listing.premium)}` : null,
   ].filter((item): item is string => Boolean(item));
 
-  const privateMemo = listing.privateMemo?.trim();
-
-  if (costItems.length === 0 && !privateMemo) return null;
+  if (costItems.length === 0) return null;
 
   return (
     <div className="mt-2 space-y-1.5">
-      {costItems.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-muted-foreground">
-          {costItems.map((item) => (
-            <span key={item} className="tabular-nums">
-              {item}
-            </span>
-          ))}
-        </div>
-      )}
-      {privateMemo && (
-        <p className="flex items-start gap-1.5 rounded-md bg-muted/60 px-2 py-1.5 text-[12px] leading-5 text-muted-foreground">
-          <Lock className="mt-0.5 size-3 shrink-0" />
-          <span className="min-w-0">
-            <span className="mr-1 font-medium text-foreground/70">내부 전용</span>
-            {privateMemo}
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-muted-foreground">
+        {costItems.map((item) => (
+          <span key={item} className="tabular-nums">
+            {item}
           </span>
-        </p>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

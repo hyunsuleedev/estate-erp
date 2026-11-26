@@ -921,7 +921,6 @@ async function seedListings(
     maintenanceFee?: number;
     maintenanceFeeIncludes?: string[];
     loanAmount?: number;
-    privateMemo?: string;
     moveInAvailableType?: string;
     isPaused?: boolean;
     memo: string;
@@ -935,7 +934,6 @@ async function seedListings(
       maintenanceFee: 25,
       maintenanceFeeIncludes: ['cleaning', 'parking'],
       loanAmount: 50000, // 융자 5억 (잔금 시 말소)
-      privateMemo: `${DEMO_TAG} 내부메모 — 집주인 깐깐함, 가격 얘기 먼저 꺼내지 말 것`,
       moveInAvailableType: 'immediate',
       memo: `${DEMO_TAG} 급매 · 로얄층 남향 · 즉시입주`,
       priceHistory: {
@@ -959,7 +957,6 @@ async function seedListings(
       intakeKey: 'P2',
       transactionType: 'sale',
       price: 319000,
-      privateMemo: `${DEMO_TAG} 내부메모 — 호가 높음, 1억까지 조정 여지 있음`,
       memo: `${DEMO_TAG} 고층 · 한강뷰 · 펜트하우스`,
     },
     {
@@ -1041,7 +1038,6 @@ async function seedListings(
         maintenanceFee: def.maintenanceFee ?? null,
         maintenanceFeeIncludes: def.maintenanceFeeIncludes ?? [],
         loanAmount: def.loanAmount ?? null,
-        privateMemo: def.privateMemo ?? null,
         moveInAvailableType: def.moveInAvailableType ?? null,
         isPaused: def.isPaused ?? false,
         memo: def.memo,

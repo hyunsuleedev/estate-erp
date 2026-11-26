@@ -22,7 +22,6 @@ export interface ListingIntakeListing {
   maintenanceFeeIncludes: string[];
   loanAmount: number | null;
   premium: number | null;
-  privateMemo: string | null;
   moveInAvailableType: string | null;
   moveInAvailableFrom: string | null;
   moveInAvailableTo: string | null;

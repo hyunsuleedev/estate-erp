@@ -150,9 +150,6 @@ const listingInput = obj(
     maintenanceFeeIncludes,
     loanAmount: num('융자금/근저당 설정액 (만원)'),
     premium: num('상가 권리금 (만원)'),
-    privateMemo: str(
-      '내부 전용 메모 — 네트워크 공유/외부 노출 절대 금지. MCP 조회 응답에는 포함되지 않습니다.',
-    ),
     moveInAvailableType: str('입주가능 유형'),
     moveInAvailableFrom: str('입주가능 시작일 (ISO)'),
     moveInAvailableTo: str('입주가능 종료일 (ISO)'),
@@ -252,7 +249,7 @@ export class McpToolsService {
           {
             type: 'text',
             // 들여쓰기 없이 보낸다. 읽는 쪽은 AI라 줄바꿈이 필요 없고, 응답이 절반 가까이 줄어든다.
-            text: JSON.stringify(this.redactPrivateFields(data)),
+            text: JSON.stringify(data),
           },
         ],
         isError: false,
@@ -283,33 +280,6 @@ export class McpToolsService {
     if (entry.requiredScopes.length === 0) return true;
     const scopes = new Set(getRoleScopes(ctx.role ?? ''));
     return entry.requiredScopes.every((scope) => scopes.has(scope));
-  }
-
-  /**
-   * MCP 응답에서 내부 전용 필드를 제거한다.
-   * Listing.privateMemo 는 네트워크 공유/외부(MCP 포함) 노출 절대 금지 필드 —
-   * 어떤 도구가 어떤 include 로 Listing 을 직렬화하든 여기서 일괄 차단한다.
-   */
-  private redactPrivateFields(value: unknown): unknown {
-    if (Array.isArray(value)) {
-      return value.map((item) => this.redactPrivateFields(item));
-    }
-    // Date/Decimal 등 class instance 는 toJSON 직렬화를 보존하기 위해 건드리지 않는다.
-    if (!this.isPlainObject(value)) {
-      return value;
-    }
-    const result: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(value)) {
-      if (key === 'privateMemo') continue;
-      result[key] = this.redactPrivateFields(val);
-    }
-    return result;
-  }
-
-  private isPlainObject(value: unknown): value is Record<string, unknown> {
-    if (!value || typeof value !== 'object') return false;
-    const proto: unknown = Object.getPrototypeOf(value);
-    return proto === Object.prototype || proto === null;
   }
 
   private clampLimit(args: Record<string, unknown>, max = 100): number {
@@ -903,9 +873,6 @@ export class McpToolsService {
           maintenanceFeeIncludes,
           loanAmount: num('융자금/근저당 설정액 (만원)'),
           premium: num('상가 권리금 (만원)'),
-          privateMemo: str(
-            '내부 전용 메모 — 네트워크 공유/외부 노출 절대 금지. MCP 조회 응답에는 포함되지 않습니다.',
-          ),
           memo: str('메모'),
         },
         ['intakeId', 'propertyId', 'transactionType'],
@@ -926,7 +893,6 @@ export class McpToolsService {
           maintenanceFeeIncludes: a.maintenanceFeeIncludes as string[],
           loanAmount: a.loanAmount as number,
           premium: a.premium as number,
-          privateMemo: a.privateMemo as string,
           memo: a.memo as string,
         });
       },
@@ -945,9 +911,6 @@ export class McpToolsService {
           maintenanceFeeIncludes,
           loanAmount: num('융자금/근저당 설정액 (만원)'),
           premium: num('상가 권리금 (만원)'),
-          privateMemo: str(
-            '내부 전용 메모 — 네트워크 공유/외부 노출 절대 금지. MCP 조회 응답에는 포함되지 않습니다.',
-          ),
           isPaused: bool('이 거래 옵션 일시 중단 여부'),
           memo: str('메모'),
         },
@@ -962,7 +925,6 @@ export class McpToolsService {
           maintenanceFeeIncludes: a.maintenanceFeeIncludes as string[],
           loanAmount: a.loanAmount as number,
           premium: a.premium as number,
-          privateMemo: a.privateMemo as string,
           isPaused: a.isPaused as boolean,
           memo: a.memo as string,
         }),

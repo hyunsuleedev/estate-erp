@@ -143,7 +143,7 @@
 
 ## 공동 중개망과 협력업체
 
-- 공유 매물(`NetworkSharedProperty`)은 우리 Property 중에서 골라 올리고, 어떤 칸을 보여 줄지 칸마다 정한다. `Listing.privateMemo`는 어떤 경로로도 밖에 나가지 않는다.
+- 공유 매물(`NetworkSharedProperty`)은 우리 Property 중에서 골라 올리고, 어떤 칸을 보여 줄지 칸마다 정한다.
 - 협력업체는 `officeId`가 비어 있으면 플랫폼 공용, 값이 있으면 그 사무소의 단골이다. 공용 업체는 플랫폼 운영자(`User.isPlatformAdmin`)만 고친다.
 
 ## 소비자 사이트

@@ -51,7 +51,6 @@ function listing(overrides: Partial<Listing> = {}): Listing {
     maintenanceFeeIncludes: [],
     loanAmount: null,
     premium: null,
-    privateMemo: null,
     moveInAvailableType: null,
     moveInAvailableFrom: null,
     moveInAvailableTo: null,

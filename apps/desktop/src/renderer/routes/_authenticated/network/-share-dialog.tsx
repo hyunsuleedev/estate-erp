@@ -2,7 +2,7 @@ import { formatUnitName } from '@estate-erp/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { LockIcon, SearchIcon } from 'lucide-react';
+import { SearchIcon } from 'lucide-react';
 import type {
   Listing,
   NetworkSharedPropertyView,
@@ -50,7 +50,7 @@ export interface ShareListingDialogProps {
   sharedListingIds?: string[];
 }
 
-/** Listing → 미리보기용 마스킹 뷰 변환. privateMemo는 어떤 경우에도 포함하지 않는다. */
+/** Listing → 미리보기용 마스킹 뷰 변환. */
 function listingToPreview(listing: Listing): SharedPropertyListingView {
   const site = listing.property?.site;
   const unit = listing.property?.unit;
@@ -75,7 +75,6 @@ function listingToPreview(listing: Listing): SharedPropertyListingView {
     exclusiveAreaM2: unit?.exclusiveAreaM2 ?? unitType?.exclusiveAreaM2 ?? null,
     supplyAreaM2: unit?.supplyAreaM2 ?? unitType?.supplyAreaM2 ?? null,
     unitTypeName: unitType?.name ?? null,
-    // 공개 메모만 — privateMemo(내부 전용)는 미리보기/전송 모두 제외
     memo: listing.memo,
   };
 }
@@ -320,10 +319,6 @@ export function ShareListingDialog({
                   </label>
                 ))}
               </div>
-              <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <LockIcon className="size-3" />
-                내부 전용 메모는 설정과 무관하게 절대 전송되지 않습니다.
-              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">

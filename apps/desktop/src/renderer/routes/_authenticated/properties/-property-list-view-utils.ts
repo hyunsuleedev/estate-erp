@@ -17,7 +17,6 @@ export type ListingSummary = Pick<
   | 'maintenanceFeeIncludes'
   | 'loanAmount'
   | 'premium'
-  | 'privateMemo'
   | 'moveInAvailableType'
   | 'moveInAvailableFrom'
   | 'moveInAvailableTo'

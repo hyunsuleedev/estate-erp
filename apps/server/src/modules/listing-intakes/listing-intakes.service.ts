@@ -280,7 +280,6 @@ interface ListingInputDto {
   maintenanceFeeIncludes?: string[];
   loanAmount?: number | null;
   premium?: number | null;
-  privateMemo?: string | null;
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: Date | string | null;
   moveInAvailableTo?: Date | string | null;
@@ -612,7 +611,6 @@ export class ListingIntakesService {
             maintenanceFeeIncludes: listing.maintenanceFeeIncludes ?? undefined,
             loanAmount: listing.loanAmount,
             premium: listing.premium,
-            privateMemo: listing.privateMemo,
             moveInAvailableType: listing.moveInAvailableType,
             moveInAvailableFrom: listing.moveInAvailableFrom,
             moveInAvailableTo: listing.moveInAvailableTo,
@@ -1535,7 +1533,6 @@ export class ListingIntakesService {
           maintenanceFeeIncludes: true,
           loanAmount: true,
           premium: true,
-          privateMemo: true,
           moveInAvailableType: true,
           moveInAvailableFrom: true,
           moveInAvailableTo: true,
@@ -1618,7 +1615,6 @@ export class ListingIntakesService {
           maintenanceFeeIncludes: true,
           loanAmount: true,
           premium: true,
-          privateMemo: true,
           moveInAvailableType: true,
           moveInAvailableFrom: true,
           moveInAvailableTo: true,

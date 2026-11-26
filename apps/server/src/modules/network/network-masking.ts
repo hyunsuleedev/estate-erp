@@ -24,7 +24,7 @@ export const networkVisibleListingWhere = {
  * 공유 매물 직렬화에 필요한 include.
  *
  * 보안 핵심: Listing은 select 화이트리스트로만 읽는다.
- * privateMemo·loanAmount는 select에 아예 포함되지 않으므로
+ * loanAmount는 select에 아예 포함되지 않으므로
  * 어떤 직렬화 경로로도 응답에 실릴 수 없다 (allowlist by construction).
  */
 export const sharedPropertyInclude = {

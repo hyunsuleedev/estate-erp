@@ -101,7 +101,6 @@ const UPDATABLE_LISTING_FIELDS = [
   'maintenanceFeeIncludes',
   'loanAmount',
   'premium',
-  'privateMemo',
   'moveInAvailableType',
   'moveInAvailableFrom',
   'moveInAvailableTo',

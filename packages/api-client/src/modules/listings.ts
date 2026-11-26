@@ -141,7 +141,6 @@ export interface Listing {
   maintenanceFeeIncludes: string[];
   loanAmount: number | null;
   premium: number | null;
-  privateMemo: string | null;
   moveInAvailableType: string | null;
   moveInAvailableFrom: string | null;
   moveInAvailableTo: string | null;
@@ -217,7 +216,6 @@ export interface Listing {
       maintenanceFeeIncludes: string[];
       loanAmount: number | null;
       premium: number | null;
-      privateMemo: string | null;
       moveInAvailableType: string | null;
       moveInAvailableFrom: string | null;
       moveInAvailableTo: string | null;
@@ -289,7 +287,6 @@ export interface CreateListingDto {
   maintenanceFeeIncludes?: string[];
   loanAmount?: number | null;
   premium?: number | null;
-  privateMemo?: string | null;
   moveInAvailableType?: string;
   moveInAvailableFrom?: string;
   moveInAvailableTo?: string;
@@ -306,7 +303,6 @@ export interface UpdateListingDto {
   maintenanceFeeIncludes?: string[];
   loanAmount?: number | null;
   premium?: number | null;
-  privateMemo?: string | null;
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: string | null;
   moveInAvailableTo?: string | null;

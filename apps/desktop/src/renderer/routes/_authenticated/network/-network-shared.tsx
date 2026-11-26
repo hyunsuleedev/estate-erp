@@ -86,7 +86,7 @@ export const MASK_FLAG_DEFS = [
   { key: 'showFloor', label: '층수', hint: '층 정보' },
   { key: 'showPrice', label: '가격', hint: '매매가/보증금/월세' },
   { key: 'showArea', label: '면적', hint: '전용/공급 면적과 평형' },
-  { key: 'showMemo', label: '메모', hint: '매물 공개 메모 (내부 전용 메모는 항상 제외)' },
+  { key: 'showMemo', label: '메모', hint: '매물 메모' },
   { key: 'showPhotos', label: '사진', hint: '매물 사진' },
 ] as const;
 

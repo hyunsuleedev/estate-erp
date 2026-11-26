@@ -880,7 +880,6 @@ export function PropertyDetailScreen({
       key: row.listing.id,
       label: `${label} 메모`,
       value: row.listing.memo?.trim() || null,
-      privateNote: row.listing.privateMemo?.trim() || null,
       onSave: (memo: string) => saveListingMemo(row.listing, memo),
     };
   });

@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, Lock, Search, UserPlus, Users } from 'lucide-react';
+import { Loader2, Search, UserPlus, Users } from 'lucide-react';
 import type { Contact, Listing } from '@estate-erp/api-client';
 import {
   MAINTENANCE_FEE_INCLUDE_LABELS,
@@ -284,7 +284,6 @@ interface ListingFormState {
   maintenanceFeeIncludes: string[];
   loanAmount: string;
   premium: string;
-  privateMemo: string;
   memo: string;
   moveInAvailableType: string;
   moveInAvailableFrom: string;
@@ -304,7 +303,6 @@ function initListingForm(listing: Listing | null, existingTypes: readonly string
     maintenanceFeeIncludes: listing?.maintenanceFeeIncludes ?? [],
     loanAmount: listing?.loanAmount != null ? String(listing.loanAmount) : '',
     premium: listing?.premium != null ? String(listing.premium) : '',
-    privateMemo: listing?.privateMemo ?? '',
     memo: listing?.memo ?? '',
     // 모르는 값은 비워 두고 "확인 필요"로 보인다(새 조건은 등록 화면과 같이 "날짜 협의")
     moveInAvailableType: listing ? (listing.moveInAvailableType ?? 'unknown') : 'negotiable',
@@ -354,7 +352,6 @@ export function ListingFormDialog({
         maintenanceFeeIncludes: form.maintenanceFeeIncludes,
         loanAmount: parseManwon(form.loanAmount),
         premium: isCommercial ? parseManwon(form.premium) : null,
-        privateMemo: form.privateMemo.trim() || null,
       };
       const moveInType = form.moveInAvailableType;
       const usesFrom = moveInType === 'date' || moveInType === 'range';
@@ -596,20 +593,6 @@ export function ListingFormDialog({
               />
             </div>
           )}
-
-          <div>
-            <Label className="flex items-center gap-1 text-xs">
-              <Lock className="size-3 text-muted-foreground" />
-              내부 전용 메모
-            </Label>
-            <Textarea
-              rows={2}
-              value={form.privateMemo}
-              onChange={(e) => set({ privateMemo: e.target.value })}
-              placeholder="네트워크 공유·외부에 절대 노출되지 않는 메모"
-              className="mt-1 text-sm"
-            />
-          </div>
 
           <div>
             <Label className="text-xs">메모</Label>

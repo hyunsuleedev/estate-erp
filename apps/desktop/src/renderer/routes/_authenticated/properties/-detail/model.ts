@@ -56,13 +56,12 @@ export type DetailUnit = Omit<NonNullable<Property['unit']>, 'siteUnitType'> & {
   siteUnitType?: DetailUnitType | null;
 };
 
-/** 상세 응답의 거래 조건. 비용·비공개 메모까지 서버가 함께 준다. */
+/** 상세 응답의 거래 조건. 비용까지 서버가 함께 준다. */
 export type DetailListing = PropertyListing & {
   maintenanceFee?: number | null;
   maintenanceFeeIncludes?: string[];
   loanAmount?: number | null;
   premium?: number | null;
-  privateMemo?: string | null;
 };
 
 // ── 공통 표시 값 ───────────────────────────────────────────────────

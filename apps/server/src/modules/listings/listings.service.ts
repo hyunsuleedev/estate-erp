@@ -158,7 +158,6 @@ interface ListingCreateDto {
   maintenanceFeeIncludes?: string[];
   loanAmount?: number | null;
   premium?: number | null;
-  privateMemo?: string | null;
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: Date | string | null;
   moveInAvailableTo?: Date | string | null;
@@ -175,7 +174,6 @@ interface ListingUpdateDto {
   maintenanceFeeIncludes?: string[];
   loanAmount?: number | null;
   premium?: number | null;
-  privateMemo?: string | null;
   moveInAvailableType?: string | null;
   moveInAvailableFrom?: Date | string | null;
   moveInAvailableTo?: Date | string | null;
@@ -452,7 +450,6 @@ export class ListingsService {
                   maintenanceFeeIncludes: true,
                   loanAmount: true,
                   premium: true,
-                  privateMemo: true,
                   moveInAvailableType: true,
                   moveInAvailableFrom: true,
                   moveInAvailableTo: true,
@@ -693,7 +690,6 @@ export class ListingsService {
         maintenanceFeeIncludes: dto.maintenanceFeeIncludes ?? undefined,
         loanAmount: dto.loanAmount,
         premium: dto.premium,
-        privateMemo: dto.privateMemo,
         moveInAvailableType: dto.moveInAvailableType,
         moveInAvailableFrom: dto.moveInAvailableFrom,
         moveInAvailableTo: dto.moveInAvailableTo,

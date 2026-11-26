@@ -156,10 +156,9 @@ describe('serializeSharedProperty (마스킹 직렬화)', () => {
     expect(view.listing.dongName).toBeNull();
   });
 
-  it('privateMemo·loanAmount는 어떤 viewer에게도 절대 포함되지 않는다', () => {
+  it('loanAmount는 어떤 viewer에게도 절대 포함되지 않는다', () => {
     // 직렬화 입력에 실수로 민감 필드가 섞여 들어와도 allowlist 직렬화라 통과 불가
     const record = buildRecord();
-    (record.listing as Record<string, unknown>).privateMemo = '집주인 이혼소송 중';
     (record.listing as Record<string, unknown>).loanAmount = 50000;
 
     const mineView = serializeSharedProperty(record, 'office-sharer');
@@ -167,9 +166,7 @@ describe('serializeSharedProperty (마스킹 직렬화)', () => {
 
     for (const view of [mineView, otherView]) {
       const json = JSON.stringify(view);
-      expect(json).not.toContain('privateMemo');
       expect(json).not.toContain('loanAmount');
-      expect(json).not.toContain('이혼소송');
     }
   });
 

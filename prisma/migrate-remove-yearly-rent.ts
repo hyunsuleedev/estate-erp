@@ -35,7 +35,6 @@ async function main() {
         price: true,
         deposit: true,
         memo: true,
-        privateMemo: true,
         intake: {
           select: {
             listings: {
@@ -104,22 +103,18 @@ async function main() {
         data: { listingId: survivorId },
       });
 
-      // 연세 조건(공개 memo + 내부 privateMemo)을 생존 매물로 보존 후 삭제
+      // 연세 조건(memo)을 생존 매물로 보존 후 삭제
       const survivor = await tx.listing.findUnique({
         where: { id: survivorId },
-        select: { memo: true, privateMemo: true },
+        select: { memo: true },
       });
       const legacyNote = `[연세 이력 통합: 보증금 ${row.deposit ?? '-'} / 연 ${row.price ?? '-'}만${
         row.memo ? ` — ${row.memo}` : ''
       }]`;
-      const legacyPrivate = row.privateMemo ? `[연세 매물 내부메모] ${row.privateMemo}` : null;
       await tx.listing.update({
         where: { id: survivorId },
         data: {
           memo: [survivor?.memo, legacyNote].filter(Boolean).join(' '),
-          ...(legacyPrivate
-            ? { privateMemo: [survivor?.privateMemo, legacyPrivate].filter(Boolean).join(' ') }
-            : {}),
         },
       });
       await tx.listing.delete({ where: { id: row.id } });

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, CalendarPlus, ClipboardCopy, ExternalLink, Lock, Phone } from 'lucide-react';
+import { ArrowDown, ArrowUp, CalendarPlus, ClipboardCopy, ExternalLink, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatPhoneNumber } from '@/lib/contacts';
@@ -24,7 +24,6 @@ export interface BriefMemo {
   key: string;
   label: string;
   value: string | null;
-  privateNote: string | null;
   onSave: (memo: string) => Promise<void>;
 }
 
@@ -81,14 +80,6 @@ export function BriefSection({
               <dt className="pt-1.5 text-[13px] text-[#37352f]/65">{memo.label}</dt>
               <dd className="-ml-2 min-w-0 text-[14px] [&_button]:text-[14px]">
                 <InlineMemoField label={memo.label} value={memo.value} onSave={memo.onSave} emptyText="메모 추가" />
-                {memo.privateNote && (
-                  <p className="ml-2 mt-1 flex items-start gap-1.5 rounded bg-[rgb(251,243,219)] px-2 py-1.5 text-[13px] leading-[19px] text-[rgb(64,44,27)]">
-                    <Lock className="mt-[3px] size-3 shrink-0 text-[rgb(203,145,47)]" />
-                    <span className="whitespace-pre-wrap break-keep">
-                      <span className="font-medium">내부 전용</span> {memo.privateNote}
-                    </span>
-                  </p>
-                )}
               </dd>
             </div>
           ))}
