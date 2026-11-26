@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   IntakeConfirmationState,
@@ -14,27 +15,18 @@ import {
 } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RealtimeService } from '../../realtime/realtime.service';
 import {
   getIntakeConfirmationState,
   LISTING_INTAKE_STATE_SELECT,
   OCCUPYING_DEALS_SELECT,
 } from '../listings/listing-state';
 import { MATCH_STAGES } from './dto/match.dto';
+import { getMatchStageStorageValues } from './match-row';
 import {
   buyerIntakeContactsInclude,
   withBuyerRequirementContact,
 } from '../buyer-requirements/buyer-requirement.presenter';
-
-function getMatchStageStorageValues(stage: string): string[] {
-  const normalizedStage = normalizeMatchStage(stage);
-  if (normalizedStage === MatchStage.BUYER_INTERESTED) {
-    return [MatchStage.BUYER_INTERESTED, 'buyerContacted'];
-  }
-  if (normalizedStage === MatchStage.VIEWING_CONFIRMED) {
-    return [MatchStage.VIEWING_CONFIRMED, 'ownerContacted'];
-  }
-  return [normalizedStage];
-}
 
 const matchInclude = {
   listing: {
@@ -53,7 +45,8 @@ const matchInclude = {
       property: {
         include: {
           site: true,
-          unit: { include: { dong: true } },
+          // 평형: 호에 면적을 적지 않았으면 평형의 면적을 쓴다 (화면이 읽는데 싣지 않고 있었다)
+          unit: { include: { dong: true, siteUnitType: true } },
           propertyContacts: {
             where: { status: 'active' },
             include: { contact: true },
@@ -98,7 +91,34 @@ export interface MatchesFilter {
 
 @Injectable()
 export class MatchesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly realtime?: RealtimeService,
+  ) {}
+
+  /**
+   * 매칭이 바뀌었다고 알린다. 저장이 끝난 뒤에 부른다. 신호를 못 보내도 저장은 성공이다.
+   * 거래 · 의뢰 · 손님 조건이 바뀌며 매칭이 함께 닫히거나 되살아나는 것은 여기서 알리지 않는다 —
+   * 여러 건이 한꺼번에 바뀌고, 그쪽 신호(거래 · 매물 의뢰)를 받은 화면이 매칭을 통째로 다시 받는다.
+   */
+  private signalChanged(match: {
+    id: string;
+    officeId: string;
+    buyerReqId: string;
+    listing: { propertyId: string; intakeId: string };
+  }) {
+    try {
+      this.realtime?.emitMatchUpdated({
+        officeId: match.officeId,
+        matchId: match.id,
+        buyerReqId: match.buyerReqId,
+        propertyId: match.listing.propertyId,
+        intakeId: match.listing.intakeId,
+      });
+    } catch {
+      // 신호는 덤이다. 화면은 다음에 다시 받을 때 맞춰진다.
+    }
+  }
 
   private readonly matchInclude = matchInclude;
 
@@ -211,6 +231,7 @@ export class MatchesService {
       });
     });
 
+    this.signalChanged(match);
     return this.withPropertyContext(match);
   }
 
@@ -347,6 +368,7 @@ export class MatchesService {
       include: this.matchInclude,
     });
 
+    this.signalChanged(match);
     return this.withPropertyContext(match);
   }
 
@@ -375,6 +397,7 @@ export class MatchesService {
         include: this.matchInclude,
       });
 
+      this.signalChanged(match);
       return this.withPropertyContext(match);
     } catch (error) {
       if (
@@ -443,12 +466,16 @@ export class MatchesService {
       include: this.matchInclude,
     });
 
+    this.signalChanged(match);
     return this.withPropertyContext(match);
   }
 
   async remove(id: string, officeId: string) {
-    await this.findOne(id, officeId);
-    return this.prisma.match.delete({ where: { id } });
+    // 지운 뒤에는 어느 손님 · 어느 집의 매칭이었는지 알 수 없으므로 지우기 전에 읽어 둔다
+    const match = await this.findOne(id, officeId);
+    const removed = await this.prisma.match.delete({ where: { id } });
+    this.signalChanged(match);
+    return removed;
   }
 
   /** 거래 전환 창이 미리 채우는 값: 적어 둔 합의 조건, 없으면 매물 가격. 당사자는 매칭의 손님과 물건의 대표 소유자. */

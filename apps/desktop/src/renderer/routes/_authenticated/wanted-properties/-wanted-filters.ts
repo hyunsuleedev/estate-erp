@@ -1,9 +1,11 @@
-import type { BuyerRequirement } from '@estate-erp/api-client';
-import { sqmToPyeong } from '@estate-erp/shared';
+import type {
+  BuyerRequirementFilterOptions,
+  BuyerRequirementsFilter,
+} from '@estate-erp/api-client';
 
 /*
- * 희망 조건 필터. 진행·보류 조건을 모두 받아 둔 뒤 화면에서 거른다.
- * 범위 판정은 서버 GET /buyer-requirements와 같다: 고객이 값을 정하지 않은 쪽은 걸리지 않는다.
+ * 희망 조건 필터. 거르는 것은 서버가 한다(GET /buyer-requirements) — 이 파일은 화면의 선택을
+ * 서버 조건으로 옮기고 선택지를 만든다. 범위는 겹치면 걸린다: 고객이 값을 정하지 않은 쪽은 걸리지 않는다.
  */
 
 /** 단계 필터의 '매칭 없음' 항목. 단계는 매칭에 붙은 값이라 고객별 보기에서만 쓴다. */
@@ -18,7 +20,10 @@ export interface OpenRange {
 
 export interface RequirementFilters {
   statuses: string[];
-  /** `region:<법정동 코드>` 또는 `site:<단지 id>` */
+  /**
+   * `region:<법정동 코드>` 또는 `site:<단지 id>`. 지역은 고른 곳과 그 아래를 원하는 손님만 걸린다
+   * (강동구를 고르면 고덕동 손님은 걸리고, 서울 전체 손님은 걸리지 않는다 — 서버가 판정한다).
+   */
   locations: string[];
   siteTypes: string[];
   /** 억 단위. 월세 조건은 보증금, 그 밖에는 매매가·전세가와 비교한다. */
@@ -100,219 +105,127 @@ export function toSliderRange(
   return [range?.min ?? rangeMin, range?.max ?? rangeMax];
 }
 
-function overlaps(
-  valueMin: number | null,
-  valueMax: number | null,
-  filter: OpenRange,
-): boolean {
-  if (filter.min !== null && valueMax !== null && valueMax < filter.min) {
-    return false;
-  }
-  if (filter.max !== null && valueMin !== null && valueMin > filter.max) {
-    return false;
-  }
-  return true;
-}
+/** 평 → m² (화면 표시와 같은 환산: 평 = m² × 0.3025, 소수 첫째 자리까지) */
+const PYEONG_PER_SQM_X10 = 3.025;
 
-function scaleRange(range: OpenRange, factor: number): OpenRange {
-  return {
-    min: range.min === null ? null : range.min * factor,
-    max: range.max === null ? null : range.max * factor,
+/**
+ * 화면의 선택을 서버 조건으로 옮긴다. 걸릴 수 있는 조건이 하나도 없으면 null
+ * ("내 손님"을 켠 채 담당자 필터에서 다른 사람만 고른 경우) — 그때는 요청하지 않는다.
+ */
+export function toWantedListFilter({
+  search,
+  stageFilters,
+  transactionType,
+  filters,
+  mineUserId,
+}: {
+  search: string;
+  stageFilters: string[];
+  transactionType: string;
+  filters: RequirementFilters;
+  /** "내 손님"을 켰을 때의 내 id */
+  mineUserId: string | null;
+}): Omit<BuyerRequirementsFilter, 'page' | 'limit'> | null {
+  let assignees = filters.assignees;
+  if (mineUserId) {
+    if (assignees.length > 0 && !assignees.includes(mineUserId)) return null;
+    assignees = [mineUserId];
+  }
+
+  const query: Omit<BuyerRequirementsFilter, 'page' | 'limit'> = {
+    // 완료한 조건은 평소에는 받지 않는다. 상태 필터에서 고른 것만 받는다
+    status: filters.statuses.length > 0 ? filters.statuses.join(',') : OPEN_STATUSES,
   };
-}
-
-/** 화면 표시와 같은 환산을 쓴다. `40평`으로 보이는 조건이 `40평대`에서 빠지면 안 된다. */
-function toDisplayedPyeong(value: number | string | null): number | null {
-  return value === null ? null : sqmToPyeong(Number(value));
-}
-
-function getRegionCode(
-  region: NonNullable<BuyerRequirement['preferredRegions']>[number],
-): string | null {
-  return region.wardCode ?? region.districtCode ?? region.provinceCode;
-}
-
-function matchesLocation(
-  requirement: BuyerRequirement,
-  selected: string[],
-): boolean {
-  const regionCodes = (requirement.preferredRegions ?? [])
-    .map(getRegionCode)
-    .filter((code): code is string => Boolean(code));
-  const siteIds = (requirement.preferredSites ?? []).map((site) => site.siteId);
-
-  return selected.some((value) => {
-    if (value.startsWith('site:')) {
-      return siteIds.includes(value.slice('site:'.length));
-    }
-    // 법정동 코드는 앞자리가 상위 지역이다. 강동구를 고르면 고덕동을 원하는 고객이,
-    // 고덕동을 고르면 강동구 전체를 원하는 고객이 함께 걸린다.
-    const code = value.slice('region:'.length);
-    return regionCodes.some(
-      (regionCode) => regionCode.startsWith(code) || code.startsWith(regionCode),
-    );
-  });
-}
-
-function toLocalDateKey(value: string): string {
-  const date = new Date(value);
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${date.getFullYear()}-${month}-${day}`;
-}
-
-export function matchesRequirementFilters(
-  requirement: BuyerRequirement,
-  filters: RequirementFilters,
-): boolean {
-  if (
-    filters.statuses.length > 0 &&
-    !filters.statuses.includes(requirement.status)
-  ) {
-    return false;
+  const text = search.trim();
+  if (text) {
+    query.search = text;
+    query.searchMatches = true;
   }
-  if (
-    filters.locations.length > 0 &&
-    !matchesLocation(requirement, filters.locations)
-  ) {
-    return false;
-  }
-  if (
-    filters.siteTypes.length > 0 &&
-    !filters.siteTypes.some((type) => requirement.siteTypes?.includes(type))
-  ) {
-    return false;
-  }
+  if (stageFilters.length > 0) query.matchStages = stageFilters.join(',');
+  if (transactionType) query.transactionType = transactionType;
+  if (filters.locations.length > 0) query.locations = filters.locations.join(',');
+  if (filters.siteTypes.length > 0) query.siteTypes = filters.siteTypes.join(',');
+  if (assignees.length > 0) query.assignedToId = assignees.join(',');
+  if (filters.urgencies.length > 0) query.urgency = filters.urgencies.join(',');
+
   if (filters.budget) {
-    const budget = scaleRange(filters.budget, 10000);
-    const isMonthly = requirement.transactionType === 'monthly';
-    const valueMin = isMonthly ? requirement.depositMin : requirement.priceMin;
-    const valueMax = isMonthly ? requirement.depositMax : requirement.priceMax;
-    if (!overlaps(valueMin, valueMax, budget)) return false;
+    // 억 → 만원
+    if (filters.budget.min !== null) query.budgetMin = filters.budget.min * 10000;
+    if (filters.budget.max !== null) query.budgetMax = filters.budget.max * 10000;
   }
   if (filters.monthlyRent) {
-    if (
-      requirement.transactionType !== 'monthly' ||
-      !overlaps(
-        requirement.monthlyRentMin,
-        requirement.monthlyRentMax,
-        filters.monthlyRent,
-      )
-    ) {
-      return false;
+    // 월세 금액은 월세 조건에만 뜻이 있다 (매매 조건의 빈 월세 칸이 걸리지 않게)
+    query.transactionType = 'monthly';
+    if (filters.monthlyRent.min !== null) query.monthlyRentMin = filters.monthlyRent.min;
+    if (filters.monthlyRent.max !== null) query.monthlyRentMax = filters.monthlyRent.max;
+  }
+  if (filters.area) {
+    // 서버는 m²로 견준다. 화면에 `40평`으로 보이는 조건이 `40평`에서 빠지지 않게,
+    // 화면의 반올림(소수 첫째 자리)으로 그 평수가 되는 m²의 끝까지 넓혀 보낸다. 면적은 소수 둘째 자리까지 저장된다.
+    if (filters.area.min !== null) {
+      query.areaMin = Math.ceil(((filters.area.min * 10 - 0.5) / PYEONG_PER_SQM_X10) * 100) / 100;
+    }
+    if (filters.area.max !== null) {
+      query.areaMax =
+        (Math.ceil(((filters.area.max * 10 + 0.5) / PYEONG_PER_SQM_X10) * 100) - 1) / 100;
     }
   }
-  if (
-    filters.area &&
-    !overlaps(
-      toDisplayedPyeong(requirement.areaMin),
-      toDisplayedPyeong(requirement.areaMax),
-      filters.area,
-    )
-  ) {
-    return false;
-  }
-  if (
-    filters.assignees.length > 0 &&
-    !filters.assignees.includes(requirement.assignedToId ?? NO_ASSIGNEE)
-  ) {
-    return false;
-  }
-  if (
-    filters.urgencies.length > 0 &&
-    !filters.urgencies.includes(requirement.urgency)
-  ) {
-    return false;
-  }
-  if (filters.moveInFrom || filters.moveInTo) {
-    // 입주일을 정하지 않은 조건은 기간 안에 있다고 볼 수 없으므로 뺀다
-    if (!requirement.moveInDate) return false;
-    const moveIn = toLocalDateKey(requirement.moveInDate);
-    if (filters.moveInFrom && moveIn < filters.moveInFrom) return false;
-    if (filters.moveInTo && moveIn > filters.moveInTo) return false;
-  }
-  return true;
+  // 날의 경계는 한국 시각이다. 입주일을 정하지 않은 조건은 기간 안에 있다고 볼 수 없어 서버가 뺀다
+  if (filters.moveInFrom) query.moveInAfter = `${filters.moveInFrom}T00:00:00+09:00`;
+  if (filters.moveInTo) query.moveInBefore = `${filters.moveInTo}T23:59:59.999+09:00`;
+  return query;
+}
+
+const OPEN_STATUSES = 'active,hold';
+
+/** 필터 선택지를 받을 범위: 지금 목록이 보여 주는 상태들 */
+export function getFilterOptionsStatus(filters: RequirementFilters): string {
+  return filters.statuses.includes('completed') ? `${OPEN_STATUSES},completed` : OPEN_STATUSES;
 }
 
 /** 선택지는 실제 조건에 등록된 지역·단지만 보여준다. 골라도 결과가 없는 항목을 만들지 않기 위해서다. */
-export function getLocationFilterOptions(requirements: BuyerRequirement[]) {
-  const regions = new Map<string, string>();
-  const sites = new Map<string, string>();
-
-  for (const requirement of requirements) {
-    for (const region of requirement.preferredRegions ?? []) {
-      const code = getRegionCode(region);
-      const name =
-        region.ward?.name ?? region.district?.name ?? region.province?.name;
-      if (code && name) regions.set(code, name);
-    }
-    for (const site of requirement.preferredSites ?? []) {
-      if (site.site?.name) sites.set(site.siteId, site.site.name);
-    }
-  }
-
+export function getLocationFilterOptions(options: BuyerRequirementFilterOptions | undefined) {
   const byLabel = (left: { label: string }, right: { label: string }) =>
     left.label.localeCompare(right.label, 'ko');
   return [
-    ...Array.from(regions, ([code, label]) => ({
-      value: `region:${code}`,
-      label,
-      meta: '지역',
-    })).sort(byLabel),
-    ...Array.from(sites, ([id, label]) => ({
-      value: `site:${id}`,
-      label,
-      meta: '단지',
-    })).sort(byLabel),
+    ...(options?.regions ?? [])
+      .map((region) => ({ value: `region:${region.code}`, label: region.name, meta: '지역' }))
+      .sort(byLabel),
+    ...(options?.sites ?? [])
+      .map((site) => ({ value: `site:${site.id}`, label: site.name, meta: '단지' }))
+      .sort(byLabel),
   ];
 }
 
 /**
- * 지금 목록에서 고를 수 없는 값을 필터에서 뺀다. 조건이 완료·삭제되어 목록에서 빠지면
+ * 지금 고를 수 없는 값을 필터에서 뺀다. 조건이 완료·삭제되어 목록에서 빠지면
  * 그 조건에만 있던 단지·담당자가 선택에 남아, 선택지에도 없는 값 때문에 목록이 비어 버린다.
- * 원래 선택은 그대로 두므로 그 값이 목록에 다시 생기면 다시 적용된다.
+ * 원래 선택은 그대로 두므로 그 값이 다시 생기면 다시 적용된다.
+ * 선택지를 아직 받지 못했으면(undefined) 아무것도 빼지 않는다.
  */
 export function scopeRequirementFilters(
   filters: RequirementFilters,
-  requirements: BuyerRequirement[],
-  /** keepCompleted: 완료 조건을 따로 받아 온 뒤라면, 완료가 하나도 없어도 '완료' 선택을 그대로 둔다 */
-  options: { keepCompleted?: boolean } = {},
+  options: BuyerRequirementFilterOptions | undefined,
 ): RequirementFilters {
-  const hasCompleted =
-    options.keepCompleted === true ||
-    requirements.some((item) => item.status === 'completed');
-  const locations = new Set(
-    getLocationFilterOptions(requirements).map((option) => option.value),
-  );
-  const assignees = new Set(
-    getAssigneeFilterOptions(requirements).map((option) => option.value),
-  );
-
-  return {
-    ...filters,
-    statuses: hasCompleted
-      ? filters.statuses
-      : filters.statuses.filter((status) => status !== 'completed'),
+  if (!options) return filters;
+  const locations = new Set(getLocationFilterOptions(options).map((option) => option.value));
+  const assignees = new Set(getAssigneeFilterOptions(options).map((option) => option.value));
+  const scoped = {
     locations: filters.locations.filter((value) => locations.has(value)),
     assignees: filters.assignees.filter((value) => assignees.has(value)),
   };
+  // 빠진 것이 없으면 같은 객체를 돌려준다 (조회 조건이 괜히 바뀌어 다시 받지 않게)
+  return scoped.locations.length === filters.locations.length &&
+    scoped.assignees.length === filters.assignees.length
+    ? filters
+    : { ...filters, ...scoped };
 }
 
-export function getAssigneeFilterOptions(requirements: BuyerRequirement[]) {
-  const assignees = new Map<string, string>();
-  let hasUnassigned = false;
-
-  for (const requirement of requirements) {
-    if (!requirement.assignedToId) hasUnassigned = true;
-    else if (requirement.assignedTo) {
-      assignees.set(requirement.assignedToId, requirement.assignedTo.name);
-    }
-  }
-
+export function getAssigneeFilterOptions(options: BuyerRequirementFilterOptions | undefined) {
   return [
-    ...Array.from(assignees, ([value, label]) => ({ value, label })).sort(
-      (left, right) => left.label.localeCompare(right.label, 'ko'),
-    ),
-    ...(hasUnassigned ? [{ value: NO_ASSIGNEE, label: '담당자 없음' }] : []),
+    ...(options?.assignees ?? [])
+      .map((assignee) => ({ value: assignee.id, label: assignee.name }))
+      .sort((left, right) => left.label.localeCompare(right.label, 'ko')),
+    ...(options?.hasUnassigned ? [{ value: NO_ASSIGNEE, label: '담당자 없음' }] : []),
   ];
 }

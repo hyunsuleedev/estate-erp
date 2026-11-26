@@ -2,6 +2,7 @@ import { formatPlaceLabel, MatchStage, normalizeMatchStage } from "@estate-erp/s
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { invalidateMatchData } from "@/queries/matches";
 import { ArrowUpRight, Link2, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import type {
@@ -308,7 +309,7 @@ export function MatchSection({
       toast.success("매물을 연결했습니다.");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] }),
-        queryClient.invalidateQueries({ queryKey: ["matches"] }),
+        invalidateMatchData(queryClient),
       ]);
     },
     onError: (error: Error) => {

@@ -10,7 +10,7 @@ import {
   Tag,
   UserRound,
 } from 'lucide-react';
-import type { BuyerRequirement } from '@estate-erp/api-client';
+import type { BuyerRequirementFilterOptions } from '@estate-erp/api-client';
 import {
   ChecklistFilterPanel,
   summarizeSelection,
@@ -103,7 +103,7 @@ function formatMonthlyRentLabel(min: number, max: number) {
 export function WantedFilterBar({
   filters,
   onFiltersChange,
-  requirements,
+  filterOptions,
   stageOptionsPrefix,
   stageFilters,
   onStageFiltersChange,
@@ -118,7 +118,8 @@ export function WantedFilterBar({
   onMineOnlyChange?: (mineOnly: boolean) => void;
   filters: RequirementFilters;
   onFiltersChange: Dispatch<SetStateAction<RequirementFilters>>;
-  requirements: BuyerRequirement[];
+  /** 지금 조건들에 실제로 있는 지역 · 단지 · 담당자 (서버가 모아 준다) */
+  filterOptions: BuyerRequirementFilterOptions | undefined;
   /** 고객별 보기에서만 쓰는 '매칭 없음' 같은 앞쪽 선택지 */
   stageOptionsPrefix: { value: string; label: string }[];
   stageFilters: string[];
@@ -133,12 +134,12 @@ export function WantedFilterBar({
 
   const stageOptions = [...stageOptionsPrefix, ...STAGE_OPTIONS];
   const locationOptions = useMemo(
-    () => getLocationFilterOptions(requirements),
-    [requirements],
+    () => getLocationFilterOptions(filterOptions),
+    [filterOptions],
   );
   const assigneeOptions = useMemo(
-    () => getAssigneeFilterOptions(requirements),
-    [requirements],
+    () => getAssigneeFilterOptions(filterOptions),
+    [filterOptions],
   );
   // '완료'는 늘 고를 수 있다. 고르면 화면이 완료한 조건을 받아 와 함께 보여 준다
   // (평소 목록은 활성 · 보류만 받는다). 다른 곳에서 구한 손님을 다시 찾을 때 쓴다.

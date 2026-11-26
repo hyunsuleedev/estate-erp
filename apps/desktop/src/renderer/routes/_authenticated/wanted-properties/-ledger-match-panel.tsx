@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { invalidateMatchData } from "@/queries/matches";
 import { useNavigate } from "@tanstack/react-router";
 import { GitBranch, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -91,7 +92,7 @@ export function LedgerMatchPanel({
   const summary = useMemo(() => getMatchKpis(matches), [matches]);
 
   const invalidateRelatedQueries = () => {
-    void queryClient.invalidateQueries({ queryKey: ["matches"] });
+    void invalidateMatchData(queryClient);
     void queryClient.invalidateQueries({ queryKey: ["projects"] });
     void queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] });
     void queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });

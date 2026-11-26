@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { patchWantedMatch } from '@/queries/buyer-requirements';
+import { refreshMatchData } from '@/queries/matches';
 import { AlertTriangle, CalendarPlus, MessageSquarePlus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Match } from '@estate-erp/api-client';
@@ -78,8 +80,8 @@ export function MatchDetailDialog({
         memo,
         expectedUpdatedAt: match.updatedAt,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    onSuccess: (updated) => {
+      void refreshMatchData(queryClient, queryClient, updated.buyerReqId);
       setIsEditingMemo(false);
       toast.success('메모를 저장했습니다');
     },
@@ -395,7 +397,15 @@ function AgreedTermsSection({ match }: { match: Match }) {
       queryClient.setQueryData<Match[]>(['matches'], (current) =>
         current?.map((item) => (item.id === updated.id ? updated : item)),
       );
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      // 희망매물 목록은 손님 줄 안에 매칭을 싣는다. 고친 칸만 덮어 곧장 바뀌게 한다
+      patchWantedMatch(queryClient, updated.id, {
+        agreedPrice: updated.agreedPrice,
+        agreedDeposit: updated.agreedDeposit,
+        agreedMonthlyRent: updated.agreedMonthlyRent,
+        agreedMoveInDate: updated.agreedMoveInDate,
+        updatedAt: updated.updatedAt,
+      });
+      void refreshMatchData(queryClient, queryClient, updated.buyerReqId);
       toast.success('합의 조건을 저장했습니다');
     },
     onError: (error: Error) => {

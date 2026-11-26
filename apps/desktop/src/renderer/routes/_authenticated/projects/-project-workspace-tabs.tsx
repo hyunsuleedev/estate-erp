@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { invalidateMatchData } from "@/queries/matches";
 import { useState, type ReactNode } from "react";
 import type { CommissionPayment, Match, ProjectStep, ProjectStepDeal } from "@estate-erp/api-client";
 import { MatchStage, normalizeMatchStage } from "@estate-erp/shared";
@@ -186,7 +187,7 @@ export function useMatchStageChange(onConvert: (match: Match) => void) {
   const mutation = useMutation({
     mutationFn: ({ id, stage }: { id: string; stage: string }) => api.matches.updateStage(id, { stage }),
     onSuccess: (_match, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["matches"] });
+      void invalidateMatchData(queryClient);
       // 진행 계획 단계의 매칭 수 · 상태도 바뀐다
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success(

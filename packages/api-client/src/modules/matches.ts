@@ -1,8 +1,7 @@
 import type { RequestFn } from '../client.js';
 import type { BuyerRequirement } from './buyer-requirements.js';
 import type { CalendarEvent } from './calendar-events.js';
-import type { Listing, ListingIntakeSummary, ListingOccupyingDeal } from './listings.js';
-import type { Property } from './properties.js';
+import type { Listing, ListingIntakeState, ListingOccupyingDeal } from './listings.js';
 
 /** Match 응답에 동봉되는 Deal 연결 요약 (dealLinkage) */
 export interface MatchDealLink {
@@ -20,11 +19,66 @@ export interface MatchIntakeListing {
   deals?: ListingOccupyingDeal[];
 }
 
-export type MatchListing = Omit<Listing, 'intake'> & {
-  intake?: ListingIntakeSummary & { listings?: MatchIntakeListing[] };
+/** 매칭 줄에 실리는 집: 어느 집인지(단지 · 동 · 호)와 관련인 */
+export interface MatchRowProperty {
+  id: string;
+  siteId: string;
+  unitId: string | null;
+  site?: {
+    id: string;
+    name: string;
+    type: string;
+    roadAddress: string | null;
+    jibunAddress: string | null;
+  };
+  unit?: {
+    id: string;
+    name: string | null;
+    floor: number | null;
+    floorEnd?: number | null;
+    floorLabel?: string | null;
+    exclusiveAreaM2: number | null;
+    supplyAreaM2: number | null;
+    dong?: { id: string; name: string; isPlaceholder?: boolean } | null;
+    siteUnitType?: {
+      id: string;
+      name: string;
+      exclusiveAreaM2: number | null;
+      supplyAreaM2: number | null;
+    } | null;
+  } | null;
+  propertyContacts?: Array<{
+    id: string;
+    role: string;
+    isPrimary?: boolean;
+    contactId?: string;
+    contact?: { id: string; name: string; phone: string | null } | null;
+  }>;
+}
+
+export type MatchRowListing = Pick<
+  Listing,
+  | 'id'
+  | 'propertyId'
+  | 'intakeId'
+  | 'transactionType'
+  | 'price'
+  | 'deposit'
+  | 'monthlyRent'
+  | 'isPaused'
+  | 'moveInAvailableFrom'
+  | 'moveInAvailableTo'
+  | 'deals'
+> & {
+  intake?: ListingIntakeState & { listings?: MatchIntakeListing[] };
+  property?: MatchRowProperty;
 };
 
-export interface Match {
+/**
+ * 매칭의 가벼운 줄. 손님 목록의 줄 안에 실려 온다(GET /buyer-requirements?expand=matches).
+ * 손님 쪽 정보와 단지의 나머지 칸은 없다 — 그것은 매칭 상세(GET /matches/:id)에 있다.
+ */
+export interface MatchRow {
   id: string;
   officeId: string;
   listingId: string;
@@ -32,24 +86,27 @@ export interface Match {
   buyerReqId: string;
   stage: string;
   closedFromStage: string | null;
-  /** 종료 이유 (MatchClosedReason): manual / other_buyer_contracted / intake_closed / deal_cancelled */
   closedReason: string | null;
-  /** 자동 종료를 일으킨 거래 */
   closedByDealId: string | null;
   memo: string | null;
-  /** 협상하며 적어 둔 합의 조건 (만원). 거래로 전환한 뒤에는 Deal 쪽이 기준이다. */
   agreedPrice: number | null;
   agreedDeposit: number | null;
   agreedMonthlyRent: number | null;
-  /** ISO 날짜 */
   agreedMoveInDate: string | null;
   createdAt: string;
   updatedAt: string;
-  property?: Property;
-  listing?: MatchListing;
-  buyerRequirement?: BuyerRequirement;
+  listing?: MatchRowListing;
   calendarEvents?: CalendarEvent[];
   deals?: MatchDealLink[];
+}
+
+/**
+ * 매칭. 손님 쪽(`buyerRequirement`)과 집의 바로 가기(`property`)는 매칭 상세와 GET /matches에 실려 온다.
+ * 손님 목록 줄 안의 매칭에는 없으므로 화면이 그 줄의 손님을 붙여 쓴다.
+ */
+export interface Match extends MatchRow {
+  property?: MatchRowProperty;
+  buyerRequirement?: BuyerRequirement;
 }
 
 export interface CreateMatchDto {

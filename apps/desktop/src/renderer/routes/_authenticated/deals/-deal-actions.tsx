@@ -1,5 +1,6 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateMatchData } from '@/queries/matches';
 import { toast } from 'sonner';
 import { ApiError, type BuyerRequirement, type DealListItem as Deal } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
@@ -574,7 +575,7 @@ function CompleteBuyerRequirementDialog({ deal, onClose }: { deal: Deal; onClose
     },
     onSuccess: (closedMatches) => {
       void queryClient.invalidateQueries({ queryKey: ['buyer-requirements'] });
-      void queryClient.invalidateQueries({ queryKey: ['matches'] });
+      void invalidateMatchData(queryClient);
       toast.success(
         closedMatches > 0
           ? `희망 조건을 완료로 바꾸고, 진행 중이던 매칭 ${closedMatches}건을 닫았습니다.`

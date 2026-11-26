@@ -27,6 +27,8 @@ function buildMatch(
     updatedAt: new Date('2026-08-01T09:00:00.000Z'),
     listing: {
       id: 'listing-1',
+      propertyId: 'property-1',
+      intakeId: 'intake-1',
       isPaused: false,
       intake: {
         lifecycleStatus: 'open',
@@ -456,5 +458,74 @@ describe('MatchesService deal-created stage', () => {
     expect(prisma.match.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ stage: 'dealCreated' }) }),
     );
+  });
+});
+
+describe('MatchesService realtime signal', () => {
+  function setupWithRealtime(match: ReturnType<typeof buildMatch>) {
+    const order: string[] = [];
+    const prisma = {
+      match: {
+        findFirst: jest.fn().mockResolvedValue(match),
+        update: jest.fn().mockImplementation(({ data }) => {
+          order.push('save');
+          return { ...match, ...data };
+        }),
+        delete: jest.fn().mockImplementation(() => {
+          order.push('delete');
+          return match;
+        }),
+      },
+    };
+    const realtime = {
+      emitMatchUpdated: jest.fn((_event: Record<string, unknown>) => {
+        order.push('signal');
+      }),
+    };
+    const service = new MatchesService(prisma as never, realtime as never);
+    return { service, realtime, order };
+  }
+
+  it('tells which match, customer and home changed — after the save, ids only', async () => {
+    const match = buildMatch('viewing');
+    const { service, realtime, order } = setupWithRealtime(match);
+
+    await service.updateStage(match.id, match.officeId, { stage: 'negotiating' });
+    await service.updateMemo(match.id, match.officeId, { memo: '메모' });
+    await service.updateAgreedTerms(match.id, match.officeId, { agreedPrice: 100000 });
+
+    expect(order).toEqual(['save', 'signal', 'save', 'signal', 'save', 'signal']);
+    expect(realtime.emitMatchUpdated).toHaveBeenCalledWith({
+      officeId: match.officeId,
+      matchId: match.id,
+      buyerReqId: match.buyerReqId,
+      propertyId: match.listing.propertyId,
+      intakeId: match.listing.intakeId,
+    });
+  });
+
+  it('reads where a match belonged before deleting it, and signals after', async () => {
+    const match = buildMatch('viewing');
+    const { service, realtime, order } = setupWithRealtime(match);
+
+    await service.remove(match.id, match.officeId);
+
+    expect(order).toEqual(['delete', 'signal']);
+    expect(realtime.emitMatchUpdated.mock.calls[0][0]).toMatchObject({
+      matchId: match.id,
+      buyerReqId: match.buyerReqId,
+    });
+  });
+
+  it('keeps the save when the signal cannot be sent', async () => {
+    const match = buildMatch('viewing');
+    const { service, realtime } = setupWithRealtime(match);
+    realtime.emitMatchUpdated.mockImplementation(() => {
+      throw new Error('socket down');
+    });
+
+    await expect(
+      service.updateMemo(match.id, match.officeId, { memo: '메모' }),
+    ).resolves.toMatchObject({ memo: '메모' });
   });
 });

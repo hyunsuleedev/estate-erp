@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query';
 import type { DealListFilter } from '@estate-erp/api-client';
 
 import { api } from '@/lib/api';
+import { invalidateMatchData } from './matches';
 
 /**
  * 거래 조회는 여기서만 정의한다. 화면이 키를 손으로 적으면 같은 요청이 다른 키로 따로 저장되고
@@ -65,5 +66,5 @@ export function invalidateDealData(queryClient: Invalidator): void {
   void queryClient.invalidateQueries({ queryKey: ['properties'] });
   void queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
   void queryClient.invalidateQueries({ queryKey: ['listings'] });
-  void queryClient.invalidateQueries({ queryKey: ['matches'] });
+  void invalidateMatchData(queryClient);
 }

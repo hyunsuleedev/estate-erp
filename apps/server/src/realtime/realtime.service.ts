@@ -32,6 +32,16 @@ export interface DealUpdatedEvent {
   intakeId: string | null;
 }
 
+export interface MatchUpdatedEvent {
+  officeId: string;
+  matchId: string;
+  /** 그 매칭의 손님 조건. 희망매물 목록은 손님 줄 안에 매칭을 실으므로 화면이 이 한 줄만 다시 받는다 */
+  buyerReqId: string;
+  /** 그 매칭이 걸린 집 · 의뢰 (매물 쪽 패널이 그 집의 매칭을 보여 준다) */
+  propertyId: string | null;
+  intakeId: string | null;
+}
+
 export interface NotificationCreatedEvent {
   officeId: string;
   /** 수신 대상 사용자 — 사용자별 room이 없으므로 클라이언트가 이 값으로 필터링한다. */
@@ -130,6 +140,19 @@ export class RealtimeService {
     if (event.propertyId) emitter.to(propertyRoom(event.officeId, event.propertyId));
     if (event.intakeId) emitter.to(listingIntakeRoom(event.officeId, event.intakeId));
     emitter.emit('deal.updated', event);
+  }
+
+  /**
+   * 매칭이 바뀌었다(연결 · 단계 · 메모 · 합의 조건 · 삭제). 무엇이 바뀌었는지(id)만 싣는다.
+   * 사무소 전체에 보낸다: 희망매물 목록 · 매물 쪽 패널 · 프로젝트 · 대시보드가 매칭을 보여 준다.
+   */
+  emitMatchUpdated(event: MatchUpdatedEvent) {
+    if (!this.server) return;
+
+    const emitter = this.server.to(officeRoom(event.officeId));
+    if (event.propertyId) emitter.to(propertyRoom(event.officeId, event.propertyId));
+    if (event.intakeId) emitter.to(listingIntakeRoom(event.officeId, event.intakeId));
+    emitter.emit('match.updated', event);
   }
 
   emitListingIntakeUpdated(event: ListingIntakeUpdatedEvent) {

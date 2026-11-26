@@ -9,6 +9,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { invalidateMatchData } from '@/queries/matches';
 import { toast } from 'sonner';
 import {
   AlignLeft,
@@ -538,7 +539,7 @@ export function PropertyMatchPanel({
           ? '매칭을 종료했습니다.'
           : `${getMatchStageLabel(variables.stage)} 단계로 변경했습니다.`,
       );
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      invalidateMatchData(queryClient);
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
     },
     onError: (error: Error) => {
@@ -553,7 +554,7 @@ export function PropertyMatchPanel({
         expectedUpdatedAt: match.updatedAt,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      invalidateMatchData(queryClient);
       toast.success('매칭 메모를 저장했습니다.');
     },
     onError: (error: Error) => {
@@ -589,7 +590,7 @@ export function PropertyMatchPanel({
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      invalidateMatchData(queryClient);
       queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
       toast.success('임장 일정을 저장했습니다.');
     },
@@ -603,13 +604,13 @@ export function PropertyMatchPanel({
     mutationFn: ({ match, terms }: { match: Match; terms: UpdateMatchAgreedTermsDto }) =>
       api.matches.updateAgreedTerms(match.id, terms),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      invalidateMatchData(queryClient);
     },
     onError: (error: Error) => {
       toast.error(propertyErrorMessage(error, '합의 조건을 저장하지 못했습니다. 다시 시도해 주세요.'));
       // 저장되지 않은 값이 저장된 것처럼 입력칸에 남지 않도록, 서버 값을 다시 받고 입력칸을 새로 그린다.
       setAgreedTermsResetKey((key) => key + 1);
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      invalidateMatchData(queryClient);
     },
   });
 

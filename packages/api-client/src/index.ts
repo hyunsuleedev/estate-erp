@@ -138,6 +138,9 @@ export type {
 } from "./modules/tasks.js";
 export type {
   Match,
+  MatchRow,
+  MatchRowListing,
+  MatchRowProperty,
   MatchDealLink,
   CreateMatchDto,
   UpdateMatchAgreedTermsDto,
@@ -242,6 +245,8 @@ export type {
   BuyerRequirementMatch,
   BuyerRequirementConsultation,
   BuyerRequirementsFilter,
+  BuyerRequirementWithMatches,
+  BuyerRequirementFilterOptions,
   CreateBuyerRequirementDto,
   UpdateBuyerRequirementDto,
 } from "./modules/buyer-requirements.js";

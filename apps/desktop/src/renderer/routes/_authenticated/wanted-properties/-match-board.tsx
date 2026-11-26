@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { refreshMatchData } from '@/queries/matches';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -489,7 +490,7 @@ function StageActionPopoverContent({
     onSuccess: async () => {
       toast.success('임장 일정을 지웠습니다');
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['matches'] }),
+        refreshMatchData(queryClient, queryClient, match.buyerReqId),
         queryClient.invalidateQueries({ queryKey: ['calendar-events'] }),
         queryClient.invalidateQueries({ queryKey: ['contacts'] }),
       ]);

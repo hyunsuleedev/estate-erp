@@ -1,4 +1,5 @@
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
+import { invalidateMatchData } from "@/queries/matches";
 import { Link } from "@tanstack/react-router";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -97,7 +98,7 @@ export function useBuyerMatchActions(matches: readonly Match[]) {
   const stageMutation = useMutation({
     mutationFn: ({ id, stage }: { id: string; stage: string }) => api.matches.updateStage(id, { stage }),
     onSuccess: (_data, variables) => {
-      void queryClient.invalidateQueries({ queryKey: ["matches"] });
+      void invalidateMatchData(queryClient);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success(
         variables.stage === MatchStage.CLOSED
@@ -114,7 +115,7 @@ export function useBuyerMatchActions(matches: readonly Match[]) {
     mutationFn: ({ match, memo }: { match: Match; memo: string | null }) =>
       api.matches.updateMemo(match.id, { memo, expectedUpdatedAt: match.updatedAt }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["matches"] });
+      void invalidateMatchData(queryClient);
       toast.success("메모를 저장했습니다");
     },
     onError: (error: Error) => {
@@ -135,7 +136,7 @@ export function useBuyerMatchActions(matches: readonly Match[]) {
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["matches"] });
+      void invalidateMatchData(queryClient);
       void queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
       toast.success("임장 일정을 저장했습니다");
     },
@@ -147,7 +148,7 @@ export function useBuyerMatchActions(matches: readonly Match[]) {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.matches.remove(id),
     onSuccess: (_data, id) => {
-      void queryClient.invalidateQueries({ queryKey: ["matches"] });
+      void invalidateMatchData(queryClient);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       setDeleteMatchId(null);
       if (detailMatchId === id) setDetailMatchId(null);

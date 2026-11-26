@@ -1,4 +1,5 @@
 import type {
+  BuyerRequirementWithMatches,
   CalendarEvent,
   CreateCalendarEventDto,
   Match,
@@ -19,12 +20,7 @@ import { getStatusMeta, type Tone } from '@/lib/status-config';
 import { formatMoney, formatPhone, formatRelativeDayTime } from '@/lib/format';
 import { getIntakeConfirmationState } from '@/lib/listing-status';
 import { formatAreaRange } from '../buyer-requirements/-buyer-utils';
-import {
-  EMPTY_REQUIREMENT_FILTERS,
-  matchesRequirementFilters,
-  NO_MATCH_STAGE,
-  type RequirementFilters,
-} from './-wanted-filters';
+import { NO_MATCH_STAGE } from './-wanted-filters';
 
 export type MatchViewListItem = Match;
 
@@ -686,100 +682,75 @@ function getRequirementSearchText(
 export interface BuyerRequirementGroup {
   buyerReqId: string;
   buyerRequirement: NonNullable<MatchViewListItem['buyerRequirement']>;
+  /** 줄에 보이는 매칭 (단계 필터 · 검색을 거친 것) */
   matches: MatchViewListItem[];
+  /** 이 손님의 매칭 전부. 옆 패널과 "진행 중 N건"은 필터와 상관없이 이것을 쓴다. */
+  allMatches: MatchViewListItem[];
 }
 
 /**
- * 고객별 목록은 희망 조건 한 건이 한 줄이다. 매칭이 아직 없는 조건도 포함한다.
- * - 거래유형: 매칭 없는 조건에는 매물이 없으므로 조건의 거래유형으로 거른다.
- * - 단계: 매칭에 붙은 값이므로, 걸면 해당 단계 매칭이 없는 조건은 숨긴다.
- *   '매칭 없음'을 함께 고르면 매칭이 하나도 없는 조건도 남는다.
- * - 검색: 조건(고객·연락처·지역·단지·메모)에 걸리면 그 조건의 매칭을 모두 보여주고,
- *   매물에만 걸리면 걸린 매칭만 보여준다.
- * - 그 밖의 조건 필터: matchesRequirementFilters
- * - keepRequirementId: 칸 편집기가 열려 있는 조건. 목록이 새로 와서 필터에서 벗어나도 줄을 남긴다.
- *   줄이 사라지면 고치던 입력이 편집기와 함께 사라진다. 편집기를 닫으면 다시 필터를 따른다.
+ * 서버가 준 줄 `{ 손님 조건, 그 손님의 매칭들 }`을 화면의 묶음으로 바꾼다.
+ * 어느 손님이 목록에 나오는지(필터 · 검색 · 정렬)는 서버가 정했다. 여기서는 줄 안에서 어느 매칭을 보일지만 정한다:
+ * - 단계: 고른 단계의 매칭만 보인다.
+ * - 검색: 조건(고객·연락처·지역·단지·메모)에 걸리면 그 조건의 매칭을 모두 보이고,
+ *   매물에만 걸리면 걸린 매칭만 보인다.
+ * 매칭에는 그 줄의 손님을 붙여 준다 — 매칭 줄 · 상세 창이 손님 이름과 조건을 매칭에서 읽는다.
  */
-export function groupMatchesByRequirement({
-  requirements,
-  matches,
+export function buildRequirementGroups({
+  rows,
   search,
   stageFilters,
-  transactionType,
-  requirementFilters = EMPTY_REQUIREMENT_FILTERS,
-  keepRequirementId = null,
 }: {
-  requirements: BuyerRequirementGroup['buyerRequirement'][];
-  matches: MatchViewListItem[];
+  rows: BuyerRequirementWithMatches[];
   search: string;
   stageFilters: string[];
-  transactionType: string;
-  requirementFilters?: RequirementFilters;
-  keepRequirementId?: string | null;
 }): BuyerRequirementGroup[] {
-  const query = search.trim().toLowerCase();
-  const matchesByRequirement = new Map<string, MatchViewListItem[]>();
-  for (const match of matches) {
-    const siblings = matchesByRequirement.get(match.buyerReqId);
-    if (siblings) siblings.push(match);
-    else matchesByRequirement.set(match.buyerReqId, [match]);
-  }
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const stages = stageFilters.filter((stage) => stage !== NO_MATCH_STAGE);
 
-  return requirements
-    .flatMap((requirement) => {
-      const kept = requirement.id === keepRequirementId;
-      if (
-        !kept &&
-        ((transactionType && requirement.transactionType !== transactionType) ||
-          !matchesRequirementFilters(requirement, requirementFilters))
-      ) {
-        return [];
+  return rows.map((row) => {
+    const { matches: rowMatches, ...buyerRequirement } = row;
+    const allMatches: MatchViewListItem[] = rowMatches.map((match) => ({
+      ...match,
+      property: match.listing?.property,
+      buyerRequirement,
+    }));
+    // 단계 가운데 '매칭 없음'만 골랐으면 서버가 매칭 없는 손님만 주므로 거를 것이 없다
+    const stageMatches =
+      stages.length === 0
+        ? allMatches
+        : allMatches.filter((match) => stages.includes(normalizeMatchStage(match.stage)));
+
+    // 서버와 같은 판정: 낱말마다 손님 쪽(이름 · 번호 · 지역 · 단지 · 메모)이나, 고른 단계의 매물에 있어야 한다.
+    // 손님 쪽에 없는 낱말이 있으면 그 낱말이 걸린 매칭만 보인다.
+    let matches = stageMatches;
+    if (words.length > 0) {
+      const requirementText = getRequirementSearchText(buyerRequirement);
+      const missing = words.filter((word) => !requirementText.includes(word));
+      if (missing.length > 0) {
+        const hits = stageMatches.filter((match) => {
+          const text = getMatchSearchText(match);
+          // "101동" · "3501호"로 쳐도 "101" · "3501"로 적힌 동 · 호에 걸린다 (서버와 같다).
+          // 끝 글자를 뗀 말은 동 · 호 이름에만 견준다 — 전체 글에 견주면 101이 든 전화번호에 걸려
+          // 같은 손님의 102동 매칭까지 보인다.
+          const unit = match.listing?.property?.unit;
+          const placeNames = [unit?.dong?.name, unit?.name]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return missing.some((word) => {
+            if (text.includes(word)) return true;
+            const bare = word.replace(/[동호]$/, '');
+            return bare !== word && bare.length > 0 && placeNames.includes(bare);
+          });
+        });
+        // 줄을 고른 것은 서버다. 화면에 없는 칸으로 걸린 줄이면(걸린 매칭을 못 찾으면) 매칭을 감추지 않는다.
+        // 이때도 보이는 것은 고른 단계의 매칭뿐이다.
+        if (hits.length > 0) matches = hits;
       }
-
-      const requirementMatches = matchesByRequirement.get(requirement.id) ?? [];
-      const stageMatches = requirementMatches.filter(
-        (match) =>
-          stageFilters.length === 0 ||
-          stageFilters.includes(normalizeMatchStage(match.stage)),
-      );
-      const keptAsUnmatched =
-        requirementMatches.length === 0 && stageFilters.includes(NO_MATCH_STAGE);
-      if (
-        !kept &&
-        stageFilters.length > 0 &&
-        stageMatches.length === 0 &&
-        !keptAsUnmatched
-      ) {
-        return [];
-      }
-
-      const requirementHit =
-        !query || getRequirementSearchText(requirement).includes(query);
-      const visibleMatches = requirementHit
-        ? stageMatches
-        : stageMatches.filter((match) =>
-            getMatchSearchText(match).includes(query),
-          );
-      if (!kept && !requirementHit && visibleMatches.length === 0) {
-        return [];
-      }
-
-      return [
-        {
-          buyerReqId: requirement.id,
-          buyerRequirement: requirement,
-          matches: visibleMatches,
-        },
-      ];
-    })
-    .sort(
-      (left, right) =>
-        (left.buyerRequirement.contact?.name ?? '').localeCompare(
-          right.buyerRequirement.contact?.name ?? '',
-          'ko',
-        ) ||
-        left.buyerRequirement.priorityRank - right.buyerRequirement.priorityRank,
-    );
+    }
+    return { buyerReqId: row.id, buyerRequirement, matches, allMatches };
+  });
 }
 
 export const siteTypeLabel: Record<string, string> = {

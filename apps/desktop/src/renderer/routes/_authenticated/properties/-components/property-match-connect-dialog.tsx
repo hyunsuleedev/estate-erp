@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateMatchData } from '@/queries/matches';
 import { toast } from 'sonner';
 import { Check, Loader2, Plus, Search } from 'lucide-react';
 import type { BuyerRequirement, Listing, Match } from '@estate-erp/api-client';
@@ -172,7 +173,7 @@ export function PropertyMatchConnectDialog({
       setConnectedIds((previous) =>
         new Set(previous).add(connectionKey(match.listingId, buyer.id)),
       );
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      invalidateMatchData(queryClient);
       queryClient.invalidateQueries({ queryKey: ['listings'] });
       queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
       queryClient.invalidateQueries({ queryKey: ['buyer-requirements'] });

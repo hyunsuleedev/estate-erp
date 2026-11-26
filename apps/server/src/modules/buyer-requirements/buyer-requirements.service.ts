@@ -5,12 +5,17 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { normalizePhone } from '../contacts/contact-phone.utils';
+import { normalizePhone, phoneSearchDigits } from '../contacts/contact-phone.utils';
 import {
   LISTING_INTAKE_STATE_SELECT,
   OCCUPYING_DEALS_SELECT,
 } from '../listings/listing-state';
 import { closeOpenMatchesForBuyerRequirement } from '../matches/match-lifecycle-sync';
+import {
+  getMatchStageStorageValues,
+  MATCH_ROW_SELECT,
+  presentMatchRow,
+} from '../matches/match-row';
 import {
   buyerIntakeContactsInclude,
   withBuyerRequirementContact,
@@ -53,13 +58,132 @@ export interface BuyerRequirementSearchQuery {
   moveInBefore?: string;
   // Free-text search over contact name/phone, memo
   search?: string;
-  sortBy?: 'createdAt' | 'nextContactDate' | 'urgency';
+  // ── 희망매물 목록이 쓰는 조건. 예전에는 화면이 전부 받아 놓고 걸렀다 ──
+  /** 이 id의 조건만 (한 줄만 같은 꼴로 다시 받을 때) */
+  ids?: string | string[];
+  /** `region:<법정동 코드>` · `site:<단지 id>`. 여럿이면 하나만 맞아도 된다 */
+  locations?: string | string[];
+  /** 예산(만원). 월세 조건은 보증금과, 그 밖에는 매매가 · 전세가와 견준다 */
+  budgetMin?: number;
+  budgetMax?: number;
+  /** 매칭 단계(여럿). `none`은 연결한 매물이 없는 조건 */
+  matchStages?: string | string[];
+  /**
+   * 검색어를 희망 지역 이름과 연결한 매물(단지 · 주소 · 동 · 호 · 매칭 메모)에서도 찾는다.
+   * 낱말을 띄어 쓰면 낱말마다 어딘가에 있어야 한다("그라시움 101동").
+   */
+  searchMatches?: boolean;
+  /** `matches`: 조건마다 연결한 매물(매칭)을 가벼운 줄로 함께 싣는다 */
+  expand?: string;
+  /** name: 대표 고객 이름 가나다순, 같은 손님은 우선순위순 */
+  sortBy?: 'createdAt' | 'nextContactDate' | 'urgency' | 'name';
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
 }
 
 const BUYER_REQUIREMENT_STATUSES = new Set(['active', 'hold', 'completed']);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** 담당자 조건의 "담당자 없음" */
+const NO_ASSIGNEE = 'none';
+/** 매칭 단계 조건의 "매칭 없음" */
+const NO_MATCH_STAGE = 'none';
+const KOREAN_COLLATOR = new Intl.Collator('ko');
+
+/**
+ * `region:<법정동 코드>` · `site:<단지 id>` 하나의 조건.
+ * 법정동 코드는 앞자리가 상위 지역이다. 고른 지역과 **그 아래**를 원하는 손님만 걸린다:
+ * 강동구를 고르면 강동구 · 고덕동을 원하는 손님이 걸리고, 서울 전체를 원하는 손님은 걸리지 않는다
+ * (사용자 결정 2026-11-26 — 예전 화면은 위쪽 지역을 원하는 손님도 함께 보였다).
+ * 희망 지역 한 줄의 지역은 가장 좁은 단위다 (동 > 구 > 시도).
+ */
+function locationWhere(value: string): Prisma.BuyerRequirementWhereInput {
+  if (value.startsWith('site:')) {
+    const siteId = value.slice('site:'.length);
+    if (!UUID_PATTERN.test(siteId)) bad('단지를 찾을 수 없습니다.');
+    return { preferredSites: { some: { siteId } } };
+  }
+  const code = value.startsWith('region:') ? value.slice('region:'.length) : '';
+  if (!/^\d{2,10}$/.test(code)) bad('지역을 찾을 수 없습니다.');
+  return {
+    preferredRegions: {
+      some: {
+        OR: [
+          { wardCode: { startsWith: code } },
+          { wardCode: null, districtCode: { startsWith: code } },
+          { wardCode: null, districtCode: null, provinceCode: { startsWith: code } },
+        ],
+      },
+    },
+  };
+}
+
+/** 낱말 하나를 찾을 곳: 손님(이름 · 번호) · 메모 · 희망 단지와 지역 · 연결한 매물 */
+function wideSearchWhere(
+  word: string,
+  /**
+   * 단계 조건을 함께 건 경우의 그 단계들. 매물에서 찾을 때는 그 단계의 매칭에서만 찾는다 —
+   * 종료한 래미안과 임장 중인 힐스테이트를 연결한 손님이 "래미안 + 임장"에 걸리면 안 된다.
+   */
+  matchStages?: string[],
+): Prisma.BuyerRequirementWhereInput[] {
+  const contains = { contains: word, mode: 'insensitive' as const };
+  // 번호를 찾는 말일 때만 번호로 찾는다 — "101동"의 101이 든 번호의 손님이 딸려 나오지 않게
+  const phone = phoneSearchDigits(word);
+  // "101동" · "3301호"로 쳐도 이름을 "101" · "3301"로 적어 둔 동 · 호를 찾는다
+  const bare = word.replace(/[동호]$/, '');
+  const placeName = { contains: bare || word, mode: 'insensitive' as const };
+  return [
+    { buyerIntake: { contacts: { some: { contact: { name: contains } } } } },
+    ...(phone
+      ? [
+          {
+            buyerIntake: {
+              contacts: {
+                some: { contact: { phones: { some: { phone: { contains: phone } } } } },
+              },
+            },
+          },
+        ]
+      : []),
+    { memo: contains },
+    { preferredSites: { some: { site: { name: contains } } } },
+    {
+      preferredRegions: {
+        some: {
+          OR: [
+            { ward: { name: contains } },
+            { district: { name: contains } },
+            { province: { name: contains } },
+          ],
+        },
+      },
+    },
+    {
+      matches: {
+        some: {
+          ...(matchStages ? { stage: { in: matchStages } } : {}),
+          OR: [
+            { memo: contains },
+            {
+              listing: {
+                property: {
+                  OR: [
+                    { site: { name: contains } },
+                    { site: { roadAddress: contains } },
+                    { site: { jibunAddress: contains } },
+                    { unit: { name: placeName } },
+                    { unit: { dong: { name: placeName } } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+  ];
+}
 const TRANSACTION_TYPES = new Set(['sale', 'jeonse', 'monthly']);
 const URGENCIES = new Set(['urgent', 'normal', 'flexible']);
 /** 만원 단위 금액의 상한 (Postgres INTEGER 범위 안, 2조 원). 매칭 합의 조건과 같다. */
@@ -263,7 +387,7 @@ export class BuyerRequirementsService {
         where: { id: input.assignedToId, officeId },
         select: { id: true },
       });
-      if (!user) bad('담당자를 찾을 수 없습니다.');
+      if (!user) bad('담당 직원을 찾을 수 없습니다.');
     }
     if (input.preferredSites !== undefined) {
       if (
@@ -368,7 +492,10 @@ export class BuyerRequirementsService {
     return regions;
   }
 
-  async findAll(officeId: string, query: BuyerRequirementSearchQuery = {}) {
+  private buildListWhere(
+    officeId: string,
+    query: BuyerRequirementSearchQuery,
+  ): Prisma.BuyerRequirementWhereInput {
     const where: Prisma.BuyerRequirementWhereInput = { officeId };
     const AND: Prisma.BuyerRequirementWhereInput[] = [];
 
@@ -383,7 +510,37 @@ export class BuyerRequirementsService {
     if (txList) where.transactionType = { in: txList };
 
     const assigneeList = toArray(query.assignedToId);
-    if (assigneeList) where.assignedToId = { in: assigneeList };
+    if (assigneeList) {
+      // `none`: 담당자가 없는 조건
+      const ids = assigneeList.filter((value) => value !== NO_ASSIGNEE);
+      for (const id of ids) if (!UUID_PATTERN.test(id)) bad('담당 직원을 찾을 수 없습니다.');
+      if (ids.length === assigneeList.length) where.assignedToId = { in: ids };
+      else AND.push({ OR: [{ assignedToId: null }, { assignedToId: { in: ids } }] });
+    }
+
+    const idList = toArray(query.ids);
+    if (idList) {
+      // 꼴이 틀린 id는 DB 오류(500) 대신 "없는 조건"으로 본다
+      where.id = { in: idList.filter((id) => UUID_PATTERN.test(id)) };
+    }
+
+    const locations = toArray(query.locations);
+    if (locations) AND.push({ OR: locations.map(locationWhere) });
+
+    const matchStages = toArray(query.matchStages);
+    if (matchStages) {
+      const stages = Array.from(
+        new Set(
+          matchStages
+            .filter((stage) => stage !== NO_MATCH_STAGE)
+            .flatMap(getMatchStageStorageValues),
+        ),
+      );
+      const stageOR: Prisma.BuyerRequirementWhereInput[] = [];
+      if (stages.length > 0) stageOR.push({ matches: { some: { stage: { in: stages } } } });
+      if (matchStages.includes(NO_MATCH_STAGE)) stageOR.push({ matches: { none: {} } });
+      AND.push({ OR: stageOR });
+    }
 
     const siteTypesList = toArray(query.siteTypes);
     if (siteTypesList) where.siteTypes = { hasSome: siteTypesList };
@@ -455,6 +612,30 @@ export class BuyerRequirementsService {
     );
     addOverlap('areaMin', 'areaMax', query.areaMin, query.areaMax);
 
+    // 예산: 월세 조건은 보증금이, 그 밖에는 매매가 · 전세가가 그 손님의 예산이다
+    const monthly: Prisma.BuyerRequirementWhereInput = { transactionType: 'monthly' };
+    const notMonthly: Prisma.BuyerRequirementWhereInput = {
+      OR: [{ transactionType: null }, { transactionType: { not: 'monthly' } }],
+    };
+    if (query.budgetMin !== undefined) {
+      const gte = query.budgetMin;
+      AND.push({
+        OR: [
+          { AND: [monthly, { OR: [{ depositMax: null }, { depositMax: { gte } }] }] },
+          { AND: [notMonthly, { OR: [{ priceMax: null }, { priceMax: { gte } }] }] },
+        ],
+      });
+    }
+    if (query.budgetMax !== undefined) {
+      const lte = query.budgetMax;
+      AND.push({
+        OR: [
+          { AND: [monthly, { OR: [{ depositMin: null }, { depositMin: { lte } }] }] },
+          { AND: [notMonthly, { OR: [{ priceMin: null }, { priceMin: { lte } }] }] },
+        ],
+      });
+    }
+
     // ── Date ranges ─────────────────────────────────────────────
     if (query.nextContactAfter || query.nextContactBefore) {
       const cond: Prisma.DateTimeNullableFilter = {};
@@ -470,7 +651,21 @@ export class BuyerRequirementsService {
     }
 
     // ── Free-text search ────────────────────────────────────────
-    if (query.search && query.search.trim()) {
+    if (query.search && query.search.trim() && query.searchMatches) {
+      const stageList = toArray(query.matchStages);
+      const searchStages = stageList
+        ? Array.from(
+            new Set(
+              stageList
+                .filter((stage) => stage !== NO_MATCH_STAGE)
+                .flatMap(getMatchStageStorageValues),
+            ),
+          )
+        : undefined;
+      for (const word of query.search.trim().split(/\s+/).slice(0, 8)) {
+        AND.push({ OR: wideSearchWhere(word, searchStages) });
+      }
+    } else if (query.search && query.search.trim()) {
       const q = query.search.trim();
       const canonicalPhone = normalizePhone(q);
       AND.push({
@@ -512,44 +707,166 @@ export class BuyerRequirementsService {
     }
 
     if (AND.length > 0) where.AND = AND;
+    return where;
+  }
+
+  async findAll(officeId: string, query: BuyerRequirementSearchQuery = {}) {
+    for (const value of Object.values(query)) {
+      if (typeof value === 'number' && !Number.isFinite(value)) bad('숫자 조건이 잘못되었습니다.');
+    }
+    const where = this.buildListWhere(officeId, query);
 
     const sortBy = query.sortBy || 'createdAt';
     const sortOrder = query.sortOrder || 'desc';
     const page = Math.max(1, query.page || 1);
     const limit = Math.min(100, Math.max(1, query.limit || 20));
     const skip = (page - 1) * limit;
-
-    const [items, total] = await Promise.all([
-      this.prisma.buyerRequirement.findMany({
-        where,
+    const include = {
+      buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
+      assignedTo: { select: { id: true, name: true } },
+      preferredSites: {
         include: {
-          buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
-          assignedTo: { select: { id: true, name: true } },
-          preferredSites: {
-            include: {
-              site: { select: { id: true, name: true, type: true } },
-            },
-            orderBy: { priority: 'asc' },
-          },
-          preferredRegions: {
-            include: {
-              province: true,
-              district: true,
-              ward: true,
-            },
-          },
-          _count: { select: { matches: true, consultations: true } },
+          site: { select: { id: true, name: true, type: true } },
         },
-        orderBy: { [sortBy]: sortOrder },
-        skip,
-        take: limit,
+        orderBy: { priority: 'asc' },
+      },
+      preferredRegions: {
+        include: {
+          province: true,
+          district: true,
+          ward: true,
+        },
+      },
+      _count: { select: { matches: true, consultations: true } },
+    } satisfies Prisma.BuyerRequirementInclude;
+
+    let rows: Prisma.BuyerRequirementGetPayload<{ include: typeof include }>[];
+    let total: number;
+    if (sortBy === 'name') {
+      // 이름은 다른 표(대표 연락처)에 있고 가나다순은 DB 정렬과 다르다. 조건에 맞는 것의 이름만 먼저 받아
+      // 차례를 정한 뒤, 이 쪽에 해당하는 줄만 온전히 받는다.
+      const named = await this.prisma.buyerRequirement.findMany({
+        where,
+        select: {
+          id: true,
+          priorityRank: true,
+          createdAt: true,
+          buyerIntake: {
+            select: {
+              contacts: {
+                select: { contact: { select: { name: true } } },
+                orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+                take: 1,
+              },
+            },
+          },
+        },
+      });
+      const direction = sortOrder === 'desc' && query.sortOrder ? -1 : 1;
+      const nameOf = (row: (typeof named)[number]) =>
+        row.buyerIntake.contacts[0]?.contact.name ?? '';
+      named.sort(
+        (left, right) =>
+          direction * KOREAN_COLLATOR.compare(nameOf(left), nameOf(right)) ||
+          left.priorityRank - right.priorityRank ||
+          right.createdAt.getTime() - left.createdAt.getTime() ||
+          left.id.localeCompare(right.id),
+      );
+      total = named.length;
+      const pageIds = named.slice(skip, skip + limit).map((row) => row.id);
+      const found = await this.prisma.buyerRequirement.findMany({
+        where: { officeId, id: { in: pageIds } },
+        include,
+      });
+      const byId = new Map(found.map((row) => [row.id, row]));
+      rows = pageIds.flatMap((id) => byId.get(id) ?? []);
+    } else {
+      [rows, total] = await Promise.all([
+        this.prisma.buyerRequirement.findMany({
+          where,
+          include,
+          orderBy: [{ [sortBy]: sortOrder }, { id: 'asc' }],
+          skip,
+          take: limit,
+        }),
+        this.prisma.buyerRequirement.count({ where }),
+      ]);
+    }
+
+    const pagination = { page, limit, total, totalPages: Math.ceil(total / limit) };
+    const items = rows.map(withBuyerRequirementContact);
+    if (!toArray(query.expand)?.includes('matches')) return { items, pagination };
+
+    // 연결한 매물(매칭)을 조건마다 싣는다. 단계 조건으로 손님을 골랐어도 그 손님의 매칭은 모두 싣는다
+    // (옆 패널과 "진행 중 N건"이 전부를 센다). 어느 것을 보일지는 화면이 정한다.
+    const matches =
+      rows.length === 0
+        ? []
+        : await this.prisma.match.findMany({
+            where: { officeId, buyerReqId: { in: rows.map((row) => row.id) } },
+            select: MATCH_ROW_SELECT,
+            orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+          });
+    const byRequirement = new Map<string, ReturnType<typeof presentMatchRow>[]>();
+    for (const match of matches) {
+      const row = presentMatchRow(match);
+      const siblings = byRequirement.get(match.buyerReqId);
+      if (siblings) siblings.push(row);
+      else byRequirement.set(match.buyerReqId, [row]);
+    }
+    return {
+      items: items.map((item) => ({ ...item, matches: byRequirement.get(item.id) ?? [] })),
+      pagination,
+    };
+  }
+
+  /**
+   * 희망매물 필터의 선택지: 지금 조건들에 실제로 있는 지역 · 단지 · 담당자.
+   * 목록을 쪽 단위로 받으므로 화면이 받아 둔 줄에서 선택지를 모을 수 없다.
+   */
+  async findFilterOptions(officeId: string, status?: string | string[]) {
+    const statuses = (toArray(status) ?? ['active', 'hold']).filter((value) =>
+      BUYER_REQUIREMENT_STATUSES.has(value),
+    );
+    const scope: Prisma.BuyerRequirementWhereInput = { officeId, status: { in: statuses } };
+    const [regions, sites, assignees, unassigned] = await Promise.all([
+      this.prisma.buyerRequirementRegion.findMany({
+        where: { buyerRequirement: scope },
+        distinct: ['provinceCode', 'districtCode', 'wardCode'],
+        select: {
+          provinceCode: true,
+          districtCode: true,
+          wardCode: true,
+          province: { select: { name: true } },
+          district: { select: { name: true } },
+          ward: { select: { name: true } },
+        },
       }),
-      this.prisma.buyerRequirement.count({ where }),
+      this.prisma.buyerRequirementSite.findMany({
+        where: { buyerRequirement: scope },
+        distinct: ['siteId'],
+        select: { siteId: true, site: { select: { name: true } } },
+      }),
+      this.prisma.buyerRequirement.findMany({
+        where: { ...scope, assignedToId: { not: null } },
+        distinct: ['assignedToId'],
+        select: { assignedTo: { select: { id: true, name: true } } },
+      }),
+      this.prisma.buyerRequirement.count({ where: { ...scope, assignedToId: null } }),
     ]);
 
+    const regionNames = new Map<string, string>();
+    for (const region of regions) {
+      // 가장 좁은 단위가 그 줄의 지역이다 (동 > 구 > 시도)
+      const code = region.wardCode ?? region.districtCode ?? region.provinceCode;
+      const name = region.ward?.name ?? region.district?.name ?? region.province?.name;
+      if (code && name) regionNames.set(code, name);
+    }
     return {
-      items: items.map(withBuyerRequirementContact),
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      regions: Array.from(regionNames, ([code, name]) => ({ code, name })),
+      sites: sites.map((row) => ({ id: row.siteId, name: row.site.name })),
+      assignees: assignees.flatMap((row) => (row.assignedTo ? [row.assignedTo] : [])),
+      hasUnassigned: unassigned > 0,
     };
   }
 

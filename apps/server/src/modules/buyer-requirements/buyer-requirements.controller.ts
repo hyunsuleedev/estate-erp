@@ -12,12 +12,18 @@ import {
   ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { BuyerRequirementsService } from './buyer-requirements.service';
+import {
+  BuyerRequirementsService,
+  type BuyerRequirementSearchQuery,
+} from './buyer-requirements.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import {
   CurrentUser,
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
+
+/** 정렬할 수 있는 칸. 그 밖의 값은 무시한다 (칸 이름을 그대로 DB 정렬에 넘기지 않는다) */
+const SORTABLE = new Set(['createdAt', 'nextContactDate', 'urgency', 'name']);
 
 /** 주소의 id가 uuid 꼴이 아니면(잘못된 링크) DB 오류(500) 대신 "찾을 수 없습니다"로 답한다 */
 const requirementIdPipe = new ParseUUIDPipe({
@@ -34,6 +40,12 @@ export class BuyerRequirementsController {
   @Get('due-contacts')
   findDueContacts(@CurrentUser() user: CurrentUserPayload) {
     return this.service.findDueContacts(user.officeId);
+  }
+
+  /** 희망매물 필터의 선택지 (지금 조건들에 있는 지역 · 단지 · 담당자) */
+  @Get('filter-options')
+  findFilterOptions(@Query('status') status: string, @CurrentUser() user: CurrentUserPayload) {
+    return this.service.findFilterOptions(user.officeId, status || undefined);
   }
 
   @Get()
@@ -62,6 +74,13 @@ export class BuyerRequirementsController {
     @Query('moveInAfter') moveInAfter: string,
     @Query('moveInBefore') moveInBefore: string,
     @Query('search') search: string,
+    @Query('searchMatches') searchMatches: string,
+    @Query('ids') ids: string,
+    @Query('locations') locations: string,
+    @Query('budgetMin') budgetMin: string,
+    @Query('budgetMax') budgetMax: string,
+    @Query('matchStages') matchStages: string,
+    @Query('expand') expand: string,
     @Query('sortBy') sortBy: string,
     @Query('sortOrder') sortOrder: string,
     @Query('page') page: string,
@@ -94,8 +113,14 @@ export class BuyerRequirementsController {
       moveInAfter: moveInAfter || undefined,
       moveInBefore: moveInBefore || undefined,
       search: search || undefined,
-      sortBy:
-        (sortBy as 'createdAt' | 'nextContactDate' | 'urgency') || undefined,
+      searchMatches: searchMatches === 'true',
+      ids: ids || undefined,
+      locations: locations || undefined,
+      budgetMin: num(budgetMin),
+      budgetMax: num(budgetMax),
+      matchStages: matchStages || undefined,
+      expand: expand || undefined,
+      sortBy: SORTABLE.has(sortBy) ? (sortBy as BuyerRequirementSearchQuery['sortBy']) : undefined,
       sortOrder: (sortOrder as 'asc' | 'desc') || undefined,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,

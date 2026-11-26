@@ -290,7 +290,13 @@
     "다녀온 임장의 일정이 {0}로 남아 있습니다.": "The completed showing is still on the calendar for {0}.",
     "일정 지우기": "Remove appointment",
     "남은 임장 일정": "Showing still scheduled",
-    "거래 진행 단계": "Deal stages"
+    "거래 진행 단계": "Deal stages",
+    "희망 조건 {0}건 표시 · 전체 {1}건": "Showing {0} of {1} wanted conditions",
+    "희망 조건 {0}건 · 매칭 {1}건": "{0} wanted conditions · {1} matches",
+    " · 더 불러오는 중...": " · Loading more...",
+    " · 아래로 스크롤하면 더 불러옵니다": " · Scroll down to load more",
+    " · 나머지를 불러오지 못했습니다. ": " · Couldn't load the rest. ",
+    "다시 시도": "Retry"
   },
   "files": {
     "routes/_authenticated/wanted-properties/-requirement-peek.tsx": {

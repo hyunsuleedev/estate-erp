@@ -1,4 +1,4 @@
-import type { Deal, Match, Property } from "@estate-erp/api-client";
+import type { Deal, Match, MatchRowProperty } from "@estate-erp/api-client";
 import { formatMoney, formatRelativeDay, formatRent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { formatPaymentKind } from "../deals/-deal-view-utils";
@@ -53,8 +53,8 @@ export function LifecycleTag({ status }: { status: string }) {
 }
 
 /** 매칭 응답에는 집이 거래 조건 아래에 들어 있다(서버의 include 그대로). */
-export function matchProperty(match: Match): Property | undefined {
-  return (match.listing as { property?: Property } | undefined)?.property ?? match.property;
+export function matchProperty(match: Match): MatchRowProperty | undefined {
+  return match.listing?.property ?? match.property;
 }
 
 /** 금액 표기: 월세는 "보증금 / 월세", 나머지는 가격. */

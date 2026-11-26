@@ -7,6 +7,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
+import { invalidateMatchData } from "@/queries/matches";
 import {
   useState,
   useCallback,
@@ -978,7 +979,7 @@ function PropertiesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
       // 매칭의 거래 전환은 확인 상태로 막히고 풀린다 — 매칭 목록(희망매물 쪽 포함)도 다시 읽는다
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
+      invalidateMatchData(queryClient);
       queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] });
       if (selectedIntakeId) {
         queryClient.invalidateQueries({

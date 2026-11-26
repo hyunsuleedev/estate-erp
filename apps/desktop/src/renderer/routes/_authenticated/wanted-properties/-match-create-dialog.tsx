@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { refreshMatchData } from "@/queries/matches";
 import {
   AlertTriangle,
   Building2,
@@ -281,8 +282,8 @@ export function MatchCreateDialog({
         memo: memo.trim() || undefined,
       });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
+    onSuccess: (created) => {
+      void refreshMatchData(queryClient, queryClient, created.buyerReqId);
       queryClient.invalidateQueries({ queryKey: ["listings"] });
       queryClient.invalidateQueries({ queryKey: ["listing-intakes"] });
       queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] });

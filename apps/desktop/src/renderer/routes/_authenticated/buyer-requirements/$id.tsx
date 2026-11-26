@@ -9,6 +9,7 @@ import {
 } from "@estate-erp/shared";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { invalidateMatchData } from "@/queries/matches";
 import {
   AlertCircle,
   Building2,
@@ -379,7 +380,7 @@ function BuyerRequirementDetailPage() {
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["buyer-requirements"] }),
-        queryClient.invalidateQueries({ queryKey: ["matches"] }),
+        invalidateMatchData(queryClient),
       ]);
     },
     onError: (error) =>

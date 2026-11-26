@@ -663,11 +663,11 @@ export function findFieldsChangedBehind(
  * 고친 칸만 덮으면 손대지 않은 값은 목록에 있던 그대로 남고, 정확한 값은 이어지는 다시 받아 오기가 채운다.
  * 응답에 없는 것(담당자 요약, 매칭 수 등)도 같은 이유로 그대로 남는다.
  */
-export function mergeSavedRequirement(
-  list: BuyerRequirement[] | undefined,
+export function mergeSavedRequirement<T extends { id: string }>(
+  list: T[] | undefined,
   saved: BuyerRequirement,
   change: RequirementChange,
-): BuyerRequirement[] | undefined {
+): T[] | undefined {
   const fields = change.kind === 'status' ? ['status'] : Object.keys(change.patch);
   const response = saved as unknown as Record<string, unknown>;
   return list?.map((item) => {
@@ -676,7 +676,7 @@ export function mergeSavedRequirement(
     for (const field of fields) {
       if (field in response) next[field] = response[field];
     }
-    return next as unknown as BuyerRequirement;
+    return next as unknown as T;
   });
 }
 
@@ -685,13 +685,17 @@ export function mergeSavedRequirement(
  * 저장 응답과 달리 이것은 읽어 온 지금 값이라 통째로 덮는다. 목록에만 있는 것(매칭 수)은 그대로 두고,
  * 한 건 조회에만 실려 오는 것(매칭 · 상담 목록)은 목록에 싣지 않는다.
  */
-export function mergeLatestRequirement(
-  list: BuyerRequirement[] | undefined,
-  latest: BuyerRequirement,
-): BuyerRequirement[] | undefined {
+export function mergeLatestRequirement<
+  T extends { id: string; matches?: unknown; consultations?: unknown },
+>(list: T[] | undefined, latest: BuyerRequirement): T[] | undefined {
   return list?.map((item) =>
     item.id === latest.id
-      ? { ...item, ...latest, matches: item.matches, consultations: item.consultations }
+      ? ({
+          ...item,
+          ...latest,
+          matches: item.matches,
+          consultations: item.consultations,
+        } as unknown as T)
       : item,
   );
 }

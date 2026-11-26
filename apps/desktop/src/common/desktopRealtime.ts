@@ -31,6 +31,7 @@ export const REALTIME_SERVER_EVENTS = [
   'listing.updated',
   'listing-intake.updated',
   'deal.updated',
+  'match.updated',
   'network.message.created',
   'notification.created',
   'cti.incoming',

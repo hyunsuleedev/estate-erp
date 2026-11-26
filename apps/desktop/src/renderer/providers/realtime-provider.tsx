@@ -6,6 +6,7 @@ import type {
 import { useAuth } from '@/providers/auth-provider';
 import { queryClient } from '@/providers/query-provider';
 import { invalidateDealData } from '@/queries/deals';
+import { invalidateMatchData, refreshMatchData } from '@/queries/matches';
 
 /**
  * 서버 실시간 연결은 main 프로세스에 하나뿐이다. 화면은 연결을 갖지 않고, main이
@@ -22,6 +23,7 @@ const RECONNECT_QUERY_KEYS = [
   ['tenants'],
   ['consultations'],
   ['matches'],
+  ['buyer-requirements'],
   ['deals'],
 ] as const;
 
@@ -68,6 +70,16 @@ export function applyRealtimeEvent(event: RealtimeEventMessage): void {
       // 내가 거래를 바꾼 직후와 같은 것을 다시 받는다(거래 · 그 집과 의뢰의 상세 · 매물 목록 · 매칭)
       invalidateDealData(remoteOnly);
       return;
+    case 'match.updated': {
+      if (!isRecord(event.payload)) return;
+      // 내가 매칭을 바꾼 직후와 같다: 매칭 목록은 다시 받고, 희망매물 목록은 그 손님 한 줄만 갈아 끼운다
+      if (typeof event.payload.buyerReqId === 'string') {
+        void refreshMatchData(queryClient, remoteOnly, event.payload.buyerReqId);
+      } else {
+        void invalidateMatchData(remoteOnly);
+      }
+      return;
+    }
     default:
       // 알림·중개방 채팅·전화 이벤트는 아직 화면에서 쓰지 않는다.
       return;

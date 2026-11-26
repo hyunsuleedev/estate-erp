@@ -45,6 +45,10 @@ const matchViewUtilsSource = readFileSync(
   ),
   'utf8',
 );
+const wantedFiltersSource = readFileSync(
+  resolve(testDir, '../src/renderer/routes/_authenticated/wanted-properties/-wanted-filters.ts'),
+  'utf8',
+);
 const wantedFilterBarSource = readFileSync(
   resolve(
     testDir,
@@ -120,10 +124,10 @@ describe('desktop matches workbench', () => {
     assert.doesNotMatch(matchGroupsSource, /StageMatchView|StageMatchGroupSection|StageMatchTableRow/);
     assert.doesNotMatch(matchViewUtilsSource, /getMatchStageGroups|matchStageGroups|MatchStageGroup/);
     // 완료된 조건은 평소에는 불러오지 않고, 상태 필터에서 '완료'를 골랐을 때만 불러온다
-    // (2026-11-22 검수: 완료하면 목록에서 사라져 다시 열 길이 없었다)
+    // (2026-11-22 검수: 완료하면 목록에서 사라져 다시 열 길이 없었다). 상태는 서버 조건으로 보낸다.
     assert.match(
-      matchesPageSource,
-      /queryFn: \(\) => fetchBuyerRequirements\('completed'\),\s*enabled: includeCompleted,/,
+      wantedFiltersSource,
+      /status: filters\.statuses\.length > 0 \? filters\.statuses\.join\(','\) : OPEN_STATUSES,/,
     );
     assert.doesNotMatch(matchesPageSource, />\s*매물별\s*<\/Button>/);
     assert.doesNotMatch(matchesPageSource, />\s*전체\s*<\/Button>/);
@@ -514,9 +518,13 @@ describe('desktop matches workbench', () => {
     // 편집기가 열려 있는 조건의 줄은 목록이 새로 와도 남긴다: 필터에서 벗어나도, 목록에서 빠져도(열 때의 값으로)
     assert.match(
       matchesPageSource,
-      /const \[editingRequirement, setEditingRequirement\] =\s*useState<BuyerRequirement \| null>\(null\);/,
+      /const \[editingRequirement, setEditingRequirement\] =\s*useState<BuyerRequirementWithMatches \| null>\(null\);/,
     );
-    assert.match(matchesPageSource, /keepRequirementId: editingRequirement\?\.id \?\? null,/);
+    // 목록(서버 조건)에서 빠진 편집 중 조건은 그 한 줄만 조건 없이 다시 받아 남긴다
+    assert.match(
+      matchesPageSource,
+      /\.\.\.buyerRequirementQueries\.wantedRow\(editingId\),\s*enabled: editingId !== null && !editingInList,/,
+    );
     // 남겨 둔 줄은 "편집기를 열 때의 값"이 아니라 목록에서 마지막으로 본 값으로 그린다.
     // 열 때의 값으로 그리면 편집기가 이미 본 값보다 예전으로 돌아가, 감지한 거래유형 충돌이 풀린다
     assert.match(
@@ -529,7 +537,7 @@ describe('desktop matches workbench', () => {
     );
     assert.match(
       matchesPageSource,
-      /editingRequirement && editingDetached \? \[\.\.\.mine, editingRequirement\] : mine;/,
+      /editingRequirement && editingDetached\s*\? \[\.\.\.requirements, editingRequirement\]\s*: requirements,/,
     );
     // 목록에서 빠진 조건은 지금 값을 알 수 없으므로 남겨 둔 줄에서는 저장하지 않는다 (입력은 편집기에 남긴다)
     assert.match(
@@ -549,7 +557,7 @@ describe('desktop matches workbench', () => {
     );
     assert.match(
       matchesPageSource,
-      /onRequirementEditingChange=\{\(editing\) =>\s*setEditingRequirement\(\(current\) =>\s*editing\s*\? group\.buyerRequirement\s*: current\?\.id === group\.buyerReqId\s*\? null\s*: current,/,
+      /onRequirementEditingChange=\{\(editing\) =>\s*setEditingRequirement\(\(current\) =>\s*editing\s*\? \(requirements\.find\(\(row\) => row\.id === group\.buyerReqId\) \?\? current\)\s*: current\?\.id === group\.buyerReqId\s*\? null\s*: current,/,
     );
     // 편집기가 열려 있는 동안에는 목록을 다시 받다 실패해도 오류 화면으로 바꾸지 않는다
     assert.match(matchesPageSource, /const showError = isError && editingRequirement === null;/);
@@ -631,13 +639,14 @@ describe('desktop matches workbench', () => {
   });
 
   it('lists every open buyer requirement, including ones without a match', async () => {
-    // 진행·보류 조건을 끝까지 불러오고, 어느 한쪽 조회가 실패하면 목록을 그리지 않는다
-    assert.match(matchesPageSource, /fetchBuyerRequirements\('active,hold'\)/);
-    assert.match(matchesPageSource, /page >= result\.pagination\.totalPages/);
+    // 조건 · 검색 · 정렬은 서버가 하고, 줄({ 손님, 그 손님의 매칭들 })을 쪽 단위로 이어 받는다.
+    // 예전처럼 조건 전부와 매칭 전부를 따로 받아 화면에서 묶지 않는다.
     assert.match(
       matchesPageSource,
-      /const isError =\s*isMatchesError \|\| isRequirementsError \|\| \(includeCompleted && completedQuery\.isError\);/,
+      /useInfiniteQuery\(\{\s*\.\.\.buyerRequirementQueries\.wanted\(listFilter \?\? NO_LIST_FILTER\),/,
     );
+    assert.doesNotMatch(matchesPageSource, /api\.matches\.findAll|fetchBuyerRequirements/);
+    assert.match(matchesPageSource, /<EndOfListSentinel onReach=\{handleEndReached\} \/>/);
     // 매칭 없는 고객은 줄 아래에서 그 조건으로 고정해 매칭을 만든다 (매칭 칸은 뺐다)
     assert.match(matchGroupsSource, /data-buyer-no-match/);
     assert.doesNotMatch(matchGroupsSource, /label: '매칭'/);
@@ -650,109 +659,102 @@ describe('desktop matches workbench', () => {
         string,
         unknown
       >;
-    const { groupMatchesByRequirement } = (loaded.default ?? loaded) as {
-      groupMatchesByRequirement: (input: Record<string, unknown>) => Array<{
+    const { buildRequirementGroups } = (loaded.default ?? loaded) as {
+      buildRequirementGroups: (input: Record<string, unknown>) => Array<{
         buyerReqId: string;
-        matches: Array<{ id: string }>;
+        buyerRequirement: Record<string, unknown>;
+        matches: Array<{ id: string; buyerRequirement?: { id: string } }>;
+        allMatches: Array<{ id: string }>;
       }>;
     };
 
-    const requirement = (id: string, name: string, transactionType: string, priorityRank = 1) => ({
-      id,
-      transactionType,
-      priorityRank,
-      contact: { id: `c-${name}`, name, phone: null },
-      memo: null,
-      preferredRegions: [],
-      siteTypes: [],
-    });
     const match = (id: string, buyerReqId: string, stage: string, siteName: string) => ({
       id,
       buyerReqId,
       stage,
       memo: null,
-      listing: { property: { site: { name: siteName, roadAddress: siteName } } },
+      listing: { property: { id: `p-${id}`, site: { name: siteName, roadAddress: siteName } } },
     });
-    const requirements = [
-      requirement('with-match', '나중', 'sale'),
-      requirement('no-match', '가나', 'jeonse'),
-      requirement('second', '나중', 'sale', 2),
-    ];
-    const matches = [
-      match('m1', 'with-match', 'viewing', '래미안'),
-      match('m2', 'with-match', 'suggested', '힐스테이트'),
+    const requirement = (id: string, name: string, matches: unknown[] = []) => ({
+      id,
+      transactionType: 'sale',
+      priorityRank: 1,
+      contact: { id: `c-${name}`, name, phone: null },
+      memo: null,
+      preferredRegions: [],
+      siteTypes: [],
+      matches,
+    });
+    // 서버가 준 차례 그대로다 (이름순 정렬과 필터는 서버가 했다)
+    const rows = [
+      requirement('no-match', '가나'),
+      requirement('with-match', '나중', [
+        match('m1', 'with-match', 'viewing', '래미안'),
+        match('m2', 'with-match', 'suggested', '힐스테이트'),
+      ]),
     ];
     const group = (overrides: Record<string, unknown> = {}) =>
-      groupMatchesByRequirement({
-        requirements,
-        matches,
-        search: '',
-        stageFilters: [],
-        transactionType: '',
-        ...overrides,
-      });
-    const ids = (groups: Array<{ buyerReqId: string }>) => groups.map((item) => item.buyerReqId);
+      buildRequirementGroups({ rows, search: '', stageFilters: [], ...overrides });
 
-    // 매칭 없는 조건도 한 줄. 이름순, 같은 고객은 우선순위순
-    assert.deepEqual(ids(group()), ['no-match', 'with-match', 'second']);
+    // 매칭 없는 조건도 한 줄. 줄의 차례는 서버가 준 대로
+    assert.deepEqual(group().map((item) => item.buyerReqId), ['no-match', 'with-match']);
     assert.deepEqual(group()[0].matches, []);
+    // 매칭에는 그 줄의 손님을 붙인다 (매칭 줄 · 상세 창이 손님을 매칭에서 읽는다). 손님 쪽에는 매칭을 다시 싣지 않는다
+    assert.equal(group()[1].matches[0].buyerRequirement?.id, 'with-match');
+    assert.equal('matches' in group()[1].buyerRequirement, false);
 
-    // 거래유형은 매물이 아니라 조건 기준
-    assert.deepEqual(ids(group({ transactionType: 'jeonse' })), ['no-match']);
-
-    // 단계 필터를 걸면 해당 단계 매칭이 있는 조건만 남는다
+    // 단계 필터: 줄은 서버가 골랐고, 줄 안에서는 고른 단계의 매칭만 보인다. 전부는 따로 남는다(옆 패널 · 진행 중 수)
     const staged = group({ stageFilters: ['viewing'] });
-    assert.deepEqual(ids(staged), ['with-match']);
-    assert.deepEqual(staged[0].matches.map((item) => item.id), ['m1']);
+    assert.deepEqual(staged[1].matches.map((item) => item.id), ['m1']);
+    assert.deepEqual(staged[1].allMatches.map((item) => item.id), ['m1', 'm2']);
+    // '매칭 없음'은 줄을 고르는 조건일 뿐 줄 안의 매칭을 거르지 않는다
+    assert.equal(group({ stageFilters: ['none'] })[1].matches.length, 2);
+    assert.deepEqual(
+      group({ stageFilters: ['none', 'viewing'] })[1].matches.map((item) => item.id),
+      ['m1'],
+    );
 
-    // 고객에 걸리면 매칭 전부, 매물에만 걸리면 걸린 매칭만
-    assert.deepEqual(ids(group({ search: '가나' })), ['no-match']);
-    assert.equal(group({ search: '나중' })[0].matches.length, 2);
-    const byListing = group({ search: '래미안' });
-    assert.deepEqual(ids(byListing), ['with-match']);
-    assert.deepEqual(byListing[0].matches.map((item) => item.id), ['m1']);
-    assert.deepEqual(group({ search: '없는말' }), []);
-    // 희망 단지 이름으로도 찾는다
-    // 칸 편집기가 열려 있는 조건은 필터에서 벗어나도 줄을 남긴다 (줄이 사라지면 고치던 입력이 함께 사라진다)
-    const kept = (extra: Record<string, unknown>) =>
-      groupMatchesByRequirement({
-        requirements,
-        matches: [],
-        search: '',
-        stageFilters: [],
-        transactionType: '',
-        ...extra,
-      }).map((group) => group.buyerReqId);
-    assert.deepEqual(kept({ transactionType: 'jeonse' }), ['no-match']);
-    assert.deepEqual(kept({ transactionType: 'jeonse', keepRequirementId: 'with-match' }), [
-      'no-match',
-      'with-match',
-    ]);
-    assert.deepEqual(kept({ search: '없는 검색어', keepRequirementId: 'second' }), ['second']);
-    assert.deepEqual(kept({ stageFilters: ['viewing'], keepRequirementId: 'no-match' }), ['no-match']);
-    assert.deepEqual(kept({ transactionType: 'jeonse', keepRequirementId: null }), ['no-match']);
-
-    const withSite = groupMatchesByRequirement({
-      requirements: [
-        {
-          ...requirement('site-req', '다라', 'sale'),
-          preferredSites: [{ siteId: 's1', site: { id: 's1', name: '고덕그라시움' } }],
-        },
-      ],
-      matches: [],
-      search: '그라시움',
-      stageFilters: [],
-      transactionType: '',
-    });
-    assert.deepEqual(ids(withSite), ['site-req']);
-
-    // '매칭 없음'을 고르면 매칭이 하나도 없는 조건만, 단계와 함께 고르면 둘 다 남는다
-    assert.deepEqual(ids(group({ stageFilters: ['none'] })), ['no-match', 'second']);
-    assert.deepEqual(ids(group({ stageFilters: ['none', 'viewing'] })), [
-      'no-match',
-      'with-match',
-      'second',
-    ]);
+    // 검색: 고객에 걸리면 매칭 전부, 매물에만 걸리면 걸린 매칭만
+    assert.equal(group({ search: '나중' })[1].matches.length, 2);
+    assert.deepEqual(group({ search: '래미안' })[1].matches.map((item) => item.id), ['m1']);
+    // 낱말을 띄어 쓰면 낱말마다 본다: 손님 쪽에 없는 낱말이 걸린 매칭만 보인다
+    assert.deepEqual(group({ search: '나중 래미안' })[1].matches.map((item) => item.id), ['m1']);
+    // 검색과 단계를 함께 걸면 고른 단계 밖의 매칭은 검색에 걸려도 보이지 않는다.
+    // (그런 손님을 목록에서 빼는 것은 서버다: 매물은 고른 단계의 매칭에서만 찾는다)
+    assert.equal(
+      group({ search: '힐스테이트', stageFilters: ['viewing'] })[1].matches.some(
+        (item) => item.id === 'm2',
+      ),
+      false,
+    );
+    // "101동"의 101은 동 · 호 이름에만 견준다. 손님 번호에 101이 있어도 102동 매칭은 보이지 않는다
+    const dongRows = [
+      {
+        ...requirement('dong', '다라', []),
+        contact: { id: 'c-dong', name: '다라', phone: '01010155555' },
+        matches: [
+          {
+            ...match('d1', 'dong', 'viewing', '고덕'),
+            listing: { property: { id: 'p1', site: { name: '고덕' }, unit: { name: '3501', dong: { name: '101' } } } },
+          },
+          {
+            ...match('d2', 'dong', 'viewing', '고덕'),
+            listing: { property: { id: 'p2', site: { name: '고덕' }, unit: { name: '802', dong: { name: '102' } } } },
+          },
+        ],
+      },
+    ];
+    assert.deepEqual(
+      buildRequirementGroups({ rows: dongRows, search: '101동', stageFilters: ['viewing'] })[0].matches.map(
+        (item) => item.id,
+      ),
+      ['d1'],
+    );
+    // 다시 받는 중에는 다음 쪽을 부르지 않는다 (부르면 다시 받기가 취소되어 저장 전 값이 남는다)
+    assert.match(
+      matchesPageSource,
+      /if \(!hasNextPage \|\| isFetching \|\| isFetchNextPageError\) return;/,
+    );
   });
 
   it('filters wanted conditions by the values the customer actually set', async () => {
@@ -765,22 +767,23 @@ describe('desktop matches workbench', () => {
       countRequirementFilters,
       EMPTY_REQUIREMENT_FILTERS,
       getAssigneeFilterOptions,
+      getFilterOptionsStatus,
       getLocationFilterOptions,
-      matchesRequirementFilters,
       scopeRequirementFilters,
       toOpenRange,
+      toWantedListFilter,
     } = (filtersModule.default ?? filtersModule) as {
       countRequirementFilters: (filters: unknown) => number;
       EMPTY_REQUIREMENT_FILTERS: Record<string, unknown>;
-      getAssigneeFilterOptions: (items: unknown[]) => Array<{ value: string; label: string }>;
-      getLocationFilterOptions: (items: unknown[]) => Array<{ value: string; meta: string }>;
-      matchesRequirementFilters: (item: unknown, filters: unknown) => boolean;
+      getAssigneeFilterOptions: (options: unknown) => Array<{ value: string; label: string }>;
+      getFilterOptionsStatus: (filters: unknown) => string;
+      getLocationFilterOptions: (options: unknown) => Array<{ value: string; meta: string }>;
       toOpenRange: (range: [number, number], min: number, max: number) => unknown;
       scopeRequirementFilters: (
         filters: unknown,
-        items: unknown[],
-        options?: { keepCompleted?: boolean },
+        options: unknown,
       ) => { statuses: string[]; locations: string[]; assignees: string[]; siteTypes: string[] };
+      toWantedListFilter: (input: Record<string, unknown>) => Record<string, unknown> | null;
     };
 
     // 필터 줄을 접었을 때 도구 줄에 보이는 수: 값이 걸린 알약의 개수와 같다
@@ -821,115 +824,137 @@ describe('desktop matches workbench', () => {
       ],
       preferredSites: [{ siteId: 'site-1', site: { id: 'site-1', name: '고덕그라시움' } }],
     };
-    const passes = (patch: Record<string, unknown>, item: Record<string, unknown> = base) =>
-      matchesRequirementFilters(item, { ...EMPTY_REQUIREMENT_FILTERS, ...patch });
+    // 거르는 것은 서버다. 화면은 선택을 서버 조건으로 옮긴다.
+    const query = (patch: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
+      toWantedListFilter({
+        search: '',
+        stageFilters: [],
+        transactionType: '',
+        mineUserId: null,
+        filters: { ...EMPTY_REQUIREMENT_FILTERS, ...patch },
+        ...extra,
+      });
 
-    // 예산: 억 단위 필터와 고객 범위가 겹치면 통과 (18억~22억)
-    assert.equal(passes({ budget: { min: 20, max: 25 } }), true);
-    assert.equal(passes({ budget: { min: 25, max: null } }), false);
-    assert.equal(passes({ budget: { min: null, max: 15 } }), false);
-    // 고객이 예산을 정하지 않았으면 걸리지 않는다
+    // 아무것도 고르지 않으면 진행 · 보류만. 완료는 상태 필터에서 골랐을 때만 받는다
+    assert.deepEqual(query(), { status: 'active,hold' });
+    assert.equal(query({ statuses: ['completed'] })?.status, 'completed');
+    assert.equal(getFilterOptionsStatus(EMPTY_REQUIREMENT_FILTERS), 'active,hold');
     assert.equal(
-      passes({ budget: { min: 25, max: null } }, { ...base, priceMin: null, priceMax: null }),
-      true,
+      getFilterOptionsStatus({ ...EMPTY_REQUIREMENT_FILTERS, statuses: ['completed'] }),
+      'active,hold,completed',
     );
-    // 월세 조건의 예산은 매매가가 아니라 보증금으로 비교한다
-    const monthly = {
-      ...base,
-      transactionType: 'monthly',
-      priceMin: null,
-      priceMax: null,
-      depositMin: 10000,
-      depositMax: 20000,
-      monthlyRentMax: 100,
-    };
-    assert.equal(passes({ budget: { min: 3, max: null } }, monthly), false);
-    assert.equal(passes({ budget: { min: 1, max: 2 } }, monthly), true);
+
+    // 예산: 억 → 만원. 월세 조건은 보증금과, 그 밖에는 매매가와 견주는 것은 서버가 한다
+    assert.deepEqual(query({ budget: { min: 20, max: 25 } }), {
+      status: 'active,hold',
+      budgetMin: 200000,
+      budgetMax: 250000,
+    });
+    assert.equal('budgetMin' in (query({ budget: { min: null, max: 15 } }) ?? {}), false);
     // 월세 필터는 월세 조건에만 해당한다
-    assert.equal(passes({ monthlyRent: { min: 50, max: 150 } }, monthly), true);
-    assert.equal(passes({ monthlyRent: { min: 200, max: null } }, monthly), false);
-    assert.equal(passes({ monthlyRent: { min: 50, max: 150 } }), false);
+    assert.deepEqual(query({ monthlyRent: { min: 50, max: null } }), {
+      status: 'active,hold',
+      transactionType: 'monthly',
+      monthlyRentMin: 50,
+    });
 
-    // 평형: m² 저장값을 평으로 바꿔 비교 (25평~34평)
-    assert.equal(passes({ area: { min: 30, max: 40 } }), true);
-    assert.equal(passes({ area: { min: 35, max: null } }), false);
-    // 132.23m²는 39.9996평이지만 화면에 40평으로 보이므로 40평대에 걸려야 한다
-    assert.equal(passes({ area: { min: 40, max: 50 } }, { ...base, areaMax: 132.23 }), true);
+    // 평형: 서버는 m²로 견준다. 화면에 40평으로 보이는 132.23m²(39.9996평)가 40평에서 빠지지 않게
+    // 화면의 반올림으로 그 평수가 되는 m²까지 넓혀 보낸다
+    const area = query({ area: { min: 40, max: 50 } }) as { areaMin: number; areaMax: number };
+    assert.ok(area.areaMin <= 132.23 && area.areaMin > 132.0);
+    // 50.0평으로 보이는 가장 큰 면적은 걸리고, 50.1평으로 보이는 면적은 걸리지 않는다
+    const shown = (sqm: number) => Math.round(sqm * 0.3025 * 10) / 10;
+    assert.equal(shown(area.areaMax), 50);
+    assert.equal(shown(area.areaMax + 0.01), 50.1);
+    assert.equal(shown(area.areaMin), 40);
+    assert.equal(shown(area.areaMin - 0.01), 39.9);
 
-    // 지역은 상하위를 함께 본다: 강동구 고객은 강동구·고덕동 어느 쪽으로도 걸린다
-    assert.equal(passes({ locations: ['region:11740'] }), true);
-    assert.equal(passes({ locations: ['region:1174010100'] }), true);
-    assert.equal(passes({ locations: ['region:11710'] }), false);
-    assert.equal(passes({ locations: ['site:site-1'] }), true);
-    assert.equal(passes({ locations: ['site:other'] }), false);
+    // 지역 · 단지 · 건물 종류 · 긴급도 · 담당자는 고른 값을 그대로 보낸다 (담당자 없음은 none)
+    assert.deepEqual(
+      query({
+        locations: ['region:11740', 'site:site-1'],
+        siteTypes: ['villa', 'apartment'],
+        urgencies: ['normal'],
+        assignees: ['u1', 'none'],
+      }),
+      {
+        status: 'active,hold',
+        locations: 'region:11740,site:site-1',
+        siteTypes: 'villa,apartment',
+        urgency: 'normal',
+        assignedToId: 'u1,none',
+      },
+    );
+    // "내 손님": 담당이 나인 조건만. 담당자 필터에서 다른 사람만 골랐으면 걸릴 것이 없어 요청하지 않는다
+    assert.equal(query({}, { mineUserId: 'me' })?.assignedToId, 'me');
+    assert.equal(query({ assignees: ['me', 'u1'] }, { mineUserId: 'me' })?.assignedToId, 'me');
+    assert.equal(query({ assignees: ['u1'] }, { mineUserId: 'me' }), null);
 
-    assert.equal(passes({ siteTypes: ['villa', 'apartment'] }), true);
-    assert.equal(passes({ siteTypes: ['villa'] }), false);
-    assert.equal(passes({ statuses: ['hold'] }), false);
-    assert.equal(passes({ urgencies: ['normal'] }), true);
-    assert.equal(passes({ assignees: ['u1'] }), true);
-    assert.equal(passes({ assignees: ['none'] }), false);
-    assert.equal(passes({ assignees: ['none'] }, { ...base, assignedToId: null }), true);
+    // 입주 희망일: 날의 경계는 한국 시각
+    assert.deepEqual(query({ moveInFrom: '2026-11-01', moveInTo: '2026-12-31' }), {
+      status: 'active,hold',
+      moveInAfter: '2026-11-01T00:00:00+09:00',
+      moveInBefore: '2026-12-31T23:59:59.999+09:00',
+    });
 
-    // 입주일을 정하지 않은 조건은 기간 필터에서 빠진다
-    assert.equal(passes({ moveInFrom: '2026-11-01' }), false);
-    const withMoveIn = { ...base, moveInDate: '2026-12-15T12:00:00.000Z' };
-    assert.equal(passes({ moveInFrom: '2026-11-01', moveInTo: '2026-12-31' }, withMoveIn), true);
-    assert.equal(passes({ moveInTo: '2026-11-30' }, withMoveIn), false);
+    // 검색어는 연결한 매물에서도 찾게 하고, 단계 · 거래유형도 서버 조건이다
+    assert.deepEqual(
+      query({}, { search: ' 그라시움 ', stageFilters: ['none', 'viewing'], transactionType: 'jeonse' }),
+      {
+        status: 'active,hold',
+        search: '그라시움',
+        searchMatches: true,
+        matchStages: 'none,viewing',
+        transactionType: 'jeonse',
+      },
+    );
 
     // 슬라이더 양 끝은 제한 없음
     assert.equal(toOpenRange([0, 30], 0, 30), null);
     assert.deepEqual(toOpenRange([30, 30], 0, 30), { min: 30, max: null });
     assert.deepEqual(toOpenRange([0, 5], 0, 30), { min: null, max: 5 });
 
-    // 선택지는 실제 조건에 있는 값만
+    // 선택지는 실제 조건에 있는 값만 (서버가 모아 준다)
+    const options = {
+      regions: [{ code: '11740', name: '강동구' }],
+      sites: [{ id: 'site-1', name: '고덕그라시움' }],
+      assignees: [{ id: 'u1', name: '이담당' }],
+      hasUnassigned: true,
+    };
     assert.deepEqual(
-      getLocationFilterOptions([base]).map((option) => [option.value, option.meta]),
+      getLocationFilterOptions(options).map((option) => [option.value, option.meta]),
       [
         ['region:11740', '지역'],
         ['site:site-1', '단지'],
       ],
     );
     assert.deepEqual(
-      getAssigneeFilterOptions([base, { ...base, assignedToId: null, assignedTo: null }]).map(
-        (option) => option.label,
-      ),
+      getAssigneeFilterOptions(options).map((option) => option.label),
       ['이담당', '담당자 없음'],
     );
 
-    // 목록에 없는 조건(완료)에만 있던 값은 목록을 비우지 않는다
-    const stageOnlySelection = {
+    // 지금 고를 수 없는 값(완료 · 삭제된 조건에만 있던 단지 · 담당자)은 목록을 비우지 않는다
+    const selection = {
       ...EMPTY_REQUIREMENT_FILTERS,
       statuses: ['completed', 'hold'],
       locations: ['site:site-1', 'site:completed-only'],
       assignees: ['u1', 'completed-agent'],
       siteTypes: ['villa'],
     };
-    const completed = {
-      ...base,
-      status: 'completed',
-      assignedToId: 'completed-agent',
-      assignedTo: { id: 'completed-agent', name: '퇴사자' },
-      preferredSites: [{ siteId: 'completed-only', site: { id: 'completed-only', name: '완료단지' } }],
-    };
-    const buyerScoped = scopeRequirementFilters(stageOnlySelection, [base]);
-    assert.deepEqual(buyerScoped.statuses, ['hold']);
-    assert.deepEqual(buyerScoped.locations, ['site:site-1']);
-    assert.deepEqual(buyerScoped.assignees, ['u1']);
-    assert.deepEqual(buyerScoped.siteTypes, ['villa']);
-    // 완료 조건이 목록에 있으면 선택이 그대로 적용된다
-    const stageScoped = scopeRequirementFilters(stageOnlySelection, [base, completed]);
-    assert.deepEqual(stageScoped.statuses, ['completed', 'hold']);
-    assert.deepEqual(stageScoped.locations, ['site:site-1', 'site:completed-only']);
-    assert.deepEqual(stageScoped.assignees, ['u1', 'completed-agent']);
-    assert.match(matchesPageSource, /scopeRequirementFilters\(requirementFilters, requirements, \{/);
-    // 완료 조건을 따로 받아 온 뒤에는 완료가 없어도 '완료' 선택을 그대로 둔다
-    assert.deepEqual(
-      scopeRequirementFilters(stageOnlySelection, [base], { keepCompleted: true }).statuses,
-      ['completed', 'hold'],
+    const scoped = scopeRequirementFilters(selection, options);
+    assert.deepEqual(scoped.statuses, ['completed', 'hold']);
+    assert.deepEqual(scoped.locations, ['site:site-1']);
+    assert.deepEqual(scoped.assignees, ['u1']);
+    assert.deepEqual(scoped.siteTypes, ['villa']);
+    // 선택지를 아직 받지 못했으면 아무것도 빼지 않고, 뺄 것이 없으면 같은 객체다 (조회 조건이 괜히 바뀌지 않게)
+    assert.equal(scopeRequirementFilters(selection, undefined), selection);
+    assert.equal(scopeRequirementFilters(scoped, options), scoped);
+    assert.match(
+      matchesPageSource,
+      /scopeRequirementFilters\(requirementFilters, filterOptionsQuery\.data\)/,
     );
     assert.match(matchesPageSource, /filters=\{activeRequirementFilters\}/);
-    assert.match(matchesPageSource, /requirementFilters: activeRequirementFilters/);
+    assert.match(matchesPageSource, /filters: activeRequirementFilters,/);
 
     // 희망 단지는 지역과 한 줄로 표시한다. 단지만 있으면 '지역 협의'를 쓰지 않는다
     const utilsModule =
@@ -960,8 +985,6 @@ describe('desktop matches workbench', () => {
       wantedFilterBarSource,
       /onFiltersChange\(\(current\) => \(\{ \.\.\.current, \.\.\.patch \}\)\)/,
     );
-    // 조건 필터는 희망 단지가 빠진 매칭 응답이 아니라 조건 목록으로 판정한다
-    assert.doesNotMatch(matchesPageSource, /match\.buyerRequirement\b[^;]*matchesRequirementFilters/);
 
     // 필터 줄은 매물관리의 칩과 범위 패널을 그대로 쓴다. 모양은 문서관리와 같은 Notion형(soft) 알약이다
     for (const part of ['ToolbarFilterChip', 'NumericRangeFilterPanel']) {

@@ -1,6 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus,
   RefreshCw,
@@ -8,7 +14,7 @@ import {
   UserSearch,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { BuyerRequirement, Match } from '@estate-erp/api-client';
+import type { BuyerRequirementWithMatches, Match } from '@estate-erp/api-client';
 import { MatchStage, normalizeMatchStage } from '@estate-erp/shared';
 import {
   buildViewingCalendarEventPayload,
@@ -16,7 +22,7 @@ import {
   getMatchStageLabel,
   getMatchTitle,
   getUpcomingViewingEvent,
-  groupMatchesByRequirement,
+  buildRequirementGroups,
   shouldMoveToViewingOnSchedule,
   toCalendarEventUpdatePayload,
   type MatchRowActions,
@@ -44,12 +50,23 @@ import {
 import {
   countRequirementFilters,
   EMPTY_REQUIREMENT_FILTERS,
+  getFilterOptionsStatus,
   hasRequirementFilters,
   NO_MATCH_STAGE,
   scopeRequirementFilters,
+  toWantedListFilter,
   type RequirementFilters,
 } from './-wanted-filters';
 import { api } from '@/lib/api';
+import {
+  buyerRequirementQueries,
+  findWantedRow,
+  mergeWantedPages,
+  patchWantedMatch,
+  updateWantedRows,
+  type WantedListFilter,
+} from '@/queries/buyer-requirements';
+import { invalidateMatchData, refreshMatchData } from '@/queries/matches';
 import { apiErrorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { getStatusMeta } from '@/lib/status-config';
@@ -60,21 +77,8 @@ import { useTabStore } from '@/features/tabs/store/useTabStore';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
-/** 해당 상태의 희망 조건 전체. 서버가 페이지당 100건으로 끊으므로 끝까지 이어 받는다. */
-async function fetchBuyerRequirements(
-  status: string,
-): Promise<BuyerRequirement[]> {
-  const items: BuyerRequirement[] = [];
-  for (let page = 1; ; page += 1) {
-    const result = await api.buyerRequirements.findAll({
-      status,
-      limit: 100,
-      page,
-    });
-    items.push(...result.items);
-    if (page >= result.pagination.totalPages) return items;
-  }
-}
+/** 걸릴 조건이 없어 요청하지 않을 때 조회 정의에 넘기는 자리 채움 */
+const NO_LIST_FILTER: WantedListFilter = { status: 'active,hold' };
 
 const TRANSACTION_TYPE_TABS = [
   { value: '', label: '전체' },
@@ -144,7 +148,7 @@ function WantedPropertiesPage() {
    * 줄이 사라지면 편집기와 고치던 입력이 함께 사라진다.
    */
   const [editingRequirement, setEditingRequirement] =
-    useState<BuyerRequirement | null>(null);
+    useState<BuyerRequirementWithMatches | null>(null);
   /** "내 손님": 담당이 나인 조건만 본다 (사용자 의견 2026-11-22 검수 보고 → 지휘자 결정) */
   const { user: currentUser } = useAuth();
   const [mineOnly, setMineOnly] = useState(false);
@@ -191,55 +195,128 @@ function WantedPropertiesPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const {
-    data: matches = [],
-    isLoading: isMatchesLoading,
-    isError: isMatchesError,
-    refetch: refetchMatches,
-  } = useQuery({
-    queryKey: ['matches'],
-    queryFn: () => api.matches.findAll(),
+  // 필터의 선택지(지역 · 단지 · 담당자)는 서버가 모아 준다. 목록을 쪽 단위로 받으므로 받아 둔 줄에서는 모을 수 없다.
+  const filterOptionsQuery = useQuery({
+    ...buyerRequirementQueries.wantedFilterOptions(getFilterOptionsStatus(requirementFilters)),
+    placeholderData: keepPreviousData,
   });
-  const {
-    data: openRequirements = [],
-    isLoading: isRequirementsLoading,
-    isError: isRequirementsError,
-    refetch: refetchRequirements,
-  } = useQuery({
-    queryKey: ['buyer-requirements', 'wanted-properties', 'open'],
-    queryFn: () => fetchBuyerRequirements('active,hold'),
-  });
-  // 완료한 조건은 평소에는 받지 않는다. 상태 필터에서 '완료'를 고르면 받아 함께 보여 준다
-  // (다른 곳에서 구한 손님을 다시 찾거나, 실수로 완료한 것을 되돌릴 때).
-  const includeCompleted = requirementFilters.statuses.includes('completed');
-  const completedQuery = useQuery({
-    queryKey: ['buyer-requirements', 'wanted-properties', 'completed'],
-    queryFn: () => fetchBuyerRequirements('completed'),
-    enabled: includeCompleted,
-  });
-  const requirements = useMemo(
-    () =>
-      includeCompleted
-        ? [...openRequirements, ...(completedQuery.data ?? [])]
-        : openRequirements,
-    [completedQuery.data, includeCompleted, openRequirements],
+  const activeRequirementFilters = useMemo(
+    () => scopeRequirementFilters(requirementFilters, filterOptionsQuery.data),
+    [filterOptionsQuery.data, requirementFilters],
   );
-  // 매칭과 조건이 모두 있어야 한다. 하나만 실패한 채 그리면 매칭이 있는 조건을
-  // '매칭 없음'으로 보여주거나, 조건 필터로 매칭을 잘못 걸러내게 된다.
-  const isLoading =
-    isMatchesLoading ||
-    isRequirementsLoading ||
-    (includeCompleted && completedQuery.isLoading);
-  const isError =
-    isMatchesError || isRequirementsError || (includeCompleted && completedQuery.isError);
+
+  // 조건 · 검색 · 정렬은 모두 서버가 한다. 줄은 `{ 손님 조건, 그 손님의 매칭들 }`이고 쪽 단위로 받아,
+  // 아래로 굴리면 이어 받는다. 예전에는 조건 전부와 매칭 전부를 따로 받아 화면에서 묶고 걸렀다.
+  const listFilter = useMemo(
+    () =>
+      toWantedListFilter({
+        search: deferredSearch,
+        stageFilters,
+        transactionType: transactionTypeFilter,
+        filters: activeRequirementFilters,
+        mineUserId: mineOnly && currentUser ? currentUser.id : null,
+      }),
+    [
+      activeRequirementFilters,
+      currentUser,
+      deferredSearch,
+      mineOnly,
+      stageFilters,
+      transactionTypeFilter,
+    ],
+  );
+  const listQuery = useInfiniteQuery({
+    ...buyerRequirementQueries.wanted(listFilter ?? NO_LIST_FILTER),
+    enabled: listFilter !== null,
+    // 조건을 바꾸는 동안 표를 비우지 않는다.
+    placeholderData: keepPreviousData,
+  });
+  const { fetchNextPage, hasNextPage, isFetching, isFetchingNextPage, isFetchNextPageError } =
+    listQuery;
+  const listedRows = useMemo(
+    () => (listFilter === null ? [] : mergeWantedPages(listQuery.data?.pages)),
+    [listFilter, listQuery.data?.pages],
+  );
+  const totalRequirements =
+    listFilter === null ? 0 : (listQuery.data?.pages[0]?.pagination.total ?? 0);
+  const handleEndReached = useCallback(() => {
+    // 다음 쪽을 못 불러왔을 때 굴릴 때마다 다시 부르지 않는다. 아래 줄의 "다시 시도"로 부른다.
+    // 다시 받는 중(저장 직후 등)에도 부르지 않는다: 다음 쪽 받기가 그 다시 받기를 취소해,
+    // 이미 받아 둔 쪽에 저장 전 값이 남는다. 다 받고 나면 아래의 감시가 다시 알린다.
+    if (!hasNextPage || isFetching || isFetchNextPageError) return;
+    void fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchNextPageError, isFetching]);
+
+  // 칸 편집기가 열려 있는 조건이 목록에서 빠졌으면(저장한 값이 필터에서 벗어났거나, 다른 탭에서 고쳤다)
+  // 그 한 줄만 조건 없이 다시 받아 남겨 둔다. 줄이 사라지면 편집기와 고치던 입력이 함께 사라진다.
+  const editingId = editingRequirement?.id ?? null;
+  const editingInList = editingId !== null && listedRows.some((row) => row.id === editingId);
+  const pinnedRowQuery = useQuery({
+    ...buyerRequirementQueries.wantedRow(editingId),
+    enabled: editingId !== null && !editingInList,
+  });
+  const pinnedRow = useMemo(() => {
+    const row = editingInList ? null : (pinnedRowQuery.data ?? null);
+    // 이 목록이 보여 주지 않는 상태(완료)가 되었으면 지워진 것과 같이 다룬다 — 아래의 "남겨 둔 줄"
+    const statuses = (listFilter ?? NO_LIST_FILTER).status?.split(',') ?? [];
+    return row && row.id === editingId && statuses.includes(row.status) ? row : null;
+  }, [editingId, editingInList, listFilter, pinnedRowQuery.data]);
+  const requirements = useMemo(
+    () => (pinnedRow ? [...listedRows, pinnedRow] : listedRows),
+    [listedRows, pinnedRow],
+  );
+
+  const isLoading = listFilter !== null && listQuery.isPending;
+  const isError = listFilter !== null && listQuery.isError && !isFetchNextPageError;
   // 칸 편집기가 열려 있는 동안에는 목록을 다시 받다 실패해도 표를 오류 화면으로 바꾸지 않는다.
   // 바꾸면 편집기와 고치던 입력이 사라진다. 받아 둔 목록을 그대로 두고, 편집기를 닫으면 오류 화면이 보인다.
   const showError = isError && editingRequirement === null;
   const refetch = () => {
-    void refetchMatches();
-    void refetchRequirements();
-    if (includeCompleted) void completedQuery.refetch();
+    void listQuery.refetch();
+    void filterOptionsQuery.refetch();
   };
+
+  // 편집 중인 조건이 지금 목록에 있으면 그 값.
+  const editingListed = useMemo(
+    () =>
+      editingRequirement
+        ? requirements.find((item) => item.id === editingRequirement.id)
+        : undefined,
+    [editingRequirement, requirements],
+  );
+  // 목록에 있는 동안에는 늘 목록의 지금 값을 기억해 둔다. 목록에서 빠졌을 때 남겨 두는 줄을
+  // "편집기를 열 때의 값"으로 그리면 편집기가 이미 본 값보다 예전으로 돌아간다 — 그 사이 감지한
+  // 거래유형 충돌이 풀려서, 매매가로 넣은 금액이 전세가 된 조건에 저장된다.
+  useEffect(() => {
+    if (!editingListed) return;
+    setEditingRequirement((current) =>
+      current && current.id === editingListed.id ? editingListed : current,
+    );
+  }, [editingListed]);
+  /**
+   * 편집 중인 조건이 목록에서 빠졌다(다른 곳에서 완료 · 삭제). 줄은 마지막으로 본 값으로 남기지만
+   * 이 조건의 지금 값은 더 알 수 없다 — 빠지면서 다른 값도 함께 바뀌었을 수 있다.
+   * 그래서 남겨 둔 줄에서는 저장하지 않는다. 입력은 편집기에 그대로 둔다.
+   */
+  const editingDetached = editingRequirement !== null && editingListed === undefined;
+
+  const groupedBuyerMatches = useMemo(
+    () =>
+      buildRequirementGroups({
+        rows:
+          editingRequirement && editingDetached
+            ? [...requirements, editingRequirement]
+            : requirements,
+        search: deferredSearch,
+        stageFilters,
+      }),
+    [deferredSearch, editingDetached, editingRequirement, requirements, stageFilters],
+  );
+  // 받아 둔 손님들의 매칭 전부 (단계 필터 · 검색과 상관없이)
+  const matches = useMemo(
+    () => groupedBuyerMatches.flatMap((group) => group.allMatches),
+    [groupedBuyerMatches],
+  );
 
   const openMatchCreate = (requirementId: string | null = null) => {
     setCreateRequirementId(requirementId);
@@ -279,11 +356,18 @@ function WantedPropertiesPage() {
     }
   }, [deepLinkQuery, navigate]);
 
+  // 매칭 하나가 바뀌면 그 손님 한 줄만 다시 받아 갈아 끼운다 (받아 둔 손님 목록 전체를 다시 받지 않는다).
+  // 어느 손님의 매칭인지 모를 때만 통째로 다시 받는다.
+  const refreshMatch = (buyerReqId: string | null | undefined) =>
+    void (buyerReqId
+      ? refreshMatchData(queryClient, queryClient, buyerReqId)
+      : invalidateMatchData(queryClient));
+
   const stageMutation = useMutation({
-    mutationFn: ({ id, stage }: { id: string; stage: string }) =>
+    mutationFn: ({ id, stage }: { id: string; stage: string; buyerReqId?: string }) =>
       api.matches.updateStage(id, { stage }),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    onSuccess: (updated, variables) => {
+      refreshMatch(updated.buyerReqId ?? variables.buyerReqId);
       toast.success(
         variables.stage === MatchStage.CLOSED
           ? '매칭을 종료했습니다'
@@ -302,12 +386,12 @@ function WantedPropertiesPage() {
         expectedUpdatedAt: match.updatedAt,
       }),
     onSuccess: (updatedMatch) => {
-      queryClient.setQueryData<Match[]>(['matches'], (current) =>
-        current?.map((match) =>
-          match.id === updatedMatch.id ? updatedMatch : match,
-        ),
-      );
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      // 응답에서 고친 칸만 받아 둔 줄에 덮어 메모가 곧장 바뀌게 하고, 정확한 값은 뒤에서 다시 받는다
+      patchWantedMatch(queryClient, updatedMatch.id, {
+        memo: updatedMatch.memo,
+        updatedAt: updatedMatch.updatedAt,
+      });
+      refreshMatch(updatedMatch.buyerReqId);
       toast.success('메모를 저장했습니다');
     },
     onError: (error: Error) => {
@@ -344,8 +428,8 @@ function WantedPropertiesPage() {
         await api.matches.updateStage(match.id, { stage: MatchStage.VIEWING });
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    onSuccess: (_data, variables) => {
+      refreshMatch(variables.match.buyerReqId);
       queryClient.invalidateQueries({ queryKey: ['calendar-events'] });
       toast.success('임장 일정을 저장했습니다');
     },
@@ -355,9 +439,9 @@ function WantedPropertiesPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.matches.remove(id),
-    onSuccess: (_data, id) => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    mutationFn: ({ id }: { id: string; buyerReqId?: string }) => api.matches.remove(id),
+    onSuccess: (_data, { id, buyerReqId }) => {
+      refreshMatch(buyerReqId);
       setDeleteMatchId(null);
       if (selectedMatchId === id) {
         setSelectedMatchId(null);
@@ -376,16 +460,9 @@ function WantedPropertiesPage() {
     const latest = await api.buyerRequirements.findOne(requirement.id);
     // 받아 오는 사이 목록이 더 새 값을 받아 왔으면(다른 탭의 저장) 그쪽이 지금 값이다.
     // 방금 받은 것으로 덮으면 화면이 예전으로 돌아가고, 편집기도 예전 값 위에서 판단하게 된다.
-    const listed = queryClient
-      .getQueryData<BuyerRequirement[]>(['buyer-requirements', 'wanted-properties', 'open'])
-      ?.find((item) => item.id === latest.id);
+    const listed = findWantedRow(queryClient, latest.id);
     if (listed && listed.updatedAt > latest.updatedAt) return listed;
-    for (const scope of ['open', 'completed']) {
-      queryClient.setQueryData<BuyerRequirement[]>(
-        ['buyer-requirements', 'wanted-properties', scope],
-        (list) => mergeLatestRequirement(list, latest),
-      );
-    }
+    updateWantedRows(queryClient, (list) => mergeLatestRequirement(list, latest));
     if (latest.updatedAt !== requirement.updatedAt) {
       // 목록이 예전 것이었다. 이 조건만이 아닐 수 있으니 뒤에서 다시 받는다
       void queryClient.invalidateQueries({ queryKey: ['buyer-requirements'] });
@@ -404,12 +481,7 @@ function WantedPropertiesPage() {
     // 응답에서 고친 칸만 받아 둔 목록에 덮어 칸이 곧장 바뀌게 하고, 정확한 목록은 뒤에서 다시 받는다.
     // (응답 전체를 덮으면 저장하는 사이 새로 온 목록의 손대지 않은 값이 응답의 예전 값으로 돌아간다.)
     // 매칭에 실려 오는 조건(매칭 상세)과 고객 원장도 같은 조건을 보여 준다.
-    for (const scope of ['open', 'completed']) {
-      queryClient.setQueryData<BuyerRequirement[]>(
-        ['buyer-requirements', 'wanted-properties', scope],
-        (list) => mergeSavedRequirement(list, saved, change),
-      );
-    }
+    updateWantedRows(queryClient, (list) => mergeSavedRequirement(list, saved, change));
     // 저장 전에 받기 시작한 목록이 있어도 여기서 멈추고 다시 받으므로(invalidateQueries의 기본 동작),
     // 저장 전 값이 뒤늦게 도착해 고친 칸을 덮지 않는다.
     for (const queryKey of [['buyer-requirements'], ['matches'], ['projects']]) {
@@ -467,7 +539,7 @@ function WantedPropertiesPage() {
 
   // dealCreated 진입은 항상 거래 생성 확인 다이얼로그를 거친다
   const handleStageChange = (id: string, stage: string) => {
-    const match = matches.find((candidate) => candidate.id === id);
+    const match = findMatch(id);
     if (match) {
       const blockReason = getMatchStageBlockReason(match, stage);
       if (blockReason) {
@@ -482,7 +554,7 @@ function WantedPropertiesPage() {
       setConvertMatchId(id);
       return;
     }
-    stageMutation.mutate({ id, stage });
+    stageMutation.mutate({ id, stage, buyerReqId: match?.buyerReqId });
   };
 
   const actions: MatchRowActions = {
@@ -512,91 +584,34 @@ function WantedPropertiesPage() {
     return counts;
   }, [matches]);
 
-  const selectedMatch = useMemo(
+  const listedSelectedMatch = useMemo(
     () => matches.find((match) => match.id === selectedMatchId) ?? null,
     [matches, selectedMatchId],
   );
-  // 바로 가기로 연 매칭이 목록에 없으면(지워졌거나 다른 사무소의 것) 빈 창을 남기지 않는다
+  // 받아 둔 줄에 없는 매칭(바로 가기로 열었거나, 그 손님이 아직 받지 않은 쪽에 있다)은 한 건만 받는다
+  const selectedDetailQuery = useQuery({
+    queryKey: ['matches', 'detail', selectedMatchId],
+    queryFn: () => api.matches.findOne(selectedMatchId as string),
+    enabled: selectedMatchId !== null && !listedSelectedMatch && !isLoading,
+    retry: false,
+  });
+  const selectedMatch: Match | null =
+    listedSelectedMatch ??
+    (selectedDetailQuery.data?.id === selectedMatchId ? selectedDetailQuery.data : null) ??
+    null;
+  // 열려던 매칭이 없으면(지워졌거나 다른 사무소의 것) 빈 창을 남기지 않는다
   useEffect(() => {
-    if (selectedMatchId && !isMatchesLoading && !isMatchesError && !selectedMatch) {
+    if (selectedMatchId && !listedSelectedMatch && selectedDetailQuery.isError) {
       setSelectedMatchId(null);
       toast.error('매칭을 찾을 수 없습니다. 지워졌을 수 있습니다.');
     }
-  }, [isMatchesError, isMatchesLoading, selectedMatch, selectedMatchId]);
-  const convertMatch = useMemo(
-    () => matches.find((match) => match.id === convertMatchId) ?? null,
-    [matches, convertMatchId],
-  );
-  const deleteMatch = useMemo(
-    () => matches.find((match) => match.id === deleteMatchId) ?? null,
-    [matches, deleteMatchId],
-  );
+  }, [listedSelectedMatch, selectedDetailQuery.isError, selectedMatchId]);
+  // 상세 창에서 누른 동작(단계 · 거래 전환 · 삭제)은 받아 둔 줄에 없는 매칭에도 닿는다
+  const findMatch = (id: string | null): Match | null =>
+    matches.find((match) => match.id === id) ?? (selectedMatch?.id === id ? selectedMatch : null);
+  const convertMatch = findMatch(convertMatchId);
+  const deleteMatch = findMatch(deleteMatchId);
 
-  // '완료'를 고른 동안에는 완료 조건을 받아 오므로, 받아 온 것이 비어 있어도 그 선택을 그대로 둔다
-  // (지우면 '완료'만 골랐는데 진행 중인 조건이 모두 보인다).
-  const activeRequirementFilters = useMemo(
-    () =>
-      scopeRequirementFilters(requirementFilters, requirements, {
-        keepCompleted: includeCompleted && completedQuery.isSuccess,
-      }),
-    [completedQuery.isSuccess, includeCompleted, requirementFilters, requirements],
-  );
-
-  // 편집 중인 조건이 지금 목록에 있으면 그 값.
-  const editingListed = useMemo(
-    () =>
-      editingRequirement
-        ? requirements.find((item) => item.id === editingRequirement.id)
-        : undefined,
-    [editingRequirement, requirements],
-  );
-  // 목록에 있는 동안에는 늘 목록의 지금 값을 기억해 둔다. 목록에서 빠졌을 때 남겨 두는 줄을
-  // "편집기를 열 때의 값"으로 그리면 편집기가 이미 본 값보다 예전으로 돌아간다 — 그 사이 감지한
-  // 거래유형 충돌이 풀려서, 매매가로 넣은 금액이 전세가 된 조건에 저장된다.
-  useEffect(() => {
-    if (!editingListed) return;
-    setEditingRequirement((current) =>
-      current && current.id === editingListed.id ? editingListed : current,
-    );
-  }, [editingListed]);
-  /**
-   * 편집 중인 조건이 목록에서 빠졌다(다른 곳에서 완료 · 삭제). 줄은 마지막으로 본 값으로 남기지만
-   * 이 조건의 지금 값은 더 알 수 없다 — 빠지면서 다른 값도 함께 바뀌었을 수 있다.
-   * 그래서 남겨 둔 줄에서는 저장하지 않는다. 입력은 편집기에 그대로 둔다.
-   */
-  const editingDetached = editingRequirement !== null && editingListed === undefined;
-
-  const groupedBuyerMatches = useMemo(() => {
-    const mine =
-      mineOnly && currentUser
-        ? requirements.filter(
-            (item) =>
-              item.assignedToId === currentUser.id || item.id === editingRequirement?.id,
-          )
-        : requirements;
-    const listed =
-      editingRequirement && editingDetached ? [...mine, editingRequirement] : mine;
-    return groupMatchesByRequirement({
-      requirements: listed,
-      matches,
-      search: deferredSearch,
-      stageFilters: stageFilters,
-      transactionType: transactionTypeFilter,
-      requirementFilters: activeRequirementFilters,
-      keepRequirementId: editingRequirement?.id ?? null,
-    });
-  }, [
-    activeRequirementFilters,
-    stageFilters,
-    currentUser,
-    deferredSearch,
-    editingDetached,
-    editingRequirement,
-    matches,
-    mineOnly,
-    requirements,
-    transactionTypeFilter,
-  ]);
   // 옆 패널에 열린 고객. 필터 · 검색으로 목록에서 빠지면 패널도 닫힌다(보이지 않는 줄의 패널이 남지 않게).
   const peekGroup =
     groupedBuyerMatches.find((group) => group.buyerReqId === peekRequirementId) ?? null;
@@ -738,7 +753,7 @@ function WantedPropertiesPage() {
           <WantedFilterBar
             filters={activeRequirementFilters}
             onFiltersChange={setRequirementFilters}
-            requirements={requirements}
+            filterOptions={filterOptionsQuery.data}
             stageOptionsPrefix={NO_MATCH_STAGE_OPTIONS}
             stageFilters={stageFilters}
             onStageFiltersChange={setStageFilters}
@@ -779,7 +794,7 @@ function WantedPropertiesPage() {
               다시 시도
             </Button>
           </div>
-        ) : requirements.length === 0 && editingRequirement === null ? (
+        ) : groupedBuyerMatches.length === 0 && !hasActiveFilters ? (
           <EmptyState
             icon={UserSearch}
             title="진행 중인 희망 조건이 없습니다"
@@ -825,7 +840,7 @@ function WantedPropertiesPage() {
                 onRequirementEditingChange={(editing) =>
                   setEditingRequirement((current) =>
                     editing
-                      ? group.buyerRequirement
+                      ? (requirements.find((row) => row.id === group.buyerReqId) ?? current)
                       : current?.id === group.buyerReqId
                         ? null
                         : current,
@@ -838,6 +853,7 @@ function WantedPropertiesPage() {
                 }
               />
             ))}
+            <EndOfListSentinel onReach={handleEndReached} />
           </div>
         ) : null}
       </main>
@@ -862,8 +878,25 @@ function WantedPropertiesPage() {
           data-buyer-table-status
           className="flex min-h-7 shrink-0 items-center gap-2 border-t border-border bg-[#faf9f6] px-3 text-[11px] text-muted-foreground tabular-nums"
         >
-          희망 조건 {groupedBuyerMatches.length.toLocaleString()}건 · 매칭{' '}
-          {groupedMatchCount.toLocaleString()}건
+          {hasNextPage
+            ? `희망 조건 ${groupedBuyerMatches.length.toLocaleString()}건 표시 · 전체 ${totalRequirements.toLocaleString()}건`
+            : `희망 조건 ${groupedBuyerMatches.length.toLocaleString()}건 · 매칭 ${groupedMatchCount.toLocaleString()}건`}
+          {isFetchingNextPage ? ' · 더 불러오는 중...' : ''}
+          {hasNextPage && !isFetchingNextPage && !isFetchNextPageError
+            ? ' · 아래로 스크롤하면 더 불러옵니다'
+            : ''}
+          {isFetchNextPageError && (
+            <>
+              {' · 나머지를 불러오지 못했습니다. '}
+              <button
+                type="button"
+                className="underline underline-offset-2 hover:text-foreground"
+                onClick={() => void fetchNextPage()}
+              >
+                다시 시도
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -930,12 +963,27 @@ function WantedPropertiesPage() {
         loading={deleteMutation.isPending}
         onConfirm={() => {
           if (deleteMatchId) {
-            deleteMutation.mutate(deleteMatchId);
+            deleteMutation.mutate({ id: deleteMatchId, buyerReqId: deleteMatch?.buyerReqId });
           }
         }}
       />
     </div>
   );
+}
+
+/** 표의 끝에 닿으면 알린다 (다음 쪽을 이어 받는다) */
+function EndOfListSentinel({ onReach }: { onReach: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) onReach();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [onReach]);
+  return <div ref={ref} aria-hidden className="h-px" />;
 }
 
 function ViewEmpty({

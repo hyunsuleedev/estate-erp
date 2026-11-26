@@ -1,6 +1,7 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
 import type { ListingIntakeState, ListingOccupyingDeal } from './listings.js';
+import type { MatchRow } from './matches.js';
 
 export type BuyerRequirementStatus = 'active' | 'hold' | 'completed';
 
@@ -130,6 +131,19 @@ export interface BuyerRequirement {
   preferredRegions?: BuyerRequirementPreferredRegion[];
 }
 
+/** 연결한 매물(매칭)을 함께 실은 목록의 줄 (expand=matches) */
+export type BuyerRequirementWithMatches = Omit<BuyerRequirement, 'matches' | 'consultations'> & {
+  matches: MatchRow[];
+};
+
+/** 희망매물 필터의 선택지: 지금 조건들에 실제로 있는 지역 · 단지 · 담당자 */
+export interface BuyerRequirementFilterOptions {
+  regions: Array<{ code: string; name: string }>;
+  sites: Array<{ id: string; name: string }>;
+  assignees: Array<{ id: string; name: string }>;
+  hasUnassigned: boolean;
+}
+
 export interface BuyerRequirementsFilter {
   // Multi-value: pass as comma-joined strings. Server splits on ','.
   status?: string;
@@ -161,7 +175,18 @@ export interface BuyerRequirementsFilter {
   moveInBefore?: string;
   // Free-text search
   search?: string;
-  sortBy?: 'createdAt' | 'nextContactDate' | 'urgency';
+  /** 검색어를 희망 지역 이름과 연결한 매물(단지 · 주소 · 동 · 호 · 매칭 메모)에서도 찾는다 */
+  searchMatches?: boolean;
+  /** 이 id의 조건만 (CSV) */
+  ids?: string;
+  /** `region:<법정동 코드>` · `site:<단지 id>` (CSV). 하나만 맞아도 된다 */
+  locations?: string;
+  /** 예산(만원). 월세 조건은 보증금과, 그 밖에는 매매가 · 전세가와 견준다 */
+  budgetMin?: number;
+  budgetMax?: number;
+  /** 매칭 단계 (CSV). `none`은 연결한 매물이 없는 조건 */
+  matchStages?: string;
+  sortBy?: 'createdAt' | 'nextContactDate' | 'urgency' | 'name';
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
@@ -231,6 +256,21 @@ export function createBuyerRequirementsApi(request: RequestFn) {
           string,
           string | number | boolean | undefined
         >,
+      }),
+
+    /** 조건마다 연결한 매물(매칭)을 가벼운 줄로 함께 받는다 (희망매물 목록) */
+    findAllWithMatches: (filters?: BuyerRequirementsFilter) =>
+      request<PaginatedResponse<BuyerRequirementWithMatches>>('/buyer-requirements', {
+        params: { ...filters, expand: 'matches' } as Record<
+          string,
+          string | number | boolean | undefined
+        >,
+      }),
+
+    /** 희망매물 필터의 선택지. status는 CSV (기본: 진행 · 보류) */
+    filterOptions: (status?: string) =>
+      request<BuyerRequirementFilterOptions>('/buyer-requirements/filter-options', {
+        params: { status },
       }),
 
     findOne: (id: string) =>

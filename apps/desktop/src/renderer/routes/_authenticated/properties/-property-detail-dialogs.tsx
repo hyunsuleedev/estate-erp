@@ -9,6 +9,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateMatchData } from '@/queries/matches';
 import { toast } from 'sonner';
 import { Loader2, Search, UserPlus, Users } from 'lucide-react';
 import type { Contact, Listing } from '@estate-erp/api-client';
@@ -1228,7 +1229,7 @@ export function MatchCreateDialog({
       }),
     onSuccess: () => {
       toast.success('고객을 연결했습니다.');
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      invalidateMatchData(queryClient);
       onCreated?.();
       onOpenChange(false);
     },

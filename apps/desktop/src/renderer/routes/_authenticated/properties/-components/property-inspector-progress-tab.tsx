@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { invalidateMatchData } from "@/queries/matches";
 import { AlertCircle, ArrowUpRight, Check, ChevronDown, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, type CalendarEvent, type DealSummary, type Match } from "@estate-erp/api-client";
@@ -193,7 +194,7 @@ function MatchSection({
     for (const key of ["listing-intakes", "buyer-requirements", "projects"]) {
       void queryClient.invalidateQueries({ queryKey: [key] });
     }
-    await queryClient.invalidateQueries({ queryKey: ["matches"] });
+    await invalidateMatchData(queryClient);
   };
 
   /** 매칭 목록 캐시(배열 형태)의 해당 매칭에 방문 일정을 넣거나 같은 id면 바꾼다 (화면 표시용). */

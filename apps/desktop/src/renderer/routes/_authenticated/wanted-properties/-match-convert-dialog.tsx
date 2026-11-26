@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { invalidateMatchData } from '@/queries/matches';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import type { Match } from '@estate-erp/api-client';
@@ -146,7 +147,7 @@ export function MatchConvertDialog({
       return dealId;
     },
     onSuccess: (dealId) => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      invalidateMatchData(queryClient);
       invalidateDealData(queryClient);
       onOpenChange(false);
       toast.success(activeDeal ? '거래 전환 단계로 바꿨습니다' : '거래로 전환했습니다 (계약 준비)', {
