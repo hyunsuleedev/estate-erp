@@ -251,7 +251,10 @@
     "매수인·임차인": "Buyer / Tenant",
     "공동 당사자": "Co-party",
     "자금 지원": "Financial supporter",
-    "조언·가족": "Advisor / Family"
+    "조언·가족": "Advisor / Family",
+    "주인 거주": "Owner-occupied",
+    "세입자 거주": "Tenant-occupied",
+    "공실": "Vacant"
   },
   "files": {
     "@shared/contract-amount.ts": {

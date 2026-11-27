@@ -7,6 +7,7 @@ describe('McpToolsService', () => {
     const listings = {
       findAll: jest.fn().mockResolvedValue({ items: [] }),
       create: jest.fn().mockResolvedValue({ id: 'listing-1' }),
+      update: jest.fn().mockResolvedValue({ id: 'listing-1' }),
     };
     const properties = {
       findAll: jest.fn().mockResolvedValue({ items: [] }),
@@ -663,5 +664,92 @@ describe('McpToolsService', () => {
       'office-1',
     );
     expect(contracts.prepareSaleContractDraft).not.toHaveBeenCalled();
+  });
+
+  describe('입주 가능 시기', () => {
+    const LISTING_ID = '00000000-0000-4000-8000-0000000000e1';
+    const schemaOf = (service: { getToolDefinitions: () => Array<{ name: string; inputSchema: any }> }, name: string) =>
+      service.getToolDefinitions().find((tool) => tool.name === name)!.inputSchema.properties;
+
+    it('고치는 도구에도 입주 칸이 있고, 값의 종류와 뜻이 스키마에 적혀 있다', () => {
+      const { service } = createService();
+      for (const tool of ['update_listing', 'create_listing']) {
+        const props = schemaOf(service as never, tool);
+        expect(props.moveInAvailableType.enum).toEqual([
+          'immediate',
+          'date',
+          'range',
+          'negotiable',
+          'unknown',
+        ]);
+        // "협의"가 어떤 값인지 AI가 스키마만 보고 알 수 있어야 한다
+        expect(props.moveInAvailableType.description).toContain('negotiable=협의');
+        expect(props).toHaveProperty('moveInAvailableFrom');
+        expect(props).toHaveProperty('moveInAvailableTo');
+      }
+    });
+
+    it('협의로 바꾸면 예전 날짜를 비운다 (의뢰를 지우고 다시 만들 필요가 없다)', async () => {
+      const { service, listings } = createService();
+      const result = await service.executeTool(
+        'update_listing',
+        { id: LISTING_ID, moveInAvailableType: 'negotiable' },
+        ctx as never,
+      );
+      expect(result.isError).toBe(false);
+      expect(listings.update).toHaveBeenCalledWith(
+        LISTING_ID,
+        'office-1',
+        expect.objectContaining({
+          moveInAvailableType: 'negotiable',
+          moveInAvailableFrom: null,
+          moveInAvailableTo: null,
+        }),
+      );
+    });
+
+    it('특정일 이후는 시작일만, 기간 협의는 양쪽 날짜를 넘긴다', async () => {
+      const { service, listings } = createService();
+      await service.executeTool(
+        'update_listing',
+        { id: LISTING_ID, moveInAvailableType: 'date', moveInAvailableFrom: '2027-03-01', moveInAvailableTo: '2027-04-01' },
+        ctx as never,
+      );
+      expect(listings.update.mock.calls[0][2]).toMatchObject({
+        moveInAvailableType: 'date',
+        moveInAvailableFrom: '2027-03-01',
+        moveInAvailableTo: null,
+      });
+      await service.executeTool(
+        'update_listing',
+        { id: LISTING_ID, moveInAvailableType: 'range', moveInAvailableFrom: '2027-03-01', moveInAvailableTo: '2027-04-01' },
+        ctx as never,
+      );
+      expect(listings.update.mock.calls[1][2]).toMatchObject({
+        moveInAvailableFrom: '2027-03-01',
+        moveInAvailableTo: '2027-04-01',
+      });
+    });
+
+    it('입주 칸을 보내지 않으면 입주 시기는 건드리지 않는다', async () => {
+      const { service, listings } = createService();
+      await service.executeTool('update_listing', { id: LISTING_ID, price: 100000 }, ctx as never);
+      const patch = listings.update.mock.calls[0][2];
+      expect(patch.moveInAvailableType).toBeUndefined();
+      expect(patch.moveInAvailableFrom).toBeUndefined();
+      expect(patch.moveInAvailableTo).toBeUndefined();
+    });
+
+    it('목록에 없는 값은 서비스에 닿기 전에 거절하고 고를 수 있는 값을 알려 준다', async () => {
+      const { service, listings } = createService();
+      const result = await service.executeTool(
+        'update_listing',
+        { id: LISTING_ID, moveInAvailableType: '협의' },
+        ctx as never,
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('negotiable');
+      expect(listings.update).not.toHaveBeenCalled();
+    });
   });
 });

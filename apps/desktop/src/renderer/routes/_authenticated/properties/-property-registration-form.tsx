@@ -3,10 +3,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  Building2, CalendarDays, Check, Coins, Landmark, Layers, Link2, Plus, Ruler, Search, Tag, UserRound, UsersRound, X,
+  Building2, CalendarDays, Check, Coins, House, Landmark, Layers, Link2, Plus, Ruler, Search, Tag, UserRound, UsersRound, X,
 } from 'lucide-react';
 import {
-  formatDongLabel, formatPlaceLabel, formatUnitLabel, MAINTENANCE_FEE_INCLUDE_LABELS, sqmToPyeong, TRANSACTION_TYPE_LABELS, type JsonValue,
+  formatDongLabel, formatPlaceLabel, formatUnitLabel, MAINTENANCE_FEE_INCLUDE_LABELS, OCCUPANCY_STATUSES, OCCUPANCY_STATUS_LABELS, sqmToPyeong, TRANSACTION_TYPE_LABELS, type JsonValue, type OccupancyStatus,
 } from '@estate-erp/shared';
 import type {
   CreateListingForIntakeDto,
@@ -117,6 +117,8 @@ interface FormState extends SpaceDraft {
   moveInAvailableTo: string;
   isJointBrokerageRequired: boolean;
   jointBrokeragePartnerId: string;
+  /** 거주 상태. null = 아직 고르지 않음(보내지 않는다), '' = 미확인을 골랐음(비운다) */
+  occupancyStatus: OccupancyStatus | '' | null;
 
   // Step 3.5: 비용 정보
   maintenanceFee: string;
@@ -159,6 +161,7 @@ const initialForm: FormState = {
   moveInAvailableTo: '',
   isJointBrokerageRequired: false,
   jointBrokeragePartnerId: '',
+  occupancyStatus: null,
   maintenanceFee: '',
   maintenanceFeeIncludes: [],
   loanAmount: '',
@@ -491,6 +494,9 @@ export function PropertyRegistrationForm({
           form.isJointBrokerageRequired && form.jointBrokeragePartnerId
             ? form.jointBrokeragePartnerId
             : null,
+        // 고르지 않았으면 보내지 않는다 — 이미 받은 의뢰에 거래 조건을 더할 때 적어 둔 값을 지우지 않게.
+        // '미확인'을 골랐으면 null을 보내 적어 둔 값을 비운다.
+        occupancyStatus: form.occupancyStatus === null ? undefined : form.occupancyStatus || null,
       };
 
       const currentIntake = activeIntake ?? (await api.listingIntakes.findAll({
@@ -852,6 +858,9 @@ export function PropertyRegistrationForm({
     if (deposit.value == null && rent.value == null) return { text: '' };
     return { text: rent.value == null ? `전세 ${formatMoney(deposit.value)}` : formatRent(deposit.value, rent.value) };
   };
+  // 아직 고르지 않았으면 이미 받은 의뢰에 적힌 값을 보여 준다
+  const shownOccupancy: OccupancyStatus | '' =
+    form.occupancyStatus ?? activeIntake?.occupancyStatus ?? '';
   const moveInLabel = MOVE_IN_TYPES.find((option) => option.value === form.moveInAvailableType)?.label ?? '';
   const selectedPartner = (partners ?? []).find((partner) => partner.id === form.jointBrokeragePartnerId);
 
@@ -1253,6 +1262,22 @@ export function PropertyRegistrationForm({
                     </>
                   )}
                 </DocProp>
+                {/* 의뢰를 받을 때 바로 아는 값이다 — 세입자 연락처를 몰라도 "누가 사는지"는 적어 둔다 */}
+                <DocProp icon={<House />} label="거주">
+                  <PickMenu<OccupancyStatus | typeof OCCUPANCY_UNSET>
+                    heading="거주"
+                    ariaLabel="거주"
+                    field="occupancy"
+                    className={cn(docCellClassName, 'cursor-pointer', !shownOccupancy && 'text-muted-foreground/70')}
+                    options={[
+                      ...OCCUPANCY_STATUSES.map((value) => ({ value, label: OCCUPANCY_STATUS_LABELS[value] })),
+                      { value: OCCUPANCY_UNSET, label: '미확인', separated: true },
+                    ]}
+                    onPick={(value) => set('occupancyStatus', value === OCCUPANCY_UNSET ? '' : value)}
+                  >
+                    {shownOccupancy ? OCCUPANCY_STATUS_LABELS[shownOccupancy] : '미확인'}
+                  </PickMenu>
+                </DocProp>
 
                 <DocProp icon={<Coins />} label="관리비">
                   {moneyCell('maintenance-fee', 'maintenanceFee', '관리비 만원', '비어 있음', 'w-28')}
@@ -1490,6 +1515,8 @@ export function PropertyRegistrationForm({
 
 const TX_ORDER: TransactionType[] = ['sale', 'jeonse', 'monthly'];
 const NEW_SPACE = '__new_space__';
+/** 고르는 창에서 '미확인'을 가리키는 값 (저장하지 않는다) */
+const OCCUPANCY_UNSET = '__unset__';
 const NO_PARTNER = '__none__';
 const SCOPE_OPTIONS: PickOption<SpaceScope>[] = [
   { value: 'whole', label: '건물 전체' },

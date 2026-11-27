@@ -12,9 +12,11 @@ import {
   ListingAvailability,
   MATCH_STAGE_ORDER,
   MatchStage,
+  OCCUPANCY_STATUSES,
 } from '@estate-erp/shared';
 import { formatToolError, normalizeDateArgs, validateToolArgs } from './mcp-tool-args';
 import { compactMcpResult } from './mcp-response-compact';
+import { MOVE_IN_AVAILABLE_TYPE_VALUES } from '../listings/listing-input';
 import { ListingsService } from '../listings/listings.service';
 import { ListingIntakesService } from '../listing-intakes/listing-intakes.service';
 import { ContactsService } from '../contacts/contacts.service';
@@ -163,6 +165,33 @@ const maintenanceFeeIncludes = {
   description:
     '관리비 포함 항목 slug 목록 (water=수도, electricity=전기, gas=가스, internet=인터넷, tv=TV, cleaning=청소, parking=주차, heating=난방)',
 };
+// 입주 가능 시기. 값의 뜻을 스키마에 적는다 — 예전에는 자유 글이라 "협의"가 어떤 값인지 AI가 알 수 없었다.
+const moveInAvailableType = strEnum(
+  '입주 가능 시기: immediate=즉시 입주, date=특정일 이후(moveInAvailableFrom에 그 날짜), range=기간 안에서 협의(moveInAvailableFrom~moveInAvailableTo), negotiable=협의, unknown=확인 필요',
+  [...MOVE_IN_AVAILABLE_TYPE_VALUES],
+);
+const moveInAvailableFrom = str(
+  '입주 가능 시작일 (YYYY-MM-DD). date · range일 때만 씁니다',
+);
+const moveInAvailableTo = str('입주 가능 종료일 (YYYY-MM-DD). range일 때만 씁니다');
+
+/**
+ * 입주 가능 시기를 바꿀 때 날짜를 종류에 맞춘다: 즉시 · 협의 · 확인 필요로 바꾸면 예전 날짜를 비우고,
+ * 특정일 이후로 바꾸면 종료일을 비운다. 종류를 보내지 않았으면 보낸 칸만 바꾼다.
+ */
+function moveInPatch(a: Record<string, unknown>) {
+  const type = a.moveInAvailableType as string | undefined;
+  const from = a.moveInAvailableFrom as string | undefined;
+  const to = a.moveInAvailableTo as string | undefined;
+  if (type === undefined) return { moveInAvailableFrom: from, moveInAvailableTo: to };
+  const usesFrom = type === 'date' || type === 'range';
+  return {
+    moveInAvailableType: type,
+    moveInAvailableFrom: usesFrom ? from : null,
+    moveInAvailableTo: type === 'range' ? to : null,
+  };
+}
+
 const listingInput = obj(
   {
     transactionType: strEnum('거래유형', LISTING_TRANSACTION_TYPES),
@@ -173,9 +202,9 @@ const listingInput = obj(
     maintenanceFeeIncludes,
     loanAmount: num('융자금/근저당 설정액 (만원)'),
     premium: num('상가 권리금 (만원)'),
-    moveInAvailableType: str('입주가능 유형'),
-    moveInAvailableFrom: str('입주가능 시작일 (ISO)'),
-    moveInAvailableTo: str('입주가능 종료일 (ISO)'),
+    moveInAvailableType,
+    moveInAvailableFrom,
+    moveInAvailableTo,
     memo: str('메모'),
   },
   ['transactionType'],
@@ -723,6 +752,10 @@ export class McpToolsService {
           nextConfirmAt: str('다음 확인 예정일 (ISO)'),
           isJointBrokerageRequired: bool('공동중개 필요 여부'),
           jointBrokeragePartnerId: str('공동중개 거래처 ID'),
+          occupancyStatus: strEnum(
+            '거주 상태: owner_occupied(주인 거주) · tenant(세입자 거주) · vacant(공실). 모르면 보내지 않습니다',
+            [...OCCUPANCY_STATUSES],
+          ),
           memo: str('의뢰 메모'),
           listings: listingInputs,
         },
@@ -740,6 +773,7 @@ export class McpToolsService {
           nextConfirmAt: a.nextConfirmAt as string | null,
           isJointBrokerageRequired: a.isJointBrokerageRequired as boolean,
           jointBrokeragePartnerId: a.jointBrokeragePartnerId as string | null,
+          occupancyStatus: a.occupancyStatus as string | undefined,
           memo: a.memo as string | null,
           listings: a.listings as never,
         }),
@@ -766,6 +800,10 @@ export class McpToolsService {
           nextConfirmAt: str('다음 확인 예정일 (ISO)'),
           isJointBrokerageRequired: bool('공동중개 필요 여부'),
           jointBrokeragePartnerId: str('공동중개 거래처 ID'),
+          occupancyStatus: strEnum(
+            '거주 상태: owner_occupied(주인 거주) · tenant(세입자 거주) · vacant(공실). 모르면 보내지 않습니다',
+            [...OCCUPANCY_STATUSES],
+          ),
           memo: str('의뢰 메모'),
         },
         ['id'],
@@ -781,6 +819,7 @@ export class McpToolsService {
           nextConfirmAt: a.nextConfirmAt as string | null,
           isJointBrokerageRequired: a.isJointBrokerageRequired as boolean,
           jointBrokeragePartnerId: a.jointBrokeragePartnerId as string | null,
+          occupancyStatus: a.occupancyStatus as string | undefined,
           memo: a.memo as string | null,
         }),
     );
@@ -898,6 +937,9 @@ export class McpToolsService {
           maintenanceFeeIncludes,
           loanAmount: num('융자금/근저당 설정액 (만원)'),
           premium: num('상가 권리금 (만원)'),
+          moveInAvailableType,
+          moveInAvailableFrom,
+          moveInAvailableTo,
           memo: str('메모'),
         },
         ['intakeId', 'propertyId', 'transactionType'],
@@ -918,6 +960,7 @@ export class McpToolsService {
           maintenanceFeeIncludes: a.maintenanceFeeIncludes as string[],
           loanAmount: a.loanAmount as number,
           premium: a.premium as number,
+          ...moveInPatch(a),
           memo: a.memo as string,
         });
       },
@@ -925,7 +968,7 @@ export class McpToolsService {
 
     this.add(
       'update_listing',
-      '매물 정보를 수정합니다. 가격, 관리비, 융자금, 권리금, 일시중단, 메모 등. 확인상태는 의뢰(update_listing_intake)에서 관리합니다.',
+      '거래 조건(Listing) 하나를 고칩니다: 가격 · 관리비 · 융자금 · 권리금 · 입주 가능 시기 · 일시 중단 · 메모. 보낸 칸만 바뀝니다. 광고와 매칭은 그대로 남으므로, 조건을 고치려고 의뢰를 지우고 다시 만들지 마세요. 확인 상태는 의뢰(update_listing_intake)에서 관리합니다.',
       obj(
         {
           id: str('매물 ID'),
@@ -936,6 +979,9 @@ export class McpToolsService {
           maintenanceFeeIncludes,
           loanAmount: num('융자금/근저당 설정액 (만원)'),
           premium: num('상가 권리금 (만원)'),
+          moveInAvailableType,
+          moveInAvailableFrom,
+          moveInAvailableTo,
           isPaused: bool('이 거래 옵션 일시 중단 여부'),
           memo: str('메모'),
         },
@@ -950,6 +996,7 @@ export class McpToolsService {
           maintenanceFeeIncludes: a.maintenanceFeeIncludes as string[],
           loanAmount: a.loanAmount as number,
           premium: a.premium as number,
+          ...moveInPatch(a),
           isPaused: a.isPaused as boolean,
           memo: a.memo as string,
         }),

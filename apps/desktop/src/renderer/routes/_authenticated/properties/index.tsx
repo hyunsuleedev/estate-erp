@@ -38,6 +38,7 @@ import {
   Loader2,
   Map as MapIcon,
   Megaphone,
+  House,
   PencilLine,
   Plus,
   RefreshCw,
@@ -70,6 +71,9 @@ import {
   ListingAvailability,
   MatchStage,
   normalizeMatchStage,
+  OCCUPANCY_STATUS_LABELS,
+  OCCUPANCY_UNKNOWN,
+  type OccupancyStatus,
 
 } from "@estate-erp/shared";
 import { Button } from "@/components/ui/button";
@@ -416,6 +420,30 @@ const transactionTypeOptions = [
   { value: "monthly", label: "월세" },
 ] as const;
 
+/** 거주 상태 칩. 공실은 바로 보여 줄 수 있는 집이라 눈에 띄게, 미확인은 흐리게 둔다 */
+const occupancyChipClassNames: Record<OccupancyStatus, string> = {
+  owner_occupied: "bg-info-soft text-info",
+  tenant: "bg-warning-soft text-warning",
+  vacant: "bg-success-soft text-success",
+};
+const occupancyChipOptions: ChipOption[] = [
+  ...(Object.keys(occupancyChipClassNames) as OccupancyStatus[]).map(
+    (value) => ({
+      value,
+      label: OCCUPANCY_STATUS_LABELS[value],
+      className: occupancyChipClassNames[value],
+    }),
+  ),
+  {
+    value: OCCUPANCY_UNKNOWN,
+    label: "미확인",
+    className: "bg-neutral-soft text-muted-foreground",
+  },
+];
+const occupancyFilterOptions: MultiSelectOption[] = occupancyChipOptions.map(
+  ({ value, label }) => ({ value, label }),
+);
+
 const siteTypeOptions: MultiSelectOption[] = [
   { value: "apartment", label: "아파트" },
   { value: "officetel", label: "오피스텔" },
@@ -455,6 +483,8 @@ interface PropertyFilterState {
   dongSearch: string;
   unitSearch: string;
   siteTypes: string[];
+  /** 거주 상태: owner_occupied | tenant | vacant | unknown */
+  occupancies: string[];
   availabilities: string[];
   priceMin: string;
   priceMax: string;
@@ -479,6 +509,7 @@ const initialPropertyFilters: PropertyFilterState = {
   dongSearch: "",
   unitSearch: "",
   siteTypes: [],
+  occupancies: [],
   availabilities: [],
   priceMin: "",
   priceMax: "",
@@ -923,6 +954,7 @@ function PropertiesPage() {
     propertyFilters.dongSearch.trim() ||
     propertyFilters.unitSearch.trim() ||
     propertyFilters.siteTypes.length > 0 ||
+    propertyFilters.occupancies.length > 0 ||
     propertyFilters.availabilities.length > 0 ||
     propertyFilters.priceMin ||
     propertyFilters.priceMax ||
@@ -1073,17 +1105,19 @@ function PropertiesPage() {
     },
   });
   const intakeMemoMutation = useMutation({
+    // 의뢰에 적는 칸(메모 · 거주)을 고친다. 고친 칸만 보낸다
     mutationFn: ({
       intakeId,
-      memo,
       expectedUpdatedAt,
+      ...patch
     }: {
       intakeId: string;
-      memo: string | null;
+      memo?: string | null;
+      occupancyStatus?: OccupancyStatus | null;
       expectedUpdatedAt?: string | null;
     }) =>
       api.listingIntakes.update(intakeId, {
-        memo,
+        ...patch,
         expectedUpdatedAt,
       }),
     onSuccess: async () => {
@@ -1318,6 +1352,20 @@ function PropertiesPage() {
       await intakeMemoMutation.mutateAsync({
         intakeId,
         memo,
+        expectedUpdatedAt: intakeUpdatedAtById.get(intakeId),
+      });
+    },
+    [intakeMemoMutation, intakeUpdatedAtById],
+  );
+  const handleIntakeOccupancySave = useCallback(
+    async (intakeId: string, value: unknown) => {
+      await intakeMemoMutation.mutateAsync({
+        intakeId,
+        // "미확인"을 고르면 적어 둔 값을 비운다
+        occupancyStatus:
+          value === OCCUPANCY_UNKNOWN || !value
+            ? null
+            : (value as OccupancyStatus),
         expectedUpdatedAt: intakeUpdatedAtById.get(intakeId),
       });
     },
@@ -1926,6 +1974,23 @@ function PropertiesPage() {
         ),
       },
       {
+        id: "occupancy",
+        header: () => (
+          <TableHeaderLabel
+            icon={<House className="size-4" />}
+            label="거주상태"
+          />
+        ),
+        size: 116,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <IntakeOccupancyCell
+            intake={row.original.representative}
+            onSave={handleIntakeOccupancySave}
+          />
+        ),
+      },
+      {
         id: "memo",
         header: () => (
           <TableHeaderLabel
@@ -1961,6 +2026,7 @@ function PropertiesPage() {
       handleCreateProperty,
       handleIntakeConfirm,
       handleIntakeMemoSave,
+      handleIntakeOccupancySave,
       handleListingPatch,
       handleRowStatusSave,
       openPropertyInspector,
@@ -2047,6 +2113,25 @@ function PropertiesPage() {
           options={siteTypeOptions}
           selected={propertyFilters.siteTypes}
           onChange={(values) => updatePropertyFilter("siteTypes", values)}
+          searchable={false}
+        />
+      ),
+    },
+    {
+      key: "occupancies",
+      label: "거주",
+      icon: <House />,
+      summary: summarizeSelection(
+        occupancyFilterOptions,
+        propertyFilters.occupancies,
+      ),
+      onClear: () => clearFilterFields(["occupancies"]),
+      contentClassName: "w-[200px] p-0",
+      render: () => (
+        <ChecklistFilterPanel
+          options={occupancyFilterOptions}
+          selected={propertyFilters.occupancies}
+          onChange={(values) => updatePropertyFilter("occupancies", values)}
           searchable={false}
         />
       ),
@@ -6267,6 +6352,41 @@ function IntakeMemoCell({
   );
 }
 
+function IntakeOccupancyCell({
+  intake,
+  onSave,
+}: {
+  intake: PropertyListingGroup["representative"];
+  onSave: (intakeId: string, value: unknown) => CellSaveResult;
+}) {
+  const status = intake.occupancyStatus ?? null;
+  return (
+    <EditableCell
+      recordId={intake.id}
+      field="occupancyStatus"
+      value={status ?? OCCUPANCY_UNKNOWN}
+      chipValueOf={(value) => String(value ?? OCCUPANCY_UNKNOWN)}
+      ariaLabel="거주상태"
+      onSave={(recordId, _field, newValue) => onSave(recordId, newValue)}
+      editType="select-chip"
+      chipOptions={occupancyChipOptions}
+    >
+      {status ? (
+        <span
+          className={cn(
+            "inline-flex h-[22px] items-center rounded-[4px] px-1.5 text-[13px] font-medium",
+            occupancyChipClassNames[status],
+          )}
+        >
+          {OCCUPANCY_STATUS_LABELS[status]}
+        </span>
+      ) : (
+        <span className="text-muted-foreground">-</span>
+      )}
+    </EditableCell>
+  );
+}
+
 const moveInAvailableChipOptions: ChipOption[] = [
   {
     value: "immediate",
@@ -6517,6 +6637,8 @@ function buildListingFilterParams(filters: PropertyFilterState) {
   if (filters.wardCode) params.wardCode = filters.wardCode;
   if (filters.siteTypes.length > 0)
     params.siteTypes = filters.siteTypes.join(",");
+  if (filters.occupancies.length > 0)
+    params.occupancies = filters.occupancies.join(",");
   if (filters.availabilities.length > 0)
     params.availabilities = filters.availabilities.join(",");
   // 가격(매매가/전세가)은 state를 억 단위로 보관 → API는 만원 단위 (×10000)

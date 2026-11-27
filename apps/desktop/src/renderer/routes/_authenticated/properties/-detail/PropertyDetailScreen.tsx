@@ -891,9 +891,14 @@ export function PropertyDetailScreen({
           tone: 'orange',
           detail: tenantRow?.name ?? null,
         }
-      : activeContacts.some((item) => item.isResident)
-        ? { label: '소유자 거주 중', tone: 'brown', detail: null }
-        : { label: '거주 정보 없음', tone: 'gray', detail: null };
+      : // 세입자 기록이 없으면 의뢰에 적어 둔 거주 상태를 쓴다(등록·목록에서 고른 값)
+        openIntake?.occupancyStatus === 'tenant'
+        ? { label: '세입자 거주 중', tone: 'yellow', detail: null }
+        : openIntake?.occupancyStatus === 'vacant'
+          ? { label: '공실', tone: 'green', detail: null }
+          : openIntake?.occupancyStatus === 'owner_occupied' || activeContacts.some((item) => item.isResident)
+            ? { label: '소유자 거주 중', tone: 'brown', detail: null }
+            : { label: '거주 정보 없음', tone: 'gray', detail: null };
   const tenantContact = tenantRow?.phone ? { name: tenantRow.name, phone: tenantRow.phone } : null;
 
   // ── 오른쪽 열 ──

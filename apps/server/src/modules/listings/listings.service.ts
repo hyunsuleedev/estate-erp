@@ -718,6 +718,20 @@ export class ListingsService {
       throw new NotFoundException('거래 조건을 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
     }
 
+    // 날짜를 하나만 고칠 수도 있다(시작일만 뒤로 미룸). 요청에 온 것만 견주면 저장된 다른 쪽과 뒤집힌 기간이
+    // 그대로 들어가므로, 저장된 값과 합친 결과로 견준다.
+    const nextMoveInFrom =
+      patch.moveInAvailableFrom !== undefined
+        ? patch.moveInAvailableFrom
+        : existingListing.moveInAvailableFrom;
+    const nextMoveInTo =
+      patch.moveInAvailableTo !== undefined
+        ? patch.moveInAvailableTo
+        : existingListing.moveInAvailableTo;
+    if (nextMoveInFrom && nextMoveInTo && nextMoveInFrom.getTime() > nextMoveInTo.getTime()) {
+      throw new BadRequestException('입주 가능 기간의 끝날이 시작날보다 빠릅니다.');
+    }
+
     const nextTransactionType =
       patch.transactionType ?? existingListing.transactionType;
     this.assertValidTransactionType(nextTransactionType);
@@ -748,13 +762,25 @@ export class ListingsService {
         ? patchWithoutTx
         : { updatedAt: new Date() };
 
+    // 날짜를 한쪽만 고칠 때는 위에서 견준 "저장된 반대쪽 날짜"가 그대로일 때만 저장한다.
+    // 그 사이 다른 요청이 반대쪽을 고쳤으면 두 요청이 각자 검사를 통과하고도 뒤집힌 기간이 남기 때문이다.
+    const moveInGuard: { moveInAvailableFrom?: Date | null; moveInAvailableTo?: Date | null } = {};
+    if (patch.moveInAvailableFrom !== undefined && patch.moveInAvailableTo === undefined) {
+      moveInGuard.moveInAvailableTo = existingListing.moveInAvailableTo;
+    }
+    if (patch.moveInAvailableTo !== undefined && patch.moveInAvailableFrom === undefined) {
+      moveInGuard.moveInAvailableFrom = existingListing.moveInAvailableFrom;
+    }
+    const guarded = Object.keys(moveInGuard).length > 0;
+
     const updateWhere: Prisma.ListingWhereUniqueInput = expectedUpdatedAt
       ? {
           id,
           officeId,
           updatedAt: this.parseExpectedUpdatedAt(expectedUpdatedAt),
+          ...moveInGuard,
         }
-      : { id };
+      : { id, ...moveInGuard };
 
     let listing;
     try {
@@ -768,7 +794,7 @@ export class ListingsService {
       // 조회 이후 다른 요청이 먼저 수정한 것이다. updateMany를 사용하면
       // 수정 전/후 행을 얻지 못해 가격 이력과 감사 로그가 누락된다.
       if (
-        expectedUpdatedAt &&
+        (expectedUpdatedAt || guarded) &&
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2025'
       ) {

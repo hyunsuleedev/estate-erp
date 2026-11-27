@@ -117,6 +117,33 @@ export const LISTING_INTAKE_REQUESTER_ROLE_LABELS: Record<
   other: '기타 의뢰인',
 };
 
+/**
+ * 매물의 거주 상태 — 지금 그 집에 누가 사는가. 의뢰를 받을 때 묻는 값이라 의뢰(ListingIntake)에 적는다.
+ * 적지 않았으면 null(미확인)이다. "공실"과 "모름"은 중개사에게 정반대의 정보라 따로 둔다.
+ */
+export const OccupancyStatus = {
+  // 이미 쌓인 자료(시드 포함)가 쓰는 값 그대로다
+  OWNER: 'owner_occupied',
+  TENANT: 'tenant',
+  VACANT: 'vacant',
+} as const;
+export type OccupancyStatus = (typeof OccupancyStatus)[keyof typeof OccupancyStatus];
+
+export const OCCUPANCY_STATUSES: readonly OccupancyStatus[] = [
+  'owner_occupied',
+  'tenant',
+  'vacant',
+];
+
+export const OCCUPANCY_STATUS_LABELS: Record<OccupancyStatus, string> = {
+  owner_occupied: '주인 거주',
+  tenant: '세입자 거주',
+  vacant: '공실',
+};
+
+/** 목록을 거를 때 "적지 않은 것"을 가리키는 값 */
+export const OCCUPANCY_UNKNOWN = 'unknown';
+
 /** 상담 조회 범위 */
 export const ConsultationScope = {
   SELF: 'self',

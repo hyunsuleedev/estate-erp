@@ -96,6 +96,58 @@ describe('ListingsService', () => {
     };
   }
 
+  it('rejects a move-in period that ends before it starts, also when only one date is sent', async () => {
+    const { prisma, service } = createService();
+    prisma.listing.findFirst.mockResolvedValue({
+      id: 'listing-1',
+      officeId: 'office-1',
+      intakeId: 'intake-1',
+      transactionType: 'sale',
+      moveInAvailableType: 'range',
+      moveInAvailableFrom: new Date('2027-03-01T00:00:00.000Z'),
+      moveInAvailableTo: new Date('2027-04-01T00:00:00.000Z'),
+    });
+
+    // 시작일만 저장된 종료일 뒤로 미룬다
+    await expect(
+      service.update('listing-1', 'office-1', { moveInAvailableFrom: '2027-05-01' }),
+    ).rejects.toThrow('입주 가능 기간의 끝날이 시작날보다 빠릅니다.');
+    // 종료일만 저장된 시작일 앞으로 당긴다
+    await expect(
+      service.update('listing-1', 'office-1', { moveInAvailableTo: '2027-02-01' }),
+    ).rejects.toThrow('입주 가능 기간의 끝날이 시작날보다 빠릅니다.');
+    expect(prisma.listing.update).not.toHaveBeenCalled();
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('saves a single move-in date only if the other date is still what was checked against', async () => {
+    const { prisma, service } = createService();
+    const storedTo = new Date('2027-04-01T00:00:00.000Z');
+    prisma.listing.findFirst.mockResolvedValue({
+      id: 'listing-1',
+      officeId: 'office-1',
+      intakeId: 'intake-1',
+      transactionType: 'sale',
+      moveInAvailableType: 'range',
+      moveInAvailableFrom: new Date('2027-03-01T00:00:00.000Z'),
+      moveInAvailableTo: storedTo,
+    });
+    // 그 사이 다른 요청이 종료일을 앞당겼다 → 조건에 맞는 줄이 없다
+    const { Prisma } = jest.requireActual('@prisma/client');
+    prisma.listing.update.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('not found', { code: 'P2025', clientVersion: 'test' }),
+    );
+
+    await expect(
+      service.update('listing-1', 'office-1', { moveInAvailableFrom: '2027-03-20' }),
+    ).rejects.toThrow('다른 사용자가 먼저 수정했습니다.');
+    // 내가 견준 종료일이 그대로일 때만 저장하도록 조건을 건다
+    expect(prisma.listing.update.mock.calls[0][0].where).toEqual({
+      id: 'listing-1',
+      moveInAvailableTo: storedTo,
+    });
+  });
+
   it('creates an active intake when creating the first listing for a property', async () => {
     const { prisma, service } = createService();
     prisma.property.findFirst.mockResolvedValue({ id: 'property-1' });

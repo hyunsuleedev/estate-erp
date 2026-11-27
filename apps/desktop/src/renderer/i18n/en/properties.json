@@ -1826,7 +1826,10 @@
     "한 호실에 매매·전세·월세를 함께 받을 수 있습니다": "One unit can be listed for sale, jeonse and monthly rent together",
     "호실 구분 없이 매물 한 건으로 관리합니다.": "Managed as a single listing with no units.",
     "호실·구획": "Unit / space",
-    "호실을 고르세요": "Choose a unit"
+    "호실을 고르세요": "Choose a unit",
+    "공실": "Vacant",
+    "거주": "Occupancy",
+    "거주상태": "Occupancy"
   },
   "files": {
     "routes/_authenticated/properties/-components/property-ad-actions-state.ts": {
@@ -1900,7 +1903,8 @@
     },
     "routes/_authenticated/properties/-property-registration-form.tsx": {
       "욕실": " bath",
-      "종료": "End"
+      "종료": "End",
+      "미확인": "Unknown"
     },
     "routes/_authenticated/properties/external-listings.tsx": {
       "대표": "Main",
@@ -1908,7 +1912,8 @@
       "부동산": "Agency"
     },
     "routes/_authenticated/properties/index.tsx": {
-      "의뢰 종료": "Close request"
+      "의뢰 종료": "Close request",
+      "미확인": "Unknown"
     }
   }
 }

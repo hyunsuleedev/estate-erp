@@ -40,14 +40,15 @@ export function assertValidListingMoney(dto: Partial<Record<keyof typeof MONEY_F
   }
 }
 
-/** 입주 가능 시기 종류 */
-const MOVE_IN_AVAILABLE_TYPES: ReadonlySet<string> = new Set([
+/** 입주 가능 시기 종류: 즉시 · 특정일 이후 · 기간 협의 · 협의 · 확인 필요 */
+export const MOVE_IN_AVAILABLE_TYPE_VALUES = [
   'immediate',
   'date',
   'range',
   'negotiable',
   'unknown',
-]);
+] as const;
+const MOVE_IN_AVAILABLE_TYPES: ReadonlySet<string> = new Set(MOVE_IN_AVAILABLE_TYPE_VALUES);
 
 function parseMoveInDate(value: unknown): Date | null | undefined {
   if (value === undefined) return undefined;

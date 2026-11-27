@@ -70,6 +70,8 @@ export interface ListingIntake {
   nextConfirmAt: string | null;
   isJointBrokerageRequired: boolean;
   jointBrokeragePartnerId: string | null;
+  /** 거주 상태: owner_occupied | tenant | vacant. 적지 않았으면 null(미확인) */
+  occupancyStatus?: import('@estate-erp/shared').OccupancyStatus | null;
   requesterContactId?: string | null;
   requesterRole?: string | null;
   memo: string | null;
@@ -132,6 +134,8 @@ export interface ListingIntakesFilter {
   transactionType?: string;
   siteType?: string;
   siteTypes?: string;
+  /** 쉼표로 여러 개: owner_occupied,tenant,vacant,unknown */
+  occupancies?: string;
   priceMin?: number;
   priceMax?: number;
   depositMin?: number;
@@ -208,6 +212,7 @@ export interface CreateListingIntakeDto {
   nextConfirmAt?: string | null;
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
+  occupancyStatus?: import('@estate-erp/shared').OccupancyStatus | null;
   requesterContactId?: string | null;
   requesterRole?: string | null;
   memo?: string | null;
@@ -224,6 +229,7 @@ export interface UpdateListingIntakeDto {
   nextConfirmAt?: string | null;
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
+  occupancyStatus?: import('@estate-erp/shared').OccupancyStatus | null;
   requesterContactId?: string | null;
   requesterRole?: string | null;
   memo?: string | null;

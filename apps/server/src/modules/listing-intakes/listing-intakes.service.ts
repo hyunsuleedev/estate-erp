@@ -17,6 +17,8 @@ import {
   MaintenanceFeeInclude,
   MatchStage,
   NON_CLOSED_INTAKE_LIFECYCLE_STATUSES,
+  OCCUPANCY_STATUSES,
+  OCCUPANCY_UNKNOWN,
   OCCUPYING_DEAL_STAGES,
   SiteType,
   TransactionType,
@@ -62,6 +64,7 @@ const VALID_CONFIRMATION_STATES: ReadonlySet<string> = new Set(
 const VALID_LISTING_AVAILABILITIES: ReadonlySet<string> = new Set(
   Object.values(ListingAvailability),
 );
+const VALID_OCCUPANCY_STATUSES: ReadonlySet<string> = new Set(OCCUPANCY_STATUSES);
 const VALID_SITE_TYPES: ReadonlySet<string> = new Set(Object.values(SiteType));
 
 /** 의뢰 생명주기 전이 규칙 — 확인/거래 상태와 독립된 유일한 저장 상태 */
@@ -255,6 +258,8 @@ export interface ListingIntakeSearchQuery {
   isJointBrokerage?: boolean;
   siteType?: string;
   siteTypes?: string[];
+  /** 거주 상태: owner_occupied | tenant | vacant | unknown(적지 않은 것) */
+  occupancies?: string[];
   provinceCode?: string;
   districtCode?: string;
   wardCode?: string;
@@ -301,6 +306,8 @@ interface ListingIntakeCreateDto {
   nextConfirmAt?: Date | string | null;
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
+  /** 거주 상태: owner_occupied | tenant | vacant, 모르면 null */
+  occupancyStatus?: string | null;
   memo?: string | null;
   listings?: ListingInputDto[];
 }
@@ -317,6 +324,7 @@ interface ListingIntakeUpdateDto {
   nextConfirmAt?: Date | string | null;
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
+  occupancyStatus?: string | null;
   memo?: string | null;
   expectedUpdatedAt?: Date | string | null;
 }
@@ -520,6 +528,7 @@ export class ListingIntakesService {
       dto.lastCheckResult ?? null,
     );
     this.assertValidListingInputs(dto.listings ?? []);
+    this.assertValidOccupancy(dto.occupancyStatus);
     await this.assertValidRequester(
       officeId,
       dto.requesterContactId,
@@ -579,6 +588,7 @@ export class ListingIntakesService {
             jointBrokeragePartnerId: dto.isJointBrokerageRequired
               ? (dto.jointBrokeragePartnerId ?? null)
               : null,
+            occupancyStatus: dto.occupancyStatus ?? null,
             memo: dto.memo,
           },
           select: { id: true },
@@ -686,6 +696,7 @@ export class ListingIntakesService {
           ? existing.closedReason
           : null),
     );
+    this.assertValidOccupancy(patch.occupancyStatus);
     await this.assertValidRequester(
       officeId,
       patch.requesterContactId,
@@ -727,6 +738,8 @@ export class ListingIntakesService {
         patch.isJointBrokerageRequired === false
           ? null
           : patch.jointBrokeragePartnerId,
+      // undefined면 그대로 두고, null이면 미확인으로 되돌린다
+      occupancyStatus: patch.occupancyStatus,
       memo: patch.memo,
     };
     let intake: { id: string };
@@ -1125,6 +1138,17 @@ export class ListingIntakesService {
       });
     }
 
+    if (query.occupancies?.length) {
+      // 적지 않은 것(null)도 고를 수 있다 — "거주 상태를 아직 안 물어본 매물"을 찾는 용도
+      const known = query.occupancies.filter((value) => value !== OCCUPANCY_UNKNOWN);
+      filters.push({
+        OR: [
+          ...(known.length > 0 ? [{ occupancyStatus: { in: known } }] : []),
+          ...(query.occupancies.includes(OCCUPANCY_UNKNOWN) ? [{ occupancyStatus: null }] : []),
+        ],
+      });
+    }
+
     if (query.isJointBrokerage !== undefined) {
       // 공동중개는 의뢰(ListingIntake)가 단일 소유 — Listing 쪽 판정 없음
       filters.push({ isJointBrokerageRequired: query.isJointBrokerage });
@@ -1429,13 +1453,11 @@ export class ListingIntakesService {
 
   private toResponse<T extends Record<string, unknown>>(intake: T) {
     const {
-      occupancyStatus,
       viewingMemo,
       rightsMemo,
       fieldMemo,
       ...rest
     } = intake;
-    void occupancyStatus;
     void viewingMemo;
     void rightsMemo;
     void fieldMemo;
@@ -1503,6 +1525,7 @@ export class ListingIntakesService {
       lastCheckResult: true,
       isJointBrokerageRequired: true,
       jointBrokeragePartnerId: true,
+      occupancyStatus: true,
       nextConfirmAt: true,
       memo: true,
       createdAt: true,
@@ -1592,6 +1615,7 @@ export class ListingIntakesService {
       lastCheckResult: true,
       isJointBrokerageRequired: true,
       jointBrokeragePartnerId: true,
+      occupancyStatus: true,
       nextConfirmAt: true,
       memo: true,
       createdAt: true,
@@ -1824,6 +1848,13 @@ export class ListingIntakesService {
     if (query.siteTypes?.some((siteType) => !VALID_SITE_TYPES.has(siteType))) {
       throw new BadRequestException('알 수 없는 건물 유형입니다.');
     }
+    if (
+      query.occupancies?.some(
+        (value) => value !== OCCUPANCY_UNKNOWN && !VALID_OCCUPANCY_STATUSES.has(value),
+      )
+    ) {
+      throw new BadRequestException('알 수 없는 거주 상태입니다.');
+    }
 
     if (
       query.transactionType &&
@@ -1856,6 +1887,13 @@ export class ListingIntakesService {
       throw new BadRequestException(
         '욕실 수는 "정확히"와 "이상" 중 하나만 고르세요.',
       );
+    }
+  }
+
+  private assertValidOccupancy(occupancyStatus?: string | null) {
+    if (occupancyStatus == null) return;
+    if (!VALID_OCCUPANCY_STATUSES.has(occupancyStatus)) {
+      throw new BadRequestException('알 수 없는 거주 상태입니다.');
     }
   }
 

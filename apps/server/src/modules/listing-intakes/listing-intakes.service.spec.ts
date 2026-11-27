@@ -499,6 +499,33 @@ describe('ListingIntakesService', () => {
     );
   });
 
+  it('거주 상태로 거른다 — 적지 않은 것(unknown)도 고를 수 있다', async () => {
+    const { prisma, service } = createService();
+
+    await service.findAll('office-1', { occupancies: ['vacant', 'unknown'] });
+
+    expect(prisma.listingIntake.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            { OR: [{ occupancyStatus: { in: ['vacant'] } }, { occupancyStatus: null }] },
+          ]),
+        }),
+      }),
+    );
+  });
+
+  it('모르는 거주 상태는 받지 않는다 (거르기 · 저장)', async () => {
+    const { service } = createService();
+
+    await expect(service.findAll('office-1', { occupancies: ['empty'] })).rejects.toThrow(
+      '알 수 없는 거주 상태입니다.',
+    );
+    await expect(
+      service.create('office-1', { propertyId: 'property-1', occupancyStatus: 'empty' }),
+    ).rejects.toThrow('알 수 없는 거주 상태입니다.');
+  });
+
   it('filters map listings by derived availability', async () => {
     const { prisma, service } = createService();
 

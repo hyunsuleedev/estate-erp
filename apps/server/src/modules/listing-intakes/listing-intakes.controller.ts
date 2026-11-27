@@ -40,6 +40,7 @@ export class ListingIntakesController {
     @Query('transactionType') transactionType: string,
     @Query('siteType') siteType: string,
     @Query('siteTypes') siteTypes: string,
+    @Query('occupancies') occupancies: string,
     @Query('priceMin') priceMin: string,
     @Query('priceMax') priceMax: string,
     @Query('depositMin') depositMin: string,
@@ -82,6 +83,7 @@ export class ListingIntakesController {
       transactionType: transactionType || undefined,
       siteType: siteType || undefined,
       siteTypes: parseCsvQuery(siteTypes),
+      occupancies: parseCsvQuery(occupancies),
       priceMin: priceMin ? Number(priceMin) : undefined,
       priceMax: priceMax ? Number(priceMax) : undefined,
       depositMin: depositMin ? Number(depositMin) : undefined,
@@ -140,6 +142,7 @@ export class ListingIntakesController {
       nextConfirmAt?: string | null;
       isJointBrokerageRequired?: boolean;
       jointBrokeragePartnerId?: string | null;
+      occupancyStatus?: string | null;
       memo?: string | null;
       listings?: Array<{
         transactionType: string;
@@ -192,6 +195,7 @@ export class ListingIntakesController {
       nextConfirmAt?: string | null;
       isJointBrokerageRequired?: boolean;
       jointBrokeragePartnerId?: string | null;
+      occupancyStatus?: string | null;
       memo?: string | null;
       expectedUpdatedAt?: string | null;
     },
@@ -280,6 +284,7 @@ function parseListingIntakeQuery(query: Record<string, string>) {
     transactionType: query.transactionType || undefined,
     siteType: query.siteType || undefined,
     siteTypes: parseCsvQuery(query.siteTypes),
+    occupancies: parseCsvQuery(query.occupancies),
     priceMin: query.priceMin ? Number(query.priceMin) : undefined,
     priceMax: query.priceMax ? Number(query.priceMax) : undefined,
     depositMin: query.depositMin ? Number(query.depositMin) : undefined,
