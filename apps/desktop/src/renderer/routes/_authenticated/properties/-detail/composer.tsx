@@ -25,8 +25,8 @@ export interface ComposerWho {
   name: string;
   role: string;
   side: ComposerSide;
-  matchId?: string;
-  listingId?: string;
+  buyerIntakeId?: string;
+  listingIntakeId?: string;
 }
 
 export interface ComposerSubmit {

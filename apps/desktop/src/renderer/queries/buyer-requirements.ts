@@ -5,8 +5,10 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import type {
+  BuyerRequirement,
   BuyerRequirementsFilter,
   BuyerRequirementWithMatches,
+  Match,
   MatchRow,
   PaginatedResponse,
 } from '@estate-erp/api-client';
@@ -88,6 +90,19 @@ export const buyerRequirementQueries = {
       queryFn: () => api.buyerRequirements.filterOptions(status),
     }),
 };
+
+/**
+ * 손님 조건에 실려 온 매칭들. 매칭 줄에는 손님이 없으므로(그 손님의 줄 · 상세 안에 실려 오니까) 붙여 준다 —
+ * 매칭을 그리는 부품들이 손님 이름과 조건을 매칭에서 읽는다. 손님 쪽에는 매칭을 다시 싣지 않는다.
+ * 받지 못했으면(아직 불러오는 중) 빈 목록.
+ */
+export function matchesOfRequirement(
+  requirement: (Omit<BuyerRequirement, 'matches'> & { matches?: MatchRow[] }) | null | undefined,
+): Match[] {
+  if (!requirement) return [];
+  const { matches, ...buyerRequirement } = requirement;
+  return (matches ?? []).map((match) => ({ ...match, buyerRequirement }));
+}
 
 type RequirementPage = PaginatedResponse<BuyerRequirementWithMatches>;
 type RequirementListData = InfiniteData<RequirementPage, number>;

@@ -10,12 +10,15 @@ import {
   ClipboardList,
   ExternalLink,
   FileAudio,
+  FolderKanban,
+  Handshake,
   Link2,
   ListChecks,
   Loader2,
   MessageSquareText,
   Pencil,
   Phone,
+  Search,
   Trash2,
   UserRound,
 } from 'lucide-react';
@@ -177,7 +180,7 @@ export function ConsultationDetailSheet({
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-5 text-sm text-muted-foreground">
-                  연결된 매물, 의뢰, 매칭, 희망 조건이 없습니다.
+                  연결된 매물·의뢰·구매 의뢰·거래·프로젝트가 없습니다.
                 </div>
               )}
             </PanelSection>
@@ -372,9 +375,9 @@ export function CreateTaskDialog({
         contactId: consultation.contactId,
         propertyId: consultation.propertyId ?? undefined,
         listingIntakeId: consultation.listingIntakeId ?? undefined,
-        listingId: consultation.listingId ?? undefined,
-        matchId: consultation.matchId ?? undefined,
-        buyerReqId: consultation.buyerReqId ?? undefined,
+        buyerIntakeId: consultation.buyerIntakeId ?? undefined,
+        dealId: consultation.dealId ?? undefined,
+        projectId: consultation.projectId ?? undefined,
       }),
     onSuccess: () => {
       toast.success('업무를 추가했습니다.');
@@ -448,8 +451,16 @@ export function ConsultationContextLinkCard({ card }: { card: ConsultationContex
 
   if (card.to === '/wanted-properties') {
     return (
+      <Link to="/wanted-properties" className="block rounded-lg focus:outline-none focus:ring-2 focus:ring-ring">
+        {content}
+      </Link>
+    );
+  }
+
+  if (card.to === '/deals') {
+    return (
       <Link
-        to="/wanted-properties"
+        to="/deals"
         search={card.search}
         className="block rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
       >
@@ -458,10 +469,10 @@ export function ConsultationContextLinkCard({ card }: { card: ConsultationContex
     );
   }
 
-  if (card.to === '/buyer-requirements/$id' && card.params) {
+  if (card.to === '/projects/$id' && card.params) {
     return (
       <Link
-        to="/buyer-requirements/$id"
+        to="/projects/$id"
         params={card.params}
         className="block rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
       >
@@ -503,18 +514,18 @@ const contextCardIcons: Record<ConsultationContextCard['key'], ComponentType<{ c
   contact: UserRound,
   property: Building2,
   listingIntake: ClipboardList,
-  listing: Link2,
-  match: ArrowRight,
-  buyerRequirement: ListChecks,
+  buyerIntake: Search,
+  deal: Handshake,
+  project: FolderKanban,
 };
 
 const contextCardIconClasses: Record<ConsultationContextCard['key'], string> = {
   contact: 'bg-sky-50 text-sky-700',
   property: 'bg-emerald-50 text-emerald-700',
   listingIntake: 'bg-orange-50 text-orange-700',
-  listing: 'bg-blue-50 text-blue-700',
-  match: 'bg-violet-50 text-violet-700',
-  buyerRequirement: 'bg-amber-50 text-amber-700',
+  buyerIntake: 'bg-amber-50 text-amber-700',
+  deal: 'bg-violet-50 text-violet-700',
+  project: 'bg-slate-100 text-slate-700',
 };
 
 // ----------------------------------------------------------------

@@ -6,10 +6,6 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePhone, phoneSearchDigits } from '../contacts/contact-phone.utils';
-import {
-  LISTING_INTAKE_STATE_SELECT,
-  OCCUPYING_DEALS_SELECT,
-} from '../listings/listing-state';
 import { closeOpenMatchesForBuyerRequirement } from '../matches/match-lifecycle-sync';
 import {
   getMatchStageStorageValues,
@@ -737,7 +733,7 @@ export class BuyerRequirementsService {
           ward: true,
         },
       },
-      _count: { select: { matches: true, consultations: true } },
+      _count: { select: { matches: true } },
     } satisfies Prisma.BuyerRequirementInclude;
 
     let rows: Prisma.BuyerRequirementGetPayload<{ include: typeof include }>[];
@@ -874,23 +870,16 @@ export class BuyerRequirementsService {
     const req = await this.prisma.buyerRequirement.findFirst({
       where: { id, officeId },
       include: {
-        buyerIntake: { include: { contacts: buyerIntakeContactsInclude } },
-        assignedTo: { select: { id: true, name: true } },
-        matches: {
+        buyerIntake: {
           include: {
-            listing: {
-              include: {
-                intake: { select: LISTING_INTAKE_STATE_SELECT },
-                deals: OCCUPYING_DEALS_SELECT,
-                // 화면이 "고덕그라시움 101동 3301호"처럼 어느 집인지 적을 수 있게 동 · 호까지 싣는다
-                property: {
-                  include: { site: true, unit: { include: { dong: true } } },
-                },
-              },
-            },
+            contacts: buyerIntakeContactsInclude,
+            consultations: { orderBy: { createdAt: 'desc' }, take: 10 },
           },
         },
-        consultations: { orderBy: { createdAt: 'desc' }, take: 10 },
+        assignedTo: { select: { id: true, name: true } },
+        // 목록의 줄 안에 싣는 것(expand=matches)과 같은 가벼운 줄. 손님 쪽에서 매칭을 보는 화면
+        // (희망 조건 상세 · 프로젝트 · 연락처)은 이것을 쓰고 매칭 목록을 따로 부르지 않는다.
+        matches: { select: MATCH_ROW_SELECT, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }] },
         preferredSites: {
           include: { site: { select: { id: true, name: true, type: true } } },
           orderBy: { priority: 'asc' },
@@ -901,7 +890,11 @@ export class BuyerRequirementsService {
       },
     });
     if (!req) throw new NotFoundException('희망 조건을 찾을 수 없습니다.');
-    return withBuyerRequirementContact(req);
+    return {
+      ...withBuyerRequirementContact(req),
+      matches: req.matches.map(presentMatchRow),
+      consultations: req.buyerIntake.consultations,
+    };
   }
 
   async create(
@@ -1273,14 +1266,6 @@ export class BuyerRequirementsService {
         select: { id: true, buyerIntakeId: true, priorityRank: true },
       });
       if (!current) throw new NotFoundException('희망 조건을 찾을 수 없습니다.');
-
-      // A consultation belongs to the buyer project even when one detailed
-      // requirement is removed. Keep the intake context and detach only the
-      // requirement-level context before deleting it.
-      await tx.consultation.updateMany({
-        where: { officeId, buyerReqId: id },
-        data: { buyerReqId: null },
-      });
 
       const deleted = await tx.buyerRequirement.delete({ where: { id } });
       await tx.buyerRequirement.updateMany({

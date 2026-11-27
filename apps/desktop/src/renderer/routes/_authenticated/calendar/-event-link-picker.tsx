@@ -182,20 +182,11 @@ async function searchEntities(
   }
 
   if (kind === "match") {
-    const matches = await api.matches.findAll();
-    return matches
-      .filter((match) =>
-        matchesNeedle(
-          needle,
-          match.property?.site?.name,
-          match.buyerRequirement?.contact?.name,
-          getStatusMeta("matchStage", match.stage).label,
-        ),
-      )
-      .slice(0, 8)
-      .map((match) => ({
+    // 단지 이름 · 손님 이름은 서버가 찾는다 (예전에는 사무소의 매칭을 전부 받아 여기서 걸렀다)
+    const matches = await api.matches.findAll({ search: needle || undefined, limit: 8 });
+    return matches.items.map((match) => ({
         id: match.id,
-        label: `${match.property?.site?.name ?? "매칭"} · ${getStatusMeta("matchStage", match.stage).label}`,
+        label: `${match.listing?.property?.site?.name ?? "매칭"} · ${getStatusMeta("matchStage", match.stage).label}`,
         sublabel: match.buyerRequirement?.contact?.name
           ? `희망매물 · ${match.buyerRequirement.contact.name}`
           : null,

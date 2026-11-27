@@ -528,4 +528,138 @@ describe('MatchesService realtime signal', () => {
       service.updateMemo(match.id, match.officeId, { memo: '메모' }),
     ).resolves.toMatchObject({ memo: '메모' });
   });
+
+  const INTAKE_ID = '00000000-0000-4000-8000-0000000000c1';
+  const PROPERTY_ID = '00000000-0000-4000-8000-0000000000c2';
+
+  it('filters matches by listingIntakeId and combines with propertyId when provided', async () => {
+    const prisma = {
+      match: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    };
+    const service = new MatchesService(prisma as never);
+
+    await service.findAll('office-1', { listingIntakeId: INTAKE_ID });
+    expect(prisma.match.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: {
+          officeId: 'office-1',
+          listing: { intakeId: INTAKE_ID },
+        },
+      }),
+    );
+
+    await service.findAll('office-1', {
+      propertyId: PROPERTY_ID,
+      listingIntakeId: INTAKE_ID,
+    });
+    expect(prisma.match.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          officeId: 'office-1',
+          listing: { propertyId: PROPERTY_ID, intakeId: INTAKE_ID },
+        },
+      }),
+    );
+  });
 });
+
+describe('MatchesService list', () => {
+  const OFFICE = 'office-1';
+  const REQUIREMENT_ID = '00000000-0000-4000-8000-0000000000d1';
+
+  function listRow(id: string, stage = 'buyerContacted') {
+    return {
+      id,
+      buyerReqId: REQUIREMENT_ID,
+      stage,
+      listing: { id: 'listing-1', property: { id: 'property-1', propertyContacts: [] } },
+      buyerRequirement: {
+        id: REQUIREMENT_ID,
+        status: 'active',
+        buyerIntake: {
+          id: 'intake-b',
+          lifecycleStatus: 'open',
+          contacts: [
+            {
+              id: 'p1',
+              contactId: 'c1',
+              role: 'buyer',
+              isPrimary: true,
+              contact: { id: 'c1', name: '김구매', phones: [{ phone: '01011112222', isPrimary: true }] },
+            },
+          ],
+        },
+        preferredRegions: [],
+        preferredSites: [],
+      },
+    };
+  }
+
+  function setupList(rows: unknown[] = [], total = rows.length) {
+    const prisma = {
+      match: {
+        findMany: jest.fn(async (_args: Record<string, any>) => rows),
+        count: jest.fn(async (_args: Record<string, any>) => total),
+      },
+    };
+    return { prisma, service: new MatchesService(prisma as never) };
+  }
+
+  it('returns light rows a page at a time, newest first', async () => {
+    const { service, prisma } = setupList([listRow('m1')], 120);
+
+    const result = await service.findAll(OFFICE, { page: 2 });
+
+    const args = prisma.match.findMany.mock.calls[0][0];
+    // 상세용 include가 아니라 목록용 select로 받는다 (단지 통째 · 손님 당사자 전체를 싣지 않는다)
+    expect(args.include).toBeUndefined();
+    expect(args.select.listing.select.property.select.site.select).toEqual({
+      id: true,
+      name: true,
+      type: true,
+      roadAddress: true,
+      jibunAddress: true,
+    });
+    expect(args).toMatchObject({ skip: 50, take: 50 });
+    expect(result.pagination).toEqual({ page: 2, limit: 50, total: 120, totalPages: 3 });
+    // 손님은 대표 연락 대상 하나와 대표 번호 하나, 단계는 지금 이름으로
+    expect(result.items[0]).toMatchObject({
+      id: 'm1',
+      stage: 'buyerInterested',
+      propertyId: 'property-1',
+      buyerRequirement: { contactId: 'c1', contact: { id: 'c1', name: '김구매', phone: '01011112222' } },
+    });
+    expect(result.items[0]).not.toHaveProperty('property');
+  });
+
+  it('caps the page size at 100', async () => {
+    const { service, prisma } = setupList();
+    await service.findAll(OFFICE, { limit: 5000 });
+    expect(prisma.match.findMany.mock.calls[0][0].take).toBe(100);
+  });
+
+  it('filters open matches, upcoming viewings and a search word in the database', async () => {
+    const { service, prisma } = setupList();
+    await service.findAll(OFFICE, { openOnly: true, upcomingViewing: true, search: ' 그라시움 ' });
+
+    const where = prisma.match.count.mock.calls[0][0].where;
+    expect(where.AND[0]).toEqual({ stage: { notIn: ['closed', 'dealCreated'] } });
+    expect(where.AND[1].calendarEvents.some).toMatchObject({ type: 'viewing' });
+    expect(where.AND[1].calendarEvents.some.start.gt).toBeInstanceOf(Date);
+    expect(JSON.stringify(where.AND[2])).toContain('"name":{"contains":"그라시움"');
+  });
+
+  it('rejects a malformed id instead of passing it to the database', async () => {
+    const { service, prisma } = setupList();
+    await expect(service.findAll(OFFICE, { buyerReqId: 'abc' })).rejects.toThrow(
+      'id 형식이 올바르지 않습니다.',
+    );
+    expect(prisma.match.findMany).not.toHaveBeenCalled();
+  });
+});
+

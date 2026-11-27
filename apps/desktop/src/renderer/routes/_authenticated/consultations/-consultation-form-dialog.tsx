@@ -1,12 +1,10 @@
-import { formatUnitName } from '@estate-erp/shared';
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { buyerRequirementQueries } from '@/queries/buyer-requirements';
 import { toast } from 'sonner';
 import { Building2, Link2, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Consultation } from '@estate-erp/api-client';
-import { formatDate, formatPhone, formatRent } from '@/lib/format';
+import { formatDate, formatPhone } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -37,9 +35,6 @@ import {
 import {
   consultationPurposeOptions,
   formatIntakeState,
-  formatListingLabel,
-  matchStageLabels,
-  transactionTypeLabels,
 } from './-consultation-view-utils';
 
 /** datetime-local 칸의 값 ("2026-11-22T14:05", 이 컴퓨터 시간) */
@@ -82,13 +77,11 @@ export function ConsultationTypeButtons({
   );
 }
 
-/** 희망 조건의 상태를 사람 말로 (영어 상태 값이 그대로 보이지 않게) */
-const BUYER_STATUS_TEXT: Record<string, string> = {
-  active: '진행 중',
-  matched: '진행 중',
+/** 구매 의뢰의 상태를 사람 말로 */
+const BUYER_INTAKE_STATUS_TEXT: Record<string, string> = {
+  open: '진행 중',
   hold: '보류',
-  inactive: '보류',
-  completed: '끝남',
+  closed: '종료',
 };
 
 interface PickedEntity {
@@ -119,9 +112,7 @@ export function ConsultationFormDialog({
   const [initialConsultedAt, setInitialConsultedAt] = useState('');
   const [property, setProperty] = useState<PickedEntity | null>(null);
   const [intakeId, setIntakeId] = useState<string | null>(null);
-  const [listingId, setListingId] = useState<string | null>(null);
-  const [matchId, setMatchId] = useState<string | null>(null);
-  const [buyerReqId, setBuyerReqId] = useState<string | null>(null);
+  const [buyerIntakeId, setBuyerIntakeId] = useState<string | null>(null);
 
   // 열릴 때 폼 초기화
   useEffect(() => {
@@ -152,9 +143,7 @@ export function ConsultationFormDialog({
       setInitialConsultedAt(now);
       setProperty(null);
       setIntakeId(null);
-      setListingId(null);
-      setMatchId(null);
-      setBuyerReqId(null);
+      setBuyerIntakeId(null);
     }
   }, [open, consultation]);
 
@@ -181,9 +170,7 @@ export function ConsultationFormDialog({
         consultedAt: consultedAtIso,
         propertyId: property?.id || undefined,
         listingIntakeId: intakeId || undefined,
-        listingId: listingId || undefined,
-        matchId: matchId || undefined,
-        buyerReqId: buyerReqId || undefined,
+        buyerIntakeId: buyerIntakeId || undefined,
       }),
     onSuccess: () => {
       toast.success('상담을 기록했습니다.');
@@ -234,7 +221,7 @@ export function ConsultationFormDialog({
           <DialogDescription className="text-xs">
             {isEdit
               ? '방식 · 상담한 때 · 내용을 고칩니다. 목적과 연결 항목은 바꿀 수 없습니다.'
-              : '고객과 나눈 대화를 기록하고 매물·의뢰·매칭·희망 조건에 연결합니다.'}
+              : '고객과 나눈 대화를 기록하고 매물·의뢰·구매 의뢰에 연결합니다.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -250,7 +237,7 @@ export function ConsultationFormDialog({
                 {contact?.sublabel && <span className="ml-2 text-xs text-muted-foreground">{contact.sublabel}</span>}
               </div>
             ) : contact ? (
-              <SelectedChip label={contact.label} sublabel={contact.sublabel} onClear={() => { setContact(null); setBuyerReqId(null); setMatchId(null); }} />
+              <SelectedChip label={contact.label} sublabel={contact.sublabel} onClear={() => { setContact(null); setBuyerIntakeId(null); }} />
             ) : (
               <ContactSearchField onSelect={setContact} />
             )}
@@ -332,8 +319,6 @@ export function ConsultationFormDialog({
                     onClear={() => {
                       setProperty(null);
                       setIntakeId(null);
-                      setListingId(null);
-                      setMatchId(null);
                     }}
                   />
                 ) : (
@@ -341,19 +326,13 @@ export function ConsultationFormDialog({
                 )}
               </div>
 
-              {property && (
-                <>
-                  <IntakeSelect propertyId={property.id} value={intakeId} onChange={setIntakeId} />
-                  <ListingSelect propertyId={property.id} value={listingId} onChange={setListingId} />
-                  <MatchSelect propertyId={property.id} value={matchId} onChange={setMatchId} />
-                </>
-              )}
+              {property && <IntakeSelect propertyId={property.id} value={intakeId} onChange={setIntakeId} />}
 
-              {contact && <BuyerReqSelect contactId={contact.id} value={buyerReqId} onChange={setBuyerReqId} />}
+              {contact && <BuyerIntakeSelect contactId={contact.id} value={buyerIntakeId} onChange={setBuyerIntakeId} />}
 
               {!property && !contact && (
                 <p className="text-[11px] leading-5 text-muted-foreground">
-                  고객을 선택하면 희망 조건을, 매물을 선택하면 의뢰·매물·매칭을 연결할 수 있습니다.
+                  고객을 선택하면 구매 의뢰를, 매물을 선택하면 의뢰를 연결할 수 있습니다.
                 </p>
               )}
             </div>
@@ -540,56 +519,7 @@ function IntakeSelect({
   return <ContextSelect label="의뢰" value={value} onChange={onChange} options={options} emptyText="이 매물에 등록된 의뢰가 없습니다." />;
 }
 
-function ListingSelect({
-  propertyId,
-  value,
-  onChange,
-}: {
-  propertyId: string;
-  value: string | null;
-  onChange: (value: string | null) => void;
-}) {
-  const { data } = useQuery({
-    queryKey: ['consultation-form-listings', propertyId],
-    queryFn: () => api.listings.findAll({ propertyId, limit: 20 }),
-  });
-  const options = (data?.items ?? []).map((listing) => ({
-    value: listing.id,
-    label:
-      listing.transactionType === 'monthly'
-        ? `월세 ${formatRent(listing.deposit, listing.monthlyRent)}`
-        : formatListingLabel(listing.transactionType, listing.price),
-  }));
-
-  return <ContextSelect label="매물 (거래)" value={value} onChange={onChange} options={options} emptyText="이 매물에 등록된 거래 매물이 없습니다." />;
-}
-
-function MatchSelect({
-  propertyId,
-  value,
-  onChange,
-}: {
-  propertyId: string;
-  value: string | null;
-  onChange: (value: string | null) => void;
-}) {
-  const { data: matches = [] } = useQuery({
-    queryKey: ['consultation-form-matches', propertyId],
-    queryFn: () => api.matches.findAll({ propertyId }),
-  });
-  const options = matches.map((match) => {
-    const stage = matchStageLabels[match.stage] ?? match.stage;
-    const buyerName = match.buyerRequirement?.contact?.name;
-    return {
-      value: match.id,
-      label: buyerName ? `${stage} · ${buyerName}` : `매칭 ${stage}`,
-    };
-  });
-
-  return <ContextSelect label="매칭" value={value} onChange={onChange} options={options} emptyText="이 매물에 연결된 매칭이 없습니다." />;
-}
-
-function BuyerReqSelect({
+function BuyerIntakeSelect({
   contactId,
   value,
   onChange,
@@ -599,15 +529,13 @@ function BuyerReqSelect({
   onChange: (value: string | null) => void;
 }) {
   const { data } = useQuery({
-    ...buyerRequirementQueries.list({ contactId, limit: 20 }),
+    queryKey: ['consultation-form-buyer-intakes', contactId],
+    queryFn: () => api.buyerIntakes.findAll({ contactId, limit: 20 }),
   });
-  const options = (data?.items ?? []).map((req) => {
-    const type = req.transactionType ? (transactionTypeLabels[req.transactionType] ?? req.transactionType) : '유형 미정';
-    return {
-      value: req.id,
-      label: `${type} · ${req.status === 'active' ? '진행 중' : (BUYER_STATUS_TEXT[req.status] ?? req.status)}`,
-    };
-  });
+  const options = (data?.items ?? []).map((intake) => ({
+    value: intake.id,
+    label: `구매 의뢰 ${BUYER_INTAKE_STATUS_TEXT[intake.lifecycleStatus] ?? intake.lifecycleStatus} · 접수 ${formatDate(intake.receivedAt)}`,
+  }));
 
-  return <ContextSelect label="희망 조건" value={value} onChange={onChange} options={options} emptyText="이 고객의 희망 조건이 없습니다." />;
+  return <ContextSelect label="구매 의뢰" value={value} onChange={onChange} options={options} emptyText="이 고객의 구매 의뢰가 없습니다." />;
 }

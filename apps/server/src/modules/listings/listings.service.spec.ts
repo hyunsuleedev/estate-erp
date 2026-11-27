@@ -75,6 +75,9 @@ describe('ListingsService', () => {
       priceHistory: {
         deleteMany: jest.fn(),
       },
+      consultation: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       $queryRaw: jest.fn(),
       $executeRaw: jest.fn(),
       $transaction: jest.fn(),
@@ -314,6 +317,10 @@ describe('ListingsService', () => {
 
     expect(prisma.priceHistory.deleteMany).toHaveBeenCalledWith({
       where: { officeId: 'office-1', listingId: 'listing-1' },
+    });
+    expect(prisma.consultation.updateMany).toHaveBeenCalledWith({
+      where: { officeId: 'office-1', listingIntakeId: 'intake-1' },
+      data: { listingIntakeId: null },
     });
     expect(prisma.listingIntake.delete).toHaveBeenCalledWith({ where: { id: 'intake-1' } });
     expect(result).toEqual(expect.objectContaining({ intakeRemoved: true }));

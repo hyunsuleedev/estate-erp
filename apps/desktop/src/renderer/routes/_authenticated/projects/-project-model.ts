@@ -5,8 +5,8 @@ import {
   normalizeMatchStage,
 } from "@estate-erp/shared";
 import type {
-  ProjectComment,
-  ProjectCommentList,
+  Comment,
+  CommentList,
   ProjectList,
   ProjectListItem,
   ProjectListStatus,
@@ -223,9 +223,9 @@ export function mergeProjectPages(pages: readonly ProjectList[] | undefined) {
  * 코멘트 쪽들을 오래된 것부터 한 줄로 잇는다. 쪽은 최근 것부터 받고(첫 쪽이 가장 최근),
  * 쪽 안에서는 오래된 것이 위다.
  */
-export function mergeCommentPages(pages: readonly ProjectCommentList[] | undefined) {
+export function mergeCommentPages(pages: readonly CommentList[] | undefined) {
   const seen = new Set<string>();
-  const rows: ProjectComment[] = [];
+  const rows: Comment[] = [];
   for (const page of [...(pages ?? [])].reverse()) {
     for (const item of page.items) {
       if (seen.has(item.id)) continue;

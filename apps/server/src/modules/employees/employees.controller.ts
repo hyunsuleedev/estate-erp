@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -19,7 +20,7 @@ import {
   CurrentUserPayload,
 } from '../../common/decorators/current-user.decorator';
 import { USER_ROLES } from '../auth/auth.types';
-import { EmployeesService } from './employees.service';
+import { EmployeesService, isEmployeeSection } from './employees.service';
 
 /** 주소의 직원 id가 uuid 모양이 아니면 DB까지 가지 않고 "없음"으로 답한다 (예전에는 500) */
 const employeeIdPipe = new ParseUUIDPipe({
@@ -48,9 +49,30 @@ export class EmployeesController {
     @Param('id', employeeIdPipe) id: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
+    // 기본 정보와 건수만. 딸린 목록은 아래 sections로 하나씩 받는다.
     return this.employeesService.forViewer(
       user,
-      await this.employeesService.findOne(id, user.officeId),
+      await this.employeesService.findProfile(id, user.officeId),
+    );
+  }
+
+  /** 직원 상세에 딸린 목록 하나(업무·구매조건·프로젝트·거래·정산·상담·활동) */
+  @Get(':id/sections/:section')
+  @Roles(...USER_ROLES)
+  @UseGuards(RolesGuard)
+  async findSection(
+    @Param('id', employeeIdPipe) id: string,
+    @Param('section') section: string,
+    @CurrentUser() user: CurrentUserPayload,
+  ) {
+    if (!isEmployeeSection(section)) {
+      throw new BadRequestException('알 수 없는 목록입니다.');
+    }
+    return this.employeesService.sectionForViewer(
+      user,
+      id,
+      section,
+      await this.employeesService.findSection(id, user.officeId, section),
     );
   }
 

@@ -188,8 +188,14 @@ describe('dashboard', () => {
     // 정체 · 지연은 거래관리와 같은 판정으로 센다. 끝난 거래 · 진행 중인 거래의 구분도 거래관리의 묶음을 쓴다.
     assert.match(dashboardSource, /getDealPipelineHealth\(deal, now\)\.state !== 'healthy'/);
     assert.match(dashboardSource, /getDealDisplayGroupKey\(deal\.stage\) === 'closed'/);
-    // 매칭 중은 닫힌 매칭과 거래로 넘어간 매칭을 뺀다.
-    assert.match(dashboardSource, /stage !== MatchStage\.CLOSED && stage !== MatchStage\.DEAL_CREATED/);
+    // 매칭 중은 닫힌 매칭과 거래로 넘어간 매칭을 뺀다. 건수만 필요하므로 서버가 세게 한다
+    // (조건을 건 목록을 한 줄만 청하고 전체 수를 읽는다 — 매칭을 전부 받아 세지 않는다).
+    assert.match(dashboardSource, /api\.matches\.findAll\(\{ scope: 'open', limit: 1 \}\)/);
+    assert.match(
+      dashboardSource,
+      /api\.matches\.findAll\(\{ scope: 'open', upcomingViewing: true, limit: 1 \}\)/,
+    );
+    assert.doesNotMatch(dashboardSource, /api\.matches\.findAll\(\)/);
     // 세 계기는 같은 눈금을 쓴다 — 호의 길이로 서로 견줄 수 있게.
     assert.match(dashboardSource, /<Gauge key=\{stat\.key\} stat=\{stat\} scale=\{scale\} order=\{index\} \/>/);
     // 계기는 통째로 링크다. role="row"를 씌우면 보조 기술에서 링크가 사라진다.

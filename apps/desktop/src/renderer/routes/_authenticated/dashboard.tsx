@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { MatchStage, formatFloorRange, normalizeMatchStage } from '@estate-erp/shared';
+import { formatFloorRange } from '@estate-erp/shared';
 import type { CalendarEvent, Consultation, DealListItem as Deal, Notice, Task } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { apiErrorMessage } from '@/lib/api-error';
@@ -1656,19 +1656,14 @@ function StatusSection({
   ).length;
 
   const matchesReady = queryView(matches) === 'ready';
-  const openMatches = (matches.data ?? []).filter((match) => {
-    const stage = normalizeMatchStage(match.stage);
-    return stage !== MatchStage.CLOSED && stage !== MatchStage.DEAL_CREATED;
-  });
-  const viewingsAhead = openMatches.filter((match) =>
-    (match.calendarEvents ?? []).some((event) => new Date(event.start).getTime() > now.getTime()),
-  ).length;
+  const openMatchCount = matches.data?.open ?? 0;
+  const viewingsAhead = matches.data?.viewingsAhead ?? 0;
 
   const stats: GaugeStat[] = [
     {
       key: 'match',
       label: '매칭 중',
-      value: matchesReady ? openMatches.length : null,
+      value: matchesReady ? openMatchCount : null,
       sub: matchesReady && viewingsAhead > 0 ? `임장 예정 ${viewingsAhead}` : null,
       to: '/wanted-properties',
     },
@@ -2361,9 +2356,21 @@ function useDealsQuery() {
   return useQuery(dealQueries.list());
 }
 
-/** 현재 상황의 '매칭 중'. 희망매물과 같은 조회(캐시 공유) */
+/**
+ * 현재 상황의 '매칭 중': 진행 중인 매칭 수와 그 가운데 임장이 잡힌 수.
+ * 건수만 필요하므로 조건을 건 목록을 한 줄만 청하고 전체 수(total)를 읽는다 (예전에는 매칭을 전부 받아 셌다).
+ */
 function useMatchesQuery() {
-  return useQuery({ queryKey: ['matches'], queryFn: () => api.matches.findAll() });
+  return useQuery({
+    queryKey: ['matches', 'open-counts'],
+    queryFn: async () => {
+      const [open, viewing] = await Promise.all([
+        api.matches.findAll({ scope: 'open', limit: 1 }),
+        api.matches.findAll({ scope: 'open', upcomingViewing: true, limit: 1 }),
+      ]);
+      return { open: open.pagination.total, viewingsAhead: viewing.pagination.total };
+    },
+  });
 }
 
 /** 오늘(0시~다음 날 0시) 일정. 달력을 다른 달로 넘겨도 인사 영역 숫자·그림 깃발이 유지된다. */

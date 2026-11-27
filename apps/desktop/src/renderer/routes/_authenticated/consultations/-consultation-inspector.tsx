@@ -477,7 +477,7 @@ function InspectorContent({
               ))}
             </ul>
           ) : (
-            <p className="text-[13px] text-muted-foreground">연결된 매물·의뢰·희망 조건이 없습니다.</p>
+            <p className="text-[13px] text-muted-foreground">연결된 매물·의뢰·구매 의뢰·거래·프로젝트가 없습니다.</p>
           )}
         </Section>
 
@@ -718,14 +718,21 @@ function ContextLine({ card }: { card: ConsultationContextCard }) {
   }
   if (card.to === '/wanted-properties') {
     return (
-      <Link to="/wanted-properties" search={card.search} className={contextLineClassName}>
+      <Link to="/wanted-properties" className={contextLineClassName}>
         {content}
       </Link>
     );
   }
-  if (card.to === '/buyer-requirements/$id' && card.params) {
+  if (card.to === '/deals') {
     return (
-      <Link to="/buyer-requirements/$id" params={card.params} className={contextLineClassName}>
+      <Link to="/deals" search={card.search} className={contextLineClassName}>
+        {content}
+      </Link>
+    );
+  }
+  if (card.to === '/projects/$id' && card.params) {
+    return (
+      <Link to="/projects/$id" params={card.params} className={contextLineClassName}>
         {content}
       </Link>
     );

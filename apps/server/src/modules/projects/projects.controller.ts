@@ -24,7 +24,6 @@ import {
   type CustomerLedgerSortField,
 } from './projects.service';
 import { ProjectPlanService } from './project-plan.service';
-import { ProjectCommentsService } from './project-comments.service';
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -37,7 +36,6 @@ export class ProjectsController {
   constructor(
     private readonly projects: ProjectsService,
     private readonly plan: ProjectPlanService,
-    private readonly comments: ProjectCommentsService,
   ) {}
 
   @Get('ledger')
@@ -220,50 +218,6 @@ export class ProjectsController {
     @CurrentUser() user: CurrentUserPayload,
   ) {
     return this.plan.remove(id, user.officeId, user.role, user.userId);
-  }
-
-  // ─── 코멘트 ──────────────────────────────────────────────────
-
-  /** 최근 것부터 한 쪽. before에 앞 쪽의 nextBefore를 그대로 주면 그보다 오래된 쪽을 준다. */
-  @Get(':id/comments')
-  findComments(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Query('before') before: string,
-    @Query('limit') limit: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.comments.findAll(id, user.officeId, {
-      before: before || undefined,
-      limit: limit ? Number(limit) : undefined,
-    });
-  }
-
-  @Post(':id/comments')
-  createComment(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: { body?: string },
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.comments.create(id, user, dto ?? {});
-  }
-
-  @Patch(':id/comments/:commentId')
-  updateComment(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('commentId', ParseUUIDPipe) commentId: string,
-    @Body() dto: { body?: string },
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.comments.update(id, commentId, user, dto ?? {});
-  }
-
-  @Delete(':id/comments/:commentId')
-  removeComment(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('commentId', ParseUUIDPipe) commentId: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
-    return this.comments.remove(id, commentId, user);
   }
 
   /**

@@ -90,7 +90,7 @@ export function ConvertConsultationDialog({
         <DialogHeader>
           <DialogTitle className="text-base">상담으로 전환</DialogTitle>
           <DialogDescription className="text-xs">
-            통화 내용을 상담 기록으로 저장합니다. 저장 후 상담기록 페이지에서 매물·매칭에
+            통화 내용을 상담 기록으로 저장합니다. 저장 후 상담기록 페이지에서 매물·의뢰에
             연결할 수 있습니다.
           </DialogDescription>
         </DialogHeader>

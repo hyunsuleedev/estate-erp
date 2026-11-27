@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useInfiniteQuery, useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Consultation, ProjectComment, ProjectPerson } from "@estate-erp/api-client";
+import type { Comment, Consultation, ProjectPerson } from "@estate-erp/api-client";
 import { Check, ChevronDown, Footprints, Mic, MessageCircle, Phone, User } from "lucide-react";
 import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/api-error";
@@ -122,7 +122,7 @@ export function ProjectFlow({
   const commentsQuery = useInfiniteQuery({
     queryKey: commentsQueryKey(projectId),
     initialPageParam: null as string | null,
-    queryFn: ({ pageParam }) => api.projects.comments(projectId, { before: pageParam ?? undefined }),
+    queryFn: ({ pageParam }) => api.comments.list({ projectId }, { before: pageParam ?? undefined }),
     getNextPageParam: (lastPage) => lastPage.nextBefore ?? undefined,
     enabled: !isProjectRemoved(projectId),
   });
@@ -132,7 +132,7 @@ export function ProjectFlow({
   );
   const commentTotal = commentsQuery.data?.pages[0]?.total ?? 0;
 
-  const flow = mergeProjectFlow<ProjectPerson, Consultation, ProjectComment>({
+  const flow = mergeProjectFlow<ProjectPerson, Consultation, Comment>({
     consultations: targets.map((person, index) => {
       const data = consultationQueries[index]?.data;
       return {
@@ -225,7 +225,6 @@ export function ProjectFlow({
               ) : (
                 <CommentRow
                   key={item.id}
-                  projectId={projectId}
                   comment={item.comment}
                   variant="flow"
                   dateHeading={null}

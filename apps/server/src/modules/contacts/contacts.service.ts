@@ -15,10 +15,7 @@ import {
   withPrimaryPhone,
   withPrimaryContactPhone,
 } from './contact-phone.utils';
-import {
-  LISTING_INTAKE_STATE_SELECT,
-  OCCUPYING_DEALS_SELECT,
-} from '../listings/listing-state';
+import { LISTING_INTAKE_STATE_SELECT } from '../listings/listing-state';
 import {
   PartiesService,
   partyIncludeWithMembers,
@@ -1036,15 +1033,27 @@ export class ContactsService {
             },
           },
         },
-        listing: {
+        listingIntake: {
           select: {
             id: true,
-            transactionType: true,
-            price: true,
-            isPaused: true,
-            intake: { select: LISTING_INTAKE_STATE_SELECT },
-            deals: OCCUPYING_DEALS_SELECT,
+            ...LISTING_INTAKE_STATE_SELECT,
+            propertyId: true,
+            receivedAt: true,
           },
+        },
+        buyerIntake: {
+          select: { id: true, lifecycleStatus: true, receivedAt: true },
+        },
+        deal: {
+          select: {
+            id: true,
+            stage: true,
+            transactionType: true,
+            isCancelled: true,
+          },
+        },
+        project: {
+          select: { id: true, title: true },
         },
         createdBy: { select: { id: true, name: true } },
       },

@@ -26,7 +26,9 @@ model Property {
   photos           PropertyPhoto[]
   /// 이 관리 공간의 광고 (매물이 정해지지 않은 광고 포함)
   advertisements   ListingAdvertisement[]
+  comments         Comment[]
 
+  @@unique([officeId, id])
   @@unique([officeId, siteId, unitId])
   @@index([officeId])
   @@index([siteId])
@@ -84,12 +86,14 @@ model ListingIntake {
   requesterContact      Contact?            @relation("ListingIntakeRequester", fields: [officeId, requesterContactId], references: [officeId, id], onDelete: Restrict)
   listings              Listing[]
   consultations         Consultation[]
+  comments              Comment[]
   tasks                 Task[]
   calendarEvents        CalendarEvent[]
   projectSteps          ProjectStep[]
 
   @@unique([officeId, id])
   @@unique([officeId, projectId, id])
+  @@unique([officeId, propertyId, id])
   @@index([officeId, receivedAt])
   @@index([officeId, lifecycleStatus, updatedAt])
   @@index([officeId, lifecycleStatus, lifecycleChangedAt])
@@ -147,7 +151,6 @@ model Listing {
 
   matches                    Match[]
   deals                      Deal[]
-  consultations              Consultation[]
   tasks                      Task[]
   calendarEvents             CalendarEvent[]
   priceHistories             PriceHistory[]

@@ -95,7 +95,7 @@ const buyerIntakeInclude = {
         include: { province: true, district: true, ward: true },
       },
       assignedTo: { select: { id: true, name: true } },
-      _count: { select: { matches: true, consultations: true } },
+      _count: { select: { matches: true } },
     },
     orderBy: [{ priorityRank: "asc" as const }, { createdAt: "asc" as const }],
   },

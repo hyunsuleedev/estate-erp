@@ -1,9 +1,6 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
-import type {
-  ListingIntakeState,
-  ListingOccupyingDeal,
-} from './listings.js';
+import type { ListingIntakeState } from './listings.js';
 
 export interface ConsultationListingIntake extends ListingIntakeState {
   id: string;
@@ -44,12 +41,9 @@ export interface Consultation {
   callRecording?: ConsultationRecordingSummary | null;
   propertyId: string | null;
   listingIntakeId: string | null;
-  listingId: string | null;
-  matchId: string | null;
   buyerIntakeId: string | null;
-  buyerReqId: string | null;
-  dealId?: string | null;
-  projectId?: string | null;
+  dealId: string | null;
+  projectId: string | null;
   createdAt: string;
   updatedAt: string;
   contact?: { id: string; name: string; phone: string | null };
@@ -71,28 +65,20 @@ export interface Consultation {
     } | null;
   } | null;
   listingIntake?: ConsultationListingIntake | null;
-  listing?: {
-    id: string;
-    transactionType: string;
-    price: number | null;
-    isPaused: boolean;
-    intake?: ListingIntakeState | null;
-    deals?: ListingOccupyingDeal[];
-  } | null;
-  match?: {
-    id: string;
-    stage: string;
-  } | null;
   buyerIntake?: {
     id: string;
     lifecycleStatus: string;
     receivedAt: string;
   } | null;
-  buyerRequirement?: {
+  deal?: {
     id: string;
-    buyerIntakeId: string;
-    status: string;
-    transactionType: string | null;
+    stage: string;
+    transactionType: string;
+    isCancelled: boolean;
+  } | null;
+  project?: {
+    id: string;
+    title: string | null;
   } | null;
 }
 
@@ -105,19 +91,13 @@ export interface ConsultationsFilter {
   dongId?: string;
   unitId?: string;
   listingIntakeId?: string;
-  listingId?: string;
-  matchId?: string;
   buyerIntakeId?: string;
-  buyerReqId?: string;
   dealId?: string;
   projectId?: string;
   context?:
     | 'property'
     | 'listingIntake'
-    | 'listing'
-    | 'match'
     | 'buyerIntake'
-    | 'buyerRequirement'
     | 'deal'
     | 'project'
     | 'unlinked';
@@ -142,10 +122,7 @@ export interface CreateConsultationDto {
   content: string;
   propertyId?: string;
   listingIntakeId?: string;
-  listingId?: string;
-  matchId?: string;
   buyerIntakeId?: string;
-  buyerReqId?: string;
   dealId?: string;
   projectId?: string;
   /** 기존 통화 녹음(CallRecording)을 상담에 연결 */

@@ -19,9 +19,9 @@ describe('ConsultationsService', () => {
       buyerIntake: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(1) },
       buyerIntakeContact: { findFirst: jest.fn() },
       property: { count: jest.fn().mockResolvedValue(1) },
-      listing: { count: jest.fn().mockResolvedValue(1) },
-      listingIntake: { count: jest.fn().mockResolvedValue(1) },
-      match: { count: jest.fn().mockResolvedValue(1) },
+      listingIntake: { findFirst: jest.fn(), count: jest.fn().mockResolvedValue(1) },
+      deal: { count: jest.fn().mockResolvedValue(1) },
+      project: { count: jest.fn().mockResolvedValue(1) },
       callRecording: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(1), create: jest.fn() },
     };
 
@@ -60,7 +60,7 @@ describe('ConsultationsService', () => {
         contactId: '11111111-1111-4111-8111-111111111111',
         type: 'phone',
         content: '이상한 id',
-        listingId: 'abc',
+        listingIntakeId: 'abc',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
@@ -187,13 +187,28 @@ describe('ConsultationsService', () => {
           {
             propertyId: null,
             listingIntakeId: null,
-            listingId: null,
-            matchId: null,
             buyerIntakeId: null,
-            buyerReqId: null,
+            dealId: null,
+            projectId: null,
           },
         ],
       },
+    });
+  });
+
+  it('filters consultations by deal and project context', async () => {
+    const { prisma, service } = createService();
+    prisma.consultation.findMany.mockResolvedValue([]);
+    prisma.consultation.count.mockResolvedValue(0);
+
+    await service.findAll('office-1', { context: 'deal' });
+    expect(prisma.consultation.count).toHaveBeenCalledWith({
+      where: { AND: [{ officeId: 'office-1' }, { dealId: { not: null } }] },
+    });
+
+    await service.findAll('office-1', { context: 'project' });
+    expect(prisma.consultation.count).toHaveBeenCalledWith({
+      where: { AND: [{ officeId: 'office-1' }, { projectId: { not: null } }] },
     });
   });
 
@@ -222,57 +237,48 @@ describe('ConsultationsService', () => {
     );
   });
 
-  it('구매요건 상담의 BuyerIntake를 자동으로 채운다', async () => {
+  it('의뢰 상담 생성 시 의뢰의 호실(propertyId)을 자동으로 채우고 다른 호실 지정은 거부한다', async () => {
     const { prisma, service } = createService();
-    prisma.contact.findFirst.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' });
-    prisma.buyerRequirement.findFirst.mockResolvedValue({
-      id: '44444444-4444-4444-8444-444444444444',
-      buyerIntakeId: '22222222-2222-4222-8222-222222222222',
-    });
-    prisma.buyerIntakeContact.findFirst.mockResolvedValue({
-      id: 'participant-1',
+    const contactId = '11111111-1111-4111-8111-111111111111';
+    const intakeId = '22222222-2222-4222-8222-222222222222';
+    const intakePropertyId = '55555555-5555-4555-8555-555555555555';
+    const otherPropertyId = '66666666-6666-4666-8666-666666666666';
+
+    prisma.contact.findFirst.mockResolvedValue({ id: contactId });
+    prisma.listingIntake.findFirst.mockResolvedValue({
+      id: intakeId,
+      propertyId: intakePropertyId,
     });
     prisma.consultation.create.mockResolvedValue({
       id: 'consultation-1',
-      contact: { id: '11111111-1111-4111-8111-111111111111', phones: [] },
+      contact: { id: contactId, phones: [] },
     });
 
     await service.create('office-1', 'user-1', {
-      contactId: '11111111-1111-4111-8111-111111111111',
+      contactId,
       type: 'phone',
-      content: '예산 조건을 다시 확인함',
-      buyerReqId: '44444444-4444-4444-8444-444444444444',
+      content: '의뢰 확인 상담',
+      listingIntakeId: intakeId,
     });
 
     expect(prisma.consultation.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          buyerIntakeId: '22222222-2222-4222-8222-222222222222',
-          buyerReqId: '44444444-4444-4444-8444-444444444444',
+          propertyId: intakePropertyId,
+          listingIntakeId: intakeId,
         }),
       }),
     );
-  });
-
-  it('구매요건과 다른 BuyerIntake를 동시에 지정하면 거부한다', async () => {
-    const { prisma, service } = createService();
-    prisma.contact.findFirst.mockResolvedValue({ id: '11111111-1111-4111-8111-111111111111' });
-    prisma.buyerRequirement.findFirst.mockResolvedValue({
-      id: '44444444-4444-4444-8444-444444444444',
-      buyerIntakeId: '22222222-2222-4222-8222-222222222222',
-    });
 
     await expect(
       service.create('office-1', 'user-1', {
-        contactId: '11111111-1111-4111-8111-111111111111',
+        contactId,
         type: 'phone',
-        content: '잘못 연결된 상담',
-        buyerIntakeId: '33333333-3333-4333-8333-333333333333',
-        buyerReqId: '44444444-4444-4444-8444-444444444444',
+        content: '어긋난 호실 지정',
+        propertyId: otherPropertyId,
+        listingIntakeId: intakeId,
       }),
-    ).rejects.toBeInstanceOf(BadRequestException);
-
-    expect(prisma.consultation.create).not.toHaveBeenCalled();
+    ).rejects.toThrow('고른 의뢰가 고른 매물에 속해 있지 않습니다.');
   });
 
   it('BuyerIntake 참여자가 아닌 연락처의 상담 연결을 거부한다', async () => {

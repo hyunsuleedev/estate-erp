@@ -14,10 +14,7 @@ import {
   withPrimaryContactPhone,
   withPrimaryPhone,
 } from '../contacts/contact-phone.utils';
-import {
-  LISTING_INTAKE_STATE_SELECT,
-  OCCUPYING_DEALS_SELECT,
-} from '../listings/listing-state';
+import { LISTING_INTAKE_STATE_SELECT } from '../listings/listing-state';
 import { parseCallRecordingFileName } from '@estate-erp/shared';
 import { CallIntelligenceService } from '../call-intelligence/call-intelligence.service';
 import { assertLinksInOffice, isUuid, type LinkField } from '../tasks/linked-records';
@@ -31,19 +28,15 @@ export interface ConsultationSearchQuery {
   dongId?: string;
   unitId?: string;
   listingIntakeId?: string;
-  listingId?: string;
-  matchId?: string;
   buyerIntakeId?: string;
-  buyerReqId?: string;
   dealId?: string;
   projectId?: string;
   context?:
     | 'property'
     | 'listingIntake'
-    | 'listing'
-    | 'match'
     | 'buyerIntake'
-    | 'buyerRequirement'
+    | 'deal'
+    | 'project'
     | 'unlinked';
   outcome?: 'actionRequired' | 'confirmed' | 'held';
   type?: string;
@@ -83,10 +76,7 @@ type ConsultationRecordingRow = Prisma.CallRecordingGetPayload<{
 const CONSULTATION_LINK_FIELDS: LinkField[] = [
   { key: 'propertyId', model: 'property', object: '매물을' },
   { key: 'listingIntakeId', model: 'listingIntake', object: '매물 의뢰를' },
-  { key: 'listingId', model: 'listing', object: '매물 조건을' },
-  { key: 'matchId', model: 'match', object: '매칭을' },
   { key: 'buyerIntakeId', model: 'buyerIntake', object: '구매 의뢰를' },
-  { key: 'buyerReqId', model: 'buyerRequirement', object: '희망 조건을' },
   { key: 'dealId', model: 'deal', object: '거래를' },
   { key: 'projectId', model: 'project', object: '프로젝트를' },
   { key: 'callRecordingId', model: 'callRecording', object: '통화 녹음을' },
@@ -201,27 +191,8 @@ export class ConsultationsService {
         receivedAt: true,
       },
     },
-    listing: {
-      select: {
-        id: true,
-        transactionType: true,
-        price: true,
-        isPaused: true,
-        intake: { select: LISTING_INTAKE_STATE_SELECT },
-        deals: OCCUPYING_DEALS_SELECT,
-      },
-    },
-    match: { select: { id: true, stage: true } },
     buyerIntake: {
       select: { id: true, lifecycleStatus: true, receivedAt: true },
-    },
-    buyerRequirement: {
-      select: {
-        id: true,
-        buyerIntakeId: true,
-        status: true,
-        transactionType: true,
-      },
     },
     deal: {
       select: {
@@ -257,12 +228,9 @@ export class ConsultationsService {
     if (query.dongId) filters.push({ property: { unit: { dongId: query.dongId } } });
     if (query.unitId) filters.push({ property: { unitId: query.unitId } });
     if (query.listingIntakeId) filters.push({ listingIntakeId: query.listingIntakeId });
-    if (query.listingId) filters.push({ listingId: query.listingId });
-    if (query.matchId) filters.push({ matchId: query.matchId });
     if (query.buyerIntakeId) {
       filters.push({ buyerIntakeId: query.buyerIntakeId });
     }
-    if (query.buyerReqId) filters.push({ buyerReqId: query.buyerReqId });
     if (query.dealId) filters.push({ dealId: query.dealId });
     if (query.projectId) filters.push({ projectId: query.projectId });
     if (query.type) filters.push({ type: query.type });
@@ -304,8 +272,6 @@ export class ConsultationsService {
           { property: { site: { name: { contains: q, mode: 'insensitive' } } } },
           { property: { unit: { name: { contains: q, mode: 'insensitive' } } } },
           { property: { unit: { dong: { name: { contains: q, mode: 'insensitive' } } } } },
-          { listing: { transactionType: { contains: q, mode: 'insensitive' } } },
-          { listing: { memo: { contains: q, mode: 'insensitive' } } },
         ],
       });
     }
@@ -375,17 +341,15 @@ export class ConsultationsService {
   private buildContextFilter(context: NonNullable<ConsultationSearchQuery['context']>): Prisma.ConsultationWhereInput {
     if (context === 'property') return { propertyId: { not: null } };
     if (context === 'listingIntake') return { listingIntakeId: { not: null } };
-    if (context === 'listing') return { listingId: { not: null } };
-    if (context === 'match') return { matchId: { not: null } };
     if (context === 'buyerIntake') return { buyerIntakeId: { not: null } };
-    if (context === 'buyerRequirement') return { buyerReqId: { not: null } };
+    if (context === 'deal') return { dealId: { not: null } };
+    if (context === 'project') return { projectId: { not: null } };
     return {
       propertyId: null,
       listingIntakeId: null,
-      listingId: null,
-      matchId: null,
       buyerIntakeId: null,
-      buyerReqId: null,
+      dealId: null,
+      projectId: null,
     };
   }
 
@@ -423,10 +387,7 @@ export class ConsultationsService {
       content: string;
       propertyId?: string;
       listingIntakeId?: string;
-      listingId?: string;
-      matchId?: string;
       buyerIntakeId?: string;
-      buyerReqId?: string;
       dealId?: string;
       projectId?: string;
       /** 통화 녹음 연결 (통화 → 상담 전환) */
@@ -438,10 +399,7 @@ export class ConsultationsService {
     const {
       propertyId,
       listingIntakeId,
-      listingId,
-      matchId,
       buyerIntakeId,
-      buyerReqId,
       dealId,
       projectId,
       callRecordingId,
@@ -463,30 +421,28 @@ export class ConsultationsService {
     });
     if (!contact) throw new NotFoundException('연락처를 찾을 수 없습니다.');
 
-    // 연결 칸(매물 · 의뢰 · 매칭 · 희망 조건 · 녹음)이 이 사무소의 것인지 저장 전에 확인한다.
+    // 연결 칸(매물 · 의뢰 · 구매 의뢰 · 거래 · 프로젝트 · 녹음)이 이 사무소의 것인지 저장 전에 확인한다.
     // 이 칸들의 FK는 id만 가리켜 DB가 다른 사무소의 행을 막지 못하고, 막지 않으면 응답(include)에
-    // 남의 사무소 단지 이름 · 매물 가격 · 의뢰 상태가 실린다.
+    // 남의 사무소 단지 이름 · 의뢰 상태가 실린다.
     await assertLinksInOffice(this.prisma, officeId, dto, CONSULTATION_LINK_FIELDS);
 
-    let resolvedBuyerIntakeId = buyerIntakeId || undefined;
-    if (buyerReqId) {
-      const requirement = await this.prisma.buyerRequirement.findFirst({
-        where: { id: buyerReqId, officeId },
-        select: { id: true, buyerIntakeId: true },
+    let resolvedPropertyId = propertyId || undefined;
+    if (listingIntakeId) {
+      const listingIntake = await this.prisma.listingIntake.findFirst({
+        where: { id: listingIntakeId, officeId },
+        select: { id: true, propertyId: true },
       });
-      if (!requirement) {
-        throw new NotFoundException('희망 조건을 찾을 수 없습니다.');
+      if (!listingIntake) {
+        throw new NotFoundException('매물 의뢰를 찾을 수 없습니다.');
       }
-      if (
-        resolvedBuyerIntakeId &&
-        resolvedBuyerIntakeId !== requirement.buyerIntakeId
-      ) {
-        throw new BadRequestException(
-          '고른 희망 조건이 고른 구매 의뢰에 속해 있지 않습니다.',
-        );
+      if (resolvedPropertyId && resolvedPropertyId !== listingIntake.propertyId) {
+        throw new BadRequestException('고른 의뢰가 고른 매물에 속해 있지 않습니다.');
       }
-      resolvedBuyerIntakeId = requirement.buyerIntakeId;
-    } else if (resolvedBuyerIntakeId) {
+      resolvedPropertyId = listingIntake.propertyId;
+    }
+
+    const resolvedBuyerIntakeId = buyerIntakeId || undefined;
+    if (resolvedBuyerIntakeId) {
       const intake = await this.prisma.buyerIntake.findFirst({
         where: { id: resolvedBuyerIntakeId, officeId },
         select: { id: true },
@@ -528,12 +484,9 @@ export class ConsultationsService {
         content,
         ...(purpose ? { purpose } : {}),
         ...(createdAt ? { createdAt } : {}),
-        propertyId: propertyId || undefined,
+        propertyId: resolvedPropertyId,
         listingIntakeId: listingIntakeId || undefined,
-        listingId: listingId || undefined,
-        matchId: matchId || undefined,
         buyerIntakeId: resolvedBuyerIntakeId,
-        buyerReqId: buyerReqId || undefined,
         dealId: dealId || undefined,
         projectId: projectId || undefined,
         callRecordingId: callRecordingId || undefined,

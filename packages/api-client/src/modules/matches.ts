@@ -1,4 +1,5 @@
 import type { RequestFn } from '../client.js';
+import type { PaginatedResponse } from '../types.js';
 import type { BuyerRequirement } from './buyer-requirements.js';
 import type { CalendarEvent } from './calendar-events.js';
 import type { Listing, ListingIntakeState, ListingOccupyingDeal } from './listings.js';
@@ -101,12 +102,17 @@ export interface MatchRow {
 }
 
 /**
- * 매칭. 손님 쪽(`buyerRequirement`)과 집의 바로 가기(`property`)는 매칭 상세와 GET /matches에 실려 온다.
- * 손님 목록 줄 안의 매칭에는 없으므로 화면이 그 줄의 손님을 붙여 쓴다.
+ * 매칭에 실리는 손님 쪽 요약: 누구의 매칭인지와 그 조건의 요점.
+ * 목록(GET /matches)과 상세가 함께 싣는다. 손님 조건의 전부는 GET /buyer-requirements/:id에 있다.
+ */
+export type MatchBuyerRequirement = Omit<BuyerRequirement, 'matches' | 'consultations' | '_count'>;
+
+/**
+ * 매칭. 목록의 줄과 상세가 같은 꼴이다: 가벼운 줄 + 손님 쪽 요약.
+ * 손님 줄 안에 실려 오는 매칭(GET /buyer-requirements?expand=matches)에는 손님이 없어, 화면이 그 줄의 손님을 붙여 쓴다.
  */
 export interface Match extends MatchRow {
-  property?: MatchRowProperty;
-  buyerRequirement?: BuyerRequirement;
+  buyerRequirement?: MatchBuyerRequirement;
 }
 
 export interface CreateMatchDto {
@@ -131,17 +137,27 @@ export interface UpdateMatchAgreedTermsDto {
 
 export interface MatchesFilter {
   propertyId?: string;
+  listingIntakeId?: string;
   listingId?: string;
   buyerReqId?: string;
   /** 콤마 구분 다중 stage 허용 (예: "suggested,viewing") */
   stage?: string;
+  /** open: 진행 중인 매칭만 (종료 · 거래 전환 제외) */
+  scope?: 'open';
+  /** 앞으로 잡힌 임장이 있는 매칭만 */
+  upcomingViewing?: boolean;
+  /** 단지 이름 · 손님 이름으로 찾기 */
+  search?: string;
+  page?: number;
+  /** 쪽 크기 (기본 50, 최대 100) */
+  limit?: number;
 }
 
 export function createMatchesApi(request: RequestFn) {
   return {
     findAll: (filters?: MatchesFilter) =>
-      request<Match[]>('/matches', {
-        params: filters as Record<string, string | undefined>,
+      request<PaginatedResponse<Match>>('/matches', {
+        params: filters as Record<string, string | number | boolean | undefined>,
       }),
 
     findOne: (id: string) =>

@@ -26,11 +26,11 @@ export interface RefEntry {
   kind: RefKind;
   id: string;
   label: string;
-  /** listing·intake: 소속 호실 */
+  /** listing·intake·match: 소속 호실 */
   propertyId?: string;
-  /** listing: 소속 의뢰 */
+  /** listing·match: 소속 의뢰 */
   intakeId?: string;
-  /** requirement: 소속 구매 의뢰 */
+  /** requirement·match: 소속 구매 의뢰 */
   buyerIntakeId?: string;
   /** match */
   listingId?: string;
@@ -344,6 +344,9 @@ export async function buildCallContext(
               kind: 'match',
               id: match.id,
               label: `${registry.refs.get(listingRef)?.label ?? ''} 매칭`,
+              propertyId: match.listing.propertyId,
+              intakeId: match.listing.intakeId,
+              buyerIntakeId: intake.id,
               listingId: match.listing.id,
               buyerReqId: requirement.id,
               allowedStages,

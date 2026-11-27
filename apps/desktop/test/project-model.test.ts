@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type {
-  ProjectCommentList,
+  CommentList,
   ProjectList,
   ProjectListItem,
   ProjectPlan,
@@ -147,7 +147,7 @@ describe("project screen model", () => {
       updatedAt: "2026-11-01T00:00:00.000Z",
       author: null,
     });
-    const page = (ids: string[], nextBefore: string | null): ProjectCommentList => ({
+    const page = (ids: string[], nextBefore: string | null): CommentList => ({
       total: 5,
       nextBefore,
       items: ids.map(comment),

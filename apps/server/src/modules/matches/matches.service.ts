@@ -22,7 +22,11 @@ import {
   OCCUPYING_DEALS_SELECT,
 } from '../listings/listing-state';
 import { MATCH_STAGES } from './dto/match.dto';
-import { getMatchStageStorageValues } from './match-row';
+import {
+  getMatchStageStorageValues,
+  MATCH_LIST_SELECT,
+  presentMatchListRow,
+} from './match-row';
 import {
   buyerIntakeContactsInclude,
   withBuyerRequirementContact,
@@ -83,11 +87,23 @@ type MatchWithRelations = Prisma.MatchGetPayload<{ include: typeof matchInclude 
 
 export interface MatchesFilter {
   propertyId?: string;
+  listingIntakeId?: string;
   listingId?: string;
   buyerReqId?: string;
   /** 콤마 구분 다중 stage 허용 (예: "suggested,viewing") */
   stage?: string;
+  /** 진행 중인 매칭만 (종료 · 거래 전환 제외) */
+  openOnly?: boolean;
+  /** 앞으로 잡힌 임장이 있는 매칭만 */
+  upcomingViewing?: boolean;
+  /** 단지 이름 · 손님 이름으로 찾기 */
+  search?: string;
+  page?: number;
+  /** 쪽 크기 (기본 50, 최대 100) */
+  limit?: number;
 }
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class MatchesService {
@@ -124,6 +140,13 @@ export class MatchesService {
 
   async findAll(officeId: string, filters: MatchesFilter = {}) {
     const where: Prisma.MatchWhereInput = { officeId };
+    // 꼴이 틀린 id는 DB 오류(500) 대신 400으로 답한다
+    for (const key of ['listingId', 'buyerReqId', 'propertyId', 'listingIntakeId'] as const) {
+      const value = filters[key];
+      if (value !== undefined && !UUID_PATTERN.test(value)) {
+        throw new BadRequestException('id 형식이 올바르지 않습니다.');
+      }
+    }
 
     if (filters.listingId) {
       where.listingId = filters.listingId;
@@ -131,8 +154,15 @@ export class MatchesService {
     if (filters.buyerReqId) {
       where.buyerReqId = filters.buyerReqId;
     }
+    const listingWhere: Prisma.ListingWhereInput = {};
     if (filters.propertyId) {
-      where.listing = { propertyId: filters.propertyId };
+      listingWhere.propertyId = filters.propertyId;
+    }
+    if (filters.listingIntakeId) {
+      listingWhere.intakeId = filters.listingIntakeId;
+    }
+    if (Object.keys(listingWhere).length > 0) {
+      where.listing = listingWhere;
     }
     if (filters.stage) {
       const stages = filters.stage
@@ -149,13 +179,51 @@ export class MatchesService {
       }
     }
 
-    const matches = await this.prisma.match.findMany({
-      where,
-      include: this.matchInclude,
-      orderBy: { createdAt: 'desc' },
-    });
+    const AND: Prisma.MatchWhereInput[] = [];
+    if (filters.openOnly) {
+      AND.push({
+        stage: {
+          notIn: [MatchStage.CLOSED, MatchStage.DEAL_CREATED].flatMap(getMatchStageStorageValues),
+        },
+      });
+    }
+    if (filters.upcomingViewing) {
+      AND.push({ calendarEvents: { some: { type: 'viewing', start: { gt: new Date() } } } });
+    }
+    const search = filters.search?.trim();
+    if (search) {
+      const contains = { contains: search, mode: 'insensitive' as const };
+      AND.push({
+        OR: [
+          { listing: { property: { site: { name: contains } } } },
+          {
+            buyerRequirement: {
+              buyerIntake: { contacts: { some: { contact: { name: contains } } } },
+            },
+          },
+        ],
+      });
+    }
+    if (AND.length > 0) where.AND = AND;
 
-    return matches.map((match) => this.withPropertyContext(match));
+    const page = Math.max(1, Math.trunc(filters.page || 1));
+    const limit = Math.min(100, Math.max(1, Math.trunc(filters.limit || 50)));
+    // 목록은 가벼운 줄이다(match-row.ts). 손님 조건의 나머지와 단지의 모든 칸은 한 건 조회에 있다.
+    const [rows, total] = await Promise.all([
+      this.prisma.match.findMany({
+        where,
+        select: MATCH_LIST_SELECT,
+        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.match.count({ where }),
+    ]);
+
+    return {
+      items: rows.map(presentMatchListRow),
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   async findOne(id: string, officeId: string) {

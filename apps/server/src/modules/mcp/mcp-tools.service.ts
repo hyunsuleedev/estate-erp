@@ -14,6 +14,7 @@ import {
   MatchStage,
 } from '@estate-erp/shared';
 import { formatToolError, normalizeDateArgs, validateToolArgs } from './mcp-tool-args';
+import { compactMcpResult } from './mcp-response-compact';
 import { ListingsService } from '../listings/listings.service';
 import { ListingIntakesService } from '../listing-intakes/listing-intakes.service';
 import { ContactsService } from '../contacts/contacts.service';
@@ -32,7 +33,12 @@ import { OfficeSitesService } from '../office-sites/office-sites.service';
 import { PropertyContactsService } from '../property-contacts/property-contacts.service';
 import { PartiesService } from '../parties/parties.service';
 import { TenantsService } from '../tenants/tenants.service';
-import { EmployeesService } from '../employees/employees.service';
+import {
+  EMPLOYEE_SECTIONS,
+  EmployeesService,
+  isEmployeeSection,
+  type EmployeeSection,
+} from '../employees/employees.service';
 import { OfficesService } from '../offices/offices.service';
 import {
   ExternalListingsService,
@@ -86,6 +92,23 @@ interface ToolEntry {
  * 시각 칸(…At)에 날짜만 와도 받는 도구. 이 도구들의 서비스는 받은 문자열을 그대로 DB에 넘겨, 날짜만 주면 실패했다.
  * 날짜만 받는 칸이 있는 도구(계약서 초안의 체결일 등)는 넣지 않는다 — 그쪽은 날짜 문자열 그대로 써야 한다.
  */
+/** 읽기만 하는 도구 — 응답을 줄여 보내도 되는 것 */
+const READ_TOOL_NAME = /^(find|get|search|list)_/;
+
+/**
+ * get_employee의 include 이름 → 응답에 붙는 칸. 직원 한 명의 기본 정보는 1KB인데 딸린 목록을
+ * 다 붙이면 60KB를 넘는다. 적은 것만 따로 읽어 붙인다(EmployeesService.findSection).
+ */
+const EMPLOYEE_INCLUDE_FIELDS: Record<EmployeeSection, string> = {
+  tasks: 'assignedTasks',
+  buyerRequirements: 'assignedBuyerRequirements',
+  projects: 'assignedProjects',
+  deals: 'dealParticipants',
+  settlements: 'recentSettlementLines',
+  consultations: 'recentConsultations',
+  activities: 'recentActivities',
+};
+
 const DATE_ONLY_AS_TIME_TOOLS: ReadonlySet<string> = new Set([
   'create_listing_intake',
   'update_listing_intake',
@@ -249,7 +272,9 @@ export class McpToolsService {
           {
             type: 'text',
             // 들여쓰기 없이 보낸다. 읽는 쪽은 AI라 줄바꿈이 필요 없고, 응답이 절반 가까이 줄어든다.
-            text: JSON.stringify(data),
+            // 조회 응답은 딸린 객체를 줄여 보낸다(mcp-response-compact.ts). 만들기·고치기·초안은
+            // 빈 칸이 "아직 안 정함"을 뜻하기도 해서 그대로 둔다.
+            text: JSON.stringify(READ_TOOL_NAME.test(toolName) ? compactMcpResult(data) : data),
           },
         ],
         isError: false,
@@ -1829,13 +1854,14 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_consultations',
-      '상담기록 목록. 연락처, 매물, 매칭별 필터.',
+      '상담기록 목록. 연락처, 호실, 의뢰, 구매 의뢰, 거래, 프로젝트별 필터.',
       obj({
         contactId: str('연락처 ID'),
-        propertyId: str('매물 ID'),
-        listingIntakeId: str('의뢰 ID'),
-        listingId: str('리스팅 ID'),
+        propertyId: str('매물(호실) ID'),
+        listingIntakeId: str('매물 의뢰 ID'),
         buyerIntakeId: str('구매 의뢰 ID'),
+        dealId: str('거래 ID'),
+        projectId: str('프로젝트 ID'),
         ...page,
       }),
       async (a, c) =>
@@ -1843,8 +1869,9 @@ export class McpToolsService {
           contactId: a.contactId as string,
           propertyId: a.propertyId as string,
           listingIntakeId: a.listingIntakeId as string,
-          listingId: a.listingId as string,
           buyerIntakeId: a.buyerIntakeId as string,
+          dealId: a.dealId as string,
+          projectId: a.projectId as string,
           page: (a.page as number) ?? 1,
           limit: this.clampLimit(a),
         }),
@@ -1865,12 +1892,11 @@ export class McpToolsService {
           contactId: str('연락처 ID'),
           type: strEnum('상담유형', ['phone', 'visit', 'online']),
           content: str('메모 내용'),
-          propertyId: str('관련 매물 ID'),
-          listingIntakeId: str('관련 의뢰 ID'),
-          listingId: str('관련 리스팅 ID'),
-          matchId: str('관련 매칭 ID'),
+          propertyId: str('관련 매물(호실) ID'),
+          listingIntakeId: str('관련 매물 의뢰 ID'),
           buyerIntakeId: str('관련 구매 의뢰 ID'),
-          buyerReqId: str('관련 구매조건 ID'),
+          dealId: str('관련 거래 ID'),
+          projectId: str('관련 프로젝트 ID'),
         },
         ['contactId', 'type', 'content'],
       ),
@@ -1881,10 +1907,9 @@ export class McpToolsService {
           content: a.content as string,
           propertyId: a.propertyId as string,
           listingIntakeId: a.listingIntakeId as string,
-          listingId: a.listingId as string,
-          matchId: a.matchId as string,
           buyerIntakeId: a.buyerIntakeId as string,
-          buyerReqId: a.buyerReqId as string,
+          dealId: a.dealId as string,
+          projectId: a.projectId as string,
         }),
     );
 
@@ -1899,8 +1924,32 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     // 매칭 (Matches)
     // ═══════════════════════════════════════════════════════════
-    this.add('find_matches', '매칭 파이프라인 목록.', obj({}), async (_a, c) =>
-      this.matches.findAll(c.officeId),
+    this.add(
+      'find_matches',
+      '매칭 목록: 어느 손님(이름 · 연락처 · 희망 조건 요점)에게 어느 집(단지 · 동 · 호 · 가격)을 연결했고 어느 단계인지. 최근에 만든 것부터 50건씩 옵니다 — 조건으로 좁히거나 page로 넘기세요. 손님 조건의 나머지와 단지 상세는 get_match로 봅니다.',
+      obj({
+        buyerReqId: str('이 구매조건(BuyerRequirement)의 매칭만'),
+        propertyId: str('이 매물(Property)의 매칭만'),
+        listingId: str('이 거래 조건(Listing)의 매칭만'),
+        stage: str(
+          '단계 (여럿은 콤마): suggested, buyerInterested, viewingConfirmed, viewing, buyerReviewing, negotiating, dealCreated, closed',
+        ),
+        openOnly: bool('진행 중인 매칭만 (종료 · 거래 전환 제외)'),
+        search: str('단지 이름 · 손님 이름으로 찾기'),
+        page: num('쪽 번호 (기본 1)'),
+        limit: num('쪽 크기 (기본 50, 최대 100)'),
+      }),
+      async (a, c) =>
+        this.matches.findAll(c.officeId, {
+          buyerReqId: a.buyerReqId as string | undefined,
+          propertyId: a.propertyId as string | undefined,
+          listingId: a.listingId as string | undefined,
+          stage: a.stage as string | undefined,
+          openOnly: a.openOnly === true,
+          search: a.search as string | undefined,
+          page: a.page as number | undefined,
+          limit: a.limit as number | undefined,
+        }),
     );
 
     this.add(
@@ -2420,13 +2469,47 @@ export class McpToolsService {
 
     this.add(
       'get_employee',
-      '직원 상세.',
-      obj({ id: str('직원 ID') }, ['id']),
-      async (a, c) =>
-        this.employees.forViewer(
-          asEmployeeViewer(c),
-          await this.employees.findOne(a.id as string, c.officeId),
-        ),
+      '직원 상세: 기본 정보와 건수(counts). 딸린 목록은 include에 적은 것만 붙습니다(각 목록은 최근·급한 순으로 일부만). 담당 업무·구매조건 전체는 find_tasks·find_buyer_requirements의 assignedToId로 찾으세요.',
+      obj(
+        {
+          id: str('직원 ID'),
+          include: str(
+            `함께 받을 목록, 쉼표로 여러 개: ${EMPLOYEE_SECTIONS.join(', ')}`,
+          ),
+        },
+        ['id'],
+      ),
+      async (a, c) => {
+        const wanted = new Set(
+          String(a.include ?? '')
+            .split(',')
+            .map((name) => name.trim())
+            .filter(Boolean),
+        );
+        const unknown = [...wanted].filter((name) => !isEmployeeSection(name));
+        if (unknown.length > 0) {
+          throw new BadRequestException(
+            `include에 쓸 수 없는 값입니다: ${unknown.join(', ')} (쓸 수 있는 값: ${EMPLOYEE_SECTIONS.join(', ')})`,
+          );
+        }
+        const id = a.id as string;
+        const viewer = asEmployeeViewer(c);
+        const employee: Record<string, unknown> = this.employees.forViewer(
+          viewer,
+          await this.employees.findProfile(id, c.officeId),
+        );
+        // 화면과 같은 가리기(급여·수수료)를 목록마다 거친다
+        for (const section of EMPLOYEE_SECTIONS) {
+          if (!wanted.has(section)) continue;
+          employee[EMPLOYEE_INCLUDE_FIELDS[section]] = this.employees.sectionForViewer(
+            viewer,
+            id,
+            section,
+            await this.employees.findSection(id, c.officeId, section),
+          );
+        }
+        return employee;
+      },
     );
 
     this.add(

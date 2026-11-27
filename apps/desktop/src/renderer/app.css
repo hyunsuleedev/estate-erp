@@ -133,6 +133,53 @@ html[data-renderer-surface="native-tab"] [data-slot="sidebar-container"] {
   flex: 1;
 }
 
+/*
+ * Windows·Linux의 기본 스크롤바는 굵고 늘 보여서 표 옆에 회색 띠가 선다(매물관리에서 지적, 2026-11-26).
+ * 가늘게 하고, 세로 스크롤바는 그 영역에 마우스를 올리거나 그 안을 쓰는 동안에만 보이게 한다.
+ * macOS는 겹쳐 뜨는 기본 스크롤바가 이미 그렇게 움직이므로 건드리지 않는다
+ * (::-webkit-scrollbar를 꾸미면 자리를 차지하는 스크롤바로 바뀐다).
+ * :where로 우선순위를 낮춰, 따로 꾸민 곳(사이드바)이 이긴다.
+ */
+:where(html:not([data-platform="darwin"])) *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+:where(html:not([data-platform="darwin"])) *::-webkit-scrollbar-track,
+:where(html:not([data-platform="darwin"])) *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+:where(html:not([data-platform="darwin"])) * {
+  /* 요소마다 다시 정해 물려받지 않게 한다 — 마우스가 올라간 영역의 스크롤바만 보인다 */
+  --app-scroll-thumb: transparent;
+}
+
+:where(html:not([data-platform="darwin"])) *:hover,
+:where(html:not([data-platform="darwin"])) *:focus-within {
+  --app-scroll-thumb: rgba(55, 53, 47, 0.24);
+}
+
+:where(html:not([data-platform="darwin"])) *::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: var(--app-scroll-thumb, transparent);
+  background-clip: padding-box;
+}
+
+/*
+ * 가로 스크롤바는 늘 보인다 — 휠만 있는 마우스로는 옆으로 넘길 길이 이것뿐이다(사용자 결정 2026-11-26).
+ * 아래 둘은 :where를 쓰지 않는다: Chromium은 :where 조상 뒤의 스크롤바 상태(:horizontal 등)를 맞추지 못한다(실측).
+ */
+html:not([data-platform="darwin"]) *::-webkit-scrollbar-thumb:horizontal {
+  background-color: rgba(55, 53, 47, 0.24);
+}
+
+html:not([data-platform="darwin"]) *::-webkit-scrollbar-thumb:hover,
+html:not([data-platform="darwin"]) *::-webkit-scrollbar-thumb:active {
+  background-color: rgba(55, 53, 47, 0.42);
+}
+
 /* Keep the long app navigation quiet until the user interacts with it. */
 [data-app-sidebar-scroll] {
   --app-sidebar-scroll-thumb: transparent;

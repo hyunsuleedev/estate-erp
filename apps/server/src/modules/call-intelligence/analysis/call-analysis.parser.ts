@@ -24,10 +24,7 @@ export interface ParsedSuggestion {
 export interface ConsultationLinks {
   propertyId: string | null;
   listingIntakeId: string | null;
-  listingId: string | null;
   buyerIntakeId: string | null;
-  buyerReqId: string | null;
-  matchId: string | null;
 }
 
 // 분석 JSON 칸에 그대로 저장하므로 interface가 아닌 type으로 둔다 (Prisma JSON 타입과 호환)
@@ -287,10 +284,7 @@ function parseLinks(context: CallContext, raw: unknown): ConsultationLinks {
   const links: ConsultationLinks = {
     propertyId: null,
     listingIntakeId: null,
-    listingId: null,
     buyerIntakeId: null,
-    buyerReqId: null,
-    matchId: null,
   };
   const data = record(raw);
   const safe = (value: unknown, kind: RefKind) => {
@@ -304,11 +298,11 @@ function parseLinks(context: CallContext, raw: unknown): ConsultationLinks {
   const property = safe(data.propertyRef, 'property');
   const intake = safe(data.intakeRef, 'intake');
   const listing = safe(data.listingRef, 'listing');
+  const buyerIntake = safe(data.buyerIntakeRef, 'buyerIntake');
   const requirement = safe(data.requirementRef, 'requirement');
   const match = safe(data.matchRef, 'match');
 
   if (listing) {
-    links.listingId = listing.id;
     links.listingIntakeId = listing.intakeId ?? null;
     links.propertyId = listing.propertyId ?? null;
   }
@@ -318,13 +312,25 @@ function parseLinks(context: CallContext, raw: unknown): ConsultationLinks {
   }
   if (property && !links.propertyId) links.propertyId = property.id;
   if (match) {
-    links.matchId = match.id;
-    links.listingId = links.listingId ?? match.listingId ?? null;
+    if (!links.listingIntakeId && match.intakeId && match.propertyId) {
+      links.listingIntakeId = match.intakeId;
+      links.propertyId = match.propertyId;
+    } else if (!links.propertyId && match.propertyId) {
+      links.propertyId = match.propertyId;
+    }
+    if (!links.buyerIntakeId && match.buyerIntakeId) {
+      links.buyerIntakeId = match.buyerIntakeId;
+    }
   }
-  // 상담의 고객 요청 연결은 (구매 의뢰, 요청) 쌍이 맞아야 한다
   if (requirement?.buyerIntakeId) {
-    links.buyerReqId = requirement.id;
     links.buyerIntakeId = requirement.buyerIntakeId;
+  }
+  if (!links.buyerIntakeId && buyerIntake) {
+    links.buyerIntakeId = buyerIntake.id;
+  }
+  // DB CHECK/복합 FK 규칙: listingIntakeId가 있으면 propertyId도 반드시 있어야 한다.
+  if (links.listingIntakeId && !links.propertyId) {
+    links.listingIntakeId = null;
   }
   return links;
 }

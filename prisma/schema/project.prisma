@@ -30,7 +30,7 @@ model Project {
   steps          ProjectStep[]
   buyerIntakes   BuyerIntake[]
   listingIntakes ListingIntake[]
-  comments       ProjectComment[]
+  comments       Comment[]
   consultations  Consultation[]
   calendarEvents CalendarEvent[]
   /// 이 프로젝트에 적은 업무. 프로젝트를 풀면 업무는 남고 연결만 끊긴다.
@@ -48,26 +48,37 @@ model Project {
 // 코멘트 — 직원이 일에 적어 두는 글
 //
 // 상담(Consultation)은 손님과 나눈 대화라 사람을 가리킨다. 코멘트는 직원이 일에 대해
-// 적는 글이라 일을 가리킨다. 지금은 프로젝트에만 단다. 거래 등 다른 곳에도 달게 되면
-// "종류 + id" 한 쌍이 아니라 곳마다 진짜 FK 칸을 늘리고, 정확히 하나만 채우는 CHECK를 둔다
-// (그때 project_id를 비울 수 있게 바꾼다).
+// 적는 글이라 일을 가리킨다. 프로젝트·관리 공간·매물 의뢰·구매 의뢰·거래 중
+// 정확히 하나를 가리키며(DB CHECK), "종류 + id" 한 쌍이 아니라 축마다 진짜 FK 칸을 둔다.
 // ============================================================
 
-model ProjectComment {
-  id        String   @id @default(uuid()) @db.Uuid
-  officeId  String   @map("office_id") @db.Uuid
-  projectId String   @map("project_id") @db.Uuid
+model Comment {
+  id              String   @id @default(uuid()) @db.Uuid
+  officeId        String   @map("office_id") @db.Uuid
+  projectId       String?  @map("project_id") @db.Uuid
+  propertyId      String?  @map("property_id") @db.Uuid
+  listingIntakeId String?  @map("listing_intake_id") @db.Uuid
+  buyerIntakeId   String?  @map("buyer_intake_id") @db.Uuid
+  dealId          String?  @map("deal_id") @db.Uuid
   /// 적은 직원. 직원 기록이 지워져도 글은 남는다.
-  authorId  String?  @map("author_id") @db.Uuid
-  body      String   @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  authorId        String?  @map("author_id") @db.Uuid
+  body            String   @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  office  Office  @relation(fields: [officeId], references: [id], onDelete: Restrict)
-  project Project @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Cascade)
-  author  User?   @relation("ProjectCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  office        Office         @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  project       Project?       @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Cascade)
+  property      Property?      @relation(fields: [officeId, propertyId], references: [officeId, id], onDelete: Cascade)
+  listingIntake ListingIntake? @relation(fields: [officeId, listingIntakeId], references: [officeId, id], onDelete: Cascade)
+  buyerIntake   BuyerIntake?   @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Cascade)
+  deal          Deal?          @relation(fields: [officeId, dealId], references: [officeId, id], onDelete: Cascade)
+  author        User?          @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([officeId, projectId, createdAt])
+  @@index([officeId, propertyId, createdAt])
+  @@index([officeId, listingIntakeId, createdAt])
+  @@index([officeId, buyerIntakeId, createdAt])
+  @@index([officeId, dealId, createdAt])
   @@map("comments")
 }
 

@@ -17,6 +17,8 @@ export function invalidateMatchData(queryClient: Invalidator): Promise<unknown> 
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: ['matches'] }),
     queryClient.invalidateQueries({ queryKey: buyerRequirementQueries.withMatchesAll }),
+    // 손님 조건 상세에도 그 손님의 매칭이 실려 있다
+    queryClient.invalidateQueries({ queryKey: ['buyer-requirements', 'detail'] }),
   ]);
 }
 
@@ -34,6 +36,8 @@ export function refreshMatchData(
 ): Promise<unknown> {
   return Promise.all([
     invalidator.invalidateQueries({ queryKey: ['matches'] }),
+    // 손님 조건 상세에도 그 손님의 매칭이 실려 있다 (프로젝트 · 연락처 · 희망 조건 상세가 이것을 읽는다)
+    invalidator.invalidateQueries({ queryKey: buyerRequirementQueries.detail(buyerReqId).queryKey }),
     refreshRequirementRow(queryClient, buyerReqId),
   ]);
 }

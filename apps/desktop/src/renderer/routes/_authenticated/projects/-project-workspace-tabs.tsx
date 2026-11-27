@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { buyerRequirementQueries } from "@/queries/buyer-requirements";
+import { buyerRequirementQueries, matchesOfRequirement } from "@/queries/buyer-requirements";
 import { invalidateMatchData } from "@/queries/matches";
 import { useState, type ReactNode } from "react";
 import type { CommissionPayment, Match, ProjectStep, ProjectStepDeal } from "@estate-erp/api-client";
@@ -324,9 +324,10 @@ function RequirementMatches({
     ...buyerRequirementQueries.detail(requirementId),
     ...FRESH_ON_RETURN,
   });
+  // 손님 조건 상세에 그 손님의 매칭이 실려 온다 — 매칭 목록을 따로 부르지 않는다
   const matchesQuery = useQuery({
-    queryKey: ["matches", "by-requirement", requirementId],
-    queryFn: () => api.matches.findAll({ buyerReqId: requirementId }),
+    ...buyerRequirementQueries.detail(requirementId),
+    select: matchesOfRequirement,
     ...FRESH_ON_RETURN,
   });
   const [showClosed, setShowClosed] = useState(false);
@@ -476,7 +477,8 @@ function ListingMatches({
   const intake = step.listingIntake!;
   const matchesQuery = useQuery({
     queryKey: ["matches", "by-property", intake.propertyId],
-    queryFn: () => api.matches.findAll({ propertyId: intake.propertyId }),
+    queryFn: async () =>
+      (await api.matches.findAll({ propertyId: intake.propertyId, limit: 100 })).items,
     ...FRESH_ON_RETURN,
   });
   const [showClosed, setShowClosed] = useState(false);

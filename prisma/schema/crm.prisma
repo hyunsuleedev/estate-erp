@@ -14,13 +14,12 @@ model Consultation {
   // 통화 녹음 연결 (nullable — 녹음 없는 상담도 있음)
   callRecordingId String? @map("call_recording_id") @db.Uuid
 
-  // 컨텍스트 (어떤 맥락의 상담인지, 자동 연결)
+  // 컨텍스트 (어떤 맥락의 상담인지, 5개 핵심 업무 축)
   propertyId      String? @map("property_id") @db.Uuid // 호실 맥락 (소유자/세입자 상담)
-  listingIntakeId String? @map("listing_intake_id") @db.Uuid // 의뢰 맥락 (방문/권리/현장 메모 등)
-  listingId       String? @map("listing_id") @db.Uuid // 매물 맥락 (거래 상담)
-  matchId         String? @map("match_id") @db.Uuid
+  /// 의뢰 맥락. listing_intake_id가 있으면 property_id도 반드시 같은 호실로 채워진다
+  /// (DB CHECK: listing_intake_id IS NULL OR property_id IS NOT NULL + 복합 FK).
+  listingIntakeId String? @map("listing_intake_id") @db.Uuid
   buyerIntakeId   String? @map("buyer_intake_id") @db.Uuid
-  buyerReqId      String? @map("buyer_req_id") @db.Uuid
   dealId          String? @map("deal_id") @db.Uuid
   projectId       String? @map("project_id") @db.Uuid
 
@@ -32,11 +31,8 @@ model Consultation {
   createdBy        User                   @relation("ConsultationCreator", fields: [createdById], references: [id])
   callRecording    CallRecording?         @relation(fields: [callRecordingId], references: [id])
   property         Property?              @relation(fields: [propertyId], references: [id])
-  listingIntake    ListingIntake?         @relation(fields: [listingIntakeId], references: [id])
-  listing          Listing?               @relation(fields: [listingId], references: [id])
-  match            Match?                 @relation(fields: [matchId], references: [id])
+  listingIntake    ListingIntake?         @relation(fields: [officeId, propertyId, listingIntakeId], references: [officeId, propertyId, id], onDelete: Restrict)
   buyerIntake      BuyerIntake?           @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Restrict)
-  buyerRequirement BuyerRequirement?      @relation(fields: [officeId, buyerIntakeId, buyerReqId], references: [officeId, buyerIntakeId, id], onDelete: Restrict)
   deal             Deal?                  @relation(fields: [dealId], references: [id], onDelete: SetNull)
   project          Project?               @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Restrict)
   tasks            Task[]
@@ -48,7 +44,6 @@ model Consultation {
   @@index([officeId, purpose])
   @@index([officeId, propertyId])
   @@index([officeId, listingIntakeId])
-  @@index([officeId, listingId])
   @@index([officeId, buyerIntakeId])
   @@index([officeId, dealId])
   @@index([officeId, projectId])
@@ -75,6 +70,7 @@ model BuyerIntake {
   contacts       BuyerIntakeContact[]
   requirements   BuyerRequirement[]
   consultations  Consultation[]
+  comments       Comment[]
   tasks          Task[]
   calendarEvents CalendarEvent[]
   projectSteps   ProjectStep[]
@@ -146,12 +142,10 @@ model BuyerRequirement {
   buyerIntake      BuyerIntake              @relation(fields: [officeId, buyerIntakeId], references: [officeId, id], onDelete: Cascade)
   assignedTo       User?                    @relation("AssignedAgent", fields: [assignedToId], references: [id])
   matches          Match[]
-  consultations    Consultation[]
   tasks            Task[]
   preferredSites   BuyerRequirementSite[]
   preferredRegions BuyerRequirementRegion[]
 
-  // Consultation의 (office_id, buyer_intake_id, buyer_req_id) 복합 FK 대상.
   @@unique([officeId, buyerIntakeId, id])
   @@unique([buyerIntakeId, priorityRank], map: "buyer_requirements_buyer_intake_id_priority_rank_key")
   @@index([officeId, status])
@@ -235,7 +229,6 @@ model Match {
   office           Office           @relation(fields: [officeId], references: [id])
   listing          Listing          @relation(fields: [listingId], references: [id])
   buyerRequirement BuyerRequirement @relation(fields: [buyerReqId], references: [id])
-  consultations    Consultation[]
   calendarEvents   CalendarEvent[]
   tasks            Task[]
   /// 이 매칭에서 전환한 거래
@@ -344,9 +337,11 @@ model Deal {
   autoClosedMatches          Match[]             @relation("MatchClosedByDeal")
   /// 프로젝트의 진행 계획에서 이 거래를 직접 가리키는 단계
   projectSteps               ProjectStep[]
+  comments                   Comment[]
   originatedPropertyContacts PropertyContact[]   @relation("PropertyContactSourceDeal")
   originatedLeases           PropertyLease[]     @relation("PropertyLeaseSourceDeal")
 
+  @@unique([officeId, id])
   @@index([officeId, stage])
   @@index([officeId, isCancelled, stage])
   @@index([listingId])

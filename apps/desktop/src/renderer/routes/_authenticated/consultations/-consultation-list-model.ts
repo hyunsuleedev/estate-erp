@@ -64,7 +64,7 @@ export function viewShowsPendingRecordings(_view: ConsultationView): boolean {
 /** 목록에 걸린 조건 중 대기 녹음을 거르는 데 쓰는 것 */
 export interface PendingRecordingFilters {
   q?: string | null;
-  /** all | actionRequired | property | listingIntake | buyerRequirement | unlinked */
+  /** all | actionRequired | property | listingIntake | buyerIntake | deal | project | unlinked */
   quickFilter?: string;
   contactId?: string | null;
   hasPlaceFilter?: boolean;

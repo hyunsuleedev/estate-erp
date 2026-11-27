@@ -11,7 +11,11 @@ import {
   Settings2,
 } from 'lucide-react';
 import type { Employee, EmployeeDetail } from '@estate-erp/api-client';
-import { api } from '@/lib/api';
+import {
+  employeeQueries,
+  invalidateEmployeeSections,
+  useEmployeeDetail,
+} from '@/queries/employees';
 import { formatDate, formatMoney, formatPhone } from '@/lib/format';
 import { timeAgo } from '@/lib/time-ago';
 import { cn } from '@/lib/utils';
@@ -184,13 +188,8 @@ export function EmployeeBentoProfile({
               onOpenChange={setTaskDialogOpen}
               defaultAssigneeId={employee.id}
               onCreated={() => {
-                void queryClient.invalidateQueries({ queryKey: ['employees'] });
-                void queryClient.invalidateQueries({
-                  queryKey: ['employee', employee.id],
-                });
-                void queryClient.invalidateQueries({
-                  queryKey: ['employee-performance', employee.id],
-                });
+                // 업무가 생겼으니 담당 업무 목록과 건수만 다시 받는다
+                invalidateEmployeeSections(queryClient, ['tasks'], employee.id);
               }}
             />
           ) : null}
@@ -223,16 +222,10 @@ function ProfileContent({
   onTabChange: (tab: BentoTab) => void;
   onOpenAssignTask: () => void;
 }) {
-  const detailQuery = useQuery({
-    queryKey: ['employee', employee.id],
-    queryFn: () => api.employees.findOne(employee.id),
-  });
-  const performanceQuery = useQuery({
-    queryKey: ['employee-performance', employee.id],
-    queryFn: () => api.employees.getPerformance(employee.id),
-  });
+  const detailQuery = useEmployeeDetail(employee.id);
+  const performanceQuery = useQuery(employeeQueries.performance(employee.id));
 
-  const detail = detailQuery.data;
+  const detail = detailQuery.detail;
   const performance = performanceQuery.data;
   const { counts } = employee;
   const workload = workloadOfEmployee(employee);
@@ -503,7 +496,7 @@ function ProfileContent({
           <Skeleton className="h-44 w-full rounded-xl" />
         </div>
       ) : detailQuery.isError || !detail ? (
-        <BentoError onRetry={() => void detailQuery.refetch()} />
+        <BentoError onRetry={detailQuery.refetch} />
       ) : activeTab === 'overview' ? (
         <div className="emp-detail-grid">
           {/* 왼쪽: 작업 워크스트림 */}
@@ -543,7 +536,8 @@ function ProfileContent({
       ) : (
         <EmployeeAccountPanel
           key={detail.id}
-          detail={detail}
+          // 기본 정보만 넘긴다 — 업무·상담 목록이 다시 와도 입력 중인 양식이 초기화되지 않는다
+          detail={detailQuery.profile ?? detail}
           actorRole={actorRole}
           actorId={actorId}
         />

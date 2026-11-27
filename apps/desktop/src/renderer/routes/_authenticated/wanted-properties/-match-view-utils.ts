@@ -712,7 +712,6 @@ export function buildRequirementGroups({
     const { matches: rowMatches, ...buyerRequirement } = row;
     const allMatches: MatchViewListItem[] = rowMatches.map((match) => ({
       ...match,
-      property: match.listing?.property,
       buyerRequirement,
     }));
     // 단계 가운데 '매칭 없음'만 골랐으면 서버가 매칭 없는 손님만 주므로 거를 것이 없다

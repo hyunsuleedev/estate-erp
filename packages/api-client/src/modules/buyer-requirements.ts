@@ -1,6 +1,5 @@
 import type { RequestFn } from '../client.js';
 import type { PaginatedResponse } from '../types.js';
-import type { ListingIntakeState, ListingOccupyingDeal } from './listings.js';
 import type { MatchRow } from './matches.js';
 
 export type BuyerRequirementStatus = 'active' | 'hold' | 'completed';
@@ -21,50 +20,6 @@ export interface BuyerRequirementPreferredRegion {
   province?: { code: string; name: string } | null;
   district?: { code: string; name: string } | null;
   ward?: { code: string; name: string } | null;
-}
-
-/** findOne include: matches → listing → property → site */
-export interface BuyerRequirementMatch {
-  id: string;
-  officeId: string;
-  listingId: string;
-  buyerReqId: string;
-  stage: string;
-  /** 종료 직전 단계와 종료 이유 (MatchClosedReason) — 종료한 매칭만 */
-  closedFromStage?: string | null;
-  closedReason?: string | null;
-  memo: string | null;
-  createdAt: string;
-  updatedAt: string;
-  listing?: {
-    id: string;
-    propertyId: string;
-    transactionType: string;
-    price: number | null;
-    deposit: number | null;
-    monthlyRent: number | null;
-    isPaused: boolean;
-    intake?: ListingIntakeState | null;
-    deals?: ListingOccupyingDeal[];
-    property?: {
-      id: string;
-      siteId: string;
-      unitId: string | null;
-      site?: {
-        id: string;
-        name: string;
-        type: string;
-        roadAddress: string | null;
-        jibunAddress: string | null;
-      } | null;
-      unit?: {
-        id: string;
-        name: string | null;
-        floor: number | null;
-        dong?: { id: string; name: string; isPlaceholder?: boolean } | null;
-      } | null;
-    } | null;
-  } | null;
 }
 
 /** findOne include: consultations (최근 10건, 관계 미포함 raw row) */
@@ -122,10 +77,13 @@ export interface BuyerRequirement {
   };
   /** findAll/findOne include — 담당자 요약 */
   assignedTo?: { id: string; name: string } | null;
-  /** findAll include — 연결 매칭/상담 수 */
-  _count?: { matches: number; consultations: number };
-  /** findOne 전용 include */
-  matches?: BuyerRequirementMatch[];
+  /** findAll include — 연결 매칭 수 */
+  _count?: { matches: number };
+  /**
+   * 그 손님의 매칭 (가벼운 줄). 상세와 expand=matches 목록에 실려 온다.
+   * 손님 쪽에서 매칭을 보는 화면은 이것을 쓰고 매칭 목록을 따로 부르지 않는다.
+   */
+  matches?: MatchRow[];
   consultations?: BuyerRequirementConsultation[];
   preferredSites?: BuyerRequirementPreferredSite[];
   preferredRegions?: BuyerRequirementPreferredRegion[];

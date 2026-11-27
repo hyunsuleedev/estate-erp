@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query';
 import type { DealListFilter } from '@estate-erp/api-client';
 
 import { api } from '@/lib/api';
+import { invalidateEmployeeSections } from './employees';
 import { invalidateMatchData } from './matches';
 
 /**
@@ -67,4 +68,6 @@ export function invalidateDealData(queryClient: Invalidator): void {
   void queryClient.invalidateQueries({ queryKey: ['listing-intakes'] });
   void queryClient.invalidateQueries({ queryKey: ['listings'] });
   void invalidateMatchData(queryClient);
+  // 직원 화면의 참여 거래·정산과 건수(진행·미정산 거래, 수수료)도 거래에서 나온다
+  invalidateEmployeeSections(queryClient, ['deals', 'settlements']);
 }

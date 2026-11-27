@@ -8,7 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
-  ProjectComment,
+  Comment,
   ProjectListItem,
   ProjectPerson,
   ProjectPlan,
@@ -1173,9 +1173,9 @@ export function useCommentActions(projectId: string) {
     ]);
   };
 
-  const [removing, setRemoving] = useState<ProjectComment | null>(null);
+  const [removing, setRemoving] = useState<Comment | null>(null);
   const remove = useMutation({
-    mutationFn: (commentId: string) => api.projects.removeComment(projectId, commentId),
+    mutationFn: (commentId: string) => api.comments.remove(commentId),
     onSuccess: async () => {
       setRemoving(null);
       await refresh();
@@ -1206,7 +1206,7 @@ export function useCommentActions(projectId: string) {
 
 /** 이 코멘트를 지금 사용자가 고치거나 지울 수 있는가: 고치기는 적은 사람만, 지우기는 적은 사람과 대표 · 매니저. */
 export function commentPermissions(
-  comment: ProjectComment,
+  comment: Comment,
   user: { id: string; role: string } | null | undefined,
 ) {
   const mine = comment.author?.id === user?.id;
@@ -1228,7 +1228,7 @@ export function CommentSection({
     queryKey: commentsQueryKey(projectId),
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
-      api.projects.comments(projectId, { before: pageParam ?? undefined }),
+      api.comments.list({ projectId }, { before: pageParam ?? undefined }),
     getNextPageParam: (lastPage) => lastPage.nextBefore ?? undefined,
     enabled: !isProjectRemoved(projectId),
   });
@@ -1259,9 +1259,9 @@ export function CommentSection({
     ]);
   };
 
-  const [removing, setRemoving] = useState<ProjectComment | null>(null);
+  const [removing, setRemoving] = useState<Comment | null>(null);
   const remove = useMutation({
-    mutationFn: (commentId: string) => api.projects.removeComment(projectId, commentId),
+    mutationFn: (commentId: string) => api.comments.remove(commentId),
     onSuccess: async () => {
       setRemoving(null);
       await refresh();
@@ -1330,7 +1330,6 @@ export function CommentSection({
             {comments.map((comment, index) => (
               <CommentRow
                 key={comment.id}
-                projectId={projectId}
                 comment={comment}
                 variant={variant}
                 // 상세 페이지는 날짜가 바뀌는 곳에 날짜 줄을 넣는다(매물 상세의 기록과 같다).
@@ -1372,7 +1371,6 @@ export function CommentSection({
 }
 
 export function CommentRow({
-  projectId,
   comment,
   variant,
   dateHeading,
@@ -1381,8 +1379,7 @@ export function CommentRow({
   onRemove,
   onChanged,
 }: {
-  projectId: string;
-  comment: ProjectComment;
+  comment: Comment;
   variant: ProjectPartVariant;
   /** 이 줄 위에 넣을 날짜. 상세 페이지에서 날짜가 바뀌는 줄에만 온다. */
   dateHeading: string | null;
@@ -1394,7 +1391,7 @@ export function CommentRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
   const save = useMutation({
-    mutationFn: (body: string) => api.projects.updateComment(projectId, comment.id, body),
+    mutationFn: (body: string) => api.comments.update(comment.id, body),
     onSuccess: async () => {
       await onChanged();
       setEditing(false);

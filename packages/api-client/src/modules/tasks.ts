@@ -79,9 +79,9 @@ export interface TaskConsultationSummary {
   content: string;
   propertyId: string | null;
   listingIntakeId: string | null;
-  listingId: string | null;
-  matchId: string | null;
-  buyerReqId: string | null;
+  buyerIntakeId: string | null;
+  dealId: string | null;
+  projectId: string | null;
   createdAt: string;
   updatedAt: string;
 }

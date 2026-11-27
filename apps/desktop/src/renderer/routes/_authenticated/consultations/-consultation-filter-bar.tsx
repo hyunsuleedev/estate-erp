@@ -39,7 +39,9 @@ const TYPE_OPTIONS = [
 const CONTEXT_OPTIONS = [
   { value: 'property', label: '매물 연결' },
   { value: 'listingIntake', label: '의뢰 연결' },
-  { value: 'buyerRequirement', label: '희망 조건 연결' },
+  { value: 'buyerIntake', label: '구매 의뢰 연결' },
+  { value: 'deal', label: '거래 연결' },
+  { value: 'project', label: '프로젝트 연결' },
   { value: 'unlinked', label: '연결 없음' },
 ];
 

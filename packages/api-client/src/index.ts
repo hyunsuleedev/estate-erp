@@ -138,6 +138,7 @@ export type {
 } from "./modules/tasks.js";
 export type {
   Match,
+  MatchBuyerRequirement,
   MatchRow,
   MatchRowListing,
   MatchRowProperty,
@@ -227,8 +228,6 @@ export type {
   ProjectIntakeFilter,
   ProjectPerson,
   ProjectPrimaryContact,
-  ProjectComment,
-  ProjectCommentList,
   UpdateProjectDto,
   ProjectStepInput,
   CustomerLedgerMode,
@@ -238,11 +237,15 @@ export type {
   CreateProjectDto,
 } from "./modules/projects.js";
 export type {
+  Comment,
+  CommentList,
+  CommentTarget,
+} from "./modules/comments.js";
+export type {
   BuyerRequirement,
   BuyerRequirementStatus,
   BuyerRequirementPreferredSite,
   BuyerRequirementPreferredRegion,
-  BuyerRequirementMatch,
   BuyerRequirementConsultation,
   BuyerRequirementsFilter,
   BuyerRequirementWithMatches,
@@ -286,6 +289,9 @@ export type { OfficeSite, RegisterPrivateSiteDto } from "./modules/office-sites.
 export type {
   Employee,
   EmployeeDetail,
+  EmployeeProfile,
+  EmployeeSection,
+  EmployeeSections,
   EmployeeDealParticipant,
   CreateEmployeeDto,
   UpdateEmployeeDto,

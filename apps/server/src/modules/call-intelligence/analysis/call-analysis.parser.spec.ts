@@ -93,7 +93,6 @@ describe('call analysis parser', () => {
     ]);
     expect(parsed.agentSpeaker).toBe(1);
     expect(parsed.links).toMatchObject({
-      listingId: ids.listing,
       listingIntakeId: ids.intake,
       propertyId: ids.property,
     });
@@ -160,8 +159,41 @@ describe('call analysis parser', () => {
       changes: { priceMax: 130000, areaMin: 99.17, siteIds: [ids.site], moveInDate: '2027-03-01' },
       memoAppend: null,
     });
-    // 상담의 고객 요청 연결은 소속 구매 의뢰와 함께 넣는다
-    expect(parsed.links).toMatchObject({ buyerReqId: ids.requirement, buyerIntakeId: ids.buyerIntake });
+    // 상담의 고객 요청 연결은 소속 구매 의뢰(BuyerIntake)로 올린다
+    expect(parsed.links).toEqual({
+      propertyId: null,
+      listingIntakeId: null,
+      buyerIntakeId: ids.buyerIntake,
+    });
+  });
+
+  it('promotes listingRef and matchRef links to propertyId, listingIntakeId, and buyerIntakeId', () => {
+    const ctx = context();
+    ctx.refs.set('M1', {
+      kind: 'match',
+      id: ids.match,
+      label: '매칭',
+      propertyId: ids.property,
+      intakeId: ids.intake,
+      buyerIntakeId: ids.buyerIntake,
+      listingId: ids.listing,
+      buyerReqId: ids.requirement,
+    });
+    const parsed = parseCallAnalysis(
+      {
+        summary: '매칭 매물 임장 일정 협의',
+        links: { matchRef: 'M1' },
+        suggestions: [],
+      },
+      ctx,
+      [0],
+      [],
+    );
+    expect(parsed.links).toEqual({
+      propertyId: ids.property,
+      listingIntakeId: ids.intake,
+      buyerIntakeId: ids.buyerIntake,
+    });
   });
 
   it('fails without a summary and ignores an unknown agent speaker', () => {

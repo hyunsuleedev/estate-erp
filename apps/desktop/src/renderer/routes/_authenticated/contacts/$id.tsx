@@ -1309,8 +1309,8 @@ function ConsultationRecords({
                         {place}
                       </Link>
                     )}
-                    {consultation.listing?.transactionType && (
-                      <TypeChip type={consultation.listing.transactionType} />
+                    {consultation.deal?.transactionType && (
+                      <TypeChip type={consultation.deal.transactionType} />
                     )}
                     <span className="ml-auto flex shrink-0 items-center gap-0.5 pl-2">
                       <span className="flex items-center opacity-0 transition-opacity group-focus-within/consult:opacity-100 group-hover/consult:opacity-100 [@media(hover:none)]:opacity-100">

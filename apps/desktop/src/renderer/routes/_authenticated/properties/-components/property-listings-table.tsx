@@ -622,7 +622,8 @@ export function PropertyListingsTable({
       <div
         ref={scrollerRef}
         data-property-table-scroller
-        className="relative min-h-0 w-full flex-1 overflow-scroll bg-white outline-none [container-type:inline-size] focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
+        // overflow-auto: 넘칠 때만 스크롤바 자리를 둔다(scroll이면 Windows에서 빈 세로 띠가 늘 선다)
+        className="relative min-h-0 w-full flex-1 overflow-auto bg-white outline-none [container-type:inline-size] focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0"
         tabIndex={0}
         onKeyDown={handleKeyDown}
         onScroll={handleScroll}

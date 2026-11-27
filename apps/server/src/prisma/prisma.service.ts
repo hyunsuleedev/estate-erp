@@ -30,7 +30,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "BuyerIntakeContact",
   "Project",
   "ProjectStep",
-  "ProjectComment",
+  "Comment",
   "BuyerRequirement",
   "Consultation",
   "Match",

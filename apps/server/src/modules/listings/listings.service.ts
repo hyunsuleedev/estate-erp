@@ -632,10 +632,6 @@ export class ListingsService {
         },
         matches: true,
         deals: true,
-        consultations: {
-          include: { contact: true },
-          orderBy: { createdAt: 'desc' },
-        },
         priceHistories: {
           include: { user: true },
           orderBy: { createdAt: 'desc' },
@@ -844,6 +840,10 @@ export class ListingsService {
       });
       const removeIntake = remaining === 0 && !found.intake.projectId;
       if (removeIntake) {
+        await tx.consultation.updateMany({
+          where: { officeId, listingIntakeId: found.intakeId },
+          data: { listingIntakeId: null },
+        });
         await tx.listingIntake.delete({ where: { id: found.intakeId } });
       }
       return { listing: found, deleted: removed, intakeRemoved: removeIntake };

@@ -95,7 +95,11 @@ function setup(
     buyerRequirement: {
       count: jest.fn().mockResolvedValue(0),
     },
+    project: {
+      count: jest.fn().mockResolvedValue(0),
+    },
     dealParticipant: {
+      count: jest.fn().mockResolvedValue(0),
       findMany: jest.fn(async () => options.dealParticipants ?? []),
       aggregate: jest.fn(async () => ({
         _sum: { commissionAmount: options.commissionSum ?? 0 },
@@ -932,6 +936,95 @@ describe('EmployeesService account management (Auth0)', () => {
         { label: '지난주', consultations: 1, activities: 1 },
         { label: '이번 주', consultations: 2, activities: 2 },
       ]);
+    });
+  });
+  describe('직원 상세를 나눠 받기', () => {
+    it('findProfile은 딸린 목록 없이 기본 정보와 건수만 준다 — 건수는 DB에서 센다', async () => {
+      const { service, prisma } = setup({ commissionSum: 700 });
+      prisma.task.count.mockResolvedValue(3);
+      prisma.dealParticipant.count.mockResolvedValue(2);
+
+      const profile = await service.findProfile('emp-1', 'office-1');
+
+      expect(profile).toMatchObject({
+        id: 'emp-1',
+        name: '김직원',
+        counts: {
+          activeTaskCount: 3,
+          overdueTaskCount: 3,
+          activeDealCount: 2,
+          unsettledDealCount: 2,
+          commissionAmountTotal: 700,
+          unsettledCommissionTotal: 700,
+        },
+      });
+      for (const key of ['assignedTasks', 'dealParticipants', 'recentConsultations', 'recentActivities']) {
+        expect(profile).not.toHaveProperty(key);
+      }
+      // 직원을 읽을 때 목록을 함께 끌어오지 않는다
+      const [{ include }] = prisma.user.findFirst.mock.calls[0] as unknown as [
+        { include: Record<string, unknown> },
+      ];
+      expect(Object.keys(include)).toEqual(['office']);
+      // 상세 목록과 같은 조건으로 센다: 진행 중인 업무, 취소하지 않은 거래
+      expect(prisma.task.count).toHaveBeenCalledWith({
+        where: {
+          status: { notIn: ['completed', 'cancelled'] },
+          assignedToId: 'emp-1',
+          officeId: 'office-1',
+        },
+      });
+      expect(prisma.dealParticipant.aggregate).toHaveBeenCalledWith({
+        where: { deal: { isCancelled: false }, userId: 'emp-1', officeId: 'office-1' },
+        _sum: { commissionAmount: true },
+      });
+    });
+
+    it('findSection은 그 목록 하나만, 상세와 같은 조건·순서·상한으로 읽는다', async () => {
+      const { service, prisma } = setup({
+        target: { assignedTasks: [{ id: 'task-1' }] },
+      });
+
+      await expect(service.findSection('emp-1', 'office-1', 'tasks')).resolves.toEqual([
+        { id: 'task-1' },
+      ]);
+
+      const [{ where, select }] = prisma.user.findFirst.mock.calls[0] as unknown as [
+        { where: unknown; select: Record<string, { where?: unknown; take?: number }> },
+      ];
+      expect(where).toEqual({ id: 'emp-1', officeId: 'office-1' });
+      expect(Object.keys(select)).toEqual(['assignedTasks']);
+      expect(select.assignedTasks.where).toEqual({ status: { notIn: ['completed', 'cancelled'] } });
+      expect(select.assignedTasks.take).toBe(100);
+    });
+
+    it('다른 사무소 직원의 목록은 없는 것으로 답한다', async () => {
+      const { service } = setup({ target: null });
+      await expect(service.findSection('emp-1', 'office-2', 'deals')).rejects.toThrow(
+        '직원을 찾을 수 없습니다.',
+      );
+      await expect(service.findProfile('emp-1', 'office-2')).rejects.toThrow(
+        '직원을 찾을 수 없습니다.',
+      );
+    });
+
+    it('목록마다 상세와 같은 가리기를 건다', () => {
+      const { service } = setup();
+      const deals = [{ id: 'dp-1', commissionAmount: 350, commissionRate: 50 }];
+      const lines = [{ id: 'line-1', netWon: 1_000_000 }];
+      const viewer = (userId: string, role: string) => ({ userId, officeId: 'office-1', role });
+
+      // 대표와 본인은 그대로
+      expect(service.sectionForViewer(viewer('owner-1', 'owner'), 'emp-1', 'deals', deals)).toEqual(deals);
+      expect(service.sectionForViewer(viewer('emp-1', 'agent'), 'emp-1', 'settlements', lines)).toEqual(lines);
+      // 다른 중개사에게는 수수료를 가리고 정산 내역을 비운다
+      expect(service.sectionForViewer(viewer('emp-2', 'agent'), 'emp-1', 'deals', deals)).toEqual([
+        { id: 'dp-1', commissionAmount: null, commissionRate: null },
+      ]);
+      expect(service.sectionForViewer(viewer('emp-2', 'agent'), 'emp-1', 'settlements', lines)).toEqual([]);
+      // 매니저는 거래 수수료는 보지만 정산 내역은 못 본다
+      expect(service.sectionForViewer(viewer('mgr-1', 'manager'), 'emp-1', 'deals', deals)).toEqual(deals);
+      expect(service.sectionForViewer(viewer('mgr-1', 'manager'), 'emp-1', 'settlements', lines)).toEqual([]);
     });
   });
 });

@@ -9,6 +9,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { buyerRequirementQueries, matchesOfRequirement } from '@/queries/buyer-requirements';
 import { invalidateMatchData } from '@/queries/matches';
 import { toast } from 'sonner';
 import {
@@ -33,6 +34,7 @@ import {
 } from 'lucide-react';
 import type {
   ActivityLog,
+  BuyerRequirement,
   Match,
   MatchDealLink,
   UpdateMatchAgreedTermsDto,
@@ -456,42 +458,34 @@ export function PropertyMatchPanel({
   const [adPreviewWidths, setAdPreviewWidths] = useState<AdColumnWidths | null>(null);
   const adLayout = getAdTableLayout(adPreviewWidths ?? adPreferences.widths);
   const setAdSort = (sort: AdTableSort) => updateAdPreferences(current => ({ ...current, sort }));
-  const listingIds = useMemo(
-    () => group.listings.map((listing) => listing.id),
-    [group.listings],
-  );
   const {
-    data: matches = [],
+    data: matchesData,
     isLoading,
     isError,
     refetch,
   } = useQuery({
-    queryKey: [
-      'matches',
-      'property-list-panel',
-      group.id,
-      listingIds.join(','),
-    ],
-    queryFn: async () => {
-      const results = await Promise.all(
-        listingIds.map((listingId) => api.matches.findAll({ listingId })),
-      );
-      return results.flat();
-    },
+    queryKey: ['matches', { listingIntakeId: group.intakeId }],
+    queryFn: async () =>
+      (await api.matches.findAll({ listingIntakeId: group.intakeId, limit: 100 })).items,
+    enabled: activeTab === 'match',
   });
+  const matches = matchesData ?? [];
 
   // 단계별 도달 날짜와 머문 일수는 활동 로그에서만 알 수 있다.
   const historyQueries = useQueries({
-    queries: matches.map((match) => ({
-      queryKey: ['matches', 'stage-history', match.id],
-      queryFn: () =>
-        api.activityLogs.list({
-          entityType: 'match',
-          entityId: match.id,
-          limit: 100,
-        }),
-      staleTime: 30_000,
-    })),
+    queries:
+      activeTab === 'match'
+        ? matches.map((match) => ({
+            queryKey: ['matches', 'stage-history', match.id],
+            queryFn: () =>
+              api.activityLogs.list({
+                entityType: 'match',
+                entityId: match.id,
+                limit: 100,
+              }),
+            staleTime: 30_000,
+          }))
+        : [],
   });
   const historyByMatchId = useMemo(() => {
     const map = new Map<string, StageHistory>();
@@ -779,7 +773,7 @@ export function PropertyMatchPanel({
             <PanelTab
               icon={<GitBranch />}
               label="연결 고객"
-              count={isLoading ? getPropertyMatchCount(group) : activeCount}
+              count={matchesData === undefined ? getPropertyMatchCount(group) : activeCount}
               active={activeTab === 'match'}
               onClick={() => onTabChange(group.id, 'match')}
             />
@@ -2098,14 +2092,17 @@ const COMPARED_STAGES: string[] = [
  * 고객은 여러 집을 보고 고른다. 같은 희망조건으로 진행 중인 다른 매물을 보여 줘서
  * 중개사가 "이 고객이 지금 어떤 집들을 놓고 고민하는지"를 한 번에 보게 한다.
  */
+function comparedMatchesOf(requirement: BuyerRequirement): Match[] {
+  return matchesOfRequirement(requirement).filter((other) =>
+    (COMPARED_STAGES as readonly string[]).includes(normalizeMatchStage(other.stage)),
+  );
+}
+
 function BuyerOtherMatches({ match }: { match: Match }) {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['matches', 'buyer-compared', match.buyerReqId],
-    queryFn: () =>
-      api.matches.findAll({
-        buyerReqId: match.buyerReqId,
-        stage: COMPARED_STAGES.join(','),
-      }),
+    // 손님 조건 상세에 그 손님의 매칭이 실려 온다 — 거기서 견줄 단계의 것만 고른다
+    ...buyerRequirementQueries.detail(match.buyerReqId),
+    select: comparedMatchesOf,
     staleTime: 30_000,
   });
   const others = (data ?? []).filter((other) => other.id !== match.id);

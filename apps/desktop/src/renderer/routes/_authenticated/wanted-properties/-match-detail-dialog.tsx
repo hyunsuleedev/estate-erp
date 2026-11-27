@@ -515,10 +515,27 @@ function MatchConsultationSection({
   const [type, setType] = useState('phone');
   const [content, setContent] = useState('');
   const contactId = match.buyerRequirement?.contactId;
+  const buyerIntakeId = match.buyerRequirement?.buyerIntakeId;
 
   const consultationsQuery = useQuery({
-    queryKey: ['consultations', { matchId: match.id }],
-    queryFn: () => api.consultations.findAll({ matchId: match.id, limit: 5 }),
+    queryKey: [
+      'consultations',
+      {
+        propertyId: match.propertyId,
+        buyerIntakeId: buyerIntakeId ?? null,
+        contactId: contactId ?? null,
+      },
+    ],
+    queryFn: () =>
+      api.consultations.findAll({
+        propertyId: match.propertyId,
+        ...(buyerIntakeId
+          ? { buyerIntakeId }
+          : contactId
+            ? { contactId }
+            : {}),
+        limit: 5,
+      }),
   });
 
   const createMutation = useMutation({
@@ -527,10 +544,9 @@ function MatchConsultationSection({
         contactId: contactId!,
         type,
         content: content.trim(),
-        matchId: match.id,
-        listingId: match.listingId,
         propertyId: match.propertyId,
-        buyerReqId: match.buyerReqId,
+        listingIntakeId: match.listing?.intakeId,
+        buyerIntakeId,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['consultations'] });

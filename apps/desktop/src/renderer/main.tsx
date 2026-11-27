@@ -30,6 +30,10 @@ const routerRoot = <RouterProvider router={router} />;
 const surface = getRendererSurface();
 // 탭 화면(native 탭)은 탭바 아래에 붙으므로 CSS가 셸과 다른 기준으로 배치한다.
 document.documentElement.dataset.rendererSurface = surface.kind;
+// 스크롤바 모양을 운영체제에 따라 가른다(app.css): macOS는 겹쳐 뜨는 기본 스크롤바를 그대로 쓴다
+document.documentElement.dataset.platform =
+  window.electronBridge?.platform ??
+  (/Mac|iPhone|iPad/.test(navigator.platform) ? 'darwin' : 'win32');
 
 function render() {
   createRoot(document.getElementById('root')!).render(

@@ -82,7 +82,7 @@ model Office {
   buyerRequirements                    BuyerRequirement[]
   projects                       Project[]
   projectSteps                   ProjectStep[]
-  projectComments                ProjectComment[]
+  comments                       Comment[]
   matches                              Match[]
   deals                                Deal[]
   dealPayments                         DealPayment[]
@@ -211,7 +211,7 @@ model User {
   settlementLines  SettlementLine[]  @relation("SettlementLines")
   noticeReads      NoticeRead[]      @relation("NoticeReads")
   assignedProjects Project[]         @relation("ProjectAssignee")
-  projectComments  ProjectComment[]  @relation("ProjectCommentAuthor")
+  comments         Comment[]         @relation("CommentAuthor")
 
   // 수수료 조정 승인 워크플로우
   commissionAdjustmentsRequested CommissionAdjustment[] @relation("AdjustmentRequester")

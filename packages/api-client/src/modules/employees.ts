@@ -139,6 +139,7 @@ export interface EmployeeDealParticipant {
   };
 }
 
+/** 기본 정보 + 딸린 목록 전부. 직원을 고친 뒤의 응답과, 화면이 나눠 받은 것을 합친 모양이다 */
 export interface EmployeeDetail extends Omit<Employee, 'latestActivityAt'> {
   lastLoginAt?: string | null;
   office: {
@@ -154,6 +155,33 @@ export interface EmployeeDetail extends Omit<Employee, 'latestActivityAt'> {
   recentConsultations: Consultation[];
   recentActivities: EmployeeActivity[];
 }
+
+/**
+ * 직원 상세에 딸린 목록. 한 응답에 다 붙이지 않고 하나씩 따로 받는다
+ * (GET /employees/:id/sections/:section) — 업무 하나가 바뀌었을 때 그 목록만 다시 받기 위해서다.
+ */
+export interface EmployeeSections {
+  tasks: Task[];
+  buyerRequirements: BuyerRequirement[];
+  projects: EmployeeAssignedProject[];
+  deals: EmployeeDealParticipant[];
+  settlements: EmployeeSettlementSummary[];
+  consultations: Consultation[];
+  activities: EmployeeActivity[];
+}
+export type EmployeeSection = keyof EmployeeSections;
+
+/** 직원 한 명의 기본 정보와 건수 (GET /employees/:id). 딸린 목록은 싣지 않는다 */
+export type EmployeeProfile = Omit<
+  EmployeeDetail,
+  | 'assignedTasks'
+  | 'assignedBuyerRequirements'
+  | 'assignedProjects'
+  | 'dealParticipants'
+  | 'recentSettlementLines'
+  | 'recentConsultations'
+  | 'recentActivities'
+>;
 
 export interface CreateEmployeeDto {
   name: string;
@@ -197,7 +225,10 @@ export interface EmployeePerformance {
 export function createEmployeesApi(request: RequestFn) {
   return {
     findAll: () => request<Employee[]>('/employees'),
-    findOne: (id: string) => request<EmployeeDetail>(`/employees/${id}`),
+    /** 기본 정보와 건수. 딸린 목록은 findSection으로 따로 받는다 */
+    findProfile: (id: string) => request<EmployeeProfile>(`/employees/${id}`),
+    findSection: <S extends EmployeeSection>(id: string, section: S) =>
+      request<EmployeeSections[S]>(`/employees/${id}/sections/${section}`),
     create: (dto: CreateEmployeeDto) =>
       request<EmployeeDetail>('/employees', { method: 'POST', body: dto }),
     update: (id: string, dto: UpdateEmployeeDto) =>

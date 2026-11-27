@@ -372,13 +372,10 @@ export class CallIntelligenceService {
     // 상담 대상과 맥락 연결 (통화 상대가 바뀌면 함께 바뀐다)
     const target = {
       contactId,
-      purpose: parsed.links.buyerReqId ? 'buyer_consult' : 'general',
+      purpose: parsed.links.buyerIntakeId ? 'buyer_consult' : 'general',
       propertyId: parsed.links.propertyId,
       listingIntakeId: parsed.links.listingIntakeId,
-      listingId: parsed.links.listingId,
-      matchId: parsed.links.matchId,
       buyerIntakeId: parsed.links.buyerIntakeId,
-      buyerReqId: parsed.links.buyerReqId,
     };
     const data = { ...target, content };
 

@@ -110,6 +110,108 @@ export const MATCH_ROW_SELECT = {
   },
 } satisfies Prisma.MatchSelect;
 
+/**
+ * 매칭 목록(GET /matches)의 줄: 가벼운 줄 + 손님 쪽 요약.
+ * 손님 줄 안에 실리는 매칭과 달리 여기서는 누구의 매칭인지 줄만 보고 알아야 하므로 손님과 그 조건의 요점을 싣는다.
+ * 손님의 당사자 전체 · 연락처의 모든 번호 · 지역 표의 나머지 칸은 싣지 않는다.
+ */
+export const MATCH_LIST_SELECT = {
+  ...MATCH_ROW_SELECT,
+  buyerRequirement: {
+    select: {
+      id: true,
+      officeId: true,
+      buyerIntakeId: true,
+      priorityRank: true,
+      status: true,
+      urgency: true,
+      transactionType: true,
+      siteTypes: true,
+      priceMin: true,
+      priceMax: true,
+      depositMin: true,
+      depositMax: true,
+      monthlyRentMin: true,
+      monthlyRentMax: true,
+      areaMin: true,
+      areaMax: true,
+      moveInDate: true,
+      assignedToId: true,
+      lastContactDate: true,
+      nextContactDate: true,
+      memo: true,
+      createdAt: true,
+      updatedAt: true,
+      assignedTo: { select: { id: true, name: true } },
+      buyerIntake: {
+        select: {
+          id: true,
+          officeId: true,
+          lifecycleStatus: true,
+          contacts: {
+            select: {
+              id: true,
+              contactId: true,
+              role: true,
+              isPrimary: true,
+              contact: {
+                select: {
+                  id: true,
+                  name: true,
+                  phones: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
+                },
+              },
+            },
+            orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+          },
+        },
+      },
+      preferredRegions: {
+        select: {
+          id: true,
+          provinceCode: true,
+          districtCode: true,
+          wardCode: true,
+          province: { select: { code: true, name: true } },
+          district: { select: { code: true, name: true } },
+          ward: { select: { code: true, name: true } },
+        },
+      },
+      preferredSites: {
+        select: {
+          id: true,
+          siteId: true,
+          priority: true,
+          memo: true,
+          site: { select: { id: true, name: true, type: true } },
+        },
+        orderBy: { priority: 'asc' },
+      },
+    },
+  },
+} satisfies Prisma.MatchSelect;
+
+type MatchListRow = Prisma.MatchGetPayload<{ select: typeof MATCH_LIST_SELECT }>;
+
+/** 목록의 줄: 손님은 대표 연락 대상 하나와 대표 번호 하나로 싣는다 */
+export function presentMatchListRow(match: MatchListRow) {
+  const { buyerRequirement, ...row } = match;
+  const contacts = buyerRequirement.buyerIntake.contacts.map(({ contact, ...participant }) => ({
+    ...participant,
+    contact: { id: contact.id, name: contact.name, phone: getPrimaryPhone(contact) },
+  }));
+  const primary = contacts.find((participant) => participant.isPrimary) ?? contacts[0] ?? null;
+  return {
+    ...presentMatchRow(row),
+    buyerRequirement: {
+      ...buyerRequirement,
+      buyerIntake: { ...buyerRequirement.buyerIntake, contacts },
+      contactId: primary?.contactId ?? null,
+      contact: primary?.contact ?? null,
+    },
+  };
+}
+
 type MatchRow = Prisma.MatchGetPayload<{ select: typeof MATCH_ROW_SELECT }>;
 
 /** 단계 값을 지금 이름으로 맞추고, 관련인의 번호는 대표 번호 하나로 싣는다 */

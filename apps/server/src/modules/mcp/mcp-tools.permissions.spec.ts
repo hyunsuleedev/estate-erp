@@ -19,8 +19,11 @@ describe('McpToolsService 권한', () => {
     const employees = {
       findAll: jest.fn().mockResolvedValue(staff),
       findOne: jest.fn((id: string) => Promise.resolve(staff.find((row) => row.id === id))),
+      findProfile: jest.fn((id: string) => Promise.resolve(staff.find((row) => row.id === id))),
+      findSection: jest.fn().mockResolvedValue([]),
       // 가리는 규칙은 실제 구현을 쓴다
       forViewer: EmployeesService.prototype.forViewer,
+      sectionForViewer: EmployeesService.prototype.sectionForViewer,
     };
     const commissionPayments = {
       listByOffice: jest.fn().mockResolvedValue([]),
@@ -101,6 +104,39 @@ describe('McpToolsService 권한', () => {
 
     expect(row.payVisible).toBe(false);
     expect(row.commissionRate).toBeNull();
+  });
+
+  it('get_employee는 기본 정보만 주고, include에 적은 목록만 따로 읽어 붙인다', async () => {
+    const { service, employees } = createService();
+    employees.findSection.mockImplementation((_id: string, _office: string, section: string) =>
+      Promise.resolve(
+        section === 'deals' ? [{ id: 'part-1', commissionAmount: 100, commissionRate: 50 }] : [{ id: `${section}-1` }],
+      ),
+    );
+
+    const base = parse(await service.executeTool('get_employee', { id: 'manager-1' }, owner));
+    expect(base.name).toBe('매니저');
+    expect(employees.findSection).not.toHaveBeenCalled();
+    expect(base).not.toHaveProperty('assignedTasks');
+
+    const withLists = parse(
+      await service.executeTool('get_employee', { id: 'manager-1', include: 'tasks, deals' }, owner),
+    );
+    expect(withLists.assignedTasks).toEqual([{ id: 'tasks-1' }]);
+    expect(withLists.dealParticipants[0].commissionAmount).toBe(100);
+    expect(withLists).not.toHaveProperty('recentActivities');
+    expect(employees.findSection).toHaveBeenCalledTimes(2);
+
+    // 중개사에게는 남의 거래 수수료를 가리고 정산 내역을 비운다
+    const asAgent = parse(
+      await service.executeTool('get_employee', { id: 'manager-1', include: 'deals,settlements' }, agent),
+    );
+    // 가려진 칸은 빈 값이라 줄인 응답에서는 빠진다
+    expect(asAgent.dealParticipants[0]).toEqual({ id: 'part-1' });
+    expect(asAgent.recentSettlementLines).toEqual([]);
+
+    const wrong = await service.executeTool('get_employee', { id: 'manager-1', include: 'salary' }, owner);
+    expect(wrong.isError).toBe(true);
   });
 
   it('대표는 급여·배분율을 본다', async () => {

@@ -30,6 +30,8 @@ const LISTING_DERIVED_QUERY_KEYS = [
   ['contacts'],
   ['employees'],
   ['employee'],
+  ['employee-section'],
+  ['employee-performance'],
   ['global-search'],
   ['calendar-event-link-search'],
   ['deal-create-listings'],

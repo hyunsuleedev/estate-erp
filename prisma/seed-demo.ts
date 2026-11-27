@@ -293,9 +293,12 @@ async function wipe({ prisma, officeId }: Pick<Ctx, 'prisma' | 'officeId'>) {
           : []),
       ],
     },
-    select: { id: true },
+    select: { id: true, buyerIntakeId: true },
   });
   const demoBuyerRequirementIds = demoBuyerRequirements.map((item) => item.id);
+  const demoBuyerIntakeIds = Array.from(
+    new Set(demoBuyerRequirements.map((item) => item.buyerIntakeId)),
+  );
 
   const demoPropertyContacts = await prisma.propertyContact.findMany({
     where: {
@@ -359,10 +362,26 @@ async function wipe({ prisma, officeId }: Pick<Ctx, 'prisma' | 'officeId'>) {
         : []),
     ],
   };
-  if (linkedContext.OR.length > 0) {
+  const consultationLinkedContext = {
+    OR: [
+      ...(demoContactIds.length > 0
+        ? [{ contactId: { in: demoContactIds } }]
+        : []),
+      ...(demoBuyerIntakeIds.length > 0
+        ? [{ buyerIntakeId: { in: demoBuyerIntakeIds } }]
+        : []),
+      ...(uniquePropIds.length > 0
+        ? [{ propertyId: { in: uniquePropIds } }]
+        : []),
+      ...(intakeIds.length > 0 ? [{ listingIntakeId: { in: intakeIds } }] : []),
+    ],
+  };
+  if (consultationLinkedContext.OR.length > 0) {
     await prisma.consultation.deleteMany({
-      where: { officeId, ...linkedContext },
+      where: { officeId, ...consultationLinkedContext },
     });
+  }
+  if (linkedContext.OR.length > 0) {
     await prisma.task.deleteMany({ where: { officeId, ...linkedContext } });
     await prisma.calendarEvent.deleteMany({
       where: {
@@ -2391,14 +2410,23 @@ async function seedConsultations(
   const now = new Date();
   const hoursAgo = (n: number) => new Date(now.getTime() - n * 60 * 60 * 1000);
 
-  const defs = [
+  const defs: Array<{
+    contact: (typeof contacts)[number];
+    createdBy: string;
+    type: string;
+    content: string;
+    propertyId?: string;
+    listingIntakeId?: string;
+    buyerIntakeId?: string;
+    createdAt: Date;
+  }> = [
     {
       contact: owners[0],
       createdBy: ctx.agentUserId,
       type: 'phone',
       content: `${DEMO_TAG} 집주인 전화 — 급매 가격 조정 수락. 26.8억으로 인하.`,
       propertyId: properties[0].id,
-      listingId: listings[0].id,
+      listingIntakeId: listings[0].intakeId,
       createdAt: hoursAgo(6),
     },
     {
@@ -2406,7 +2434,7 @@ async function seedConsultations(
       createdBy: ctx.agentUserId,
       type: 'visit',
       content: `${DEMO_TAG} 내방 상담 — 고덕그라시움 급매 물건 소개. 남향 강조.`,
-      buyerReqId: buyerReqs[0].id,
+      buyerIntakeId: buyerReqs[0].buyerIntakeId,
       createdAt: hoursAgo(5),
     },
     {
@@ -2414,8 +2442,9 @@ async function seedConsultations(
       createdBy: ctx.managerUserId,
       type: 'phone',
       content: `${DEMO_TAG} 임장 일정 조율 — 토요일 오후 2시 확정.`,
-      listingId: listings[1].id,
-      matchId: matches[1].id,
+      propertyId: listings[1].propertyId,
+      listingIntakeId: listings[1].intakeId,
+      buyerIntakeId: buyerReqs.find((r) => r.id === matches[1].buyerReqId)?.buyerIntakeId,
       createdAt: hoursAgo(24),
     },
     {
@@ -2424,7 +2453,7 @@ async function seedConsultations(
       type: 'online',
       content: `${DEMO_TAG} 카톡 — 계약금 입금 확인. 19.8억 매매.`,
       propertyId: properties[3].id,
-      listingId: listings[3].id,
+      listingIntakeId: listings[3].intakeId,
       createdAt: hoursAgo(48),
     },
     {
@@ -2432,8 +2461,9 @@ async function seedConsultations(
       createdBy: ctx.managerUserId,
       type: 'visit',
       content: `${DEMO_TAG} 내방 — 31.9억 펜트하우스 상담. 한강뷰 강조.`,
-      listingId: listings[2].id,
-      matchId: matches[2].id,
+      propertyId: listings[2].propertyId,
+      listingIntakeId: listings[2].intakeId,
+      buyerIntakeId: buyerReqs.find((r) => r.id === matches[2].buyerReqId)?.buyerIntakeId,
       createdAt: hoursAgo(72),
     },
     {
@@ -2441,7 +2471,7 @@ async function seedConsultations(
       createdBy: ctx.agentUserId,
       type: 'phone',
       content: `${DEMO_TAG} 투자 상담 — 전세 끼고 매매 가능한 물건 브리핑.`,
-      buyerReqId: buyerReqs[2].id,
+      buyerIntakeId: buyerReqs[2].buyerIntakeId,
       createdAt: hoursAgo(96),
     },
     {
@@ -2457,15 +2487,12 @@ async function seedConsultations(
       createdBy: ctx.managerUserId,
       type: 'visit',
       content: `${DEMO_TAG} 갈아타기 상담 — 현재 집 매도 잔금과 새 집 잔금을 같은 주로 맞추기로 함.`,
-      buyerReqId: buyerReqs[4].id,
+      buyerIntakeId: buyerReqs[4].buyerIntakeId,
       createdAt: hoursAgo(144),
     },
   ];
 
   for (const def of defs) {
-    const buyerRequirement = def.buyerReqId
-      ? buyerReqs.find((item) => item.id === def.buyerReqId)
-      : null;
     await ctx.prisma.consultation.create({
       data: {
         officeId: ctx.officeId,
@@ -2474,10 +2501,8 @@ async function seedConsultations(
         type: def.type,
         content: def.content,
         propertyId: def.propertyId ?? null,
-        listingId: def.listingId ?? null,
-        matchId: def.matchId ?? null,
-        buyerIntakeId: buyerRequirement?.buyerIntakeId ?? null,
-        buyerReqId: def.buyerReqId ?? null,
+        listingIntakeId: def.listingIntakeId ?? null,
+        buyerIntakeId: def.buyerIntakeId ?? null,
         createdAt: def.createdAt,
       },
     });

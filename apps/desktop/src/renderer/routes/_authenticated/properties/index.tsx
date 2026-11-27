@@ -3681,9 +3681,7 @@ function PropertyInspectorContent({
   const propertyWithListings: Property = { ...property, listings };
   const contacts = property.propertyContacts ?? [];
   // 상세 API는 이 의뢰에 연결된 상담만 의뢰 최상위(intake.consultations)에 담는다.
-  // 전체 페이지·연락처·매칭 등에서 매물이나 거래 조건에만 연결해 남긴 상담은 따로 받아 합친다.
-  // 서버는 거래 조건(listingId)만 준 상담에 propertyId를 채우지 않으므로 거래 조건별로도 받는다.
-  // 다른 의뢰나 다른 의뢰의 거래 조건에 연결된 상담은 이 의뢰 것이 아니므로 뺀다.
+  // 전체 페이지·연락처 등에서 호실(propertyId)에만 연결해 남긴 상담은 따로 받아 합친다.
   const inspectorListingIds = (intake.listings ?? []).map(
     (listing) => listing.id,
   );
@@ -3691,7 +3689,6 @@ function PropertyInspectorContent({
     "consultations",
     {
       propertyId: property.id,
-      listingIds: inspectorListingIds,
       scope: "inspector",
     },
   ] as const;
@@ -3701,23 +3698,10 @@ function PropertyInspectorContent({
     refetch: refetchConsultations,
   } = useQuery({
     queryKey: looseConsultationsKey,
-    // 조회 하나(또는 중간 페이지 하나)가 실패해도 정상으로 받은 상담은 버리지 않고
+    // 조회(또는 중간 페이지)가 실패해도 정상으로 받은 상담은 버리지 않고
     // complete=false로 표시한다. 예전 캐시는 섞지 않는다: 삭제되거나 다른 의뢰로 옮겨져
     // 정상 조회에서 빠진 상담이 되살아나기 때문이다. 빠진 것은 실패 안내로 알린다.
-    queryFn: async () => {
-      const results = await Promise.all([
-        fetchAllConsultations({ propertyId: property.id }),
-        ...inspectorListingIds.map((listingId) =>
-          fetchAllConsultations({ listingId }),
-        ),
-      ]);
-      const complete = results.every((result) => result.complete);
-      const byId = new Map<string, Consultation>();
-      for (const result of results) {
-        for (const item of result.items) byId.set(item.id, item);
-      }
-      return { items: [...byId.values()], complete };
-    },
+    queryFn: () => fetchAllConsultations({ propertyId: property.id }),
     staleTime: 30_000,
   });
   const looseConsultations = looseConsultationResult?.items;
@@ -3737,7 +3721,6 @@ function PropertyInspectorContent({
     ...(looseConsultations ?? []).filter(
       (item) =>
         !item.listingIntakeId &&
-        (!item.listingId || intakeListingIdSet.has(item.listingId)) &&
         (intakeClosedAt === null ||
           new Date(item.createdAt).getTime() <= intakeClosedAt) &&
         !intakeConsultations.some((linked) => linked.id === item.id),
@@ -3756,7 +3739,8 @@ function PropertyInspectorContent({
     refetch: refetchMatches,
   } = useQuery({
     queryKey: ["matches", { propertyId: property.id }],
-    queryFn: () => api.matches.findAll({ propertyId: property.id }),
+    queryFn: async () =>
+      (await api.matches.findAll({ propertyId: property.id, limit: 100 })).items,
     staleTime: 30_000,
   });
   const suggestedContacts = contacts.flatMap((propertyContact) =>

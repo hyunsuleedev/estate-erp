@@ -8,6 +8,7 @@ import {
   Query,
   Body,
   UseGuards,
+  BadRequestException,
   NotFoundException,
   ParseUUIDPipe,
 } from '@nestjs/common';
@@ -41,15 +42,33 @@ export class MatchesController {
   findAll(
     @CurrentUser() user: CurrentUserPayload,
     @Query('propertyId') propertyId?: string,
+    @Query('listingIntakeId') listingIntakeId?: string,
     @Query('listingId') listingId?: string,
     @Query('buyerReqId') buyerReqId?: string,
     @Query('stage') stage?: string,
+    @Query('scope') scope?: string,
+    @Query('upcomingViewing') upcomingViewing?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
+    const num = (value?: string) => {
+      if (!value) return undefined;
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) throw new BadRequestException('숫자 조건이 잘못되었습니다.');
+      return parsed;
+    };
     return this.matchesService.findAll(user.officeId, {
-      propertyId,
-      listingId,
-      buyerReqId,
-      stage,
+      propertyId: propertyId || undefined,
+      listingIntakeId: listingIntakeId || undefined,
+      listingId: listingId || undefined,
+      buyerReqId: buyerReqId || undefined,
+      stage: stage || undefined,
+      openOnly: scope === 'open',
+      upcomingViewing: upcomingViewing === 'true',
+      search: search || undefined,
+      page: num(page),
+      limit: num(limit),
     });
   }
 

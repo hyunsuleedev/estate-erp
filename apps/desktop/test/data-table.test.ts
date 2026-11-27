@@ -494,8 +494,8 @@ describe('desktop data table', () => {
     );
     assert.match(
       pageSource,
-      /fetchAllConsultations\(\{ propertyId: property\.id \}\),\s*\.\.\.inspectorListingIds\.map\(\(listingId\) =>\s*fetchAllConsultations\(\{ listingId \}\)/,
-      'loose consultations are fetched by property and by each listing (the server does not fill propertyId from listingId)',
+      /fetchAllConsultations\(\{ propertyId: property\.id \}\)/,
+      'loose consultations are fetched once by propertyId (the server enforces propertyId whenever listingIntakeId is set)',
     );
     assert.match(
       pageSource,
@@ -528,7 +528,7 @@ describe('desktop data table', () => {
     );
     assert.match(
       pageSource,
-      /!item\.listingIntakeId &&\s*\(!item\.listingId \|\| intakeListingIdSet\.has\(item\.listingId\)\)/,
+      /!item\.listingIntakeId &&\s*\(intakeClosedAt === null \|\|/,
       'property-level consultations not tied to another intake should also appear in the panel',
     );
     assert.match(

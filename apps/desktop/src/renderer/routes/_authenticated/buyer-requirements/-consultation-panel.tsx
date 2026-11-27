@@ -131,7 +131,7 @@ export function ConsultationPanel({ requirement }: { requirement: BuyerRequireme
         contactId: consultContactId || requirement.contactId,
         type: consultType,
         content: consultContent.trim(),
-        buyerReqId: requirement.id,
+        buyerIntakeId: requirement.buyerIntakeId,
       });
       if (touchLastContact) {
         await api.buyerRequirements.update(requirement.id, {

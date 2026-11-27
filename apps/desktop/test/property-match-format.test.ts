@@ -115,7 +115,7 @@ describe('property match detail', () => {
     assert.match(statusConfigSource, /buyerReviewing: \{ label: '고객 검토'/);
     // 고객이 함께 보고 있는 다른 매물을 같은 희망조건으로 찾는다
     assert.match(panelSource, /isReviewing && \(\s*<PropertyRow icon=\{<GitBranch \/>\} label="다른 매물">\s*<BuyerOtherMatches match=\{match\} \/>/);
-    assert.match(panelSource, /buyerReqId: match\.buyerReqId,\s*stage: COMPARED_STAGES\.join\(','\)/);
+    assert.match(panelSource, /\.\.\.buyerRequirementQueries\.detail\(match\.buyerReqId\),\s*select: comparedMatchesOf,/);
     assert.match(panelSource, /filter\(\(other\) => other\.id !== match\.id\)/);
   });
 

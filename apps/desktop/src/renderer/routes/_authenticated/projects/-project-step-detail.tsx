@@ -54,7 +54,7 @@ export function LifecycleTag({ status }: { status: string }) {
 
 /** 매칭 응답에는 집이 거래 조건 아래에 들어 있다(서버의 include 그대로). */
 export function matchProperty(match: Match): MatchRowProperty | undefined {
-  return match.listing?.property ?? match.property;
+  return match.listing?.property;
 }
 
 /** 금액 표기: 월세는 "보증금 / 월세", 나머지는 가격. */

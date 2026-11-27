@@ -1,7 +1,7 @@
 import { formatPlaceLabel } from '@estate-erp/shared';
 import type { Consultation, ListingIntakeState } from '@estate-erp/api-client';
-import { formatDate, formatMoney } from '@/lib/format';
-import { getIntakeConfirmationState, getListingAvailability } from '@/lib/listing-status';
+import { formatDate } from '@/lib/format';
+import { getIntakeConfirmationState } from '@/lib/listing-status';
 import { getStatusMeta } from '@/lib/status-config';
 import { consultationViewParams, type ConsultationView } from './-consultation-list-model';
 
@@ -25,9 +25,9 @@ export type ConsultationContextCardKey =
   | 'contact'
   | 'property'
   | 'listingIntake'
-  | 'listing'
-  | 'match'
-  | 'buyerRequirement';
+  | 'buyerIntake'
+  | 'deal'
+  | 'project';
 
 export interface ConsultationContextCard {
   key: ConsultationContextCardKey;
@@ -39,10 +39,10 @@ export interface ConsultationContextCard {
     | '/properties/$id'
     | '/properties'
     | '/wanted-properties'
-    | '/buyer-requirements/$id';
+    | '/deals'
+    | '/projects/$id';
   params?: { id: string };
-  /** 매칭 딥링크 (?matchId=) — /wanted-properties 페이지가 자동으로 상세를 연다 */
-  search?: { matchId: string };
+  search?: { dealId?: string };
 }
 
 export type ConsultationQuickFilter =
@@ -50,7 +50,9 @@ export type ConsultationQuickFilter =
   | 'actionRequired'
   | 'property'
   | 'listingIntake'
-  | 'buyerRequirement'
+  | 'buyerIntake'
+  | 'deal'
+  | 'project'
   | 'unlinked';
 
 export interface ConsultationFilterOption {
@@ -192,15 +194,9 @@ export function getConsultationContextLabels(consultation: ConsultationListItem)
   if (propertyTitle) labels.push(propertyTitle);
 
   if (consultation.listingIntakeId) labels.push('의뢰 연결');
-
-  if (consultation.listing) {
-    const type = transactionTypeLabels[consultation.listing.transactionType] ?? consultation.listing.transactionType;
-    const price = consultation.listing.price ? ` ${formatMoney(consultation.listing.price)}` : '';
-    labels.push(`${type}${price}`);
-  } else if (consultation.listingId) labels.push('매물 연결');
-
-  if (consultation.matchId) labels.push('매칭 연결');
-  if (consultation.buyerReqId) labels.push('희망 조건 연결');
+  if (consultation.buyerIntakeId) labels.push('구매 의뢰 연결');
+  if (consultation.dealId) labels.push('거래 연결');
+  if (consultation.projectId) labels.push('프로젝트 연결');
 
   return labels;
 }
@@ -256,46 +252,48 @@ export function getConsultationContextCards(consultation: ConsultationListItem):
     });
   }
 
-  if (consultation.listingId) {
-    const listingTitle = consultation.listing
-      ? formatListingLabel(consultation.listing.transactionType, consultation.listing.price)
-      : '매물 연결';
+  if (consultation.buyerIntakeId) {
+    const buyerIntake = consultation.buyerIntake;
+    const lifecycle = buyerIntake
+      ? getStatusMeta('intakeLifecycle', buyerIntake.lifecycleStatus).label
+      : null;
     cards.push({
-      key: 'listing',
-      label: '매물(거래)',
-      title: listingTitle,
-      description: consultation.listing?.intake
-        ? `가용 ${getStatusMeta('listingAvailability', getListingAvailability(consultation.listing)).label} · 확인 ${getStatusMeta('confirmationState', getIntakeConfirmationState(consultation.listing.intake)).label}`
-        : '거래 조건, 가격 협의, 광고 상태 문맥입니다.',
-      to: consultation.propertyId ? '/properties/$id' : '/properties',
-      params: consultation.propertyId ? { id: consultation.propertyId } : undefined,
-    });
-  }
-
-  if (consultation.matchId) {
-    cards.push({
-      key: 'match',
-      label: '매칭',
-      title: consultation.match?.stage
-        ? `매칭 · ${matchStageLabels[consultation.match.stage] ?? consultation.match.stage}`
-        : '매칭 연결',
-      description: '희망매물에서 이 매칭의 상세를 엽니다.',
+      key: 'buyerIntake',
+      label: '구매 의뢰',
+      title: lifecycle ? `구매 의뢰 (${lifecycle})` : '구매 의뢰 연결',
+      description: buyerIntake?.receivedAt
+        ? `접수일 ${formatDate(buyerIntake.receivedAt)}`
+        : '희망매물에서 구매 조건과 매칭을 확인합니다.',
       to: '/wanted-properties',
-      search: { matchId: consultation.matchId },
     });
   }
 
-  if (consultation.buyerReqId) {
-    const transactionType = consultation.buyerRequirement?.transactionType;
+  if (consultation.dealId) {
+    const deal = consultation.deal;
+    const txLabel = deal ? getStatusMeta('transactionType', deal.transactionType).label : null;
+    const stageLabel = deal
+      ? deal.isCancelled
+        ? '취소'
+        : getStatusMeta('dealStage', deal.stage).label
+      : null;
     cards.push({
-      key: 'buyerRequirement',
-      label: '희망 조건',
-      title: '희망 조건 연결',
-      description: transactionType
-        ? `${transactionTypeLabels[transactionType] ?? transactionType} · ${buyerReqStatusLabels[consultation.buyerRequirement?.status ?? ''] ?? consultation.buyerRequirement?.status ?? '상태 미지정'}`
-        : '거래유형을 정하지 않은 희망 조건',
-      to: '/buyer-requirements/$id',
-      params: { id: consultation.buyerReqId },
+      key: 'deal',
+      label: '거래',
+      title: txLabel && stageLabel ? `${txLabel} · ${stageLabel}` : '거래 연결',
+      description: '거래관리에서 이 거래의 진행과 계약을 엽니다.',
+      to: '/deals',
+      search: { dealId: consultation.dealId },
+    });
+  }
+
+  if (consultation.projectId) {
+    cards.push({
+      key: 'project',
+      label: '프로젝트',
+      title: consultation.project?.title?.trim() || '프로젝트 연결',
+      description: '프로젝트 작업 공간을 엽니다.',
+      to: '/projects/$id',
+      params: { id: consultation.projectId },
     });
   }
 
@@ -403,7 +401,9 @@ export function buildConsultationApiParams({
   if (filters.quickFilter === 'actionRequired') params.outcome = 'actionRequired';
   if (filters.quickFilter === 'property') params.context = 'property';
   if (filters.quickFilter === 'listingIntake') params.context = 'listingIntake';
-  if (filters.quickFilter === 'buyerRequirement') params.context = 'buyerRequirement';
+  if (filters.quickFilter === 'buyerIntake') params.context = 'buyerIntake';
+  if (filters.quickFilter === 'deal') params.context = 'deal';
+  if (filters.quickFilter === 'project') params.context = 'project';
   if (filters.quickFilter === 'unlinked') params.context = 'unlinked';
 
   if (filters.contact?.id) params.contactId = filters.contact.id;
@@ -440,7 +440,9 @@ export function getConsultationFilterChips(filters: ConsultationEntityFilters): 
   if (filters.quickFilter === 'actionRequired') chips.push({ key: 'quickFilter', label: '후속 필요' });
   if (filters.quickFilter === 'property') chips.push({ key: 'quickFilter', label: '매물 연결' });
   if (filters.quickFilter === 'listingIntake') chips.push({ key: 'quickFilter', label: '의뢰 연결' });
-  if (filters.quickFilter === 'buyerRequirement') chips.push({ key: 'quickFilter', label: '희망 조건' });
+  if (filters.quickFilter === 'buyerIntake') chips.push({ key: 'quickFilter', label: '구매 의뢰 연결' });
+  if (filters.quickFilter === 'deal') chips.push({ key: 'quickFilter', label: '거래 연결' });
+  if (filters.quickFilter === 'project') chips.push({ key: 'quickFilter', label: '프로젝트 연결' });
   if (filters.quickFilter === 'unlinked') chips.push({ key: 'quickFilter', label: '미연결' });
   if (filters.contact) chips.push({ key: 'contact', label: `고객 ${filters.contact.label}` });
 
@@ -463,33 +465,6 @@ export function getConsultationFilterChips(filters: ConsultationEntityFilters): 
 // 라벨/포맷 헬퍼
 // ----------------------------------------------------------------
 
-export const transactionTypeLabels: Record<string, string> = {
-  sale: '매매',
-  jeonse: '전세',
-  monthly: '월세',
-};
-
-export const buyerReqStatusLabels: Record<string, string> = {
-  active: '활성',
-  matched: '활성',
-  hold: '보류',
-  inactive: '보류',
-  completed: '완료',
-};
-
-export const matchStageLabels: Record<string, string> = {
-  suggested: '내부 후보',
-  buyerInterested: '고객 관심',
-  viewingConfirmed: '임장 조율',
-  viewing: '임장',
-  buyerReviewing: '고객 검토',
-  negotiating: '협상',
-  dealCreated: '거래 전환',
-  closed: '종료',
-  buyerContacted: '고객 관심',
-  ownerContacted: '임장 조율',
-};
-
 const consultationTypeLabels: Record<string, string> = {
   phone: '전화',
   visit: '방문',
@@ -498,11 +473,6 @@ const consultationTypeLabels: Record<string, string> = {
 
 function typeLabel(type: string) {
   return consultationTypeLabels[type] ?? type;
-}
-
-export function formatListingLabel(transactionType: string, price: number | null): string {
-  const type = transactionTypeLabels[transactionType] ?? transactionType;
-  return price ? `${type} ${formatMoney(price)}` : type;
 }
 
 function formatPropertyContextTitle(

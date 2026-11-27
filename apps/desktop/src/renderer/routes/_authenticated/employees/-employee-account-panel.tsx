@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Save } from 'lucide-react';
 import { toast } from 'sonner';
-import type { EmployeeDetail } from '@estate-erp/api-client';
+import type { EmployeeProfile } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
 import { formatPhoneWhileTyping } from '@/lib/phone';
 import { cn } from '@/lib/utils';
@@ -32,7 +32,7 @@ interface AccountForm {
   withholdTax: boolean;
 }
 
-function toAccountForm(detail: EmployeeDetail): AccountForm {
+function toAccountForm(detail: EmployeeProfile): AccountForm {
   return {
     name: detail.name ?? '',
     phone: detail.phone ? formatPhoneWhileTyping(detail.phone) : '',
@@ -59,7 +59,7 @@ export function EmployeeAccountPanel({
   actorRole,
   actorId,
 }: {
-  detail: EmployeeDetail;
+  detail: EmployeeProfile;
   actorRole: string;
   actorId: string | null;
 }) {
@@ -69,9 +69,12 @@ export function EmployeeAccountPanel({
   const [pendingRole, setPendingRole] = useState<string | null>(null);
   const [isStatusConfirmOpen, setIsStatusConfirmOpen] = useState(false);
 
+  // 양식에 실리는 값이 서버에서 바뀌었을 때만 양식을 맞춘다. 건수처럼 양식과 무관한 값이 다시 와도
+  // (거래가 바뀌면 기본 정보를 다시 받는다) 입력 중인 내용을 지우지 않는다.
+  const serverFormKey = JSON.stringify(toAccountForm(detail));
   useEffect(() => {
-    setForm(toAccountForm(detail));
-  }, [detail]);
+    setForm(JSON.parse(serverFormKey) as AccountForm);
+  }, [serverFormKey]);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['employees'] });

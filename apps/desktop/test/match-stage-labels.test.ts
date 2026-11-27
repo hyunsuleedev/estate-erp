@@ -5,7 +5,6 @@ import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { MATCH_STAGE_ORDER } from '@estate-erp/shared';
 import { STATUS_CONFIG } from '../src/renderer/lib/status-config';
-import { matchStageLabels } from '../src/renderer/routes/_authenticated/consultations/-consultation-view-utils';
 
 const read = (path: string) =>
   readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), path), 'utf8');
@@ -16,12 +15,6 @@ describe('match stage labels', () => {
   it('names every stage in the shared status config', () => {
     for (const stage of MATCH_STAGE_ORDER) {
       assert.ok(STATUS_CONFIG.matchStage[stage]?.label, `${stage} has no label`);
-    }
-  });
-
-  it('names every stage on the consultation screens', () => {
-    for (const stage of MATCH_STAGE_ORDER) {
-      assert.equal(matchStageLabels[stage], STATUS_CONFIG.matchStage[stage].label, stage);
     }
   });
 

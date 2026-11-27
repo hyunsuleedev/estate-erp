@@ -89,10 +89,6 @@ async function main() {
       }
       // SET NULL / CASCADE FK — 링크 유실 방지를 위해 명시적으로 재지정
       await tx.deal.updateMany({ where: { listingId: row.id }, data: { listingId: survivorId } });
-      await tx.consultation.updateMany({
-        where: { listingId: row.id },
-        data: { listingId: survivorId },
-      });
       await tx.task.updateMany({ where: { listingId: row.id }, data: { listingId: survivorId } });
       await tx.calendarEvent.updateMany({
         where: { listingId: row.id },

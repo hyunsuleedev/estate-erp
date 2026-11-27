@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
+import { buyerRequirementQueries, matchesOfRequirement } from '@/queries/buyer-requirements';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import type { BuyerRequirement, Match } from '@estate-erp/api-client';
@@ -115,9 +116,10 @@ export function ContactJobsSection({
   );
 
   const matchQueries = useQueries({
+    // 손님 조건 상세에 그 손님의 매칭이 실려 온다 — 매칭 목록을 따로 부르지 않는다
     queries: requirements.map((requirement) => ({
-      queryKey: ['matches', 'by-requirement', requirement.id],
-      queryFn: () => api.matches.findAll({ buyerReqId: requirement.id }),
+      ...buyerRequirementQueries.detail(requirement.id),
+      select: matchesOfRequirement,
     })),
   });
   // 내놓은 집마다 그 집을 보는 손님들. 같은 집의 매칭은 한 번만 읽는다.
@@ -129,7 +131,8 @@ export function ContactJobsSection({
   const listingMatchQueries = useQueries({
     queries: ownerListings.map((listing) => ({
       queryKey: ['matches', 'by-listing', listing.listingId],
-      queryFn: () => api.matches.findAll({ listingId: listing.listingId }),
+      queryFn: async () =>
+        (await api.matches.findAll({ listingId: listing.listingId, limit: 100 })).items,
     })),
   });
   const allMatches = [

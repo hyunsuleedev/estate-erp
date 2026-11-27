@@ -191,7 +191,7 @@ export function useCommentSave(
   return useMutation({
     mutationKey: COMMENT_SAVE_MUTATION_KEY,
     mutationFn: (request: CommentSaveRequest) =>
-      api.projects.createComment(request.projectId, request.body),
+      api.comments.create({ projectId: request.projectId, body: request.body }),
     onSuccess: async (_comment, request) => {
       // 보낸 글과 남아 있는 글이 같을 때만 지운다.
       settleSavedCommentDraft(drafts, request);

@@ -206,12 +206,11 @@ describe("BuyerRequirementsService", () => {
     });
   });
 
-  it("희망조건 삭제 시 상담은 Intake에 남기고 조건 연결만 해제한다", async () => {
+  it("희망조건 삭제 시 상담은 Intake에 남기고 마지막 조건만 지운다", async () => {
     const requirementId = "00000000-0000-4000-8000-000000000004";
     const deleted = { id: requirementId };
     const tx = {
       consultation: {
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn().mockResolvedValue(1),
       },
       deal: { count: jest.fn().mockResolvedValue(0) },
@@ -225,7 +224,7 @@ describe("BuyerRequirementsService", () => {
         }),
         delete: jest.fn().mockResolvedValue(deleted),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        count: jest.fn().mockResolvedValue(1),
+        count: jest.fn().mockResolvedValue(0),
       },
       $executeRaw: jest.fn().mockResolvedValue(0),
     };
@@ -239,13 +238,10 @@ describe("BuyerRequirementsService", () => {
     await expect(service.remove(requirementId, OFFICE_ID)).resolves.toBe(
       deleted,
     );
-    expect(tx.consultation.updateMany).toHaveBeenCalledWith({
-      where: { officeId: OFFICE_ID, buyerReqId: requirementId },
-      data: { buyerReqId: null },
-    });
     expect(tx.buyerRequirement.delete).toHaveBeenCalledWith({
       where: { id: requirementId },
     });
+    expect(tx.buyerIntake.delete).not.toHaveBeenCalled();
     expect(tx.buyerRequirement.updateMany).toHaveBeenCalledWith({
       where: {
         officeId: OFFICE_ID,

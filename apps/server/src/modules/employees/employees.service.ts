@@ -123,7 +123,7 @@ const employeeDetailInclude = {
         },
         take: 3,
       },
-      _count: { select: { matches: true, consultations: true } },
+      _count: { select: { matches: true } },
     },
     orderBy: [{ nextContactDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }],
     take: EMPLOYEE_DETAIL_LIST_LIMIT,
@@ -207,9 +207,56 @@ const employeeDetailInclude = {
   },
 } satisfies Prisma.UserInclude;
 
+/**
+ * 직원 상세에 딸린 목록. 화면과 MCP가 필요한 것만 따로 받는다(GET /employees/:id/sections/:section).
+ * 한 응답에 다 붙이면 직원 한 명이 100KB를 넘고, 업무 하나가 바뀌어도 전부 다시 받게 된다.
+ */
+export const EMPLOYEE_SECTIONS = [
+  'tasks',
+  'buyerRequirements',
+  'projects',
+  'deals',
+  'settlements',
+  'consultations',
+  'activities',
+] as const;
+export type EmployeeSection = (typeof EMPLOYEE_SECTIONS)[number];
+
+export function isEmployeeSection(value: string): value is EmployeeSection {
+  return (EMPLOYEE_SECTIONS as readonly string[]).includes(value);
+}
+
 type EmployeeDetail = Prisma.UserGetPayload<{
   include: typeof employeeDetailInclude;
 }>;
+
+function withProjectStepCounts<T extends { steps: Array<{ doneAt: Date | null }> }>(project: T) {
+  return {
+    ...project,
+    completedStepCount: project.steps.filter((step) => Boolean(step.doneAt)).length,
+    totalStepCount: project.steps.length,
+  };
+}
+
+function toSettlementSummary(line: EmployeeDetail['settlementLines'][number]) {
+  return {
+    id: line.id,
+    month: line.settlement.month,
+    timing: line.settlement.timing,
+    confirmedAt: line.settlement.confirmedAt,
+    employmentType: line.employmentType,
+    withholdTax: line.withholdTax,
+    targetWon: line.targetWon,
+    shareWon: line.shareWon,
+    baseWon: line.baseWon,
+    adjustWon: line.adjustWon,
+    carryInWon: line.carryInWon,
+    withholdingWon: line.withholdingWon,
+    netWon: line.netWon,
+    carryOutWon: line.carryOutWon,
+    paidAt: line.paidAt,
+  };
+}
 
 const USER_LICENSE_TYPES = ['broker_owner', 'broker_associate', 'assistant'] as const;
 const USER_PAY_TYPES = ['fixed', 'mixed', 'commission_only'] as const;
@@ -415,6 +462,10 @@ export class EmployeesService {
     });
   }
 
+  /**
+   * 기본 정보 + 딸린 목록 전부. 직원을 고친 뒤의 응답이 이 모양이다.
+   * 조회는 findProfile(기본·건수)과 findSection(목록 하나)으로 나눠 받는다.
+   */
   async findOne(id: string, officeId: string) {
     const employee = await this.prisma.user.findFirst({
       where: { id, officeId },
@@ -426,6 +477,165 @@ export class EmployeesService {
     }
 
     return this.enrichEmployee(employee);
+  }
+
+  /**
+   * 직원 한 명의 기본 정보와 건수. 딸린 목록은 싣지 않는다(findSection).
+   * 건수는 목록을 세지 않고 DB에서 바로 센다 — 목록은 상한에서 잘리지만 건수는 잘리지 않는다.
+   */
+  async findProfile(id: string, officeId: string) {
+    const employee = await this.prisma.user.findFirst({
+      where: { id, officeId },
+      include: { office: employeeDetailInclude.office },
+    });
+    if (!employee) {
+      throw new NotFoundException('직원을 찾을 수 없습니다.');
+    }
+
+    const kstToday = kstDayStartUtc();
+    const activeTask = { ...employeeDetailInclude.assignedTasks.where, assignedToId: id, officeId };
+    const activeRequirement = {
+      ...employeeDetailInclude.assignedRequirements.where,
+      assignedToId: id,
+      officeId,
+    };
+    const participation = { ...employeeDetailInclude.dealParticipants.where, userId: id, officeId };
+    const [
+      activeTaskCount,
+      overdueTaskCount,
+      activeBuyerRequirementCount,
+      overdueBuyerCount,
+      activeProjectCount,
+      activeDealCount,
+      unsettledDealCount,
+      commissionAll,
+      commissionUnsettled,
+    ] = await Promise.all([
+      this.prisma.task.count({ where: activeTask }),
+      this.prisma.task.count({ where: { ...activeTask, dueDate: { lt: kstToday } } }),
+      this.prisma.buyerRequirement.count({ where: activeRequirement }),
+      this.prisma.buyerRequirement.count({
+        where: { ...activeRequirement, nextContactDate: { lt: kstToday } },
+      }),
+      this.prisma.project.count({
+        where: { ...employeeDetailInclude.assignedProjects.where, assignedToId: id, officeId },
+      }),
+      this.prisma.dealParticipant.count({
+        where: { ...participation, deal: { isCancelled: false, stage: { not: 'closed' } } },
+      }),
+      this.prisma.dealParticipant.count({
+        where: { ...participation, settlementStatus: { not: 'settled' } },
+      }),
+      this.prisma.dealParticipant.aggregate({
+        where: participation,
+        _sum: { commissionAmount: true },
+      }),
+      this.prisma.dealParticipant.aggregate({
+        where: { ...participation, settlementStatus: { not: 'settled' } },
+        _sum: { commissionAmount: true },
+      }),
+    ]);
+
+    return {
+      ...this.employeeBaseFields(employee),
+      office: employee.office,
+      counts: {
+        activeTaskCount,
+        activeBuyerRequirementCount,
+        activeProjectCount,
+        activeDealCount,
+        unsettledDealCount,
+        overdueTaskCount,
+        overdueBuyerCount,
+        unsettledCommissionTotal: commissionUnsettled._sum.commissionAmount ?? 0,
+        commissionAmountTotal: commissionAll._sum.commissionAmount ?? 0,
+      },
+    };
+  }
+
+  /**
+   * 직원 상세에 딸린 목록 하나. 줄의 모양·조건·순서·상한은 employeeDetailInclude가 정한다
+   * (진행 중인 것만, 급한 것부터 — 그 주석 참고). 보는 사람에 따른 가리기는 sectionForViewer.
+   */
+  async findSection(id: string, officeId: string, section: EmployeeSection) {
+    const where = { id, officeId };
+    const missing = () => new NotFoundException('직원을 찾을 수 없습니다.');
+    switch (section) {
+      case 'tasks': {
+        const row = await this.prisma.user.findFirst({
+          where,
+          select: { assignedTasks: employeeDetailInclude.assignedTasks },
+        });
+        if (!row) throw missing();
+        return row.assignedTasks;
+      }
+      case 'buyerRequirements': {
+        const row = await this.prisma.user.findFirst({
+          where,
+          select: { assignedRequirements: employeeDetailInclude.assignedRequirements },
+        });
+        if (!row) throw missing();
+        return row.assignedRequirements.map(withBuyerRequirementContact);
+      }
+      case 'projects': {
+        const row = await this.prisma.user.findFirst({
+          where,
+          select: { assignedProjects: employeeDetailInclude.assignedProjects },
+        });
+        if (!row) throw missing();
+        return row.assignedProjects.map(withProjectStepCounts);
+      }
+      case 'deals': {
+        const row = await this.prisma.user.findFirst({
+          where,
+          select: { dealParticipants: employeeDetailInclude.dealParticipants },
+        });
+        if (!row) throw missing();
+        return row.dealParticipants;
+      }
+      case 'settlements': {
+        const row = await this.prisma.user.findFirst({
+          where,
+          select: { settlementLines: employeeDetailInclude.settlementLines },
+        });
+        if (!row) throw missing();
+        return row.settlementLines.map(toSettlementSummary);
+      }
+      case 'consultations': {
+        const row = await this.prisma.user.findFirst({
+          where,
+          select: { consultations: employeeDetailInclude.consultations },
+        });
+        if (!row) throw missing();
+        return row.consultations;
+      }
+      case 'activities': {
+        const row = await this.prisma.user.findFirst({
+          where,
+          select: { activityLogs: employeeDetailInclude.activityLogs },
+        });
+        if (!row) throw missing();
+        return row.activityLogs;
+      }
+    }
+  }
+
+  /**
+   * 목록 하나에 거는 가리기 — forViewer가 상세 전체에 하던 것과 같은 기준이다.
+   * 대표와 본인은 그대로 본다. 그 밖에는 정산 내역을 비우고, 중개사에게는 남의 거래 수수료를 가린다.
+   */
+  sectionForViewer(
+    viewer: CurrentUserPayload,
+    employeeId: string,
+    section: EmployeeSection,
+    rows: readonly object[],
+  ): readonly object[] {
+    if (viewer.role === 'owner' || viewer.userId === employeeId) return rows;
+    if (section === 'settlements') return [];
+    if (section === 'deals' && viewer.role === 'agent') {
+      return rows.map((row) => ({ ...row, commissionAmount: null, commissionRate: null }));
+    }
+    return rows;
   }
 
   /**
@@ -974,6 +1184,52 @@ export class EmployeesService {
     return redacted;
   }
 
+  private employeeBaseFields(
+    employee: Pick<
+      EmployeeDetail,
+      | 'id'
+      | 'officeId'
+      | 'loginId'
+      | 'email'
+      | 'name'
+      | 'phone'
+      | 'role'
+      | 'isActive'
+      | 'licenseType'
+      | 'licenseNo'
+      | 'payType'
+      | 'baseSalary'
+      | 'commissionRate'
+      | 'employmentType'
+      | 'withholdTax'
+      | 'lastLoginAt'
+      | 'createdAt'
+      | 'updatedAt'
+    >,
+  ) {
+    return {
+      id: employee.id,
+      officeId: employee.officeId,
+      loginId: employee.loginId,
+      email: employee.email,
+      name: employee.name,
+      phone: employee.phone,
+      role: employee.role,
+      isActive: employee.isActive,
+      licenseType: employee.licenseType,
+      licenseNo: employee.licenseNo,
+      payType: employee.payType,
+      baseSalary: employee.baseSalary,
+      commissionRate:
+        employee.commissionRate === null ? null : Number(employee.commissionRate),
+      employmentType: employee.employmentType,
+      withholdTax: employee.withholdTax,
+      lastLoginAt: employee.lastLoginAt ?? null,
+      createdAt: employee.createdAt,
+      updatedAt: employee.updatedAt,
+    };
+  }
+
   private enrichEmployee(employee: EmployeeDetail) {
     const activeTasks = employee.assignedTasks.filter(
       (task) => !['completed', 'cancelled'].includes(task.status),
@@ -984,28 +1240,8 @@ export class EmployeesService {
     const activeDeals = employee.dealParticipants.filter(
       (participant) => participant.deal.stage !== 'closed',
     );
-    const assignedProjects = (employee.assignedProjects ?? []).map((project) => ({
-      ...project,
-      completedStepCount: project.steps.filter((step) => Boolean(step.doneAt)).length,
-      totalStepCount: project.steps.length,
-    }));
-    const recentSettlementLines = (employee.settlementLines ?? []).map((line) => ({
-      id: line.id,
-      month: line.settlement.month,
-      timing: line.settlement.timing,
-      confirmedAt: line.settlement.confirmedAt,
-      employmentType: line.employmentType,
-      withholdTax: line.withholdTax,
-      targetWon: line.targetWon,
-      shareWon: line.shareWon,
-      baseWon: line.baseWon,
-      adjustWon: line.adjustWon,
-      carryInWon: line.carryInWon,
-      withholdingWon: line.withholdingWon,
-      netWon: line.netWon,
-      carryOutWon: line.carryOutWon,
-      paidAt: line.paidAt,
-    }));
+    const assignedProjects = (employee.assignedProjects ?? []).map(withProjectStepCounts);
+    const recentSettlementLines = (employee.settlementLines ?? []).map(toSettlementSummary);
     const kstTodayMs = kstDayStartUtc().getTime();
 
     const overdueTaskCount = activeTasks.filter(
@@ -1028,25 +1264,7 @@ export class EmployeesService {
     }
 
     return {
-      id: employee.id,
-      officeId: employee.officeId,
-      loginId: employee.loginId,
-      email: employee.email,
-      name: employee.name,
-      phone: employee.phone,
-      role: employee.role,
-      isActive: employee.isActive,
-      licenseType: employee.licenseType,
-      licenseNo: employee.licenseNo,
-      payType: employee.payType,
-      baseSalary: employee.baseSalary,
-      commissionRate:
-        employee.commissionRate === null ? null : Number(employee.commissionRate),
-      employmentType: employee.employmentType,
-      withholdTax: employee.withholdTax,
-      lastLoginAt: employee.lastLoginAt ?? null,
-      createdAt: employee.createdAt,
-      updatedAt: employee.updatedAt,
+      ...this.employeeBaseFields(employee),
       office: employee.office,
       counts: {
         activeTaskCount: activeTasks.length,

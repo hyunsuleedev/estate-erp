@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { buyerRequirementQueries, matchesOfRequirement } from "@/queries/buyer-requirements";
 import { invalidateMatchData } from "@/queries/matches";
 import { useNavigate } from "@tanstack/react-router";
 import { GitBranch, Loader2, Plus } from "lucide-react";
@@ -46,12 +47,13 @@ function uniqueListingIds(listingIds: string[]) {
 
 async function fetchLedgerMatches(source: LedgerMatchPanelSource) {
   if (source.kind === "demand") {
-    return api.matches.findAll({ buyerReqId: source.requirementId });
+    // 손님 조건 상세에 그 손님의 매칭이 실려 온다
+    return matchesOfRequirement(await api.buyerRequirements.findOne(source.requirementId));
   }
 
   const results = await Promise.all(
     uniqueListingIds(source.listingIds).map((listingId) =>
-      api.matches.findAll({ listingId }),
+      api.matches.findAll({ listingId, limit: 100 }).then((page) => page.items),
     ),
   );
 

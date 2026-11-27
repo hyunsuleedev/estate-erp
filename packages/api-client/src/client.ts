@@ -17,6 +17,7 @@ import { createContractsApi } from "./modules/contracts.js";
 import { createConsultationsApi } from "./modules/consultations.js";
 import { createBuyerIntakesApi } from "./modules/buyer-intakes.js";
 import { createProjectsApi } from "./modules/projects.js";
+import { createCommentsApi } from "./modules/comments.js";
 import { createBuyerRequirementsApi } from "./modules/buyer-requirements.js";
 import { createCalendarEventsApi } from "./modules/calendar-events.js";
 import { createPropertyContactsApi } from "./modules/property-contacts.js";
@@ -146,6 +147,7 @@ export function createApiClient(config: ApiClientConfig) {
     consultations: createConsultationsApi(req),
     buyerIntakes: createBuyerIntakesApi(req),
     projects: createProjectsApi(req),
+    comments: createCommentsApi(req),
     buyerRequirements: createBuyerRequirementsApi(req),
     calendarEvents: createCalendarEventsApi(req),
     propertyContacts: createPropertyContactsApi(req),

@@ -341,25 +341,6 @@ export interface ProjectListFilter {
   limit?: number;
 }
 
-/** 프로젝트에 적는 코멘트. 직원이 일에 대해 적는 글이다(손님과 나눈 대화는 상담). */
-export interface ProjectComment {
-  id: string;
-  body: string;
-  createdAt: string;
-  updatedAt: string;
-  /** 적은 직원. 직원 기록이 지워졌으면 null. */
-  author: { id: string; name: string } | null;
-}
-
-export interface ProjectCommentList {
-  /** 이 프로젝트의 코멘트 전체 수 */
-  total: number;
-  /** 더 오래된 쪽을 읽을 때 before로 그대로 돌려줄 값. 더 없으면 null. 뜻을 풀어 쓰지 않는다. */
-  nextBefore: string | null;
-  /** 한 쪽. 쪽 안에서는 오래된 것부터 */
-  items: ProjectComment[];
-}
-
 export interface UpdateProjectDto {
   title?: string | null;
   memo?: string | null;
@@ -519,25 +500,6 @@ export function createProjectsApi(request: RequestFn) {
     /** 프로젝트를 푼다. 의뢰 · 거래 · 상담은 남고 진행 계획 · 코멘트는 지워진다. */
     remove: (id: string) =>
       request<{ success: boolean }>(`/projects/${id}`, {
-        method: "DELETE",
-      }),
-    /** 최근 쪽부터. before에 앞 쪽의 nextBefore를 주면 그보다 오래된 쪽을 준다. */
-    comments: (id: string, page?: { before?: string; limit?: number }) =>
-      request<ProjectCommentList>(`/projects/${id}/comments`, {
-        params: page as Record<string, string | number | undefined>,
-      }),
-    createComment: (id: string, body: string) =>
-      request<ProjectComment>(`/projects/${id}/comments`, {
-        method: "POST",
-        body: { body },
-      }),
-    updateComment: (id: string, commentId: string, body: string) =>
-      request<ProjectComment>(`/projects/${id}/comments/${commentId}`, {
-        method: "PATCH",
-        body: { body },
-      }),
-    removeComment: (id: string, commentId: string) =>
-      request<{ success: boolean }>(`/projects/${id}/comments/${commentId}`, {
         method: "DELETE",
       }),
     /** 담을 만한 의뢰·거래. contactId를 주면 그 손님(프로젝트 사람이 아니어도)의 것을 준다. */

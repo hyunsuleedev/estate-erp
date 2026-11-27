@@ -11,8 +11,9 @@ import {
   Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { CreateEmployeeDto, Employee, EmployeeDetail } from '@estate-erp/api-client';
+import type { CreateEmployeeDto, Employee, EmployeeProfile } from '@estate-erp/api-client';
 import { api } from '@/lib/api';
+import { employeeQueries } from '@/queries/employees';
 import { formatDate, formatPhone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/providers/auth-provider';
@@ -98,7 +99,7 @@ const EMPTY_CREATE_FORM: CreateForm = {
   licenseNo: '',
 };
 
-function toAccountForm(employee: EmployeeDetail): AccountForm {
+function toAccountForm(employee: EmployeeProfile): AccountForm {
   return {
     name: employee.name ?? '',
     phone: employee.phone ?? '',
@@ -544,10 +545,7 @@ function EmployeeAccount({
   onBack: () => void;
 }) {
   const queryClient = useQueryClient();
-  const detailQuery = useQuery({
-    queryKey: ['employee', employeeId],
-    queryFn: () => api.employees.findOne(employeeId),
-  });
+  const detailQuery = useQuery(employeeQueries.profile(employeeId));
   const employee = detailQuery.data;
 
   const [form, setForm] = useState<AccountForm | null>(null);
@@ -556,9 +554,11 @@ function EmployeeAccount({
   const [isStatusConfirmOpen, setIsStatusConfirmOpen] = useState(false);
 
   // 서버 값이 바뀌면(저장 뒤 포함) 입력칸을 그 값으로 맞춘다
+  // 양식에 실리는 값이 바뀌었을 때만 맞춘다 — 건수만 다시 와도 입력 중인 내용을 지우지 않는다
+  const serverFormKey = employee ? JSON.stringify(toAccountForm(employee)) : null;
   useEffect(() => {
-    if (employee) setForm(toAccountForm(employee));
-  }, [employee]);
+    if (serverFormKey) setForm(JSON.parse(serverFormKey) as AccountForm);
+  }, [serverFormKey]);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['employees'] });

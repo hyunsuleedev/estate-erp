@@ -305,7 +305,8 @@ export function PropertyDetailScreen({
   });
   const matchesQuery = useQuery({
     queryKey: ['matches', { propertyId }],
-    queryFn: () => (propertyId === null ? [] : api.matches.findAll({ propertyId })),
+    queryFn: async () =>
+      propertyId === null ? [] : (await api.matches.findAll({ propertyId, limit: 100 })).items,
   });
   const photosQuery = useQuery({
     queryKey: ['property-photos', 'property', propertyId],
@@ -321,26 +322,15 @@ export function PropertyDetailScreen({
     intakes.find((intake) => intake.lifecycleStatus !== IntakeLifecycleStatus.CLOSED) ?? null;
   // 진행 중 의뢰의 조건만이 아니라 지난 의뢰(거래 완료로 자동 종료된 의뢰 포함)의 조건까지.
   const allListingIds = collectListingIds(listings, intakes);
-  const intakeIds = intakes.map((intake) => intake.id);
   // 이 집의 거래는 집 상세에 실려 온다(지난 의뢰의 거래까지, 완료·취소 포함). 따로 요청하지 않는다.
   const propertyDeals = propertyId === null ? [] : selectPropertyDeals(propertyQuery.data?.deals ?? [], propertyId, allListingIds);
 
-  // 상담은 매물·의뢰·거래 조건 중 어디에 연결했는지에 따라 따로 받아 합친다.
-  // (서버는 의뢰나 거래 조건만 지정한 상담에 propertyId를 채우지 않는다.)
+  // 의뢰에 연결된 상담도 모두 같은 propertyId를 가지므로 호실 기준으로 한 번에 병렬 조회한다.
   const consultationsQuery = useQuery({
-    queryKey: ['consultations', 'property-detail', propertyId, intakeIds, allListingIds],
-    enabled: propertyId !== null && Boolean(property) && !intakesQuery.isPending,
+    queryKey: ['consultations', 'property-detail', propertyId],
+    enabled: propertyId !== null,
     staleTime: 30_000,
-    queryFn: async () => {
-      const results = await Promise.all([
-        fetchAllConsultations({ propertyId: propertyId as string }),
-        ...intakeIds.map((listingIntakeId) => fetchAllConsultations({ listingIntakeId })),
-        ...allListingIds.map((listingId) => fetchAllConsultations({ listingId })),
-      ]);
-      const byId = new Map<string, Consultation>();
-      for (const result of results) for (const item of result.items) byId.set(item.id, item);
-      return { items: [...byId.values()], complete: results.every((result) => result.complete) };
-    },
+    queryFn: () => fetchAllConsultations({ propertyId: propertyId as string }),
   });
 
   const invalidateAll = async () => {
@@ -499,9 +489,8 @@ export function PropertyDetailScreen({
           type,
           content: text,
           propertyId: propertyId ?? undefined,
-          listingIntakeId: who.side === 'buyer' ? undefined : openIntake?.id,
-          matchId: who.matchId,
-          listingId: who.listingId,
+          listingIntakeId: who.side === 'buyer' ? who.listingIntakeId : openIntake?.id,
+          buyerIntakeId: who.buyerIntakeId,
         });
         toast.success('상담을 기록했습니다.');
       }
@@ -1086,8 +1075,8 @@ export function PropertyDetailScreen({
           name: buyer.name,
           role: `${getTransactionTypeMeta(listingTypeById.get(match.listingId) ?? '').label} 손님`,
           side: 'buyer' as const,
-          matchId: match.id,
-          listingId: match.listingId,
+          buyerIntakeId: match.buyerRequirement?.buyerIntakeId,
+          listingIntakeId: match.listing?.intakeId,
         },
       ];
     }),

@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { buyerRequirementQueries } from "@/queries/buyer-requirements";
+import { buyerRequirementQueries, matchesOfRequirement } from "@/queries/buyer-requirements";
 import { invalidateMatchData } from "@/queries/matches";
 import { Link } from "@tanstack/react-router";
 import { useState, type CSSProperties, type ReactNode } from "react";
@@ -265,9 +265,10 @@ export function BuyerStepTable({
     })),
   });
   const matchQueries = useQueries({
+    // 손님 조건 상세에 그 손님의 매칭이 실려 온다 — 매칭 목록을 따로 부르지 않는다 (위의 상세와 같은 조회)
     queries: requirements.map((requirement) => ({
-      queryKey: ["matches", "by-requirement", requirement.id],
-      queryFn: () => api.matches.findAll({ buyerReqId: requirement.id }),
+      ...buyerRequirementQueries.detail(requirement.id),
+      select: matchesOfRequirement,
       ...FRESH_ON_RETURN,
     })),
   });
