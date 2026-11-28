@@ -63,9 +63,7 @@ export function getIntakeConfirmationState(
   intake: IntakeConfirmationSource,
   now = new Date(),
 ): IntakeConfirmationState {
-  if (intake.lastCheckResult === IntakeCheckResult.NO_ANSWER) {
-    return IntakeConfirmationState.NO_ANSWER;
-  }
+  // 서버(listing-state.ts)와 같다: 유효하다고 확인된 날과 다음 확인 날로만 정한다. 부재중은 상태가 아니다.
   if (!intake.lastVerifiedAt) {
     return IntakeConfirmationState.UNVERIFIED;
   }

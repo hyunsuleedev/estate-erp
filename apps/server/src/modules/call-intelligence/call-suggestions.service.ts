@@ -8,6 +8,8 @@ import {
   CallSuggestionStatus,
   CallSuggestionType,
   normalizeMatchStage,
+  IntakeClosedReason,
+  IntakeLifecycleStatus,
 } from '@estate-erp/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -341,8 +343,24 @@ export class CallSuggestionsService {
       case CallSuggestionType.MATCH_CREATE:
         return found('match', await this.prisma.match.findFirst({ where: own, select }));
       case CallSuggestionType.LISTING_CONFIRM: {
-        const intakeId = (prior as SuggestionPayloadByType['listing_confirm'] | null)?.intakeId;
+        const confirmPayload = prior as SuggestionPayloadByType['listing_confirm'] | null;
+        const intakeId = confirmPayload?.intakeId;
         if (!intakeId) return null;
+        // 의뢰 종료로 반영한 제안은 사람이 닫은 의뢰인지로 본다 (확인 상담을 남기지 않는다).
+        // 닫혀 있기만 한 것으로는 모자란다: 거래가 자동으로 닫은 의뢰(system:deal)는 그 거래가 취소되면 다시 열린다.
+        // 그런 의뢰는 아직 반영되지 않은 것으로 보고 종료를 실제로 태워, 사람이 닫은 것으로 남긴다.
+        if (confirmPayload?.result === 'unavailable') {
+          const closed = await this.prisma.listingIntake.findFirst({
+            where: {
+              id: intakeId,
+              officeId: context.officeId,
+              lifecycleStatus: IntakeLifecycleStatus.CLOSED,
+              lifecycleChangedBy: 'user',
+            },
+            select,
+          });
+          return closed ? { entityType: 'listing_intake', entityId: intakeId } : null;
+        }
         const confirmed = await this.prisma.consultation.findFirst({
           where: {
             officeId: context.officeId,
@@ -747,8 +765,14 @@ export class CallSuggestionsService {
         ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
       });
     }
+    // 통화에서 "팔렸다 · 거둬들인다"고 한 경우는 확인이 아니라 의뢰 종료다. 확인은 유효함 · 부재중만 찍는다.
+    if (payload.result === 'unavailable') {
+      await this.listingIntakes.close(payload.intakeId, context.officeId, IntakeClosedReason.UNAVAILABLE);
+      return { entityType: 'listing_intake', entityId: payload.intakeId };
+    }
     await this.listingIntakes.confirm(payload.intakeId, context.officeId, context.userId, {
-      result: payload.result,
+      // 가격이 바뀐 통화도 매물은 살아 있다 — 가격은 위에서 거래 조건에 따로 썼다
+      result: 'alive',
       channel: 'phone',
       memo: payload.memo,
       contactId,

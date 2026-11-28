@@ -27,7 +27,12 @@ import { Prisma } from '@prisma/client';
 import { DEAL_SUMMARY_SELECT, presentDealSummary } from '../deals/deal-summary';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
-import { assertValidListingMoney, normalizeListingMoveIn } from '../listings/listing-input';
+import {
+  assertCanDeleteListing,
+  assertValidListingMoney,
+  normalizeListingMoveIn,
+} from '../listings/listing-input';
+import { deleteListingInTransaction } from '../listings/listing-delete';
 import {
   ACTIVE_LISTING_ADVERTISEMENT_OPEN_REQUESTS_INCLUDE,
   ACTIVE_LISTING_ADVERTISEMENT_WHERE,
@@ -330,8 +335,8 @@ interface ListingIntakeUpdateDto {
 }
 
 interface ListingIntakeConfirmDto {
-  result: string;
-  closedReason?: string | null;
+  /** 확인은 유효함(alive) 하나다. 보내지 않아도 된다 */
+  result?: string;
   channel?: string;
   memo?: string | null;
   checkedAt?: Date | string | null;
@@ -942,7 +947,16 @@ export class ListingIntakesService {
     userId: string,
     dto: ListingIntakeConfirmDto,
   ) {
-    this.assertValidConfirmResult(dto.result);
+    // 확인은 "이 매물이 아직 살아 있다"를 찍는 일 하나다. 고를 결과가 없다(사용자 결정 2026-11-27 · 28).
+    // - 의뢰를 닫는 것은 매물 상태(의뢰 종료)가, 가격을 고치는 것은 거래 조건이 한다. 예전에는 확인 결과
+    //   "유효하지 않음"이 의뢰와 매칭까지 닫아서 옆의 매물 상태와 같은 일을 두 곳에서 했다.
+    // - 연락이 안 된 것(부재중)은 찍지 않는다. 확인되지 않은 채 그대로이고 기한이 지나면 어차피 다시 올라온다.
+    const result = dto.result ?? IntakeCheckResult.ALIVE;
+    if (result !== IntakeCheckResult.ALIVE) {
+      throw new BadRequestException(
+        '확인은 매물이 유효할 때만 기록합니다. 의뢰 종료는 매물 상태에서, 가격 변경은 거래 조건에서 해 주세요.',
+      );
+    }
     this.assertValidConfirmChannel(dto.channel);
 
     const intake = await this.prisma.listingIntake.findFirst({
@@ -968,80 +982,37 @@ export class ListingIntakesService {
     }
 
     const checkedAt = this.resolveDate(dto.checkedAt) ?? new Date();
-    const nextConfirmAt = this.resolveNextConfirmAt(dto.result, checkedAt, dto.nextConfirmAt);
+    const nextConfirmAt = this.resolveNextConfirmAt(checkedAt, dto.nextConfirmAt);
     const contactId = dto.contactId ?? this.resolveDefaultConfirmContactId(intake);
-    const confirmedClosedReason =
-      dto.result === 'unavailable'
-        ? (dto.closedReason ?? IntakeClosedReason.UNAVAILABLE)
-        : null;
-    if (
-      confirmedClosedReason &&
-      (!VALID_INTAKE_CLOSED_REASONS.has(confirmedClosedReason) ||
-        confirmedClosedReason === IntakeClosedReason.DEAL_COMPLETED)
-    ) {
-      throw new BadRequestException('고를 수 없는 종결 사유입니다.');
-    }
-    if (dto.result !== 'unavailable' && dto.closedReason) {
-      throw new BadRequestException(
-        '종결 사유는 "유효하지 않음"으로 확인할 때만 적을 수 있습니다.',
-      );
-    }
-    const content = this.buildConfirmConsultationContent(
-      dto.result,
-      dto.memo,
-      confirmedClosedReason,
-    );
+    const memo = dto.memo?.trim() || null;
+    // 확인은 직원이 "이 매물이 아직 살아 있나"를 찍는 일이다. 의뢰의 확인 칸만 갱신하고,
+    // 상담 기록은 적은 말이 있을 때만 남긴다 — "유효함" 한 줄이 상담 목록을 덮지 않게(사용자 결정 2026-11-27).
+    // 통화 분석으로 확인한 것은 그 통화에 묶어 남긴다(같은 제안을 두 번 반영하지 않는 표식이기도 하다).
+    const writeConsultation = Boolean(contactId && (memo || dto.callRecordingId));
+    const content = this.buildConfirmConsultationContent(memo);
     const consultationType = this.resolveConsultationType(dto.channel);
-    const shouldUpdateLastVerifiedAt =
-      dto.result === 'alive' || dto.result === 'price_changed';
-    // 확인 결과는 확인 축에 기록하고, unavailable만 생명주기를 종결한다.
-    const nextLifecycleStatus =
-      dto.result === 'unavailable'
-        ? IntakeLifecycleStatus.CLOSED
-        : intake.lifecycleStatus;
-    const lifecycleChanged =
-      nextLifecycleStatus !== intake.lifecycleStatus;
-
     const updated = await this.prisma.$transaction(async (tx) => {
-      // 거래 불가로 의뢰가 닫히면 남은 진행 중 매칭도 닫는다.
-      // 거래 취소의 매칭 되살리기와 겹치지 않게 같은 의뢰 잠금을 잡는다.
-      if (dto.result === 'unavailable') {
-        await this.lockIntakeForLifecycleSync(tx, id);
-        await closeOpenMatchesForIntake(tx, { officeId, intakeId: id });
-      }
-      if (contactId) {
+      if (writeConsultation && contactId) {
         await tx.consultation.create({
-          data: {
-            officeId,
-            createdById: userId,
-            contactId,
-            type: consultationType,
-            purpose: 'listing_confirm',
-            content,
-            propertyId: intake.propertyId,
-            listingIntakeId: intake.id,
-            callRecordingId: dto.callRecordingId ?? undefined,
-          },
-          select: { id: true },
-        });
+              data: {
+                officeId,
+                createdById: userId,
+                contactId,
+                type: consultationType,
+                purpose: 'listing_confirm',
+                content,
+                propertyId: intake.propertyId,
+                listingIntakeId: intake.id,
+                callRecordingId: dto.callRecordingId ?? undefined,
+              },
+              select: { id: true },
+            });
       }
 
       const data = {
-        lifecycleStatus: nextLifecycleStatus,
-        lifecycleChangedAt: lifecycleChanged ? new Date() : undefined,
-        // unavailable 확인은 이미 closed인 의뢰라도 사용자의 명시적 종결 승인 —
-        // 주체를 user 로 승격해 자동 복구 대상에서 제외한다.
-        lifecycleChangedBy:
-          lifecycleChanged || dto.result === 'unavailable'
-            ? 'user'
-            : undefined,
-        closedReason:
-          dto.result === 'unavailable'
-            ? confirmedClosedReason
-            : undefined,
         lastCheckedAt: checkedAt,
-        lastVerifiedAt: shouldUpdateLastVerifiedAt ? checkedAt : undefined,
-        lastCheckResult: dto.result,
+        lastVerifiedAt: checkedAt,
+        lastCheckResult: result,
         nextConfirmAt,
       };
 
@@ -1079,13 +1050,73 @@ export class ListingIntakesService {
     return this.findOne(updated.id, officeId);
   }
 
-  async remove(id: string, officeId: string) {
+  /**
+   * 의뢰를 종료한다. 지우지 않는다 — 의뢰와 거래 조건은 종료 상태로 남는다.
+   * 거래가 끝났거나 집주인이 거둬 갔을 때의 평소 정리다.
+   */
+  async close(id: string, officeId: string, closedReason?: string | null) {
     return this.updateLifecycleStatus(
       id,
       officeId,
       IntakeLifecycleStatus.CLOSED,
-      IntakeClosedReason.OTHER,
+      closedReason ?? IntakeClosedReason.OTHER,
     );
+  }
+
+  /**
+   * 의뢰를 통째로 지운다: 그 의뢰의 거래 조건을 모두 지우고 의뢰도 지운다. 잘못 넣은 의뢰를 없앨 때 쓴다.
+   * 권한과 막는 경우는 거래 조건 하나를 지울 때(ListingsService.remove)와 같다 — 대표·매니저만,
+   * 거래·매칭·공동중개망 공유가 걸린 조건이 하나라도 있으면 아무것도 지우지 않는다.
+   * 프로젝트에 담긴 의뢰도 지우지 않는다(프로젝트의 단계가 그 의뢰를 가리킨다).
+   * 상담은 의뢰 연결만 풀리고 매물·연락처 연결은 남는다. 의뢰에 단 코멘트는 함께 지워진다.
+   */
+  async remove(id: string, officeId: string, role?: string | null) {
+    assertCanDeleteListing(role);
+
+    const removed = await this.prisma.$transaction(async (tx) => {
+      // 의뢰 줄을 잠근다. 지우는 동안 다른 요청이 이 의뢰에 조건을 더하거나 프로젝트에 담지 못한다.
+      await tx.$executeRaw`SELECT id FROM listing_intakes WHERE id = ${id}::uuid AND office_id = ${officeId}::uuid FOR UPDATE`;
+      const intake = await tx.listingIntake.findFirst({
+        where: { id, officeId },
+        select: {
+          id: true,
+          propertyId: true,
+          projectId: true,
+          listings: { select: { id: true }, orderBy: { createdAt: 'asc' } },
+        },
+      });
+      if (!intake) {
+        throw new NotFoundException('의뢰를 찾을 수 없습니다. 이미 지워졌을 수 있습니다.');
+      }
+      if (intake.projectId) {
+        throw new ConflictException(
+          '프로젝트에 담긴 의뢰는 지울 수 없습니다. 프로젝트에서 먼저 빼거나 의뢰를 종료로 바꿔 주세요.',
+        );
+      }
+
+      // 하나라도 막히면 던져서 앞에서 지운 조건까지 모두 되돌린다.
+      for (const listing of intake.listings) {
+        await deleteListingInTransaction(tx, officeId, listing.id);
+      }
+      await tx.consultation.updateMany({
+        where: { officeId, listingIntakeId: id },
+        data: { listingIntakeId: null },
+      });
+      await tx.listingIntake.delete({ where: { id } });
+      return intake;
+    });
+
+    this.realtime?.emitListingIntakeUpdated({
+      officeId,
+      intakeId: removed.id,
+      propertyId: removed.propertyId,
+    });
+
+    return {
+      id: removed.id,
+      propertyId: removed.propertyId,
+      deletedListingIds: removed.listings.map((listing) => listing.id),
+    };
   }
 
   private buildFindManyWhere(officeId: string, query: ListingIntakeSearchQuery) {
@@ -2028,18 +2059,9 @@ export class ListingIntakesService {
     return date;
   }
 
-  private resolveNextConfirmAt(
-    result: string,
-    checkedAt: Date,
-    nextConfirmAt?: Date | string | null,
-  ) {
-    const explicit = this.resolveDate(nextConfirmAt);
-    if (explicit) return explicit;
-    if (result === 'unavailable') return null;
-
-    const days =
-      result === 'no_answer' ? 1 : result === 'pending' ? 2 : 7;
-    return new Date(checkedAt.getTime() + days * 86_400_000);
+  /** 다음 확인 날: 따로 정하지 않으면 확인한 날에서 7일 뒤 */
+  private resolveNextConfirmAt(checkedAt: Date, nextConfirmAt?: Date | string | null) {
+    return this.resolveDate(nextConfirmAt) ?? new Date(checkedAt.getTime() + 7 * 86_400_000);
   }
 
   private resolveDefaultConfirmContactId(
@@ -2065,26 +2087,8 @@ export class ListingIntakesService {
     );
   }
 
-  private buildConfirmConsultationContent(
-    result: string,
-    memo?: string | null,
-    closedReason?: string | null,
-  ) {
-    const resultLabel: Record<string, string> = {
-      alive: '살아있음',
-      price_changed: '가격변경',
-      unavailable:
-        closedReason === IntakeClosedReason.EXTERNAL_DEAL_COMPLETED
-          ? '다른 중개사·직거래 계약'
-          : closedReason === IntakeClosedReason.WITHDRAWN
-            ? '의뢰 철회'
-            : closedReason === IntakeClosedReason.OTHER
-              ? '기타 사유로 의뢰 종료'
-              : '거래 불가·매물 없어짐',
-      no_answer: '부재중',
-      pending: '답변대기',
-    };
-    const head = `[매물확인] ${resultLabel[result] ?? result}`;
+  private buildConfirmConsultationContent(memo?: string | null) {
+    const head = '[매물확인] 살아있음';
     const body = memo?.trim();
     return body ? `${head}\n${body}` : head;
   }

@@ -161,6 +161,16 @@ type TenantPhoneLineInput = {
   contractEnd?: string | null;
 };
 
+/**
+ * 모르는 입주 시기는 강조하지 않고 다른 빈 칸처럼 "-"로 둔다(사용자 결정 2026-11-27, 거주상태 칸과 같게).
+ * 주황 칩이 여러 줄에 되풀이되면 정작 봐야 할 "즉시"와 날짜가 묻힌다. 물어봐야 한다는 것은 매물 상세의 할 일이 챙긴다.
+ */
+const UNKNOWN_MOVE_IN = {
+  label: '-',
+  detail: null,
+  className: 'px-0 text-muted-foreground',
+} as const;
+
 export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
   const type = listing.moveInAvailableType ?? 'unknown';
   const from = listing.moveInAvailableFrom;
@@ -175,12 +185,11 @@ export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
   }
 
   if (type === 'date') {
+    if (!from) return UNKNOWN_MOVE_IN;
     return {
-      label: from ? `${formatDateShort(from)} 이후` : '확인 필요',
+      label: `${formatMoveInDate(from)} 이후`,
       detail: null,
-      className: from
-        ? 'bg-neutral-soft text-neutral-strong'
-        : 'bg-warning-soft text-warning-strong',
+      className: 'bg-neutral-soft text-neutral-strong',
     };
   }
 
@@ -200,17 +209,13 @@ export function getMoveInAvailability(listing: MoveInAvailabilityInput) {
     };
   }
 
-  return {
-    label: '확인 필요',
-    detail: null,
-    className: 'bg-warning-soft text-warning-strong',
-  };
+  return UNKNOWN_MOVE_IN;
 }
 
 export function formatMoveInRange(from?: string | null, to?: string | null) {
-  if (from && to) return `${formatDateShort(from)}~${formatDateShort(to)}`;
-  if (from) return `${formatDateShort(from)}~`;
-  if (to) return `~${formatDateShort(to)}`;
+  if (from && to) return `${formatMoveInDate(from)}~${formatMoveInDate(to)}`;
+  if (from) return `${formatMoveInDate(from)}~`;
+  if (to) return `~${formatMoveInDate(to)}`;
   return '협의';
 }
 
@@ -221,6 +226,18 @@ export function getTenantPhoneLine(tenant: TenantPhoneLineInput) {
   return tenant.contractEnd
     ? `${phone} · 만기 ${formatDateShort(tenant.contractEnd)}`
     : phone;
+}
+
+/**
+ * 입주 가능 날짜는 해를 적지 않는다: "03.01". 입주일은 늘 가까운 앞날이라 해가 달라도 헷갈리지 않고,
+ * 해를 붙이면 칸이 그만큼 넓어야 한다(사용자 결정 2026-11-27). 임대차 만기처럼 지난 해·먼 해가 섞이는
+ * 날짜는 아래 formatDateShort가 해를 붙인다.
+ */
+function formatMoveInDate(value?: string | null) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return `${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function formatDateShort(value?: string | null) {

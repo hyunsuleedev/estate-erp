@@ -237,8 +237,8 @@ export interface UpdateListingIntakeDto {
 }
 
 export interface ConfirmListingIntakeDto {
-  result: ListingIntakeConfirmResult;
-  closedReason?: IntakeClosedReason | null;
+  /** 확인은 "유효함" 하나다(보내지 않아도 된다). 의뢰 종료는 lifecycle, 가격 변경은 거래 조건 수정으로 한다 */
+  result?: 'alive';
   channel?: ListingIntakeConfirmChannel | string;
   memo?: string | null;
   checkedAt?: string | null;
@@ -315,7 +315,11 @@ export function createListingIntakesApi(request: RequestFn) {
         body: dto,
       }),
 
+    /** 의뢰와 그 거래 조건을 모두 지운다(대표·매니저). 종료는 update의 lifecycleStatus로 한다. */
     remove: (id: string) =>
-      request<ListingIntake>(`/listing-intakes/${id}`, { method: 'DELETE' }),
+      request<{ id: string; propertyId: string; deletedListingIds: string[] }>(
+        `/listing-intakes/${id}`,
+        { method: 'DELETE' },
+      ),
   };
 }

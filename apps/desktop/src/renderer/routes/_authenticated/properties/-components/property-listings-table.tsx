@@ -1,5 +1,6 @@
 import {
   Fragment,
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -12,9 +13,11 @@ import {
   flexRender,
   getCoreRowModel,
   useReactTable,
+  type Cell,
   type ColumnDef,
   type ColumnPinningState,
   type ColumnResizeMode,
+  type Row,
   type RowSelectionState,
   type SortingState,
   type VisibilityState,
@@ -445,134 +448,45 @@ export function PropertyListingsTable({
     [rows, rowSelection],
   );
 
-  const getPinStyle = (column: ReturnType<typeof table.getAllLeafColumns>[number]) => {
-    if (column.getIsPinned() !== 'left') return {};
-    return {
-      position: 'sticky' as const,
-      left: column.getStart('left'),
-      zIndex: PINNED_BODY_CELL_Z_INDEX,
-    };
-  };
+  // 줄은 PropertyTableRow가 기억해 둔다(아래). 그 줄에 넘기는 값이 그대로면 다시 그리지 않으므로,
+  // 줄의 모양을 바꾸는 것은 모두 여기서 값으로 넘겨야 한다.
+  // 칸의 넓이·고정 위치는 칸 객체에서 읽는데 그 객체는 넓이가 바뀌어도 같은 객체다. 그래서
+  // 넓이·고정·순서를 한 줄 글로 만들어 넘긴다.
+  const columnLayoutKey = leafColumns
+    .map((column) => `${column.id}:${column.getSize()}:${column.getIsPinned() === 'left' ? column.getStart('left') : ''}`)
+    .join('|');
+  // 부모가 그릴 때마다 새로 만드는 함수는 ref로 받아, 줄에는 바뀌지 않는 함수만 넘긴다.
+  const rowHandlersRef = useRef({ onRowClick, toggleColumnGroup: columnGroupControl?.onToggle });
+  rowHandlersRef.current = { onRowClick, toggleColumnGroup: columnGroupControl?.onToggle };
+  const openRow = useCallback((group: PropertyListingGroup) => rowHandlersRef.current.onRowClick?.(group), []);
+  const toggleColumnGroup = useCallback(() => rowHandlersRef.current.toggleColumnGroup?.(), []);
 
   const renderRow = (row: (typeof rows)[number], rowIndex: number) => {
     const isExpanded = Boolean(renderExpandedRow) && Boolean(expandedRowIds?.has(row.original.id));
+    const isRowFocused = focusedCell?.row === rowIndex;
 
     return (
-      <Fragment key={row.id}>
-        <tr
-          ref={canVirtualize && !isExpanded ? rowVirtualizer.measureElement : undefined}
-          data-index={rowIndex}
-          data-property-row="true"
-          style={{ height: estimatePropertyGroupRowHeight(row.original) }}
-          data-state={row.getIsSelected() ? 'selected' : undefined}
-          className="group"
-        >
-          {row.getVisibleCells().map((cell, colIndex) => {
-            const isLastCol = colIndex === row.getVisibleCells().length - 1;
-            const isFocused = focusedCell?.row === rowIndex && focusedCell?.col === colIndex;
-            const isRowFocused = focusedCell?.row === rowIndex;
-            const isPinned = cell.column.getIsPinned() === 'left';
-            const isLastPinned = isPinned && cell.column.getIsLastColumn('left');
-
-            const columnMeta = cell.column.columnDef.meta as
-              | PropertyListingColumnMeta | undefined;
-            const shouldGrow = cell.column.id === growColumnId;
-            const hasListingCells = columnMeta?.listingCell && row.original.listings.length > 0;
-            const hasSplitListingCells = hasListingCells && row.original.listings.length > 1;
-            // A single listing uses the full td, whose height may come from another column.
-            const isWholeCellFocused = isFocused && !hasSplitListingCells;
-
-            return (
-              <td
-                key={cell.id}
-                data-table-col={colIndex}
-                data-table-row={rowIndex}
-                data-column-id={cell.column.id}
-                data-property-row-id={row.id}
-                data-pinned-edge={isLastPinned || undefined}
-                data-cell-selected={isWholeCellFocused || undefined}
-                className={cn(
-                  'relative select-none align-middle border-b border-border px-2.5 text-[14px] font-[450] leading-[21px] text-foreground',
-                  !isLastCol && 'border-r border-r-[#eeeeec]',
-                  isLastPinned && PINNED_EDGE_LINE_CLASS,
-                  'group-hover:bg-muted/70',
-                  'group-data-[state=selected]:bg-primary/5',
-                  isWholeCellFocused && 'bg-blue-50/40 outline outline-2 -outline-offset-2 outline-[#2383e2]',
-                  isRowFocused && !isFocused && 'bg-muted',
-                  onRowClick && 'cursor-default',
-                  isPinned && 'bg-white group-hover:bg-muted group-data-[state=selected]:bg-secondary',
-                  columnMeta?.cellClassName,
-                  wrappedColumns[cell.column.id] && 'py-1.5 [&_.truncate]:whitespace-normal [&_.truncate]:overflow-visible [&_.line-clamp-2]:line-clamp-none [&_span]:break-words',
-                )}
-                style={{
-                  // A definite td height lets h-full edit triggers fill the
-                  // cell; table layout still grows for wrapped text.
-                  height: estimatePropertyGroupRowHeight(row.original),
-                  width: shouldGrow ? undefined : cell.column.getSize(),
-                  ...getPinStyle(cell.column),
-                }}
-                onClick={(event) => {
-                  const surfaces = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-listing-cell-id]'));
-                  const nearest = surfaces.reduce<HTMLElement | null>((best, surface) => {
-                    const distance = (element: HTMLElement) => {
-                      const rect = element.getBoundingClientRect();
-                      return Math.abs(event.clientY - (rect.top + rect.height / 2));
-                    };
-                    return !best || distance(surface) < distance(best) ? surface : best;
-                  }, null);
-                  cellNavigation.select(nearest ?? event.currentTarget, true);
-                  columnMeta?.onCellClick?.(row.original, event);
-                }}
-                onDoubleClick={(event) => {
-                  if (hasListingCells) return;
-                  cellNavigation.select(event.currentTarget, true);
-                  if (columnMeta?.onCellClick) return;
-                  onRowClick?.(row.original);
-                }}
-              >
-                <PropertyListingCellProvider value={{
-                  rowId: row.id,
-                  columnId: cell.column.id,
-                  rowIndex,
-                  columnIndex: colIndex,
-                  selectedListingId: isFocused && hasSplitListingCells ? focusedCell?.listingId : undefined,
-                }}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </PropertyListingCellProvider>
-                {isLastPinned && columnGroupControl && (
-                  // 경계선 전체가 접기/펼치기 손잡이다. 선을 가운데 둔 9px 띠를 누르면
-                  // 머리글의 버튼과 같은 동작을 한다. 키보드·스크린리더는 머리글 버튼을 쓴다.
-                  <span
-                    data-column-edge-hit
-                    aria-hidden="true"
-                    title={
-                      columnGroupControl.collapsed
-                        ? '타입–확인 컬럼 펼치기'
-                        : '타입–확인 컬럼 접기'
-                    }
-                    className="absolute -right-[5px] top-0 z-[2] h-full w-[9px] cursor-pointer"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      columnGroupControl.onToggle();
-                    }}
-                    onDoubleClick={(event) => event.stopPropagation()}
-                  />
-                )}
-              </td>
-            );
-          })}
-        </tr>
-        {isExpanded && (
-          <tr data-expanded-row={row.original.id}>
-            <td colSpan={visibleColumnCount} className="border-0 p-0 align-top">
-              {/* Keep expanded content within the visible scroller width as columns scroll. */}
-              <div className="sticky left-0 w-[100cqw]">
-                {renderExpandedRow?.(row.original)}
-              </div>
-            </td>
-          </tr>
-        )}
-      </Fragment>
+      <PropertyTableRow
+        key={row.id}
+        row={row}
+        rowIndex={rowIndex}
+        cells={row.getVisibleCells()}
+        columnLayoutKey={columnLayoutKey}
+        isSelected={row.getIsSelected()}
+        focusedCol={isRowFocused ? focusedCell.col : null}
+        focusedListingId={isRowFocused ? focusedCell.listingId : undefined}
+        wrappedColumns={wrappedColumns}
+        growColumnId={growColumnId}
+        measureElement={canVirtualize && !isExpanded ? rowVirtualizer.measureElement : undefined}
+        expandedContent={isExpanded ? renderExpandedRow?.(row.original) : undefined}
+        isExpanded={isExpanded}
+        visibleColumnCount={visibleColumnCount}
+        hasRowClick={Boolean(onRowClick)}
+        columnGroupCollapsed={columnGroupControl?.collapsed}
+        cellNavigation={cellNavigation}
+        openRow={openRow}
+        toggleColumnGroup={toggleColumnGroup}
+      />
     );
   };
 
@@ -790,6 +704,196 @@ export function PropertyListingsTable({
     </div>
     </CellTableNavigationProvider>
   );
+}
+
+interface PropertyTableRowProps {
+  row: Row<PropertyListingGroup>;
+  rowIndex: number;
+  /** row.getVisibleCells(). 칸 정의·숨김·고정이 바뀌면 새 배열이 온다. */
+  cells: Cell<PropertyListingGroup, unknown>[];
+  /** 칸의 넓이·고정 위치·순서를 적은 글. 이 값이 바뀌어야 넓이를 다시 읽는다. */
+  columnLayoutKey: string;
+  isSelected: boolean;
+  /** 이 줄에 선택된 칸이 있으면 그 칸의 자리, 없으면 null. */
+  focusedCol: number | null;
+  focusedListingId: string | undefined;
+  wrappedColumns: Record<string, boolean>;
+  growColumnId: string | undefined;
+  measureElement: ((node: Element | null) => void) | undefined;
+  isExpanded: boolean;
+  expandedContent: ReactNode;
+  visibleColumnCount: number;
+  hasRowClick: boolean;
+  /** 타입–확인 칸 묶음이 접혔는지. 접기 손잡이가 없는 표는 undefined. */
+  columnGroupCollapsed: boolean | undefined;
+  cellNavigation: { select: (trigger: HTMLElement, focusTable?: boolean) => void };
+  openRow: (group: PropertyListingGroup) => void;
+  toggleColumnGroup: () => void;
+}
+
+/**
+ * 매물 한 줄. 넘겨받은 값이 그대로면 다시 그리지 않는다(memo).
+ *
+ * 표는 스크롤할 때, 줄 높이가 바뀔 때(창 넓이를 바꿔 메모가 한 줄↔두 줄이 될 때),
+ * 다른 줄의 칸을 고를 때마다 다시 그려진다. 그때마다 보이는 줄 전부와 그 안의 칸을
+ * 다시 그리면 창 넓이를 바꾸는 동안 화면이 끊긴다.
+ *
+ * 펼친 줄은 기억하지 않는다. 펼친 내용은 부모가 그릴 때마다 새로 만들어 주는 것이라
+ * 같은지 가릴 수 없다.
+ */
+const PropertyTableRow = memo(function PropertyTableRow({
+  row,
+  rowIndex,
+  cells,
+  isSelected,
+  focusedCol,
+  focusedListingId,
+  wrappedColumns,
+  growColumnId,
+  measureElement,
+  isExpanded,
+  expandedContent,
+  visibleColumnCount,
+  hasRowClick,
+  columnGroupCollapsed,
+  cellNavigation,
+  openRow,
+  toggleColumnGroup,
+}: PropertyTableRowProps) {
+  const isRowFocused = focusedCol !== null;
+  const rowHeight = estimatePropertyGroupRowHeight(row.original);
+
+  return (
+    <Fragment>
+      <tr
+        ref={measureElement}
+        data-index={rowIndex}
+        data-property-row="true"
+        style={{ height: rowHeight }}
+        data-state={isSelected ? 'selected' : undefined}
+        className="group"
+      >
+        {cells.map((cell, colIndex) => {
+          const isLastCol = colIndex === cells.length - 1;
+          const isFocused = focusedCol === colIndex;
+          const isPinned = cell.column.getIsPinned() === 'left';
+          const isLastPinned = isPinned && cell.column.getIsLastColumn('left');
+
+          const columnMeta = cell.column.columnDef.meta as
+            | PropertyListingColumnMeta | undefined;
+          const shouldGrow = cell.column.id === growColumnId;
+          const hasListingCells = columnMeta?.listingCell && row.original.listings.length > 0;
+          const hasSplitListingCells = hasListingCells && row.original.listings.length > 1;
+          // A single listing uses the full td, whose height may come from another column.
+          const isWholeCellFocused = isFocused && !hasSplitListingCells;
+
+          return (
+            <td
+              key={cell.id}
+              data-table-col={colIndex}
+              data-table-row={rowIndex}
+              data-column-id={cell.column.id}
+              data-property-row-id={row.id}
+              data-pinned-edge={isLastPinned || undefined}
+              data-cell-selected={isWholeCellFocused || undefined}
+              className={cn(
+                'relative select-none align-middle border-b border-border px-2.5 text-[14px] font-[450] leading-[21px] text-foreground',
+                !isLastCol && 'border-r border-r-[#eeeeec]',
+                isLastPinned && PINNED_EDGE_LINE_CLASS,
+                'group-hover:bg-muted/70',
+                'group-data-[state=selected]:bg-primary/5',
+                isWholeCellFocused && 'bg-blue-50/40 outline outline-2 -outline-offset-2 outline-[#2383e2]',
+                isRowFocused && !isFocused && 'bg-muted',
+                hasRowClick && 'cursor-default',
+                isPinned && 'bg-white group-hover:bg-muted group-data-[state=selected]:bg-secondary',
+                columnMeta?.cellClassName,
+                wrappedColumns[cell.column.id] && 'py-1.5 [&_.truncate]:whitespace-normal [&_.truncate]:overflow-visible [&_.line-clamp-2]:line-clamp-none [&_span]:break-words',
+              )}
+              style={{
+                // A definite td height lets h-full edit triggers fill the
+                // cell; table layout still grows for wrapped text.
+                height: rowHeight,
+                width: shouldGrow ? undefined : cell.column.getSize(),
+                ...(isPinned
+                  ? {
+                      position: 'sticky' as const,
+                      left: cell.column.getStart('left'),
+                      zIndex: PINNED_BODY_CELL_Z_INDEX,
+                    }
+                  : {}),
+              }}
+              onClick={(event) => {
+                const surfaces = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[data-listing-cell-id]'));
+                const nearest = surfaces.reduce<HTMLElement | null>((best, surface) => {
+                  const distance = (element: HTMLElement) => {
+                    const rect = element.getBoundingClientRect();
+                    return Math.abs(event.clientY - (rect.top + rect.height / 2));
+                  };
+                  return !best || distance(surface) < distance(best) ? surface : best;
+                }, null);
+                cellNavigation.select(nearest ?? event.currentTarget, true);
+                columnMeta?.onCellClick?.(row.original, event);
+              }}
+              onDoubleClick={(event) => {
+                if (hasListingCells) return;
+                cellNavigation.select(event.currentTarget, true);
+                if (columnMeta?.onCellClick) return;
+                if (hasRowClick) openRow(row.original);
+              }}
+            >
+              <PropertyListingCellProvider value={{
+                rowId: row.id,
+                columnId: cell.column.id,
+                rowIndex,
+                columnIndex: colIndex,
+                selectedListingId: isFocused && hasSplitListingCells ? focusedListingId : undefined,
+              }}>
+                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </PropertyListingCellProvider>
+              {isLastPinned && columnGroupCollapsed !== undefined && (
+                // 경계선 전체가 접기/펼치기 손잡이다. 선을 가운데 둔 9px 띠를 누르면
+                // 머리글의 버튼과 같은 동작을 한다. 키보드·스크린리더는 머리글 버튼을 쓴다.
+                <span
+                  data-column-edge-hit
+                  aria-hidden="true"
+                  title={
+                    columnGroupCollapsed
+                      ? '타입–확인 컬럼 펼치기'
+                      : '타입–확인 컬럼 접기'
+                  }
+                  className="absolute -right-[5px] top-0 z-[2] h-full w-[9px] cursor-pointer"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleColumnGroup();
+                  }}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                />
+              )}
+            </td>
+          );
+        })}
+      </tr>
+      {isExpanded && (
+        <tr data-expanded-row={row.original.id}>
+          <td colSpan={visibleColumnCount} className="border-0 p-0 align-top">
+            {/* Keep expanded content within the visible scroller width as columns scroll. */}
+            <div className="sticky left-0 w-[100cqw]">
+              {expandedContent}
+            </div>
+          </td>
+        </tr>
+      )}
+    </Fragment>
+  );
+}, arePropertyTableRowPropsEqual);
+
+function arePropertyTableRowPropsEqual(previous: PropertyTableRowProps, next: PropertyTableRowProps) {
+  // 펼친 줄은 늘 다시 그린다. 펼치지 않은 줄의 expandedContent는 늘 undefined라 아래 견주기에 걸리지 않는다.
+  if (previous.isExpanded || next.isExpanded) return false;
+  for (const key of Object.keys(next) as (keyof PropertyTableRowProps)[]) {
+    if (!Object.is(previous[key], next[key])) return false;
+  }
+  return true;
 }
 
 function estimatePropertyGroupRowHeight(group?: PropertyListingGroup) {

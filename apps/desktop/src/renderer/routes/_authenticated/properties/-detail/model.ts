@@ -6,7 +6,7 @@ import type {
   ListingIntake,
   Property,
   PropertyListing,
-  Tenant,
+  Tenant
 } from '@estate-erp/api-client';
 import {
   formatPrice,
@@ -377,7 +377,7 @@ export function buildOfferRows(listings: DetailListing[]): OfferRow[] {
         priceText: formatListingPrice(listing),
         availability: getListingAvailability(listing),
         delta: getPriceDelta(listing),
-        moveIn: moveIn ?? '확인 필요',
+        moveIn: moveIn ?? '-',
         moveInPending: moveIn === null,
         loan: listing.loanAmount === undefined ? '-' : formatAmount(listing.loanAmount),
         maintenance:
@@ -453,14 +453,6 @@ export function getConfirmSummary(intake: ListingIntake): ConfirmSummary {
         headline: '재확인 필요',
         detail: `${formatShortDate(intake.nextConfirmAt)} 확인 예정이었음 · 마지막 확인 ${formatAgo(intake.lastVerifiedAt)}`,
         chip: '재확인 필요',
-        tone: 'warn',
-      };
-    case IntakeConfirmationState.NO_ANSWER:
-      return {
-        state,
-        headline: '부재중',
-        detail: `${formatAgo(intake.lastCheckedAt)} 연락했지만 받지 않음`,
-        chip: '부재중',
         tone: 'warn',
       };
     default:

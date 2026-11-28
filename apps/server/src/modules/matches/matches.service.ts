@@ -403,9 +403,7 @@ export class MatchesService {
       const confirmationState = getIntakeConfirmationState(intake);
       if (confirmationState !== IntakeConfirmationState.VERIFIED) {
         throw new BadRequestException(
-          confirmationState === IntakeConfirmationState.NO_ANSWER
-            ? '집주인·의뢰인 확인이 되지 않은 매물입니다. 다시 확인한 뒤 진행해 주세요'
-            : confirmationState === IntakeConfirmationState.OVERDUE
+          confirmationState === IntakeConfirmationState.OVERDUE
               ? '매물 확인 기한이 지났습니다. 다시 확인한 뒤 고객에게 제안해 주세요'
               : '매물 확인을 완료한 뒤 고객 관심 단계로 이동할 수 있습니다',
         );

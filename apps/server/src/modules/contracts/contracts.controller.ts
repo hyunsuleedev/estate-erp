@@ -88,6 +88,14 @@ export class ContractsController {
     });
   }
 
+  @Get('document-templates/:templateId')
+  getDocumentTemplate(
+    @CurrentUser() user: CurrentUserPayload,
+    @Param('templateId') templateId: string,
+  ) {
+    return this.contractsService.getDocumentTemplate(user.officeId, templateId);
+  }
+
   @Get('document-templates')
   getDocumentTemplates(
     @CurrentUser() user: CurrentUserPayload,

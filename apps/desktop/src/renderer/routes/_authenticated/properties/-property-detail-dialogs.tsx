@@ -306,7 +306,7 @@ function initListingForm(listing: Listing | null, existingTypes: readonly string
     loanAmount: listing?.loanAmount != null ? String(listing.loanAmount) : '',
     premium: listing?.premium != null ? String(listing.premium) : '',
     memo: listing?.memo ?? '',
-    // 모르는 값은 비워 두고 "확인 필요"로 보인다(새 조건은 등록 화면과 같이 "날짜 협의")
+    // 모르는 값은 비워 두고 "미확인"으로 보인다(새 조건은 등록 화면과 같이 "날짜 협의")
     moveInAvailableType: listing ? (listing.moveInAvailableType ?? 'unknown') : 'negotiable',
     moveInAvailableFrom: toDateInputValue(listing?.moveInAvailableFrom),
     moveInAvailableTo: toDateInputValue(listing?.moveInAvailableTo),

@@ -16,7 +16,9 @@ paths:
 
 - 저장하는 것은 생명주기 하나뿐이다: `open ↔ hold`, `open/hold → closed`. 닫을 때는 사유(`closedReason`)를 남긴다.
 - 한 Property에 닫히지 않은 의뢰는 하나만 있을 수 있다(DB의 partial unique index).
-- **확인 상태**(미확인·확인됨·기한 지남·부재)는 저장하지 않는다. `lastVerifiedAt`, `lastCheckResult`, `nextConfirmAt`에서 계산한다.
+- **확인 상태**(미확인·확인됨·기한 지남)는 저장하지 않는다. `lastVerifiedAt`과 `nextConfirmAt`에서 계산한다. 부재중은 상태가 아니다.
+- 확인은 "유효함" 하나다(`alive`). 기록하면 확인된 날과 다음 확인 날(7일 뒤)만 바뀌고 생명주기는 바뀌지 않는다 — 닫는 것은 의뢰 종료가 한다. `no_answer`·`price_changed`·`unavailable`·`pending`은 예전 기록의 `lastCheckResult`에만 남아 있고 새로 찍지 못한다.
+- 상담 기록은 확인하며 메모에 나눈 이야기를 적었을 때만 생긴다(통화 분석으로 확인한 것은 그 통화에 묶어 남긴다). 확인 이력을 담는 표는 두지 않는다 — 누가 언제 바꿨는지는 변경 기록(ActivityLog)에 남는다.
 - **거래 중·완료**도 저장하지 않는다. 그 의뢰의 취소되지 않은 Deal 단계에서 계산한다.
 - 거래 조건 하나만 잠깐 내릴 때는 `Listing.isPaused`, 의뢰 전체를 보류할 때는 `hold`.
 

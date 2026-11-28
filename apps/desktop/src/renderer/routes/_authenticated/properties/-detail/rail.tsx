@@ -264,7 +264,7 @@ export function ConfirmSection({
           확인 완료
         </button>
         <button type="button" className={nb.line} onClick={onOther}>
-          다른 결과…
+          메모와 함께…
         </button>
       </div>
     </RailSection>

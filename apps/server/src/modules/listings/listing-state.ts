@@ -41,9 +41,8 @@ export function getIntakeConfirmationState(
   intake: IntakeConfirmationStateSource,
   now = new Date(),
 ): IntakeConfirmationState {
-  if (intake.lastCheckResult === IntakeCheckResult.NO_ANSWER) {
-    return IntakeConfirmationState.NO_ANSWER;
-  }
+  // 상태는 "유효하다고 확인된 날"과 다음 확인 날로만 정한다. 연락이 안 된 것(부재중)은 따로 상태를 두지 않는다 —
+  // 확인되지 않은 채 그대로이고, 기한이 지나면 어차피 다시 올라온다(사용자 결정 2026-11-28).
   if (!intake.lastVerifiedAt) {
     return IntakeConfirmationState.UNVERIFIED;
   }
@@ -82,40 +81,22 @@ export function buildIntakeConfirmationWhere(
   now: Date,
 ): Prisma.ListingIntakeWhereInput {
   if (confirmationState === IntakeConfirmationState.UNVERIFIED) {
-    return {
-      lastVerifiedAt: null,
-      OR: [
-        { lastCheckResult: null },
-        { lastCheckResult: { not: IntakeCheckResult.NO_ANSWER } },
-      ],
-    };
-  }
-  if (confirmationState === IntakeConfirmationState.NO_ANSWER) {
-    return { lastCheckResult: IntakeCheckResult.NO_ANSWER };
+    return { lastVerifiedAt: null };
   }
   if (confirmationState === IntakeConfirmationState.OVERDUE) {
     return {
       lifecycleStatus: { not: IntakeLifecycleStatus.CLOSED },
       lastVerifiedAt: { not: null },
-      OR: [
-        { lastCheckResult: null },
-        { lastCheckResult: { not: IntakeCheckResult.NO_ANSWER } },
-      ],
       nextConfirmAt: { lt: now },
     };
   }
+  // 확인됨: getIntakeConfirmationState와 같다 — 닫힌 의뢰는 기한이 지나도 "기한 지남"으로 보지 않는다
   return {
     lastVerifiedAt: { not: null },
-    AND: [
-      {
-        OR: [
-          { lastCheckResult: null },
-          { lastCheckResult: { not: IntakeCheckResult.NO_ANSWER } },
-        ],
-      },
-      {
-        OR: [{ nextConfirmAt: null }, { nextConfirmAt: { gte: now } }],
-      },
+    OR: [
+      { lifecycleStatus: IntakeLifecycleStatus.CLOSED },
+      { nextConfirmAt: null },
+      { nextConfirmAt: { gte: now } },
     ],
   };
 }

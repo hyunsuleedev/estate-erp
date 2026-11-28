@@ -27,6 +27,8 @@ const ConsultationIdPipe = new ParseUUIDPipe({
   exceptionFactory: () => new BadRequestException('잘못된 상담 주소입니다.'),
 });
 
+const RecordingUpload = FileInterceptor('file', { limits: { fileSize: 128 * 1024 * 1024, files: 1 } });
+
 @ApiTags('상담')
 @ApiBearerAuth()
 @Controller('consultations')
@@ -159,7 +161,7 @@ export class ConsultationsController {
   // ================================================================
 
   @Post('with-recording')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(RecordingUpload)
   createWithRecording(
     @UploadedFile() file: Express.Multer.File,
     @Body('contactId') contactId: string,
@@ -187,7 +189,7 @@ export class ConsultationsController {
 
   /** 이미 적어 둔 상담에 녹음을 붙인다 (방문 메모에 나중에 녹음을 올리는 경우) */
   @Post(':id/recording')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(RecordingUpload)
   attachRecordingToConsultation(
     @Param('id', ConsultationIdPipe) id: string,
     @UploadedFile() file: Express.Multer.File,
@@ -214,7 +216,7 @@ export class ConsultationsController {
    * with-recording과 달리 새 레코드를 만들지 않아 통화당 1건이 유지된다.
    */
   @Post('recordings/:id/attach-file')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(RecordingUpload)
   attachRecordingFile(
     @Param('id', ConsultationIdPipe) id: string,
     @UploadedFile() file: Express.Multer.File,

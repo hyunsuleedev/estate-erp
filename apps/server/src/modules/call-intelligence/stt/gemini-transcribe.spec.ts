@@ -68,13 +68,16 @@ describe('Gemini transcribe', () => {
       return new Response('{}', { status: 200 });
     });
 
+    const sleep = jest.fn(async () => undefined);
     await expect(
       transcribeWithGemini(
         { buffer: Buffer.from('audio'), fileName: 'call.m4a', mimeType: 'audio/m4a' },
-        { apiKey: 'key', fetchFn: fetchFn as never, sleep: async () => undefined },
+        { apiKey: 'key', fetchFn: fetchFn as never, sleep },
       ),
     ).rejects.toThrow('quota exceeded');
 
+    expect(sleep.mock.calls).toEqual([[30_000], [60_000], [90_000]]);
+    expect(calls.filter((call) => call.url.endsWith('/v1beta/interactions'))).toHaveLength(4);
     const interaction = calls.find((call) => call.url.endsWith('/v1beta/interactions'));
     expect(interaction?.body).toEqual({
       model: 'gemini-3.5-transcribe',
@@ -87,5 +90,43 @@ describe('Gemini transcribe', () => {
       },
     });
     expect(calls.at(-1)).toMatchObject({ url: expect.stringContaining('/v1beta/files/abc'), method: 'DELETE' });
+  });
+});
+
+describe('Gemini 전사 요청의 일시적인 사용량 제한', () => {
+  function run(initial: Response, second = Response.json({ status: 'completed' })) {
+    const responses = [
+      new Response(null, { headers: { 'x-goog-upload-url': 'https://upload.test/1' } }),
+      Response.json({ file: { name: 'files/one', uri: 'https://files.test/one', state: 'ACTIVE' } }),
+      initial, second, new Response(null),
+    ];
+    const fetchFn = jest.fn(async (_url: string, _init: RequestInit) => responses.shift()!);
+    const sleep = jest.fn(async () => undefined);
+    const result = transcribeWithGemini(
+      { buffer: Buffer.from('test'), fileName: 'test.flac', mimeType: 'audio/flac' },
+      { apiKey: 'key', fetchFn: fetchFn as never, sleep },
+    );
+    return { result, fetchFn, sleep };
+  }
+
+  it.each([
+    [{ message: 'quota' }, { 'Retry-After': '17' }, 17_000],
+    [{ details: [{ retryDelay: '14.2s' }] }, {}, 14_200],
+    [{ message: 'Please retry in 12s.' }, {}, 12_000],
+    [{ message: 'quota' }, {}, 30_000],
+  ] as const)('reuses the upload and respects the rate limit', async (error, headers, delay) => {
+    const { result, fetchFn, sleep } = run(Response.json({ error }, { status: 429, headers }));
+    await expect(result).resolves.toEqual([]);
+    expect(sleep).toHaveBeenCalledWith(delay);
+    expect(fetchFn.mock.calls[2]).toEqual(fetchFn.mock.calls[3]);
+    expect(fetchFn.mock.calls[4][1].method).toBe('DELETE');
+  });
+
+  it.each([429, 400, 503])('stops on an excessive wait or a different HTTP error (%i)', async (status) => {
+    const { result, sleep } = run(Response.json({ error: { message: 'unavailable' } }, {
+      status, headers: { 'Retry-After': '181' },
+    }));
+    await expect(result).rejects.toThrow('unavailable');
+    expect(sleep).not.toHaveBeenCalled();
   });
 });

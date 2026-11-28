@@ -4,8 +4,6 @@ import { toast } from 'sonner';
 import { ExternalLink, MoreVertical, PhoneCall, Trash2 } from 'lucide-react';
 import type { ListingIntake } from '@estate-erp/api-client';
 import {
-  IntakeCheckResult,
-  IntakeClosedReason,
   IntakeLifecycleStatus,
   MAINTENANCE_FEE_INCLUDE_LABELS,
 } from '@estate-erp/shared';
@@ -23,7 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -81,41 +78,6 @@ function useInvalidatePropertyLists() {
 
 // ── 확인 기록 다이얼로그 ────────────────────────────────────────
 
-const CONFIRM_RESULTS = [
-  {
-    value: 'alive',
-    label: '확인 완료 (이상 없음)',
-    description: '매물이 유효하고 조건 변동이 없습니다.',
-  },
-  {
-    value: 'price_changed',
-    label: '가격 변경됨',
-    description: '확인 후 매물 가격을 함께 수정하세요.',
-  },
-  {
-    value: 'no_answer',
-    label: '연락 안 됨',
-    description: '소유자와 연락이 닿지 않았습니다.',
-  },
-  {
-    value: 'unavailable',
-    label: '의뢰 종료',
-    description: '종결 사유를 선택하면 의뢰가 자동으로 종료됩니다.',
-  },
-] as const;
-
-const CONFIRM_CLOSED_REASON_OPTIONS = [
-  {
-    value: IntakeClosedReason.EXTERNAL_DEAL_COMPLETED,
-    label: '다른 중개사·직거래로 계약됨',
-  },
-  { value: IntakeClosedReason.WITHDRAWN, label: '의뢰 철회' },
-  { value: IntakeClosedReason.OTHER, label: '기타' },
-] as const;
-
-type ConfirmClosedReason =
-  (typeof CONFIRM_CLOSED_REASON_OPTIONS)[number]['value'];
-
 const CONFIRM_CHANNELS = [
   { value: 'phone', label: '전화' },
   { value: 'sms', label: '문자' },
@@ -133,45 +95,29 @@ export function IntakeConfirmDialog({
   intake: ListingIntake;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** 저장한 뒤(창이 닫힌 뒤) 부른다. "가격 변경됨"이면 가격 수정 창으로 이어 가는 데 쓴다 */
-  onSaved?: (result: IntakeCheckResult) => void;
+  /** 저장한 뒤(창이 닫힌 뒤) 부른다 */
+  onSaved?: () => void;
 }) {
   const invalidate = useInvalidatePropertyLists();
-  const [result, setResult] = useState<IntakeCheckResult>(
-    IntakeCheckResult.ALIVE,
-  );
   const [channel, setChannel] = useState<string>('phone');
   const [memo, setMemo] = useState('');
   const [nextConfirmAt, setNextConfirmAt] = useState('');
-  const [closedReason, setClosedReason] =
-    useState<ConfirmClosedReason | null>(null);
 
   const mutation = useMutation({
     mutationFn: () =>
       api.listingIntakes.confirm(intake.id, {
-        result,
-        closedReason:
-          result === IntakeCheckResult.UNAVAILABLE ? closedReason : undefined,
         channel,
         memo: memo.trim() || undefined,
         nextConfirmAt: nextConfirmAt || undefined,
       }),
     onSuccess: () => {
-      toast.success(
-        result === IntakeCheckResult.UNAVAILABLE
-          ? '의뢰를 종료했습니다. 진행 중이던 매칭도 함께 닫았습니다.'
-          : result === IntakeCheckResult.PRICE_CHANGED
-            ? '확인 기록을 저장했습니다. 바뀐 가격을 적으세요.'
-            : '확인 기록을 저장했습니다.',
-      );
+      toast.success('확인 기록을 저장했습니다.');
       invalidate();
       onOpenChange(false);
-      onSaved?.(result);
-      setResult(IntakeCheckResult.ALIVE);
+      onSaved?.();
       setChannel('phone');
       setMemo('');
       setNextConfirmAt('');
-      setClosedReason(null);
     },
     onError: (error: Error) => {
       toast.error(propertyErrorMessage(error, '확인 기록을 저장하지 못했습니다. 다시 시도해 주세요.'));
@@ -182,7 +128,7 @@ export function IntakeConfirmDialog({
     <Dialog open={open} onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}>
       <DialogContent className="sm:max-w-md" onClick={(event) => event.stopPropagation()}>
         <DialogHeader>
-          <DialogTitle>의뢰 확인 기록</DialogTitle>
+          <DialogTitle>매물 확인 기록</DialogTitle>
           <DialogDescription>
             마지막 유효 확인{' '}
             {intake.lastVerifiedAt ? formatDateShort(intake.lastVerifiedAt) : '없음'} ·
@@ -192,65 +138,6 @@ export function IntakeConfirmDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs font-medium text-muted-foreground">확인 결과 *</Label>
-            <RadioGroup
-              value={result}
-              onValueChange={(value) => setResult(value as IntakeCheckResult)}
-              className="gap-1.5"
-            >
-              {CONFIRM_RESULTS.map((option) => (
-                <label
-                  key={option.value}
-                  className={cn(
-                    'flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2 transition-colors',
-                    result === option.value
-                      ? 'border-primary/60 bg-primary/5'
-                      : 'border-border hover:bg-muted/50',
-                  )}
-                >
-                  <RadioGroupItem value={option.value} className="mt-0.5" />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">{option.label}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {option.description}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </RadioGroup>
-          </div>
-
-          {result === IntakeCheckResult.UNAVAILABLE && (
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground">
-                종결 사유 *
-              </Label>
-              <RadioGroup
-                value={closedReason ?? undefined}
-                onValueChange={(value) =>
-                  setClosedReason(value as ConfirmClosedReason)
-                }
-                className="gap-1.5"
-              >
-                {CONFIRM_CLOSED_REASON_OPTIONS.map((option) => (
-                  <label
-                    key={option.value}
-                    className={cn(
-                      'flex cursor-pointer items-center gap-2.5 rounded-md border px-3 py-2 transition-colors',
-                      closedReason === option.value
-                        ? 'border-destructive/50 bg-destructive/5'
-                        : 'border-border hover:bg-muted/50',
-                    )}
-                  >
-                    <RadioGroupItem value={option.value} />
-                    <span className="text-sm font-medium">{option.label}</span>
-                  </label>
-                ))}
-              </RadioGroup>
-            </div>
-          )}
-
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground">확인 방법</Label>
@@ -274,7 +161,7 @@ export function IntakeConfirmDialog({
                 value={nextConfirmAt}
                 onChange={(event) => setNextConfirmAt(event.target.value)}
               />
-              <p className="text-[11px] text-muted-foreground">비워두면 결과에 따라 자동 설정</p>
+              <p className="text-[11px] text-muted-foreground">비워두면 7일 뒤</p>
             </div>
           </div>
 
@@ -298,17 +185,10 @@ export function IntakeConfirmDialog({
             취소
           </Button>
           <Button
-            disabled={
-              mutation.isPending ||
-              (result === IntakeCheckResult.UNAVAILABLE && !closedReason)
-            }
+            disabled={mutation.isPending}
             onClick={() => mutation.mutate()}
           >
-            {mutation.isPending
-              ? '저장 중...'
-              : result === IntakeCheckResult.UNAVAILABLE
-                ? '의뢰 종료'
-                : '확인 기록 저장'}
+            {mutation.isPending ? '저장 중...' : '확인 기록 저장'}
           </Button>
         </DialogFooter>
       </DialogContent>

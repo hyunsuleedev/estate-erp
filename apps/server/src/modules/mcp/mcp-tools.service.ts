@@ -16,6 +16,7 @@ import {
 } from '@estate-erp/shared';
 import { formatToolError, normalizeDateArgs, validateToolArgs } from './mcp-tool-args';
 import { compactMcpResult } from './mcp-response-compact';
+import { toLightList, toListingRow, toPropertyRow } from './mcp-list-rows';
 import { MOVE_IN_AVAILABLE_TYPE_VALUES } from '../listings/listing-input';
 import { ListingsService } from '../listings/listings.service';
 import { ListingIntakesService } from '../listing-intakes/listing-intakes.service';
@@ -781,7 +782,7 @@ export class McpToolsService {
 
     this.add(
       'update_listing_intake',
-      '매물 의뢰(ListingIntake) row를 수정합니다.',
+      '매물 의뢰(ListingIntake)를 고칩니다. 의뢰를 끝낼 때도 이것을 씁니다: lifecycleStatus=closed와 closedReason(withdrawn=의뢰 철회, external_deal_completed=다른 중개사 · 직거래로 계약됨, unavailable=매물 없어짐, other)을 보내면 의뢰가 종료되고 진행 중인 매칭도 함께 닫히므로 사용자에게 확인한 뒤에 하세요. 보류는 hold, 다시 열기는 open.',
       obj(
         {
           id: str('의뢰 ID'),
@@ -826,35 +827,23 @@ export class McpToolsService {
 
     this.add(
       'confirm_listing_intake',
-      '매물 의뢰의 생존 여부를 확인하고 최신 확인 상태를 갱신합니다. 가능하면 Consultation 히스토리도 함께 남깁니다.',
+      '매물이 아직 살아 있다고 집주인 · 의뢰인에게 확인했을 때 찍습니다. 의뢰의 확인된 날과 다음 확인 날(7일 뒤)만 갱신합니다. 확인은 이것 하나뿐입니다 — 연락이 안 됐으면 찍지 않습니다. 팔렸거나 거둬들인 매물은 close_listing_intake로 종료하고, 가격이 바뀌었으면 update_listing으로 고친 뒤 찍으세요. 상담 기록은 memo에 집주인과 나눈 이야기를 적었을 때만 함께 남습니다.',
       obj(
         {
           id: str('의뢰 ID'),
-          result: strEnum('확인 결과', [
-            'alive',
-            'price_changed',
-            'unavailable',
-            'no_answer',
-            'pending',
-          ]),
-          channel: strEnum('확인 채널', [
-            'phone',
-            'sms',
-            'visit',
-            'owner_message',
-            'note',
-            'mcp',
-          ]),
-          memo: str('확인 메모'),
+          channel: strEnum('확인 방법', ['phone', 'sms', 'visit', 'owner_message', 'note', 'mcp']),
+          memo: str('집주인과 나눈 이야기 (적으면 상담 기록도 남습니다)'),
           checkedAt: str('확인 시각 (ISO)'),
-          nextConfirmAt: str('다음 확인 예정일 (ISO)'),
+          nextConfirmAt: str('다음 확인 예정일 (ISO). 비우면 7일 뒤'),
           contactId: str('확인 대상 연락처 ID'),
         },
-        ['id', 'result'],
+        ['id'],
       ),
       async (a, c) =>
         this.listingIntakes.confirm(a.id as string, c.officeId, c.userId, {
-          result: a.result as string,
+          // 예전 도구 정의를 기억한 AI가 result(no_answer · unavailable 등)를 보낼 수 있다. 버리면 "연락 안 됨"이
+          // 유효함으로 기록되므로 그대로 넘겨 서비스가 거절하게 한다(유효함 말고는 받지 않는다).
+          result: a.result as string | undefined,
           channel: (a.channel as string) ?? 'mcp',
           memo: a.memo as string | null,
           checkedAt: a.checkedAt as string | null,
@@ -863,11 +852,31 @@ export class McpToolsService {
         }),
     );
 
+    // 의뢰를 끝내는 길은 둘이다: 종료(기록을 남김)와 삭제(없앰). 이름이 하는 일과 같아야 한다 —
+    // 예전에는 delete_listing_intake가 종료만 해서, 지워 달라는 요청에 의뢰가 종료 상태로 남았다.
+    this.add(
+      'close_listing_intake',
+      '매물 의뢰(ListingIntake)를 종료(closed)로 바꿉니다. 평소의 정리는 이것입니다: 거래가 끝났거나, 집주인이 거둬 갔거나, 더는 유효하지 않을 때. 의뢰와 그 거래 조건은 지워지지 않고 종료 상태로 남아 이력으로 볼 수 있습니다(includeClosed). 의뢰는 집주인이 한 번 맡긴 것이고 그 안에 거래 조건(Listing: 매매 · 전세 · 월세)이 하나 이상 들어 있어, 종료하면 그 조건이 모두 함께 내려갑니다. 잘못 넣은 것을 아예 없애려면 delete_listing_intake를 쓰세요.',
+      obj(
+        {
+          id: str('의뢰 ID'),
+          closedReason: strEnum(
+            '종료 사유 (기본 other). withdrawn=집주인이 거둠, unavailable=더는 거래할 수 없음, external_deal_completed=다른 곳에서 거래됨, superseded=새 의뢰로 대체',
+            Object.values(IntakeClosedReason),
+          ),
+        },
+        ['id'],
+      ),
+      async (a, c) =>
+        this.listingIntakes.close(a.id as string, c.officeId, a.closedReason as string | undefined),
+    );
+
     this.add(
       'delete_listing_intake',
-      '매물 의뢰(ListingIntake)를 삭제 요청합니다. 현재 API 구현은 closed 생명주기로 전환합니다.',
+      '매물 의뢰(ListingIntake)를 통째로 지웁니다: 그 의뢰의 거래 조건(Listing)을 모두 지우고 의뢰도 지웁니다. 되돌릴 수 없으니 잘못 넣은 의뢰를 없앨 때만 쓰고, 거래가 끝났거나 거둬 간 의뢰는 close_listing_intake로 종료하세요. 대표·매니저만 할 수 있습니다. 조건 가운데 하나라도 거래가 연결됐거나, 매칭된 손님이 있거나, 공동중개망에 공유돼 있으면 아무것도 지우지 않고 이유를 알려 줍니다. 프로젝트에 담긴 의뢰도 지우지 않습니다. 관리매물(Property)과 연락처는 남습니다. 의뢰는 그대로 두고 거래 조건 하나만 지우려면(매매·전세를 함께 내놓았다가 전세만 뺄 때) delete_listing을 쓰세요.',
       obj({ id: str('의뢰 ID') }, ['id']),
-      async (a, c) => this.listingIntakes.remove(a.id as string, c.officeId),
+      // 화면과 같은 권한: 역할을 넘겨 서비스가 가린다. 역할을 모르면 null — undefined는 서버 안쪽 호출로 본다.
+      async (a, c) => this.listingIntakes.remove(a.id as string, c.officeId, c.role ?? null),
     );
 
     // ═══════════════════════════════════════════════════════════
@@ -875,7 +884,7 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_listings',
-      '매물(Listing) 목록을 검색합니다. 의뢰 생명주기·확인 상태·가용 상태와 거래 조건으로 필터링합니다.',
+      '매물(Listing) 목록을 검색합니다. 의뢰 생명주기·확인 상태·가용 상태와 거래 조건으로 필터링합니다. 한 줄에는 어느 집(place) · 거래 조건 · 의뢰 상태 · 잡고 있는 거래 · 소유자 이름과 대표 전화 · 진행 중인 광고 요약만 싣습니다. 가격 이력, 광고 전체, 임대차, 연락처 상세는 get_listing · get_property · get_contact로 봅니다.',
       obj({
         propertyId: str('관리매물 ID'),
         transactionType: strEnum('거래유형', LISTING_TRANSACTION_TYPES),
@@ -898,21 +907,25 @@ export class McpToolsService {
         priceMax: num('최대 가격 (만원)'),
         ...page,
       }),
+      // 서비스의 목록은 아직 화면용 무거운 줄이다. 가벼운 줄로 골라 싣는다(mcp-list-rows.ts).
       async (a, c) =>
-        this.listings.findAll(c.officeId, {
-          propertyId: a.propertyId as string,
-          transactionType: a.transactionType as string,
-          intakeLifecycleStatus: a.intakeLifecycleStatus as string,
-          confirmationState: a.confirmationState as string,
-          availability: a.availability as string,
-          includeClosed: a.includeClosed as boolean,
-          siteId: a.siteId as string,
-          search: a.search as string,
-          priceMin: a.priceMin as number,
-          priceMax: a.priceMax as number,
-          page: (a.page as number) ?? 1,
-          limit: this.clampLimit(a),
-        }),
+        toLightList(
+          await this.listings.findAll(c.officeId, {
+            propertyId: a.propertyId as string,
+            transactionType: a.transactionType as string,
+            intakeLifecycleStatus: a.intakeLifecycleStatus as string,
+            confirmationState: a.confirmationState as string,
+            availability: a.availability as string,
+            includeClosed: a.includeClosed as boolean,
+            siteId: a.siteId as string,
+            search: a.search as string,
+            priceMin: a.priceMin as number,
+            priceMax: a.priceMax as number,
+            page: (a.page as number) ?? 1,
+            limit: this.clampLimit(a),
+          }),
+          toListingRow,
+        ),
     );
 
     this.add(
@@ -920,6 +933,15 @@ export class McpToolsService {
       '특정 매물의 상세 정보를 조회합니다. 소유자, 세입자, 매칭, 거래, 가격이력 포함.',
       obj({ id: str('매물 ID') }, ['id']),
       async (a, c) => this.listings.findOne(a.id as string, c.officeId),
+    );
+
+    this.add(
+      'delete_listing',
+      '거래 조건(Listing) 하나를 완전히 지웁니다. 의뢰(ListingIntake)는 집주인이 한 번 맡긴 것이고 거래 조건은 그 안의 매매 · 전세 · 월세 하나하나입니다 — 이 도구는 그중 하나만 지웁니다(매매·전세를 함께 내놓았다가 전세만 뺄 때). 의뢰를 통째로 없애려면 delete_listing_intake, 지우지 않고 끝내려면 close_listing_intake를 쓰세요. 되돌릴 수 없고 대표·매니저만 할 수 있습니다. 거래가 연결됐거나, 매칭된 손님이 있거나, 공동중개망에 공유한 조건은 지워지지 않고 이유를 알려 줍니다. 그 의뢰의 마지막 조건을 지우면 빈 의뢰가 남지 않게 의뢰도 함께 지워지며(프로젝트에 담긴 의뢰는 남습니다) 응답의 intakeRemoved로 알 수 있습니다. 관리매물(Property)과 연락처는 남습니다.',
+      obj({ id: str('매물(Listing) ID') }, ['id']),
+      // 화면과 같은 권한: 역할을 넘겨 서비스가 가린다. 역할을 모르면 null을 넘긴다 —
+      // undefined는 서버 안쪽 호출로 보아 검사를 건너뛴다.
+      async (a, c) => this.listings.remove(a.id as string, c.officeId, c.role ?? null),
     );
 
     this.add(
@@ -1650,7 +1672,7 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_properties',
-      '관리매물(Property) 목록. 단지, 지역, 매물유형으로 필터링.',
+      '관리매물(Property) 목록. 단지, 지역, 매물유형으로 필터링. 한 줄에는 어느 집(place) · 소유자 이름과 대표 전화 · 걸린 매물의 거래 조건 · 임대차 요약만 싣습니다. 전체는 get_property로 봅니다.',
       obj({
         siteId: str('단지 ID'),
         unitId: str('호실 ID'),
@@ -1660,15 +1682,18 @@ export class McpToolsService {
         ...page,
       }),
       async (a, c) =>
-        this.properties.findAll(c.officeId, {
-          siteId: a.siteId as string,
-          unitId: a.unitId as string,
-          siteType: a.siteType as string,
-          wardCode: a.wardCode as string,
-          search: a.search as string,
-          page: (a.page as number) ?? 1,
-          limit: this.clampLimit(a),
-        }),
+        toLightList(
+          await this.properties.findAll(c.officeId, {
+            siteId: a.siteId as string,
+            unitId: a.unitId as string,
+            siteType: a.siteType as string,
+            wardCode: a.wardCode as string,
+            search: a.search as string,
+            page: (a.page as number) ?? 1,
+            limit: this.clampLimit(a),
+          }),
+          toPropertyRow,
+        ),
     );
 
     this.add(

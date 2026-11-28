@@ -583,7 +583,19 @@ function CellEditPortal({
   // Auto-focus on mount (skip for select/chip — has its own focus management)
   useEffect(() => {
     if (editType === 'select' || editType === 'select-chip') return;
-    inputRef.current?.focus();
+    const input = inputRef.current;
+    input?.focus();
+    // 글 칸은 적힌 글의 끝에서 이어 쓰게 한다. textarea는 포커스만 주면 커서가 맨 앞에 놓여,
+    // 메모에 한 줄 덧붙이려 해도 매번 끝으로 옮겨야 했다.
+    if (editType === 'text' && input) {
+      const end = input.value.length;
+      try {
+        input.setSelectionRange(end, end);
+      } catch {
+        /* 선택 범위를 받지 않는 입력 칸이면 그대로 둔다 */
+      }
+      if (input instanceof HTMLTextAreaElement) input.scrollTop = input.scrollHeight;
+    }
   }, [editType]);
 
   useLayoutEffect(() => {

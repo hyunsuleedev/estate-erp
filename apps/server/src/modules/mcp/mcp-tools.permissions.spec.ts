@@ -1,4 +1,5 @@
 import { EmployeesService } from '../employees/employees.service';
+import { assertCanDeleteListing } from '../listings/listing-input';
 import { McpToolsService } from './mcp-tools.service';
 
 /**
@@ -43,9 +44,24 @@ describe('McpToolsService 권한', () => {
       findOne: jest.fn().mockResolvedValue({ id: 'deal-1' }),
     };
     const noop = {};
+    const listings = {
+      // 지우는 권한은 실제 규칙을 쓴다(대표·매니저만)
+      remove: jest.fn(async (id: string, _officeId: string, role?: string | null) => {
+        assertCanDeleteListing(role);
+        return { id, intakeRemoved: false };
+      }),
+    };
+
+    const listingIntakes = {
+      remove: jest.fn(async (id: string, _officeId: string, role?: string | null) => {
+        assertCanDeleteListing(role);
+        return { id, propertyId: 'property-1', deletedListingIds: ['listing-1'] };
+      }),
+      close: jest.fn().mockResolvedValue({ id: 'intake-1', lifecycleStatus: 'closed' }),
+    };
 
     const service = new (McpToolsService as any)(
-      noop, // listings
+      listings,
       noop, // contacts
       noop, // properties
       deals,
@@ -71,11 +87,11 @@ describe('McpToolsService 권한', () => {
       noop, // propertyPhotos
       noop, // listingAdvertisements
       noop, // officeAdvertisements
-      noop, // listingIntakes
+      listingIntakes,
       noop, // listingAdvertisementSnapshots
     ) as McpToolsService;
 
-    return { service, employees, commissionPayments, cashflow, deals };
+    return { service, employees, commissionPayments, cashflow, deals, listings, listingIntakes };
   }
 
   const parse = (result: { content: Array<{ text?: string }> }) =>
@@ -201,6 +217,68 @@ describe('McpToolsService 권한', () => {
       userId: 'agent-1',
       role: 'agent',
     });
+  });
+
+  it('매물 삭제는 대표·매니저만 한다 (delete_listing)', async () => {
+    const { service, listings } = createService();
+
+    const refused = await service.executeTool('delete_listing', { id: 'listing-1' }, agent);
+    expect(listings.remove).toHaveBeenLastCalledWith('listing-1', 'office-1', 'agent');
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]?.text).toContain('대표·매니저만');
+
+    const done = await service.executeTool('delete_listing', { id: 'listing-1' }, owner);
+    expect(done.isError).toBe(false);
+    expect(parse(done)).toEqual({ id: 'listing-1', intakeRemoved: false });
+  });
+
+  it('역할을 모르는 연결은 매물을 지우지 못한다 (서버 안쪽 호출로 보이지 않게)', async () => {
+    const { service, listings } = createService();
+
+    const result = await service.executeTool(
+      'delete_listing',
+      { id: 'listing-1' },
+      { officeId: 'office-1', userId: 'someone' },
+    );
+    expect(listings.remove).toHaveBeenLastCalledWith('listing-1', 'office-1', null);
+    expect(result.isError).toBe(true);
+  });
+
+  it('의뢰 삭제는 대표·매니저만 하고, 실제로 지우는 쪽을 부른다 (delete_listing_intake)', async () => {
+    const { service, listingIntakes } = createService();
+
+    const refused = await service.executeTool('delete_listing_intake', { id: 'intake-1' }, agent);
+    expect(listingIntakes.remove).toHaveBeenLastCalledWith('intake-1', 'office-1', 'agent');
+    expect(refused.isError).toBe(true);
+
+    const unknownRole = await service.executeTool(
+      'delete_listing_intake',
+      { id: 'intake-1' },
+      { officeId: 'office-1', userId: 'someone' },
+    );
+    expect(listingIntakes.remove).toHaveBeenLastCalledWith('intake-1', 'office-1', null);
+    expect(unknownRole.isError).toBe(true);
+
+    const done = await service.executeTool('delete_listing_intake', { id: 'intake-1' }, owner);
+    expect(parse(done)).toEqual({
+      id: 'intake-1',
+      propertyId: 'property-1',
+      deletedListingIds: ['listing-1'],
+    });
+    expect(listingIntakes.close).not.toHaveBeenCalled();
+  });
+
+  it('의뢰 종료는 지우지 않고 종료만 하며 누구나 할 수 있다 (close_listing_intake)', async () => {
+    const { service, listingIntakes } = createService();
+
+    const result = await service.executeTool(
+      'close_listing_intake',
+      { id: 'intake-1', closedReason: 'withdrawn' },
+      agent,
+    );
+    expect(result.isError).toBe(false);
+    expect(listingIntakes.close).toHaveBeenCalledWith('intake-1', 'office-1', 'withdrawn');
+    expect(listingIntakes.remove).not.toHaveBeenCalled();
   });
 
   it('대표·매니저에게는 캐시플로우 요약을 그대로 돌려준다', async () => {

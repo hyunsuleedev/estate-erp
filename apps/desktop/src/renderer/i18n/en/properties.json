@@ -1829,7 +1829,16 @@
     "호실을 고르세요": "Choose a unit",
     "공실": "Vacant",
     "거주": "Occupancy",
-    "거주상태": "Occupancy"
+    "거주상태": "Occupancy",
+    "매물이 아직 살아 있습니다.": "The listing is still available.",
+    "오늘 확인 완료": "Checked today",
+    "방법 · 메모": "Method · note",
+    "확인 기록…": "Record a check…",
+    "메모와 함께…": "With a note…",
+    "매물 확인 기록": "Listing check",
+    "오늘 확인함으로 기록했습니다.": "Recorded as checked today.",
+    "오늘 확인함으로 기록": "Record as checked today",
+    "비워두면 7일 뒤": "Leave empty for 7 days from now"
   },
   "files": {
     "routes/_authenticated/properties/-components/property-ad-actions-state.ts": {
@@ -1869,7 +1878,8 @@
       "기록": "Records"
     },
     "routes/_authenticated/properties/-move-in-options.ts": {
-      "확인 필요": "To confirm"
+      "확인 필요": "To confirm",
+      "미확인": "Unknown"
     },
     "routes/_authenticated/properties/-my-ads/my-ads-cells.tsx": {
       "미확인": "Unknown",

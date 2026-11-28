@@ -175,7 +175,7 @@ export const STATUS_CONFIG: Record<StatusKind, Record<string, StatusMeta>> = {
  * 파이프라인 단계 순서 (PipelineSteps용). 취소/예외 상태는 포함하지 않는다.
  */
 export const PIPELINE_STEPS: Partial<Record<StatusKind, string[]>> = {
-  confirmationState: ['unverified', 'no_answer', 'overdue', 'verified'],
+  confirmationState: ['unverified', 'overdue', 'verified'],
   intakeLifecycle: ['open', 'hold', 'closed'],
   listingAvailability: ['available', 'paused', 'in_contract', 'closed'],
   matchStage: [

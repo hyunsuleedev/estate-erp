@@ -26,11 +26,11 @@ describe('desktop property list view utilities', () => {
     });
   });
 
-  it('reserves the warning pill for move-in availability that needs confirmation', () => {
+  it('shows unknown move-in availability as a quiet dash, like other empty cells', () => {
     assert.deepEqual(getMoveInAvailability({ moveInAvailableType: 'unknown' }), {
-      label: '확인 필요',
+      label: '-',
       detail: null,
-      className: 'bg-warning-soft text-warning-strong',
+      className: 'px-0 text-muted-foreground',
     });
   });
 });

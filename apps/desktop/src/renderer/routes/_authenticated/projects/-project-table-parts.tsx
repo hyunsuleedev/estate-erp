@@ -181,7 +181,7 @@ export function ConfirmationCellView({ intake }: { intake: ListingIntake }) {
         <span
           className={cn(
             "min-h-[14px] truncate text-[11px] leading-[14px]",
-            model.attempt ? "text-muted-foreground-strong" : tone.relative,
+            tone.relative,
           )}
         >
           {model.relative}

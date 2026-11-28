@@ -59,7 +59,7 @@ import type {
   Property,
   PropertyListing,
   Tenant,
-  UpdateListingDto,
+  UpdateListingDto
 } from "@estate-erp/api-client";
 import {
   formatPrice,
@@ -197,7 +197,6 @@ import {
   type PropertyMapClusterSource,
 } from "./-property-map-utils";
 import {
-  IntakeConfirmDialog,
   PropertyBulkActions,
   PropertyRowActions,
 } from "./-property-intake-actions";
@@ -633,9 +632,6 @@ function PropertiesPage() {
     useState<ResumeClosedPrompt | null>(null);
   const [closeIntakePrompt, setCloseIntakePrompt] =
     useState<CloseIntakePrompt | null>(null);
-  // 확인 칸의 "자세히 기록"이 여는 확인 기록 창의 대상.
-  const [confirmDialogIntake, setConfirmDialogIntake] =
-    useState<ListingIntake | null>(null);
   const [reactivateListingPrompt, setReactivateListingPrompt] =
     useState<ReactivateListingPrompt | null>(null);
   const [viewMode, setViewMode] = useState<PropertyViewMode>("list");
@@ -990,21 +986,13 @@ function PropertiesPage() {
   const confirmMutation = useMutation({
     mutationFn: ({
       intakeId,
-      result,
       expectedUpdatedAt,
     }: {
       intakeId: string;
-      result:
-        | "alive"
-        | "price_changed"
-        | "unavailable"
-        | "no_answer"
-        | "pending";
       expectedUpdatedAt?: string | null;
     }) =>
       api.listingIntakes.confirm(intakeId, {
-        result,
-        // 빠른 메뉴는 "오늘 연락한 결과" — 전화로 확인한 것으로 남긴다(자세히 기록에서는 고른 방법 그대로)
+        // 확인 칸의 단추는 전화로 확인한 것으로 남긴다(확인 기록 창에서는 고른 방법 그대로)
         channel: "phone",
         expectedUpdatedAt,
       }),
@@ -1172,27 +1160,10 @@ function PropertiesPage() {
     [listingUpdatedAtById, updateMutation],
   );
   const handleIntakeConfirm = useCallback(
-    (
-      intakeId: string,
-      result:
-        | "alive"
-        | "price_changed"
-        | "unavailable"
-        | "no_answer"
-        | "pending",
-    ) => {
+    (intakeId: string) => {
       confirmMutation.mutate(
-        {
-          intakeId,
-          result,
-          expectedUpdatedAt: intakeUpdatedAtById.get(intakeId),
-        },
-        {
-          onSuccess: () => {
-            if (result === "alive") toast.success("오늘 유효함으로 기록했습니다.");
-            if (result === "no_answer") toast.success("오늘 부재중으로 기록했습니다.");
-          },
-        },
+        { intakeId, expectedUpdatedAt: intakeUpdatedAtById.get(intakeId) },
+        { onSuccess: () => toast.success("오늘 확인함으로 기록했습니다.") },
       );
     },
     [confirmMutation, intakeUpdatedAtById],
@@ -1706,7 +1677,7 @@ function PropertiesPage() {
         size: 58,
         enableSorting: true,
         cell: ({ row }) => (
-          <span className="truncate text-[14px] font-medium leading-[21px] text-foreground">
+          <span className="block min-w-0 truncate text-[14px] font-medium leading-[21px] text-foreground">
             {getDongName(row.original.property)}
           </span>
         ),
@@ -1743,7 +1714,7 @@ function PropertiesPage() {
             0,
           );
           return (
-            <span className="truncate text-[14px] leading-[21px] text-foreground tabular-nums">
+            <span className="block min-w-0 truncate text-[14px] leading-[21px] text-foreground tabular-nums">
               {value === "-" ? "" : value}
             </span>
           );
@@ -1764,7 +1735,10 @@ function PropertiesPage() {
               cell: ({ row }) => {
                 const value = getUnitTypeName(row.original.property);
                 return (
-                  <span className="truncate text-[14px] leading-[21px] text-foreground">
+                  <span
+                    title={value === "-" ? undefined : value}
+                    className="block min-w-0 truncate text-[14px] leading-[21px] text-foreground"
+                  >
                     {value === "-" ? "" : value}
                   </span>
                 );
@@ -1814,20 +1788,13 @@ function PropertiesPage() {
                   label="확인"
                 />
               ),
-              size: 120,
+              // 칸은 확인된 날과 지난 날수만 적는다("11. 18." / "8일 전"). 부재중 · 의뢰 종료를 적던 때(120)보다 좁다. 단추는 글자 위에 겹쳐 뜬다
+              size: 92,
               enableSorting: true,
               cell: ({ row }) => (
                 <IntakeConfirmationCell
                   intake={row.original.representative}
                   onConfirm={handleIntakeConfirm}
-                  // 유효하지 않으면 의뢰를 종료한다. 매물상태를 종료로 바꿀 때와 같은 길을 타서,
-                  // 종결 사유를 묻고 진행 중인 거래가 있으면 함께 처리한다.
-                  onClose={() =>
-                    handleRowStatusSave(row.original, ListingAvailability.CLOSED)
-                  }
-                  onDetail={() =>
-                    setConfirmDialogIntake(row.original.representative)
-                  }
                   isPending={
                     confirmMutation.isPending &&
                     confirmMutation.variables?.intakeId ===
@@ -1846,7 +1813,8 @@ function PropertiesPage() {
             label="매물상태"
           />
         ),
-        size: 148,
+        // 148에서 2/3로 줄였다(사용자 결정 2026-11-27) — 상태 칩 하나가 들어갈 만큼이면 된다
+        size: 99,
         minSize: 96,
         enableSorting: true,
         meta: {
@@ -1962,8 +1930,8 @@ function PropertiesPage() {
             label="입주가능일"
           />
         ),
-        // 다른 해 날짜는 "2027.03.01 이후"처럼 해까지 적어 120px에서는 잘렸다
-        size: 150,
+        // 날짜는 해 없이 "03.01 이후"로 적는다. 기간("03.01~04.15")까지 들어가는 너비다
+        size: 112,
         enableSorting: true,
         meta: { listingCell: true },
         cell: ({ row }) => (
@@ -1981,7 +1949,7 @@ function PropertiesPage() {
             label="거주상태"
           />
         ),
-        size: 116,
+        size: 96,
         enableSorting: false,
         cell: ({ row }) => (
           <IntakeOccupancyCell
@@ -2700,7 +2668,7 @@ function PropertiesPage() {
               animate={inspectorMotion}
               onExited={finishClosingPropertyInspector}
               onClose={closePropertyInspector}
-              onConfirm={(intakeId) => handleIntakeConfirm(intakeId, "alive")}
+              onConfirm={handleIntakeConfirm}
               isConfirming={
                 confirmMutation.isPending &&
                 confirmMutation.variables?.intakeId === selectedIntakeId
@@ -2766,16 +2734,6 @@ function PropertiesPage() {
             onConfirm={() =>
               reactivateListingMutation.mutate(reactivateListingPrompt)
             }
-          />
-        )}
-        {confirmDialogIntake && (
-          <IntakeConfirmDialog
-            key={confirmDialogIntake.id}
-            intake={confirmDialogIntake}
-            open
-            onOpenChange={(open) => {
-              if (!open) setConfirmDialogIntake(null);
-            }}
           />
         )}
         {closeIntakePrompt && (
@@ -4368,19 +4326,6 @@ function buildPropertyInspectorModel({
             detail: `${formatInspectorMonthDay(intake.nextConfirmAt)} 확인 예정이었음`,
             tone: "attention",
           }
-        : confirmState === IntakeConfirmationState.NO_ANSWER
-          ? {
-              key: "confirm",
-              label: "확인",
-              value: "부재중",
-              detail: [
-                `${formatDaysAgo(intake.lastCheckedAt)} 연락 시도`,
-                nextConfirmText,
-              ]
-                .filter(Boolean)
-                .join(" · "),
-              tone: "attention",
-            }
           : {
               key: "confirm",
               label: "확인",
@@ -4550,9 +4495,7 @@ function buildPropertyInspectorModel({
       title:
         confirmState === IntakeConfirmationState.OVERDUE
           ? "재확인 기한이 지났습니다"
-          : confirmState === IntakeConfirmationState.NO_ANSWER
-            ? "소유자가 부재중이었습니다"
-            : "한 번도 확인하지 않은 매물",
+          : "한 번도 확인하지 않은 매물",
       detail: "광고 유지 전에 소유자에게 가격·거래 가능 여부를 확인하세요.",
       tone: "warning",
       action: { label: "확인 완료", onClick: actions.confirm },
@@ -5745,6 +5688,8 @@ function ActiveDealListingConnector({
     PROPERTY_LISTING_STACK_ITEM_HEIGHT / 2;
   // 컬럼 폭이 바뀌어도 곡선과 끝점은 고정하고 수평 구간만 늘린다.
   // 곡선 시작점이 상태 칩 오른쪽 모서리에 닿도록 grid 간격(gap-x-1.5)만큼 왼쪽으로 확장한다.
+  // 칸이 좁아 칩과 끝점 사이가 곡선 폭(34px)보다 짧으면 곡선을 그 사이에 맞춰 눌러 그린다.
+  // 그대로 두면 곡선이 끝점을 지나 옆 칸의 거래유형 표시 위까지 나간다.
   const chipGap = 6;
   const curveWidth = 28;
   const path = `M 0 ${startY} C 12 ${startY}, 22 ${targetY}, ${curveWidth + chipGap} ${targetY}`;
@@ -5758,9 +5703,10 @@ function ActiveDealListingConnector({
     >
       <svg
         data-active-deal-connector
-        className="absolute inset-y-0 -left-1.5 w-[34px] overflow-visible"
+        className="absolute inset-y-0 -left-1.5 w-[min(34px,calc(100%+6px))] overflow-visible"
         style={{ height }}
         viewBox={`0 0 ${curveWidth + chipGap} ${height}`}
+        preserveAspectRatio="none"
       >
         <path
           d={path}
@@ -5814,19 +5760,11 @@ const CONFIRM_TONE_CLASSES: Record<
 function IntakeConfirmationCell({
   intake,
   onConfirm,
-  onClose,
-  onDetail,
   isPending,
 }: {
   intake: ListingIntake;
-  onConfirm: (
-    intakeId: string,
-    result: "alive" | "price_changed" | "unavailable" | "no_answer" | "pending",
-  ) => void;
-  /** 유효하지 않음: 종결 사유를 묻는 의뢰 종료 창을 연다. */
-  onClose: () => void;
-  /** 자세히 기록: 연락 방법·가격 변경·메모를 적는 확인 기록 창을 연다. */
-  onDetail: () => void;
+  /** 오늘 유효함을 확인했다고 기록한다 */
+  onConfirm: (intakeId: string) => void;
   isPending?: boolean;
 }) {
   const model = getConfirmCellModel(intake);
@@ -5851,64 +5789,27 @@ function IntakeConfirmationCell({
         <span
           className={cn(
             "min-h-[14px] truncate text-[11px] leading-[14px]",
-            // 마지막에 한 일은 경고색이 아니라 먹색으로 둔다. 매물의 상태는 윗줄의 색이 말한다.
-            model.attempt ? "text-muted-foreground-strong" : tone.relative,
+            tone.relative,
           )}
         >
           {model.relative}
         </span>
       </div>
       {!model.closed && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            {/*
-              단추는 글자 자리를 차지하지 않고, 줄에 올렸을 때 오른쪽 끝을 덮으며 나타난다
-              (단지 칸의 "열기"와 같은 방식). 자리를 따로 잡아 두면 "부재중 · 3일 전"이 잘린다.
-            */}
-            <button
-              type="button"
-              title="확인 기록"
-              aria-label="확인 기록"
-              disabled={isPending}
-              className="absolute right-0 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-white text-muted-foreground opacity-0 shadow-[0_0_0_4px_#fff] transition-opacity hover:bg-secondary hover:text-foreground focus-visible:opacity-100 disabled:opacity-40 group-hover:opacity-100 data-[state=open]:bg-secondary data-[state=open]:text-foreground data-[state=open]:opacity-100"
-            >
-              <RefreshCw className={cn("size-3.5", isPending && "animate-spin")} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-              오늘 연락한 결과
-            </DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => onConfirm(intake.id, "alive")}>
-              <span className="size-[7px] shrink-0 rounded-full bg-success" />
-              유효함
-              <span className="ml-auto text-xs text-muted-foreground">
-                오늘 확인 완료
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onConfirm(intake.id, "no_answer")}>
-              <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/50" />
-              부재중
-              <span className="ml-auto text-xs text-muted-foreground">
-                연락 안 됨
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={onClose}>
-              <span className="size-[7px] shrink-0 rounded-full bg-destructive" />
-              유효하지 않음…
-              <span className="ml-auto text-xs text-muted-foreground">
-                의뢰 종료
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onDetail}>
-              자세히 기록…
-              <span className="ml-auto text-xs text-muted-foreground">
-                가격 변경 · 메모
-              </span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        // 확인은 "오늘 살아 있음을 확인했다" 하나다 — 고를 것이 없어 누르면 바로 기록한다.
+        // 집주인과 나눈 이야기를 적으려면 줄의 메뉴에서 확인 기록 창을 연다.
+        // 단추는 글자 자리를 차지하지 않는다: 줄에 올렸을 때 칸 가운데에 반투명하게 겹쳐 나타나, 뒤의 날짜가 비쳐 보인다.
+        // 그래서 칸을 글자만큼만 좁게 둘 수 있다.
+        <button
+          type="button"
+          title="오늘 확인함으로 기록"
+          aria-label="오늘 확인함으로 기록"
+          disabled={isPending}
+          onClick={() => onConfirm(intake.id)}
+          className="absolute left-1/2 top-1/2 flex size-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md border border-border/60 bg-white/40 text-foreground opacity-0 transition-opacity hover:bg-white/80 focus-visible:opacity-100 disabled:opacity-40 group-hover:opacity-100"
+        >
+          <RefreshCw className={cn("size-3.5", isPending && "animate-spin")} />
+        </button>
       )}
     </div>
   );
@@ -6433,8 +6334,8 @@ const moveInAvailableChipOptions: ChipOption[] = [
   },
   {
     value: "unknown",
-    label: "확인 필요",
-    className: "bg-warning-soft text-warning-strong",
+    label: "미확인",
+    className: "bg-neutral-soft text-muted-foreground",
   },
 ];
 

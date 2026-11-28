@@ -161,7 +161,7 @@ export function TopHeader({
               <button
                 type="button"
                 onClick={onConfirmMenu}
-                title="확인 결과 기록"
+                title="확인 기록"
                 className="-ml-1 inline-flex h-[30px] items-center gap-1.5 rounded pl-1 pr-2 transition-colors hover:bg-[#37352f]/[0.06]"
               >
                 <Tag tone={confirm.tone} dot>

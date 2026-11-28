@@ -173,7 +173,8 @@ export interface ContractDocument {
   currentRevisionId: string | null;
   createdAt: string;
   updatedAt: string;
-  template?: ContractDocumentTemplate | null;
+  /** 가리키는 데 필요한 칸만 온다. 서식 정의(metadata)는 documentTemplates · documentTemplate로 받는다. */
+  template?: Pick<ContractDocumentTemplate, 'id' | 'code' | 'title' | 'category'> | null;
   generatedBy?: { id: string; name: string } | null;
   currentRevision?: ContractDocumentRevision | null;
 }
@@ -248,7 +249,6 @@ export interface Contract {
   missingDocumentCount?: number;
   requiredDocuments?: string[];
   missingDocuments?: string[];
-  requiredDocumentTemplates?: ContractDocumentTemplate[];
   /**
    * 거래신고 상태 롤업 (레거시 TRAN_REPT_CLSF) — category=report 문서
    * (cancelled 제외)의 최상위 status. 신고 문서 없으면 'none'.
@@ -666,6 +666,9 @@ export function createContractsApi(request: RequestFn) {
       request<ContractDocumentTemplate[]>('/contracts/document-templates', {
         params: (filter ?? {}) as Record<string, string | number | boolean | undefined>,
       }),
+    /** 서식 하나의 정의 (목록에 없는 서식으로 만든 문서를 열 때) */
+    documentTemplate: (id: string) =>
+      request<ContractDocumentTemplate>(`/contracts/document-templates/${id}`),
     printTemplates: (filter?: OfficePrintTemplateFilter) =>
       request<OfficePrintTemplate[]>('/contracts/print-templates', {
         params: (filter ?? {}) as Record<string, string | number | boolean | undefined>,

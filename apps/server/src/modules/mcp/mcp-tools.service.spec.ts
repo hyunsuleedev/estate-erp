@@ -752,4 +752,18 @@ describe('McpToolsService', () => {
       expect(listings.update).not.toHaveBeenCalled();
     });
   });
+
+  it('does not turn an unanswered call into a confirmed listing', async () => {
+    const { service, listingIntakes } = createService();
+    (listingIntakes as any).confirm = jest.fn().mockResolvedValue({ id: 'intake-1' });
+    const INTAKE_ID = '00000000-0000-4000-8000-0000000000e2';
+
+    // 예전 도구 정의대로 result를 보내도 버리지 않고 서비스에 넘긴다 — 서비스가 유효함 말고는 거절한다
+    await service.executeTool('confirm_listing_intake', { id: INTAKE_ID, result: 'no_answer' }, ctx as never);
+    expect((listingIntakes as any).confirm.mock.calls[0][3].result).toBe('no_answer');
+
+    // 결과를 보내지 않으면 유효함으로 찍는 것이다
+    await service.executeTool('confirm_listing_intake', { id: INTAKE_ID }, ctx as never);
+    expect((listingIntakes as any).confirm.mock.calls[1][3].result).toBeUndefined();
+  });
 });

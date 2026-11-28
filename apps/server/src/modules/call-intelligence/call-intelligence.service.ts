@@ -24,10 +24,8 @@ import {
   DEFAULT_GEMINI_ANALYSIS_MODEL,
   generateAnalysisJson,
 } from './analysis/gemini-analyze';
-import {
-  DEFAULT_GEMINI_TRANSCRIBE_MODEL,
-  transcribeWithGemini,
-} from './stt/gemini-transcribe';
+import { DEFAULT_GEMINI_TRANSCRIBE_MODEL } from './stt/gemini-transcribe';
+import { transcribeGeminiRecording } from './stt/gemini-recording';
 import type { SttProvider, TranscriptUtterance } from './stt/stt.types';
 import { transcribeWithVito } from './stt/vito-transcribe';
 
@@ -155,7 +153,7 @@ export class CallIntelligenceService {
     }
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('GEMINI_API_KEY가 설정되지 않았습니다');
-    return transcribeWithGemini(audio, {
+    return transcribeGeminiRecording(audio, {
       apiKey,
       model: process.env.GEMINI_TRANSCRIBE_MODEL || DEFAULT_GEMINI_TRANSCRIBE_MODEL,
       wordTimestamps: process.env.GEMINI_STT_WORD_TIMESTAMPS === 'true',

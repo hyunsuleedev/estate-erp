@@ -12,7 +12,6 @@ const daysAgo = (days: number) => new Date(NOW - days * 86_400_000).toISOString(
 type Intake = Parameters<typeof getConfirmCellModel>[0];
 const intake = (patch: Partial<Intake>): Intake => ({
   lifecycleStatus: 'open',
-  lifecycleChangedAt: daysAgo(60),
   lastCheckedAt: null,
   lastVerifiedAt: null,
   lastCheckResult: null,
@@ -35,8 +34,8 @@ describe('property confirm cell', () => {
       NOW,
     );
     assert.deepEqual(
-      { tone: today.tone, date: today.date, relative: today.relative, attempt: today.attempt },
-      { tone: 'fresh', date: '11. 18.', relative: '오늘', attempt: false },
+      { tone: today.tone, date: today.date, relative: today.relative },
+      { tone: 'fresh', date: '11. 18.', relative: '오늘' },
     );
 
     const old = getConfirmCellModel(
@@ -49,17 +48,17 @@ describe('property confirm cell', () => {
     );
   });
 
-  it('keeps the verified date when a later attempt did not reach the owner', () => {
-    // 지금까지는 연락해 본 날을 보여 줘서 이 매물이 "11. 18. 오늘" 초록으로 보였다.
+  it('answers only "when was this last verified" — a later unanswered call is not shown', () => {
+    // 확인은 "살아 있음"을 찍는 것 하나다. 예전 기록에 부재중 · 답변대기가 남아 있어도 칸은 확인된 날만 말한다.
     const noAnswer = getConfirmCellModel(
       intake({ lastCheckedAt: daysAgo(0), lastVerifiedAt: daysAgo(8), lastCheckResult: 'no_answer' }),
       NOW,
     );
     assert.deepEqual(
-      { tone: noAnswer.tone, date: noAnswer.date, relative: noAnswer.relative, attempt: noAnswer.attempt },
-      { tone: 'aging', date: '11. 10.', relative: '부재중 · 오늘', attempt: true },
+      { tone: noAnswer.tone, date: noAnswer.date, relative: noAnswer.relative },
+      { tone: 'aging', date: '11. 10.', relative: '8일 전' },
     );
-    assert.match(noAnswer.title, /확인된 날 11\. 10\..*마지막 시도 11\. 18\. 부재중/);
+    assert.equal(noAnswer.title, '확인된 날 11. 10.');
 
     const pending = getConfirmCellModel(
       intake({ lastCheckedAt: daysAgo(3), lastVerifiedAt: daysAgo(41), lastCheckResult: 'pending' }),
@@ -67,18 +66,19 @@ describe('property confirm cell', () => {
     );
     assert.deepEqual(
       { tone: pending.tone, date: pending.date, relative: pending.relative },
-      { tone: 'stale', date: '10. 8.', relative: '답변대기 · 3일 전' },
+      { tone: 'stale', date: '10. 8.', relative: '41일 전' },
     );
   });
 
-  it('shows a dash for a listing that was never verified, with the last attempt if any', () => {
+  it('shows a dash for a listing that was never verified', () => {
+    // 걸어 봤지만 안 받은 매물도 확인된 적 없는 매물이다
     const tried = getConfirmCellModel(
       intake({ lastCheckedAt: daysAgo(0), lastCheckResult: 'no_answer' }),
       NOW,
     );
     assert.deepEqual(
-      { tone: tried.tone, date: tried.date, relative: tried.relative, attempt: tried.attempt },
-      { tone: 'none', date: '-', relative: '부재중 · 오늘', attempt: true },
+      { tone: tried.tone, date: tried.date, relative: tried.relative },
+      { tone: 'none', date: '-', relative: '' },
     );
 
     const untouched = getConfirmCellModel(intake({}), NOW);
@@ -87,18 +87,6 @@ describe('property confirm cell', () => {
       { tone: 'none', date: '-', relative: '', closed: false },
     );
     assert.equal(untouched.title, '확인된 적 없음');
-  });
-
-  it('does not report an attempt that is older than the verification', () => {
-    // 부재중 결과가 남아 있어도 그 뒤에 유효 확인이 있었으면 유효 확인이 마지막이다.
-    const model = getConfirmCellModel(
-      intake({ lastCheckedAt: daysAgo(5), lastVerifiedAt: daysAgo(2), lastCheckResult: 'no_answer' }),
-      NOW,
-    );
-    assert.deepEqual(
-      { relative: model.relative, attempt: model.attempt },
-      { relative: '2일 전', attempt: false },
-    );
   });
 
   it('reads an old record that has only a checked date as verified when the result was valid', () => {
@@ -116,16 +104,16 @@ describe('property confirm cell', () => {
     const model = getConfirmCellModel(
       intake({
         lifecycleStatus: 'closed',
-        lifecycleChangedAt: daysAgo(0),
         lastCheckedAt: daysAgo(41),
         lastVerifiedAt: daysAgo(41),
         lastCheckResult: 'alive',
       }),
       NOW,
     );
+    // 종료는 옆의 매물 상태가 보여 준다. 확인 칸은 마지막으로 확인된 날만 남긴다("의뢰 종료 · 오늘"을 적지 않는다)
     assert.deepEqual(
-      { tone: model.tone, date: model.date, relative: model.relative, attempt: model.attempt, closed: model.closed },
-      { tone: 'none', date: '10. 8.', relative: '의뢰 종료 · 오늘', attempt: true, closed: true },
+      { tone: model.tone, date: model.date, relative: model.relative, closed: model.closed },
+      { tone: 'none', date: '10. 8.', relative: '', closed: true },
     );
   });
 

@@ -167,8 +167,11 @@ describe('desktop data table', () => {
       source,
       anyQuote(/id: 'confirmationAt'[\s\S]*?label="확인"[\s\S]*?<IntakeConfirmationCell/),
     );
-    // 2026-11-18: 확인 칸의 단추는 '오늘로 갱신'이 아니라 결과를 고르는 메뉴(확인 기록)다
-    assert.match(source, /aria-label="확인 기록"/);
+    // 2026-11-28: 확인은 "오늘 살아 있음을 확인했다" 하나다. 고를 결과가 없어 단추를 누르면 바로 기록한다
+    // (부재중 · 의뢰 종료를 고르던 메뉴를 없앴다 — 종료는 매물 상태가, 메모는 줄 메뉴의 확인 기록 창이 한다)
+    assert.match(source, /aria-label="오늘 확인함으로 기록"/);
+    assert.match(source, /onClick=\{\(\) => onConfirm\(intake\.id\)\}/);
+    assert.doesNotMatch(source, /onConfirm\(intake\.id, "no_answer"\)|유효하지 않음…/);
     assert.doesNotMatch(source, anyQuote(/id: 'confirmAction'/));
     assert.doesNotMatch(source, anyQuote(/label="확인일"/));
     assert.doesNotMatch(source, anyQuote(/label="다음확인"/));
@@ -611,7 +614,9 @@ describe('desktop data table', () => {
       /label: "최근 확인"|label: "다음 확인"|label: "공동중개"/,
       'confirmation dates and joint brokerage already appear in 진행 상황 and the header chips',
     );
-    for (const value of ['확인 완료', '부재중', '미확인']) {
+    // 부재중은 확인 상태가 아니다(2026-11-28) — 확인됨 · 기한 지남 · 미확인 셋뿐이다
+    assert.doesNotMatch(pageSource, /value: "부재중"/);
+    for (const value of ['확인 완료', '미확인']) {
       assert.match(
         pageSource,
         new RegExp(`value: "${value}",\\s*detail: \\[[^\\]]*?nextConfirmText,?\\s*\\]`),
@@ -850,7 +855,7 @@ describe('desktop data table', () => {
 
     assert.match(
       pageSource,
-      anyQuote(/id: 'listingAvailability'[\s\S]*?size: 148,[\s\S]*?minSize: 96/),
+      anyQuote(/id: 'listingAvailability'[\s\S]*?size: 99,[\s\S]*?minSize: 96/),
     );
     assert.match(
       pageSource,
@@ -870,7 +875,12 @@ describe('desktop data table', () => {
       anyQuote(/data-active-deal-connector-end[\s\S]*?size-\[5px\]/),
     );
     assert.doesNotMatch(connectorSource, anyQuote(/new ResizeObserver/));
-    assert.doesNotMatch(connectorSource, anyQuote(/preserveAspectRatio="none"/));
+    // 곡선은 34px로 고정이고, 칸이 좁아 칩과 끝점 사이가 그보다 짧을 때만 그 사이에 맞춰 눌린다
+    // (그대로 두면 끝점을 지나 옆 칸의 거래유형 표시 위까지 나간다). 선 굵기는 눌리지 않고,
+    // 끝점은 svg 밖의 따로 둔 점이다. 칸 넓이만큼 곡선 전체를 늘이는 것은 여전히 하지 않는다.
+    assert.match(connectorSource, anyQuote(/w-\[min\(34px,calc\(100%\+6px\)\)\]/));
+    assert.match(connectorSource, anyQuote(/preserveAspectRatio="none"/));
+    assert.match(connectorSource, anyQuote(/vectorEffect="non-scaling-stroke"/));
     assert.doesNotMatch(
       connectorSource,
       anyQuote(/data-active-deal-connector[\s\S]*?left-\[64px\][\s\S]*?w-16/),
@@ -1022,8 +1032,10 @@ describe('desktop data table', () => {
       'utf8',
     );
 
-    assert.match(editorSource, /inputRef\.current\?\.focus\(\)/);
-    assert.doesNotMatch(editorSource, /inputRef\.current\?\.select\(\)/);
+    assert.match(editorSource, /const input = inputRef\.current;\s*input\?\.focus\(\);/);
+    // 글 칸은 전체를 고르지 않고 커서만 끝에 둔다 (맨 앞에 놓이면 덧붙일 때마다 옮겨야 한다)
+    assert.match(editorSource, /input\.setSelectionRange\(end, end\)/);
+    assert.doesNotMatch(editorSource, /\.select\(\)/);
   });
 
   it('uses a vertical ellipsis for the property row actions menu', () => {
@@ -1500,10 +1512,6 @@ describe('desktop data table', () => {
       propertiesSource.indexOf('const MANUAL_INTAKE_CLOSE_REASON_OPTIONS'),
       propertiesSource.indexOf('type ManualIntakeCloseReason'),
     );
-    const confirmReasonOptions = intakeActionsSource.slice(
-      intakeActionsSource.indexOf('const CONFIRM_CLOSED_REASON_OPTIONS'),
-      intakeActionsSource.indexOf('type ConfirmClosedReason'),
-    );
 
     assert.match(propertiesSource, /진행 중인 거래가 있습니다/);
     assert.match(propertiesSource, /거래 취소 후 종료/);
@@ -1511,9 +1519,12 @@ describe('desktop data table', () => {
     assert.match(propertiesSource, /다른 중개사·직거래로 계약됨/);
     assert.doesNotMatch(manualReasonOptions, /IntakeClosedReason\.UNAVAILABLE/);
     assert.doesNotMatch(manualReasonOptions, /IntakeClosedReason\.SUPERSEDED/);
-    assert.doesNotMatch(confirmReasonOptions, /IntakeClosedReason\.UNAVAILABLE/);
     assert.match(manualReasonOptions, /IntakeClosedReason\.OTHER/);
-    assert.match(confirmReasonOptions, /IntakeClosedReason\.OTHER/);
+    // 의뢰 종료는 매물 상태 한 곳에서만 한다. 확인 기록에는 종료도 종결 사유도 없다 —
+    // 확인은 "살아 있나"(유효함 · 부재중)만 찍는다 (사용자 결정 2026-11-27)
+    assert.doesNotMatch(intakeActionsSource, /CONFIRM_CLOSED_REASON_OPTIONS|종결 사유 \*/);
+    assert.doesNotMatch(intakeActionsSource, /value: 'unavailable'|value: 'price_changed'/);
+    assert.doesNotMatch(propertiesSource, /유효하지 않음…/);
     assert.match(
       propertiesSource,
       /closedReason:\s*resolvedClosedReason|closedReason,/,

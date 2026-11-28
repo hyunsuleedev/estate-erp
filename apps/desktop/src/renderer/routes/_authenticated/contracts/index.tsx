@@ -49,6 +49,7 @@ import {
   getContractPropertyLabel,
   hasContractFile,
   isUnconfirmedContactName,
+  missingDocumentTemplateIds,
   resolveDocumentTemplate,
   sortContractDocuments,
   stringifyOptionalNumber,
@@ -246,6 +247,13 @@ function ContractsPage() {
     queryKey: ['contract-document-templates', 'all'],
     queryFn: () => api.contracts.documentTemplates(),
   });
+
+  // 목록에 없는 서식(지금은 쓰지 않는 서식 등)으로 만든 문서의 서식 정의. 편집기를 열 때 받아 둔다.
+  const [extraDocumentTemplates, setExtraDocumentTemplates] = useState<ContractDocumentTemplate[]>([]);
+  const knownDocumentTemplates = useMemo(
+    () => [...allDocumentTemplates, ...extraDocumentTemplates],
+    [allDocumentTemplates, extraDocumentTemplates],
+  );
 
   const kindOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -522,7 +530,7 @@ function ContractsPage() {
           documents: nextDocuments,
           documentCount: nextDocuments.filter((document) => document.status !== 'cancelled').length,
         };
-        const template = resolveDocumentTemplate(savedDocument, allDocumentTemplates);
+        const template = resolveDocumentTemplate(savedDocument, knownDocumentTemplates);
         const nextForm = toDocumentEditorForm(nextContract, template, savedDocument);
 
         queryClient.setQueryData(['contract', selectedContractId], nextContract);
@@ -679,9 +687,33 @@ function ContractsPage() {
         documents.find((item) => item.status !== 'cancelled') ??
         documents[0];
 
+      // 문서에는 서식의 이름만 딸려 온다. 목록에 없는 서식은 정의를 따로 받아야 입력 칸이 그려진다.
+      const missing = await Promise.all(
+        missingDocumentTemplateIds(documents, templates).map((id) =>
+          queryClient
+            .fetchQuery({
+              queryKey: ['contract-document-template', id],
+              queryFn: () => api.contracts.documentTemplate(id),
+              staleTime: Infinity,
+            })
+            // 없는 서식(404)일 때만 문서 정보로 만든 빈 서식으로 연다(resolveDocumentTemplate).
+            // 그 밖의 실패(네트워크 · 서버 오류)는 던져서 편집기를 열지 않는다 — 입력 칸 없이
+            // 열리면 멀쩡한 문서처럼 보이고, 그대로 저장할 수 있다.
+            .catch((error: unknown) => {
+              if (error instanceof ApiError && error.statusCode === 404) return null;
+              throw error;
+            }),
+        ),
+      );
+      if (requestId !== editorOpenRequestRef.current) return;
+      const extraTemplates = missing.filter(
+        (item): item is ContractDocumentTemplate => item !== null,
+      );
+      setExtraDocumentTemplates(extraTemplates);
+
       let template: ContractDocumentTemplate;
       if (document) {
-        template = resolveDocumentTemplate(document, templates);
+        template = resolveDocumentTemplate(document, [...templates, ...extraTemplates]);
       } else {
         const applicableTemplates = await queryClient.fetchQuery({
           queryKey: ['contract-document-templates', contract.transactionType],
@@ -776,7 +808,7 @@ function ContractsPage() {
       if (!confirmed) return;
     }
 
-    const template = resolveDocumentTemplate(document, allDocumentTemplates);
+    const template = resolveDocumentTemplate(document, knownDocumentTemplates);
     const nextForm = toDocumentEditorForm(contractDetail, template, document);
     setDocumentFormError(null);
     setDocumentEditorForm(nextForm);

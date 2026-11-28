@@ -245,8 +245,7 @@ export class ListingIntakesController {
     @Param('id') id: string,
     @Body()
     dto: {
-      result: string;
-      closedReason?: string | null;
+      result?: string;
       channel?: string;
       memo?: string | null;
       checkedAt?: string | null;
@@ -259,9 +258,10 @@ export class ListingIntakesController {
     return this.listingIntakes.confirm(id, user.officeId, user.userId, dto);
   }
 
+  /** 의뢰를 통째로 지운다(대표·매니저). 종료는 PATCH의 lifecycleStatus=closed다. */
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
-    return this.listingIntakes.remove(id, user.officeId);
+    return this.listingIntakes.remove(id, user.officeId, user.role ?? null);
   }
 }
 

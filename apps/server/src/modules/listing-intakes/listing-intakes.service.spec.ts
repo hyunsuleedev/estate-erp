@@ -1138,97 +1138,36 @@ describe('ListingIntakesService', () => {
     );
   });
 
-  it("promotes lifecycleChangedBy on an 'unavailable' confirmation of an already-closed intake", async () => {
-    const { prisma, service, tx } = createService();
-    prisma.listingIntake.findFirst.mockResolvedValue({
-      id: 'intake-1',
-      officeId: 'office-1',
-      propertyId: 'property-1',
-      lifecycleStatus: 'closed',
-      lifecycleChangedBy: 'system:deal',
-      closedReason: 'deal_completed',
-      lastVerifiedAt: null,
-      property: { propertyContacts: [] },
-    });
-
-    await service.confirm('intake-1', 'office-1', 'user-1', {
-      result: 'unavailable',
-      channel: 'phone',
-    });
-
-    expect(tx.listingIntake.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          lifecycleStatus: 'closed',
-          lifecycleChangedBy: 'user',
-          closedReason: 'unavailable',
-          lastCheckResult: 'unavailable',
-        }),
-      }),
-    );
-  });
-
-  it('records an external contract separately from an internal Deal completion', async () => {
+  it('records one thing only: the listing was checked and is still available', async () => {
     const { prisma, service, tx } = createService();
     prisma.listingIntake.findFirst.mockResolvedValue({
       id: 'intake-1',
       officeId: 'office-1',
       propertyId: 'property-1',
       lifecycleStatus: 'open',
-      lifecycleChangedBy: 'user',
       closedReason: null,
       lastVerifiedAt: null,
-      property: { propertyContacts: [] },
+      property: { propertyContacts: [{ contactId: 'owner-1', isPrimary: true, role: 'owner' }] },
     });
 
-    await service.confirm('intake-1', 'office-1', 'user-1', {
-      result: 'unavailable',
-      closedReason: 'external_deal_completed',
-      channel: 'phone',
+    // 의뢰를 닫는 것 · 가격 변경 · 연락 안 됨은 확인이 아니다. 예전에는 "유효하지 않음"이 의뢰와 매칭까지 닫았다
+    for (const result of ['unavailable', 'price_changed', 'pending', 'no_answer', 'something']) {
+      await expect(
+        service.confirm('intake-1', 'office-1', 'user-1', { result, channel: 'phone' }),
+      ).rejects.toThrow('확인은 매물이 유효할 때만 기록합니다.');
+    }
+    expect(tx.listingIntake.update).not.toHaveBeenCalled();
+    expect(tx.consultation.create).not.toHaveBeenCalled();
+
+    // 결과를 보내지 않아도 된다. 확인 칸만 바뀌고 의뢰의 상태 · 종결 사유는 건드리지 않는다
+    await service.confirm('intake-1', 'office-1', 'user-1', { checkedAt: '2026-05-19T00:00:00.000Z' });
+    expect(tx.listingIntake.update.mock.calls[0][0].data).toEqual({
+      lastCheckedAt: new Date('2026-05-19T00:00:00.000Z'),
+      lastVerifiedAt: new Date('2026-05-19T00:00:00.000Z'),
+      lastCheckResult: 'alive',
+      nextConfirmAt: new Date('2026-05-26T00:00:00.000Z'),
     });
-
-    expect(tx.listingIntake.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          lifecycleStatus: 'closed',
-          lifecycleChangedBy: 'user',
-          closedReason: 'external_deal_completed',
-          lastCheckResult: 'unavailable',
-        }),
-      }),
-    );
-  });
-
-  it('records a generic close reason without describing the listing as unavailable', async () => {
-    const { prisma, service, tx } = createService();
-    prisma.listingIntake.findFirst.mockResolvedValue({
-      id: 'intake-1',
-      officeId: 'office-1',
-      propertyId: 'property-1',
-      lifecycleStatus: 'open',
-      lifecycleChangedBy: 'user',
-      closedReason: null,
-      lastVerifiedAt: null,
-      property: {
-        propertyContacts: [
-          { contactId: 'owner-1', isPrimary: true, role: 'owner' },
-        ],
-      },
-    });
-
-    await service.confirm('intake-1', 'office-1', 'user-1', {
-      result: 'unavailable',
-      closedReason: 'other',
-      channel: 'phone',
-    });
-
-    expect(tx.consultation.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          content: '[매물확인] 기타 사유로 의뢰 종료',
-        }),
-      }),
-    );
+    expect(tx.match.findMany).not.toHaveBeenCalled();
   });
 
   it('creates a new open intake even when the property has no contacts', async () => {
@@ -1348,10 +1287,6 @@ describe('ListingIntakesService', () => {
       expect.objectContaining({
         where: { id: 'intake-1' },
         data: expect.objectContaining({
-          lifecycleStatus: 'open',
-          lifecycleChangedAt: undefined,
-          lifecycleChangedBy: undefined,
-          closedReason: undefined,
           lastCheckedAt: new Date('2026-05-19T00:00:00.000Z'),
           lastVerifiedAt: new Date('2026-05-19T00:00:00.000Z'),
           lastCheckResult: 'alive',
@@ -1365,6 +1300,48 @@ describe('ListingIntakesService', () => {
         lastVerifiedAt: '2026-05-19T00:00:00.000Z',
       }),
     );
+  });
+
+  it('writes a consultation only when something was said or the check came from a call', async () => {
+    const owner = { contactId: 'owner-1', isPrimary: true, role: 'owner' };
+    const intake = (contacts: unknown[]) => ({
+      id: 'intake-1',
+      officeId: 'office-1',
+      propertyId: 'property-1',
+      lifecycleStatus: 'open',
+      closedReason: null,
+      lastVerifiedAt: null,
+      property: { propertyContacts: contacts },
+    });
+
+    // 적은 말이 없는 확인은 상담으로 쌓이지 않는다. 의뢰의 확인 칸만 바뀐다
+    const plain = createService();
+    plain.prisma.listingIntake.findFirst.mockResolvedValue(intake([owner]));
+    await plain.service.confirm('intake-1', 'office-1', 'user-1', { channel: 'phone' });
+    expect(plain.tx.consultation.create).not.toHaveBeenCalled();
+    expect(plain.tx.listingIntake.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ lastCheckResult: 'alive' }) }),
+    );
+
+    // 빈칸만 적은 메모도 적은 말이 아니다
+    const blank = createService();
+    blank.prisma.listingIntake.findFirst.mockResolvedValue(intake([owner]));
+    await blank.service.confirm('intake-1', 'office-1', 'user-1', { result: 'alive', memo: '   ' });
+    expect(blank.tx.consultation.create).not.toHaveBeenCalled();
+
+    // 통화 분석으로 확인한 것은 메모가 없어도 그 통화에 묶어 남긴다
+    const fromCall = createService();
+    fromCall.prisma.listingIntake.findFirst.mockResolvedValue(intake([owner]));
+    await fromCall.service.confirm('intake-1', 'office-1', 'user-1', {
+      result: 'alive',
+      channel: 'phone',
+      callRecordingId: 'recording-1',
+    });
+    expect(fromCall.tx.consultation.create.mock.calls[0][0].data).toMatchObject({
+      purpose: 'listing_confirm',
+      callRecordingId: 'recording-1',
+      content: '[매물확인] 살아있음',
+    });
   });
 
   it('rejects a stale intake confirmation when expectedUpdatedAt no longer matches', async () => {

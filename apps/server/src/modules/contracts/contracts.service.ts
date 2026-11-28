@@ -105,7 +105,9 @@ const PARTY_SIDE_RANK: Record<string, number> = {
 };
 
 const contractDocumentInclude = {
-  template: true,
+  // 서식은 가리키는 데 필요한 칸만 싣는다. 서식 정의(칸 구성, metadata)는 문서마다 붙이기에는 크다
+  // (문서 하나에 3천~9천 자). 정의는 /contracts/document-templates에서 따로 받는다.
+  template: { select: { id: true, code: true, title: true, category: true } },
   generatedBy: { select: { id: true, name: true } },
   currentRevision: true,
 } satisfies Prisma.ContractDocumentInclude;
@@ -1123,6 +1125,18 @@ export class ContractsService {
     });
 
     return this.dedupeTemplates(templates);
+  }
+
+  /**
+   * 서식 하나의 정의. 목록(getDocumentTemplates)에 없는 서식으로 만든 문서를 열 때 쓴다 —
+   * 지금은 쓰지 않는 서식이거나, 사무소 서식에 가려진 기본 서식.
+   */
+  async getDocumentTemplate(officeId: string, id: string) {
+    const template = await this.prisma.contractDocumentTemplate.findFirst({
+      where: { id, OR: [{ officeId: null }, { officeId }] },
+    });
+    if (!template) throw new NotFoundException('서식을 찾을 수 없습니다.');
+    return template;
   }
 
   async listPrintTemplates(officeId: string, filters: OfficePrintTemplateFilters = {}) {
@@ -2248,9 +2262,10 @@ export class ContractsService {
       buyerContact,
       documentCount: activeDocuments.length,
       missingDocumentCount: missingTemplates.length,
+      // 필수 서식은 제목만 싣는다. 서식 정의(칸 구성)는 계약마다 붙이기에는 크고(매매 한 건에 2만 자)
+      // 읽는 곳도 없었다 — /contracts/document-templates에 있다.
       requiredDocuments: requiredTemplates.map((template) => template.title),
       missingDocuments: missingTemplates.map((template) => template.title),
-      requiredDocumentTemplates: requiredTemplates,
       // 거래신고 상태 롤업 (레거시 TRAN_REPT_CLSF 대응) —
       // category=report 문서(cancelled 제외)의 최상위 status. 없으면 'none'.
       transactionReportStatus: this.rollupTransactionReportStatus(activeDocuments),

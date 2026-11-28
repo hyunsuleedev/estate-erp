@@ -7,29 +7,40 @@ import {
 describe('listing state query predicates', () => {
   const now = new Date('2026-07-24T12:00:00.000Z');
 
-  it('keeps unverified and no-answer confirmation filters disjoint', () => {
-    expect(buildIntakeConfirmationWhere('unverified', now)).toEqual({
-      lastVerifiedAt: null,
-      OR: [
-        { lastCheckResult: null },
-        { lastCheckResult: { not: 'no_answer' } },
-      ],
-    });
-    expect(buildIntakeConfirmationWhere('no_answer', now)).toEqual({
-      lastCheckResult: 'no_answer',
-    });
-  });
-
-  it('requires a prior verification for the overdue state', () => {
+  it('filters the three confirmation states by the verified date and the next check date only', () => {
+    // 부재중은 상태가 아니다: 연락이 안 된 매물은 확인된 적이 있느냐에 따라 미확인이거나 기한 지남 · 확인됨이다
+    expect(buildIntakeConfirmationWhere('unverified', now)).toEqual({ lastVerifiedAt: null });
     expect(buildIntakeConfirmationWhere('overdue', now)).toEqual({
       lifecycleStatus: { not: 'closed' },
       lastVerifiedAt: { not: null },
-      OR: [
-        { lastCheckResult: null },
-        { lastCheckResult: { not: 'no_answer' } },
-      ],
       nextConfirmAt: { lt: now },
     });
+    // 닫힌 의뢰는 기한이 지나도 "기한 지남"이 아니다 (getIntakeConfirmationState와 같다)
+    expect(buildIntakeConfirmationWhere('verified', now)).toEqual({
+      lastVerifiedAt: { not: null },
+      OR: [{ lifecycleStatus: 'closed' }, { nextConfirmAt: null }, { nextConfirmAt: { gte: now } }],
+    });
+  });
+
+  it('does not treat an unanswered call as a state of its own', () => {
+    // 예전 기록에 no_answer가 남아 있어도 확인된 날과 기한으로만 본다
+    expect(
+      getIntakeConfirmationState(
+        { lifecycleStatus: 'open', lastVerifiedAt: null, lastCheckResult: 'no_answer', nextConfirmAt: null },
+        now,
+      ),
+    ).toBe('unverified');
+    expect(
+      getIntakeConfirmationState(
+        {
+          lifecycleStatus: 'open',
+          lastVerifiedAt: new Date('2026-07-20T12:00:00.000Z'),
+          lastCheckResult: 'no_answer',
+          nextConfirmAt: new Date('2099-01-01T00:00:00.000Z'),
+        },
+        now,
+      ),
+    ).toBe('verified');
   });
 
   it('derives the same confirmation state used by match progression guards', () => {

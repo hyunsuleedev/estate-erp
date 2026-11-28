@@ -27,7 +27,6 @@ import {
   type PropertyPhoto,
 } from '@estate-erp/api-client';
 import {
-  IntakeCheckResult,
   IntakeConfirmationState,
   IntakeLifecycleStatus,
   ListingAvailability,
@@ -354,7 +353,7 @@ export function PropertyDetailScreen({
     mutationFn: (intake: ListingIntake) =>
       api.listingIntakes.confirm(intake.id, {
         result: 'alive',
-        // 빠른 확인(확인 완료)은 전화로 확인한 것으로 남긴다. 다른 방법은 '다른 결과…'에서 고른다
+        // 빠른 확인(확인 완료)은 전화로 확인한 것으로 남긴다. 다른 방법과 메모는 '메모와 함께…'에서 적는다
         channel: 'phone',
         expectedUpdatedAt: intake.updatedAt,
       }),
@@ -759,9 +758,7 @@ export function PropertyDetailScreen({
           }
         : confirmSummary.state === IntakeConfirmationState.OVERDUE
           ? { label: '재확인 필요', tone: 'red', sub: openIntake.nextConfirmAt ? formatDue(openIntake.nextConfirmAt) : null }
-          : confirmSummary.state === IntakeConfirmationState.NO_ANSWER
-            ? { label: '부재중', tone: 'orange', sub: `${formatAgo(openIntake.lastCheckedAt)} 연락` }
-            : { label: '미확인', tone: 'orange', sub: `접수 ${daysSince(openIntake.receivedAt) ?? 0}일째` }
+          : { label: '미확인', tone: 'orange', sub: `접수 ${daysSince(openIntake.receivedAt) ?? 0}일째` }
       : null;
 
   const headerMenu = (
@@ -802,7 +799,7 @@ export function PropertyDetailScreen({
             </DropdownMenuLabel>
             <DropdownMenuItem onSelect={() => openDialog({ kind: 'confirm' })}>
               <PhoneCall className="size-3.5" />
-              확인 결과 기록…
+              확인 기록…
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={lifecycleMutation.isPending}
@@ -1285,12 +1282,6 @@ export function PropertyDetailScreen({
             closeDialog();
             void invalidateAll();
             void queryClient.invalidateQueries({ queryKey: ['consultations'] });
-          }}
-          onSaved={(result) => {
-            // "가격 변경됨"으로 적었으면 바로 가격을 고치게 한다(예전에는 창이 닫히고 끝나 가격 수정을 따로 찾아야 했다)
-            if (result !== IntakeCheckResult.PRICE_CHANGED) return;
-            const target = offerRows[0]?.listing;
-            if (target) openDialog({ kind: 'listing', listing: target as unknown as Listing });
           }}
         />
       )}

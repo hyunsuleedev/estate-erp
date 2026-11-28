@@ -179,7 +179,7 @@ describe('desktop property detail page structure', () => {
       '소유자·관련인 추가',
       '세입자 추가',
       '거래 바로 만들기',
-      '확인 결과 기록',
+      '확인 기록',
       '가격·조건 수정',
       '거래 조건 삭제',
       '확인 완료',
@@ -292,7 +292,7 @@ describe('property detail model', () => {
 
   it('marks a move-in date the owner has not given as needing confirmation', () => {
     const [row] = buildOfferRows([makeListing({ moveInAvailableType: null })]);
-    assert.equal(row.moveIn, '확인 필요');
+    assert.equal(row.moveIn, '-');
     assert.equal(row.moveInPending, true);
   });
 

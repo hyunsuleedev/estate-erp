@@ -60,7 +60,10 @@ function setup(suggestion: Record<string, unknown>) {
     update: jest.fn().mockResolvedValue({ id: REQUIREMENT }),
   };
   const matches = { create: jest.fn().mockResolvedValue({ id: 'match-1' }), updateStage: jest.fn() };
-  const listingIntakes = { confirm: jest.fn().mockResolvedValue({}) };
+  const listingIntakes = {
+    confirm: jest.fn().mockResolvedValue({}),
+    close: jest.fn().mockResolvedValue({}),
+  };
   const listings = { update: jest.fn().mockResolvedValue({}) };
   const service = new CallSuggestionsService(
     prisma as never,
@@ -236,8 +239,9 @@ describe('CallSuggestionsService', () => {
         // 견준 뒤에 누가 고쳤으면 쓰기가 실패하도록 수정 시각을 조건으로 건다
         expectedUpdatedAt: LISTING_VERSION,
       });
+    // 가격이 바뀐 통화도 매물은 살아 있다: 가격은 거래 조건에 쓰고, 확인은 유효함으로 찍는다
     expect(listingIntakes.confirm).toHaveBeenCalledWith(INTAKE, 'office-1', 'owner-1', {
-      result: 'price_changed',
+      result: 'alive',
       channel: 'phone',
       memo: '집주인 인하 동의',
       contactId: 'contact-1',
@@ -352,6 +356,36 @@ describe('CallSuggestionsService', () => {
       status: 'accepted',
       appliedEntityId: 'suggestion-1',
     });
+  });
+
+  it('closes the intake instead of recording a check when the call said the listing is gone', async () => {
+    const payload = { intakeId: INTAKE, result: 'unavailable', priceChanges: [], memo: null };
+    const { service, listingIntakes } = setup({ type: 'listing_confirm', payload });
+
+    await service.accept('suggestion-1', 'office-1', 'owner-1');
+
+    // 확인은 유효함 · 부재중만 찍는다. 팔렸거나 거둬들인 매물은 의뢰 종료로 반영한다
+    expect(listingIntakes.close).toHaveBeenCalledWith(INTAKE, 'office-1', 'unavailable');
+    expect(listingIntakes.confirm).not.toHaveBeenCalled();
+
+    // 사람이 이미 닫은 의뢰면 다시 닫지 않고 끝낸다
+    const again = setup({ type: 'listing_confirm', payload, appliedPayload: payload });
+    const findClosed = jest.fn().mockResolvedValue({ id: INTAKE });
+    (again.prisma.listingIntake as any).findFirst = findClosed;
+    await again.service.accept('suggestion-1', 'office-1', 'owner-1');
+    expect(again.listingIntakes.close).not.toHaveBeenCalled();
+    // 닫혀 있기만 한 것이 아니라 사람이 닫은 것이어야 반영된 것으로 본다
+    expect(findClosed.mock.calls[0][0].where).toMatchObject({
+      lifecycleStatus: 'closed',
+      lifecycleChangedBy: 'user',
+    });
+
+    // 거래가 자동으로 닫은 의뢰(사람이 닫은 것으로는 못 찾는다)는 아직 반영되지 않은 것이다 — 종료를 실제로 태운다.
+    // 그러지 않으면 그 거래가 취소될 때 의뢰가 다시 열린다
+    const autoClosed = setup({ type: 'listing_confirm', payload, appliedPayload: payload });
+    (autoClosed.prisma.listingIntake as any).findFirst = jest.fn().mockResolvedValue(null);
+    await autoClosed.service.accept('suggestion-1', 'office-1', 'owner-1');
+    expect(autoClosed.listingIntakes.close).toHaveBeenCalledWith(INTAKE, 'office-1', 'unavailable');
   });
 
   it('refuses suggestions analyzed for a different caller after the call contact changed', async () => {

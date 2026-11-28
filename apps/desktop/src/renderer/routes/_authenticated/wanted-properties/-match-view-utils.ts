@@ -334,9 +334,6 @@ export function getMatchStageBlockReason(
     }
 
     const confirmationState = getIntakeConfirmationState(intake, now);
-    if (confirmationState === IntakeConfirmationState.NO_ANSWER) {
-      return '집주인·의뢰인 확인이 되지 않았습니다. 다시 확인한 뒤 진행해 주세요.';
-    }
     if (confirmationState === IntakeConfirmationState.OVERDUE) {
       return '매물 확인 기한이 지났습니다. 다시 확인한 뒤 고객에게 제안해 주세요.';
     }

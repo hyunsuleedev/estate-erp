@@ -524,7 +524,6 @@ export const IntakeConfirmationState = {
   UNVERIFIED: 'unverified',
   VERIFIED: 'verified',
   OVERDUE: 'overdue',
-  NO_ANSWER: 'no_answer',
 } as const;
 export type IntakeConfirmationState =
   (typeof IntakeConfirmationState)[keyof typeof IntakeConfirmationState];

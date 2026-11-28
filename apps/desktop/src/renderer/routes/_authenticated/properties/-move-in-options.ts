@@ -4,7 +4,7 @@ export const MOVE_IN_TYPES = [
   { value: 'date', label: '특정일 이후' },
   { value: 'range', label: '기간 협의' },
   { value: 'negotiable', label: '날짜 협의' },
-  { value: 'unknown', label: '확인 필요' },
+  { value: 'unknown', label: '미확인' },
 ] as const;
 
 export type MoveInType = (typeof MOVE_IN_TYPES)[number]['value'];

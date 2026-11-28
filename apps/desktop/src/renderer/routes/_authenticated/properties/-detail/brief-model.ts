@@ -216,8 +216,8 @@ export function buildBriefCards({
         key: 'move-in',
         label: '입주',
         value: row.moveIn,
-        warn: row.moveInPending && !guest,
-        muted: row.moveInPending && guest,
+        // 모르는 값은 강조하지 않는다. 물어봐야 한다는 것은 아래 할 일이 알려 준다
+        muted: row.moveInPending,
       });
     }
 
@@ -532,15 +532,6 @@ export function buildTodos({
         tone: 'danger',
         text: due != null && due < 0 ? `재확인 기한 ${-due}일 지남` : '재확인 필요',
         sub: `마지막 확인 ${formatAgo(intake.lastVerifiedAt)}`,
-        actionLabel: '확인 완료',
-        action: { kind: 'confirm' },
-      });
-    } else if (state === IntakeConfirmationState.NO_ANSWER) {
-      items.push({
-        key: 'confirm',
-        tone: 'warn',
-        text: '소유자가 전화를 받지 않았습니다',
-        sub: `${formatAgo(intake.lastCheckedAt)} 연락 · 다시 확인하세요`,
         actionLabel: '확인 완료',
         action: { kind: 'confirm' },
       });

@@ -51,6 +51,8 @@ export interface GeminiTranscribeOptions {
   apiKey: string;
   model?: string;
   wordTimestamps?: boolean;
+  /** 조각 사이 화자를 맞출 때는 개별 단어와 실제 시각이 필요하다. */
+  wordRows?: boolean;
   fetchFn?: FetchFn;
   sleep?: (ms: number) => Promise<void>;
   /** interactions 결과 대기 최대 시간 */
@@ -72,22 +74,19 @@ export async function transcribeWithGemini(
     await waitForFileActive(file, options.apiKey, fetchFn, sleep);
 
     const mode: Record<string, unknown> = { type: 'verbatim', diarization_mode: 'speaker' };
-    if (options.wordTimestamps) mode.timestamp_granularities = ['word'];
+    if (options.wordTimestamps || options.wordRows) mode.timestamp_granularities = ['word'];
 
-    let interaction = await readJsonResponse<GeminiInteraction>(
-      await fetchFn(`${GEMINI_BASE}/v1beta/interactions`, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: options.model ?? DEFAULT_GEMINI_TRANSCRIBE_MODEL,
-          input: [{ type: 'audio', uri: file.uri, mime_type: audio.mimeType }],
-          generation_config: {
-            transcription_config: { language_codes: ['ko-KR'], mode },
-          },
-        }),
+    let interaction = await requestInteraction(fetchFn, sleep, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: options.model ?? DEFAULT_GEMINI_TRANSCRIBE_MODEL,
+        input: [{ type: 'audio', uri: file.uri, mime_type: audio.mimeType }],
+        generation_config: {
+          transcription_config: { language_codes: ['ko-KR'], mode },
+        },
       }),
-      'Gemini 받아쓰기 요청',
-    );
+    });
 
     const deadline = Date.now() + (options.timeoutMs ?? 10 * 60_000);
     while (interaction.status && PENDING_STATUSES.has(interaction.status)) {
@@ -99,13 +98,51 @@ export async function transcribeWithGemini(
         'Gemini 받아쓰기 조회',
       );
     }
-    return utterancesFromInteraction(interaction);
+    return utterancesFromInteraction(interaction, options.wordRows);
   } finally {
     // 고객 음성이 남지 않게 바로 지운다 (Files API는 48시간 뒤 자동 삭제되지만 기다리지 않는다)
     await fetchFn(`${GEMINI_BASE}/v1beta/${file.name}`, { method: 'DELETE', headers }).catch(
       () => undefined,
     );
   }
+}
+
+/** 429는 생성 전에 거절된 요청이므로 같은 업로드를 다시 쓴다. 응답이 유실된 POST는 재전송하지 않는다. */
+async function requestInteraction(
+  fetchFn: FetchFn,
+  sleep: (ms: number) => Promise<void>,
+  request: RequestInit,
+) {
+  let waitedMs = 0;
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetchFn(`${GEMINI_BASE}/v1beta/interactions`, request);
+    if (response.status === 429 && attempt < 3) {
+      const delayMs = await rateLimitDelay(response, (attempt + 1) * 30_000);
+      if (waitedMs + delayMs <= 180_000) {
+        waitedMs += delayMs;
+        await sleep(delayMs);
+        continue;
+      }
+    }
+    return readJsonResponse<GeminiInteraction>(response, 'Gemini 받아쓰기 요청');
+  }
+}
+
+async function rateLimitDelay(response: Response, defaultMs: number): Promise<number> {
+  const retryAfter = response.headers.get('retry-after')?.trim();
+  if (retryAfter) {
+    const ms = /^\d+(?:\.\d+)?$/.test(retryAfter)
+      ? Number(retryAfter) * 1000
+      : Date.parse(retryAfter) - Date.now();
+    if (Number.isFinite(ms)) return Math.max(1000, Math.ceil(ms));
+  }
+  const body = await response.clone().json().catch(() => null);
+  const retryInfo = Array.isArray(body?.error?.details)
+    ? body.error.details.find((detail: { retryDelay?: unknown } | null) => typeof detail?.retryDelay === 'string')
+    : undefined;
+  const delay = retryInfo?.retryDelay?.match(/^(\d+(?:\.\d+)?)s$/)
+    ?? String(body?.error?.message ?? '').match(/retry in\s+(\d+(?:\.\d+)?)s/i);
+  return delay ? Math.max(1000, Math.ceil(Number(delay[1]) * 1000)) : defaultMs;
 }
 
 function interactionPath(id: string) {
@@ -185,7 +222,7 @@ function offsetToMs(value: unknown): number | null {
   return null;
 }
 
-function joinWords(words: string[]) {
+export function joinWords(words: string[]) {
   return words
     .join(' ')
     .replace(/\s+([.,?!])/g, '$1')
@@ -197,7 +234,10 @@ function joinWords(words: string[]) {
  * interactions 응답 → 발화 목록.
  * 단어별 화자 정보(word_info)를 같은 화자끼리 이어 붙인다. 화자 정보가 없으면 전체를 한 발화로 둔다.
  */
-export function utterancesFromInteraction(interaction: GeminiInteraction): TranscriptUtterance[] {
+export function utterancesFromInteraction(
+  interaction: GeminiInteraction,
+  wordRows = false,
+): TranscriptUtterance[] {
   if (interaction.error?.message) {
     throw new Error(`Gemini 받아쓰기 오류: ${interaction.error.message}`);
   }
@@ -224,6 +264,7 @@ export function utterancesFromInteraction(interaction: GeminiInteraction): Trans
     );
     if (words.length === 0) {
       const text = content.text?.trim();
+      if (text && wordRows) throw new Error('Gemini가 구간별 화자와 단어 시각을 반환하지 않았습니다');
       if (text) utterances.push({ speaker: indexOf(undefined), text, startMs: 0, endMs: 0 });
       continue;
     }
@@ -246,6 +287,16 @@ export function utterancesFromInteraction(interaction: GeminiInteraction): Trans
       const speaker = indexOf(word.speaker);
       const startMs = offsetToMs(word.start_offset);
       const endMs = offsetToMs(word.end_offset);
+      if (wordRows) {
+        if (
+          word.speaker == null || String(word.speaker).trim() === '' ||
+          startMs === null || endMs === null || startMs < 0 || endMs < startMs
+        ) {
+          throw new Error('Gemini가 구간별 화자와 단어 시각을 반환하지 않았습니다');
+        }
+        utterances.push({ speaker, text: word.text!.trim(), startMs, endMs });
+        continue;
+      }
       if (!current || current.speaker !== speaker) {
         flush();
         const previousEnd = utterances.at(-1)?.endMs ?? 0;

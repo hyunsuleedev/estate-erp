@@ -428,8 +428,10 @@ export function findPrimaryContractDocument(
 }
 
 /**
- * 문서의 템플릿 해석 — 템플릿 목록 → 문서 동봉 template → 문서 자체 정보 합성 순.
- * (거래유형 필터로 목록에 없는 템플릿으로 만든 문서도 편집 가능해야 함)
+ * 문서의 템플릿 해석 — 템플릿 목록 → 문서 자체 정보 합성 순.
+ * 문서에는 서식의 이름·종류만 딸려 온다(서식 정의는 크다). 목록에 없는 서식(지금은 쓰지 않는 서식,
+ * 사무소 서식에 가려진 기본 서식)으로 만든 문서는 열기 전에 missingDocumentTemplateIds로 찾아
+ * 그 정의를 받아 목록에 더해 둔다 — 그러지 않으면 입력 칸 없이 열린다.
  * 합성 code 는 kind 가 없으면 '' — category('attachment' 등)를 kind 로 위장하면
  * 저장 시 서버 kind 검증(400)에 걸린다.
  */
@@ -438,13 +440,12 @@ export function resolveDocumentTemplate(
   templates: ContractDocumentTemplate[],
 ): ContractDocumentTemplate {
   return (
-    templates.find((template) => template.id === document.templateId) ??
-    document.template ?? {
+    templates.find((template) => template.id === document.templateId) ?? {
       id: document.templateId ?? '',
       officeId: null,
-      code: document.kind ?? '',
-      title: document.title,
-      category: document.category,
+      code: document.template?.code ?? document.kind ?? '',
+      title: document.template?.title ?? document.title,
+      category: document.template?.category ?? document.category,
       transactionTypes: [],
       isRequired: false,
       isActive: true,
@@ -454,6 +455,21 @@ export function resolveDocumentTemplate(
       updatedAt: document.updatedAt,
     }
   );
+}
+
+/** 문서들이 가리키는 서식 가운데 목록에 없는 것의 id */
+export function missingDocumentTemplateIds(
+  documents: ContractDocument[],
+  templates: ContractDocumentTemplate[],
+): string[] {
+  const known = new Set(templates.map((template) => template.id));
+  return [
+    ...new Set(
+      documents
+        .map((document) => document.templateId)
+        .filter((id): id is string => Boolean(id) && !known.has(id as string)),
+    ),
+  ];
 }
 
 // ---------------------------------------------------------------------------
