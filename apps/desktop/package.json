@@ -1,7 +1,7 @@
 {
   "name": "@estate-erp/desktop",
   "productName": "EstaitFlow",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "에스테잇플로우(Estait Flow) Electron desktop application",
   "main": "out/main/index.js",
   "private": true,
