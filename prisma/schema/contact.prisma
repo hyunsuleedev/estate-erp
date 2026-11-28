@@ -22,7 +22,6 @@ model Contact {
   organizationParty       Party?                 @relation("PartyOrganizationContact")
   partyMemberships        PartyMember[]          @relation("PartyMemberContact")
   propertyContacts        PropertyContact[]
-  requestedListingIntakes ListingIntake[]        @relation("ListingIntakeRequester")
   buyerIntakeContacts     BuyerIntakeContact[]
   consultations           Consultation[]
   leaseTenancies          PropertyLeaseTenant[]

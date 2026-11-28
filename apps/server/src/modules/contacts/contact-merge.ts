@@ -110,7 +110,6 @@ export async function planContactMerge(
           select: {
             consultations: true,
             propertyContacts: true,
-            requestedListingIntakes: true,
             buyerIntakeContacts: true,
             leaseTenancies: true,
             dealsAsBuyer: true,
@@ -286,7 +285,6 @@ export async function planContactMerge(
     ? pick([
         { key: 'consultations', label: '상담 기록', count: count.consultations },
         { key: 'propertyContacts', label: '연결 매물', count: count.propertyContacts - overlapProperties },
-        { key: 'requestedListingIntakes', label: '매물 의뢰 창구', count: count.requestedListingIntakes },
         { key: 'buyerIntakes', label: '희망 조건', count: count.buyerIntakeContacts - overlapIntakes },
         { key: 'tenants', label: '세입자 기록', count: count.leaseTenancies - overlapLeases },
         { key: 'deals', label: '거래', count: count.dealsAsBuyer + count.dealsAsSeller },
@@ -357,16 +355,6 @@ export async function executeContactMerge(
 
   // 1) 칸 하나만 바꾸면 되는 기록
   add(moved, 'consultations', (await tx.consultation.updateMany({ where: fromSource, data: toTarget })).count);
-  add(
-    moved,
-    'requestedListingIntakes',
-    (
-      await tx.listingIntake.updateMany({
-        where: { officeId, requesterContactId: sourceId },
-        data: { requesterContactId: targetId },
-      })
-    ).count,
-  );
   add(moved, 'tasks', (await tx.task.updateMany({ where: fromSource, data: toTarget })).count);
   add(moved, 'calendarEvents', (await tx.calendarEvent.updateMany({ where: fromSource, data: toTarget })).count);
   add(moved, 'calls', (await tx.callLog.updateMany({ where: fromSource, data: toTarget })).count);

@@ -744,8 +744,6 @@
     "이미 이 임대차에 등록된 임차인입니다.": "This contact is already registered on this lease.",
     "임대차 구성원을 찾을 수 없습니다.": "Lease tenant record not found.",
     "올바른 임차인 역할이 아닙니다.": "Invalid tenant role.",
-    "올바른 매물 의뢰 요청인 역할이 아닙니다.": "Invalid listing intake requester role.",
-    "매물 의뢰 요청 연락처를 찾을 수 없습니다.": "Listing intake requester contact not found.",
     "이미 구매 의뢰에 연결된 연락처입니다.": "This contact is already linked to this buyer intake.",
     "이 구매 의뢰에 연결된 연락처가 아닙니다.": "This contact is not linked to this buyer intake.",
     "파트너 사무소 담당자를 찾을 수 없습니다.": "Partner broker contact not found.",

@@ -177,6 +177,19 @@ describe('desktop data table', () => {
     assert.doesNotMatch(source, anyQuote(/label="다음확인"/));
   });
 
+  it('shows when a row last changed, without offering a sort the server cannot honour', () => {
+    const pageSource = readFileSync(
+      resolve(testDir, '../src/renderer/routes/_authenticated/properties/index.tsx'),
+      'utf8',
+    );
+    // 수정일 = 의뢰와 거래 조건 가운데 가장 최근에 바뀐 때. 서버는 의뢰의 수정 시각으로만 줄을 세울 수 있어
+    // 보이는 값과 어긋나므로 이 칸으로는 정렬하지 않는다.
+    assert.match(
+      pageSource,
+      /id: "updatedAt",[\s\S]{0,260}label="수정"[\s\S]{0,120}enableSorting: false,[\s\S]{0,260}getRowUpdatedAt\(\s*row\.original\.representative\.updatedAt,\s*row\.original\.listings,/,
+    );
+  });
+
   it('makes property data headers keyboard-sortable with announced direction', () => {
     const pageSource = readFileSync(
       resolve(

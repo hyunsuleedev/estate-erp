@@ -77,7 +77,7 @@
 ## 매물과 의뢰
 
 - **Property**: 우리 사무소가 관리하는 호실 하나. 의뢰가 끝나도 남는다.
-- **ListingIntake**: 한 번 들어온 의뢰. 한 Property에 닫히지 않은 의뢰는 하나뿐이다. 소유자 대신 대리인이나 세입자가 의뢰한 경우 `requesterContactId`·`requesterRole`에 요청인을 남긴다.
+- **ListingIntake**: 한 번 들어온 의뢰. 한 Property에 닫히지 않은 의뢰는 하나뿐이다. 누가 내놓았는지는 따로 적지 않는다 — 연락할 사람은 호실에 연결된 소유자·대리인(PropertyContact)이다(의뢰인 칸은 쓰는 곳이 없어 2026-11-28에 뺐다).
 - **Listing**: 의뢰 안의 거래 조건 하나(매매·전세·월세). 가격은 여기에 있다.
 - 저장하는 상태는 의뢰의 생명주기(`open | hold | closed`)뿐이다. 확인 상태는 확인 이력에서, 거래 중·완료는 Deal에서 계산한다. 상세는 `.claude/rules/pipelines.md`.
 - 가격이 바뀌면 `PriceHistory`에 남는다.

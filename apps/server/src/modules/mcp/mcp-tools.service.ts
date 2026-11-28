@@ -16,6 +16,7 @@ import {
 } from '@estate-erp/shared';
 import { formatToolError, normalizeDateArgs, validateToolArgs } from './mcp-tool-args';
 import { compactMcpResult } from './mcp-response-compact';
+import { rejectMisnamedListingArgs, toMcpVocabulary } from './mcp-vocabulary';
 import { toLightList, toListingRow, toPropertyRow } from './mcp-list-rows';
 import { MOVE_IN_AVAILABLE_TYPE_VALUES } from '../listings/listing-input';
 import { ListingsService } from '../listings/listings.service';
@@ -95,6 +96,12 @@ interface ToolEntry {
  * 시각 칸(…At)에 날짜만 와도 받는 도구. 이 도구들의 서비스는 받은 문자열을 그대로 DB에 넘겨, 날짜만 주면 실패했다.
  * 날짜만 받는 칸이 있는 도구(계약서 초안의 체결일 등)는 넣지 않는다 — 그쪽은 날짜 문자열 그대로 써야 한다.
  */
+/**
+ * 매물 · 거래 조건의 낱말을 옮기는 도구. 광고노트(external_listing) 도구는 뺀다 — 거기서 listingId는
+ * 우리 매물이 아니라 외부 광고 한 줄의 id다.
+ */
+const USES_LISTING_VOCABULARY = (toolName: string) => !toolName.includes('external_listing');
+
 /** 읽기만 하는 도구 — 응답을 줄여 보내도 되는 것 */
 const READ_TOOL_NAME = /^(find|get|search|list)_/;
 
@@ -113,8 +120,8 @@ const EMPLOYEE_INCLUDE_FIELDS: Record<EmployeeSection, string> = {
 };
 
 const DATE_ONLY_AS_TIME_TOOLS: ReadonlySet<string> = new Set([
-  'create_listing_intake',
-  'update_listing_intake',
+  'create_listing',
+  'update_listing',
   'create_listing_advertisement',
   'update_listing_advertisement',
 ]);
@@ -213,7 +220,7 @@ const listingInput = obj(
 const listingInputs = {
   type: 'array' as const,
   items: listingInput,
-  description: '의뢰건에 포함할 listing rows',
+  description: '이 매물의 거래 조건들 (매매 · 전세 · 월세마다 하나)',
 };
 
 @Injectable()
@@ -292,11 +299,22 @@ export class McpToolsService {
         isError: true,
       };
     }
+    // 매물 · 거래 조건의 id를 이 도구가 받지 않는 이름으로 보냈으면 버리지 않고 거절한다(mcp-vocabulary.ts).
+    const misnamed = USES_LISTING_VOCABULARY(toolName)
+      ? rejectMisnamedListingArgs(entry.def.inputSchema, args ?? {})
+      : null;
+    if (misnamed) {
+      return {
+        content: [{ type: 'text', text: `Error: 인자가 올바르지 않습니다 — ${misnamed}` }],
+        isError: true,
+      };
+    }
     try {
-      const data = await entry.handler(
+      const raw = await entry.handler(
         DATE_ONLY_AS_TIME_TOOLS.has(toolName) ? normalizeDateArgs(args ?? {}) : (args ?? {}),
         ctx,
       );
+      const data = USES_LISTING_VOCABULARY(toolName) ? toMcpVocabulary(raw) : raw;
       return {
         content: [
           {
@@ -304,6 +322,7 @@ export class McpToolsService {
             // 들여쓰기 없이 보낸다. 읽는 쪽은 AI라 줄바꿈이 필요 없고, 응답이 절반 가까이 줄어든다.
             // 조회 응답은 딸린 객체를 줄여 보낸다(mcp-response-compact.ts). 만들기·고치기·초안은
             // 빈 칸이 "아직 안 정함"을 뜻하기도 해서 그대로 둔다.
+            // 그 전에 칸 이름을 MCP의 낱말로 옮긴다(매물 = listing, 거래 조건 = term).
             text: JSON.stringify(READ_TOOL_NAME.test(toolName) ? compactMcpResult(data) : data),
           },
         ],
@@ -662,29 +681,37 @@ export class McpToolsService {
 
   private registerAll() {
     // ═══════════════════════════════════════════════════════════
-    // 매물 의뢰 (ListingIntakes) - table CRUD for MCP testing
+    // 매물 — 매물관리 화면의 한 줄 (DB의 ListingIntake). 낱말의 기준은 mcp-vocabulary.ts
     // ═══════════════════════════════════════════════════════════
     this.add(
-      'find_listing_intakes',
-      '매물 의뢰(ListingIntake) 목록을 검색합니다.',
+      'find_listings',
+      '매물 목록을 찾습니다. "매물 알려 줘"에는 이 도구를 씁니다. 매물은 매물관리 화면의 한 줄입니다: 집주인이 한 집을 한 번 맡긴 것이고, 그 안에 거래 조건(terms: 매매 · 전세 · 월세)이 하나 이상 들어 있습니다. 한 줄에는 어느 집(place) · 매물 상태 · 확인된 날 · 거주 상태 · 메모와, 조건마다(terms[]) 가격 · 입주 가능 시기 · 잡고 있는 거래 · 진행 중인 광고 요약을 싣습니다. 가격 이력 · 광고 전체는 get_listing으로, 소유자 이름 · 전화는 그 줄의 propertyId로 find_property_contacts를 불러 봅니다. 종료한 매물은 includeClosed를 줘야 나옵니다. 호실(집) 자체를 찾을 때는 find_properties를 씁니다.',
       obj({
         lifecycleStatus: strEnum(
-          '의뢰 생명주기',
+          '매물 상태: open=진행 중, hold=보류, closed=종료',
           Object.values(IntakeLifecycleStatus),
         ),
         confirmationState: strEnum(
-          '파생 확인 상태',
+          '확인 상태: unverified=확인한 적 없음, verified=확인됨, overdue=다시 확인할 때가 지남',
           Object.values(IntakeConfirmationState),
         ),
         nextConfirmFrom: str('다음 확인 예정 시작일 (ISO)'),
         nextConfirmTo: str('다음 확인 예정 종료일 (ISO)'),
-        includeClosed: bool('종결 의뢰 포함'),
+        availability: strEnum(
+          '거래할 수 있는 상태(거래 · 보류 · 종료에서 계산)',
+          Object.values(ListingAvailability),
+        ),
+        occupancyStatus: strEnum(
+          '거주 상태: owner_occupied=주인 거주, tenant=세입자 거주, vacant=공실, unknown=적지 않음',
+          [...OCCUPANCY_STATUSES, 'unknown'],
+        ),
+        includeClosed: bool('종료한 매물 포함'),
         propertyId: str('관리매물 ID'),
         transactionType: strEnum('거래유형', LISTING_TRANSACTION_TYPES),
         siteId: str('단지 ID'),
         siteType: str('매물유형'),
         wardCode: str('법정동코드'),
-        search: str('검색어'),
+        search: str('검색어 (단지 이름, 주소)'),
         priceMin: num('최소 가격 (만원)'),
         priceMax: num('최대 가격 (만원)'),
         depositMin: num('최소 보증금 (만원)'),
@@ -697,49 +724,55 @@ export class McpToolsService {
         sortOrder: strEnum('정렬 방향', ['asc', 'desc']),
         ...page,
       }),
+      // 서비스의 목록은 아직 화면용 무거운 줄이다. 가벼운 줄로 골라 싣는다(mcp-list-rows.ts).
       async (a, c) =>
-        this.listingIntakes.findAll(c.officeId, {
-          lifecycleStatus: a.lifecycleStatus as string,
-          confirmationState: a.confirmationState as string,
-          nextConfirmFrom: a.nextConfirmFrom as string,
-          nextConfirmTo: a.nextConfirmTo as string,
-          includeClosed: a.includeClosed as boolean,
-          propertyId: a.propertyId as string,
-          transactionType: a.transactionType as string,
-          siteId: a.siteId as string,
-          siteType: a.siteType as string,
-          wardCode: a.wardCode as string,
-          search: a.search as string,
-          priceMin: a.priceMin as number,
-          priceMax: a.priceMax as number,
-          depositMin: a.depositMin as number,
-          depositMax: a.depositMax as number,
-          monthlyRentMin: a.monthlyRentMin as number,
-          monthlyRentMax: a.monthlyRentMax as number,
-          areaMin: a.areaMin as number,
-          areaMax: a.areaMax as number,
-          sortBy: a.sortBy as 'receivedAt' | 'updatedAt' | 'createdAt',
-          sortOrder: a.sortOrder as 'asc' | 'desc',
-          page: (a.page as number) ?? 1,
-          limit: this.clampLimit(a),
-        }),
+        toLightList(
+          await this.listingIntakes.findAll(c.officeId, {
+            lifecycleStatus: a.lifecycleStatus as string,
+            confirmationState: a.confirmationState as string,
+            nextConfirmFrom: a.nextConfirmFrom as string,
+            nextConfirmTo: a.nextConfirmTo as string,
+            availability: a.availability as string,
+            occupancies: a.occupancyStatus ? [a.occupancyStatus as string] : undefined,
+            includeClosed: a.includeClosed as boolean,
+            propertyId: a.propertyId as string,
+            transactionType: a.transactionType as string,
+            siteId: a.siteId as string,
+            siteType: a.siteType as string,
+            wardCode: a.wardCode as string,
+            search: a.search as string,
+            priceMin: a.priceMin as number,
+            priceMax: a.priceMax as number,
+            depositMin: a.depositMin as number,
+            depositMax: a.depositMax as number,
+            monthlyRentMin: a.monthlyRentMin as number,
+            monthlyRentMax: a.monthlyRentMax as number,
+            areaMin: a.areaMin as number,
+            areaMax: a.areaMax as number,
+            sortBy: a.sortBy as 'receivedAt' | 'updatedAt' | 'createdAt',
+            sortOrder: a.sortOrder as 'asc' | 'desc',
+            page: (a.page as number) ?? 1,
+            limit: this.clampLimit(a),
+          }),
+          toListingRow,
+        ),
     );
 
     this.add(
-      'get_listing_intake',
-      '특정 매물 의뢰(ListingIntake)를 조회합니다.',
-      obj({ id: str('의뢰 ID') }, ['id']),
+      'get_listing',
+      '매물 하나의 상세: 어느 집인지, 거래 조건(terms)마다 가격 이력 · 광고 · 걸린 거래. 소유자는 propertyId로 find_property_contacts를 불러 봅니다. 매물은 매물관리 화면의 한 줄입니다: 집주인이 한 집을 한 번 맡긴 것이고, 그 안에 거래 조건(terms: 매매 · 전세 · 월세)이 하나 이상 들어 있습니다.',
+      obj({ id: str('매물 ID (find_listings의 id)') }, ['id']),
       async (a, c) => this.listingIntakes.findOne(a.id as string, c.officeId),
     );
 
     this.add(
-      'create_listing_intake',
-      '새 매물 의뢰(ListingIntake)를 등록합니다. 거래 조건(listings)은 함께 줘도 되고 나중에 create_listing으로 더해도 됩니다.',
+      'create_listing',
+      '새 매물을 등록합니다. 매물은 매물관리 화면의 한 줄입니다: 집주인이 한 집을 한 번 맡긴 것이고, 그 안에 거래 조건(terms: 매매 · 전세 · 월세)이 하나 이상 들어 있습니다. 거래 조건(terms)은 함께 줘도 되고 나중에 add_listing_term으로 더해도 됩니다. 어느 집인지는 propertyId로 알립니다(find_or_create_property).',
       obj(
         {
           propertyId: str('관리매물 ID'),
           lifecycleStatus: strEnum(
-            '의뢰 생명주기',
+            '매물 상태 (기본 open)',
             Object.values(IntakeLifecycleStatus),
           ),
           closedReason: strEnum('종결 사유', Object.values(IntakeClosedReason)),
@@ -757,8 +790,8 @@ export class McpToolsService {
             '거주 상태: owner_occupied(주인 거주) · tenant(세입자 거주) · vacant(공실). 모르면 보내지 않습니다',
             [...OCCUPANCY_STATUSES],
           ),
-          memo: str('의뢰 메모'),
-          listings: listingInputs,
+          memo: str('매물 메모'),
+          terms: listingInputs,
         },
         ['propertyId'],
       ),
@@ -776,18 +809,18 @@ export class McpToolsService {
           jointBrokeragePartnerId: a.jointBrokeragePartnerId as string | null,
           occupancyStatus: a.occupancyStatus as string | undefined,
           memo: a.memo as string | null,
-          listings: a.listings as never,
+          listings: a.terms as never,
         }),
     );
 
     this.add(
-      'update_listing_intake',
-      '매물 의뢰(ListingIntake)를 고칩니다. 의뢰를 끝낼 때도 이것을 씁니다: lifecycleStatus=closed와 closedReason(withdrawn=의뢰 철회, external_deal_completed=다른 중개사 · 직거래로 계약됨, unavailable=매물 없어짐, other)을 보내면 의뢰가 종료되고 진행 중인 매칭도 함께 닫히므로 사용자에게 확인한 뒤에 하세요. 보류는 hold, 다시 열기는 open.',
+      'update_listing',
+      '매물을 고칩니다: 상태 · 거주 상태 · 메모 · 공동중개 · 접수일. 가격처럼 거래 조건에 딸린 값은 update_listing_term으로 고칩니다. 매물을 끝낼 때는 lifecycleStatus=closed와 closedReason(withdrawn=의뢰 철회, external_deal_completed=다른 중개사 · 직거래로 계약됨, unavailable=매물 없어짐, other)을 보냅니다 — 진행 중인 매칭도 함께 닫히므로 사용자에게 확인한 뒤에 하세요. 보류는 hold, 다시 열기는 open.',
       obj(
         {
-          id: str('의뢰 ID'),
+          id: str('매물 ID'),
           lifecycleStatus: strEnum(
-            '의뢰 생명주기',
+            '매물 상태: open=진행 중, hold=보류, closed=종료',
             Object.values(IntakeLifecycleStatus),
           ),
           closedReason: strEnum('종결 사유', Object.values(IntakeClosedReason)),
@@ -805,7 +838,7 @@ export class McpToolsService {
             '거주 상태: owner_occupied(주인 거주) · tenant(세입자 거주) · vacant(공실). 모르면 보내지 않습니다',
             [...OCCUPANCY_STATUSES],
           ),
-          memo: str('의뢰 메모'),
+          memo: str('매물 메모'),
         },
         ['id'],
       ),
@@ -826,11 +859,11 @@ export class McpToolsService {
     );
 
     this.add(
-      'confirm_listing_intake',
-      '매물이 아직 살아 있다고 집주인 · 의뢰인에게 확인했을 때 찍습니다. 의뢰의 확인된 날과 다음 확인 날(7일 뒤)만 갱신합니다. 확인은 이것 하나뿐입니다 — 연락이 안 됐으면 찍지 않습니다. 팔렸거나 거둬들인 매물은 close_listing_intake로 종료하고, 가격이 바뀌었으면 update_listing으로 고친 뒤 찍으세요. 상담 기록은 memo에 집주인과 나눈 이야기를 적었을 때만 함께 남습니다.',
+      'confirm_listing',
+      '매물이 아직 살아 있다고 집주인에게 확인했을 때 찍습니다. 확인된 날과 다음 확인 날(7일 뒤)만 갱신합니다. 확인은 이것 하나뿐입니다 — 연락이 안 됐으면 찍지 않습니다. 팔렸거나 거둬들인 매물은 close_listing으로 종료하고, 가격이 바뀌었으면 update_listing_term으로 고친 뒤 찍으세요. 상담 기록은 memo에 집주인과 나눈 이야기를 적었을 때만 함께 남습니다.',
       obj(
         {
-          id: str('의뢰 ID'),
+          id: str('매물 ID'),
           channel: strEnum('확인 방법', ['phone', 'sms', 'visit', 'owner_message', 'note', 'mcp']),
           memo: str('집주인과 나눈 이야기 (적으면 상담 기록도 남습니다)'),
           checkedAt: str('확인 시각 (ISO)'),
@@ -852,14 +885,14 @@ export class McpToolsService {
         }),
     );
 
-    // 의뢰를 끝내는 길은 둘이다: 종료(기록을 남김)와 삭제(없앰). 이름이 하는 일과 같아야 한다 —
-    // 예전에는 delete_listing_intake가 종료만 해서, 지워 달라는 요청에 의뢰가 종료 상태로 남았다.
+    // 매물을 끝내는 길은 둘이다: 종료(기록을 남김)와 삭제(없앰). 이름이 하는 일과 같아야 한다 —
+    // 예전에는 삭제 도구가 종료만 해서, 지워 달라는 요청에 매물이 종료 상태로 남았다.
     this.add(
-      'close_listing_intake',
-      '매물 의뢰(ListingIntake)를 종료(closed)로 바꿉니다. 평소의 정리는 이것입니다: 거래가 끝났거나, 집주인이 거둬 갔거나, 더는 유효하지 않을 때. 의뢰와 그 거래 조건은 지워지지 않고 종료 상태로 남아 이력으로 볼 수 있습니다(includeClosed). 의뢰는 집주인이 한 번 맡긴 것이고 그 안에 거래 조건(Listing: 매매 · 전세 · 월세)이 하나 이상 들어 있어, 종료하면 그 조건이 모두 함께 내려갑니다. 잘못 넣은 것을 아예 없애려면 delete_listing_intake를 쓰세요.',
+      'close_listing',
+      '매물을 종료(closed)로 바꿉니다. 평소의 정리는 이것입니다: 거래가 끝났거나, 집주인이 거둬 갔거나, 더는 유효하지 않을 때. 매물과 그 거래 조건은 지워지지 않고 종료 상태로 남아 이력으로 볼 수 있습니다(find_listings의 includeClosed). 종료하면 그 안의 거래 조건(매매 · 전세 · 월세)이 모두 함께 내려갑니다. 잘못 넣은 것을 아예 없애려면 delete_listing을 쓰세요.',
       obj(
         {
-          id: str('의뢰 ID'),
+          id: str('매물 ID'),
           closedReason: strEnum(
             '종료 사유 (기본 other). withdrawn=집주인이 거둠, unavailable=더는 거래할 수 없음, external_deal_completed=다른 곳에서 거래됨, superseded=새 의뢰로 대체',
             Object.values(IntakeClosedReason),
@@ -872,84 +905,23 @@ export class McpToolsService {
     );
 
     this.add(
-      'delete_listing_intake',
-      '매물 의뢰(ListingIntake)를 통째로 지웁니다: 그 의뢰의 거래 조건(Listing)을 모두 지우고 의뢰도 지웁니다. 되돌릴 수 없으니 잘못 넣은 의뢰를 없앨 때만 쓰고, 거래가 끝났거나 거둬 간 의뢰는 close_listing_intake로 종료하세요. 대표·매니저만 할 수 있습니다. 조건 가운데 하나라도 거래가 연결됐거나, 매칭된 손님이 있거나, 공동중개망에 공유돼 있으면 아무것도 지우지 않고 이유를 알려 줍니다. 프로젝트에 담긴 의뢰도 지우지 않습니다. 관리매물(Property)과 연락처는 남습니다. 의뢰는 그대로 두고 거래 조건 하나만 지우려면(매매·전세를 함께 내놓았다가 전세만 뺄 때) delete_listing을 쓰세요.',
-      obj({ id: str('의뢰 ID') }, ['id']),
+      'delete_listing',
+      '매물을 통째로 지웁니다: 그 매물의 거래 조건을 모두 지우고 매물도 지웁니다. 되돌릴 수 없으니 잘못 넣은 매물을 없앨 때만 쓰고, 거래가 끝났거나 거둬 간 매물은 close_listing으로 종료하세요. 대표·매니저만 할 수 있습니다. 조건 가운데 하나라도 거래가 연결됐거나, 매칭된 손님이 있거나, 공동중개망에 공유돼 있으면 아무것도 지우지 않고 이유를 알려 줍니다. 프로젝트에 담긴 매물도 지우지 않습니다. 관리매물(Property)과 연락처는 남습니다. 매물은 그대로 두고 거래 조건 하나만 지우려면(매매·전세를 함께 내놓았다가 전세만 뺄 때) delete_listing_term을 쓰세요.',
+      obj({ id: str('매물 ID') }, ['id']),
       // 화면과 같은 권한: 역할을 넘겨 서비스가 가린다. 역할을 모르면 null — undefined는 서버 안쪽 호출로 본다.
       async (a, c) => this.listingIntakes.remove(a.id as string, c.officeId, c.role ?? null),
     );
 
     // ═══════════════════════════════════════════════════════════
-    // 매물 (Listings)
+    // 거래 조건 — 매물 안의 매매 · 전세 · 월세 하나 (DB의 Listing).
+    // 조건만 따로 찾거나 보는 도구는 두지 않는다: 매물(find_listings · get_listing)의 terms에 실린다.
     // ═══════════════════════════════════════════════════════════
     this.add(
-      'find_listings',
-      '매물(Listing) 목록을 검색합니다. 의뢰 생명주기·확인 상태·가용 상태와 거래 조건으로 필터링합니다. 한 줄에는 어느 집(place) · 거래 조건 · 의뢰 상태 · 잡고 있는 거래 · 소유자 이름과 대표 전화 · 진행 중인 광고 요약만 싣습니다. 가격 이력, 광고 전체, 임대차, 연락처 상세는 get_listing · get_property · get_contact로 봅니다.',
-      obj({
-        propertyId: str('관리매물 ID'),
-        transactionType: strEnum('거래유형', LISTING_TRANSACTION_TYPES),
-        intakeLifecycleStatus: strEnum(
-          '의뢰 생명주기',
-          Object.values(IntakeLifecycleStatus),
-        ),
-        confirmationState: strEnum(
-          '확인 이력에서 파생한 상태',
-          Object.values(IntakeConfirmationState),
-        ),
-        availability: strEnum(
-          'Deal/보류/종결에서 파생한 매물 가용 상태',
-          Object.values(ListingAvailability),
-        ),
-        includeClosed: bool('종결 의뢰의 매물 포함'),
-        siteId: str('단지 ID'),
-        search: str('검색어 (단지명, 주소)'),
-        priceMin: num('최소 가격 (만원)'),
-        priceMax: num('최대 가격 (만원)'),
-        ...page,
-      }),
-      // 서비스의 목록은 아직 화면용 무거운 줄이다. 가벼운 줄로 골라 싣는다(mcp-list-rows.ts).
-      async (a, c) =>
-        toLightList(
-          await this.listings.findAll(c.officeId, {
-            propertyId: a.propertyId as string,
-            transactionType: a.transactionType as string,
-            intakeLifecycleStatus: a.intakeLifecycleStatus as string,
-            confirmationState: a.confirmationState as string,
-            availability: a.availability as string,
-            includeClosed: a.includeClosed as boolean,
-            siteId: a.siteId as string,
-            search: a.search as string,
-            priceMin: a.priceMin as number,
-            priceMax: a.priceMax as number,
-            page: (a.page as number) ?? 1,
-            limit: this.clampLimit(a),
-          }),
-          toListingRow,
-        ),
-    );
-
-    this.add(
-      'get_listing',
-      '특정 매물의 상세 정보를 조회합니다. 소유자, 세입자, 매칭, 거래, 가격이력 포함.',
-      obj({ id: str('매물 ID') }, ['id']),
-      async (a, c) => this.listings.findOne(a.id as string, c.officeId),
-    );
-
-    this.add(
-      'delete_listing',
-      '거래 조건(Listing) 하나를 완전히 지웁니다. 의뢰(ListingIntake)는 집주인이 한 번 맡긴 것이고 거래 조건은 그 안의 매매 · 전세 · 월세 하나하나입니다 — 이 도구는 그중 하나만 지웁니다(매매·전세를 함께 내놓았다가 전세만 뺄 때). 의뢰를 통째로 없애려면 delete_listing_intake, 지우지 않고 끝내려면 close_listing_intake를 쓰세요. 되돌릴 수 없고 대표·매니저만 할 수 있습니다. 거래가 연결됐거나, 매칭된 손님이 있거나, 공동중개망에 공유한 조건은 지워지지 않고 이유를 알려 줍니다. 그 의뢰의 마지막 조건을 지우면 빈 의뢰가 남지 않게 의뢰도 함께 지워지며(프로젝트에 담긴 의뢰는 남습니다) 응답의 intakeRemoved로 알 수 있습니다. 관리매물(Property)과 연락처는 남습니다.',
-      obj({ id: str('매물(Listing) ID') }, ['id']),
-      // 화면과 같은 권한: 역할을 넘겨 서비스가 가린다. 역할을 모르면 null을 넘긴다 —
-      // undefined는 서버 안쪽 호출로 보아 검사를 건너뛴다.
-      async (a, c) => this.listings.remove(a.id as string, c.officeId, c.role ?? null),
-    );
-
-    this.add(
-      'create_listing',
-      '새 매물을 등록합니다. Property에 거래 조건을 추가합니다.',
+      'add_listing_term',
+      '매물에 거래 조건을 하나 더합니다(매매로 내놓은 집을 전세로도 내놓을 때). 새 매물을 등록하는 것은 create_listing입니다.',
       obj(
         {
-          intakeId: str('의뢰 ID'),
+          listingId: str('매물 ID'),
           propertyId: str('관리매물 ID'),
           transactionType: strEnum('거래유형', LISTING_TRANSACTION_TYPES),
           price: num('매매가/전세가 (만원)'),
@@ -964,15 +936,11 @@ export class McpToolsService {
           moveInAvailableTo,
           memo: str('메모'),
         },
-        ['intakeId', 'propertyId', 'transactionType'],
+        ['listingId', 'propertyId', 'transactionType'],
       ),
       async (a, c) => {
-        if (!a.intakeId) {
-          throw new BadRequestException('intakeId is required');
-        }
-
         return this.listings.create(c.officeId, {
-          intakeId: a.intakeId as string,
+          intakeId: a.listingId as string,
           propertyId: a.propertyId as string,
           transactionType: a.transactionType as string,
           price: a.price as number,
@@ -989,11 +957,11 @@ export class McpToolsService {
     );
 
     this.add(
-      'update_listing',
-      '거래 조건(Listing) 하나를 고칩니다: 가격 · 관리비 · 융자금 · 권리금 · 입주 가능 시기 · 일시 중단 · 메모. 보낸 칸만 바뀝니다. 광고와 매칭은 그대로 남으므로, 조건을 고치려고 의뢰를 지우고 다시 만들지 마세요. 확인 상태는 의뢰(update_listing_intake)에서 관리합니다.',
+      'update_listing_term',
+      '거래 조건 하나를 고칩니다: 가격 · 관리비 · 융자금 · 권리금 · 입주 가능 시기 · 일시 중단 · 메모. 보낸 칸만 바뀝니다. 광고와 매칭은 그대로 남으므로, 조건을 고치려고 매물을 지우고 다시 만들지 마세요. 매물 상태 · 거주 상태 · 매물 메모는 update_listing, 확인은 confirm_listing입니다.',
       obj(
         {
-          id: str('매물 ID'),
+          id: str('거래 조건 ID (매물의 terms[].id)'),
           price: num('가격 (만원)'),
           deposit: num('보증금 (만원)'),
           monthlyRent: num('월세 (만원)'),
@@ -1004,8 +972,8 @@ export class McpToolsService {
           moveInAvailableType,
           moveInAvailableFrom,
           moveInAvailableTo,
-          isPaused: bool('이 거래 옵션 일시 중단 여부'),
-          memo: str('메모'),
+          isPaused: bool('이 조건만 잠시 멈춤'),
+          memo: str('이 조건의 메모'),
         },
         ['id'],
       ),
@@ -1022,6 +990,15 @@ export class McpToolsService {
           isPaused: a.isPaused as boolean,
           memo: a.memo as string,
         }),
+    );
+
+    this.add(
+      'delete_listing_term',
+      '거래 조건 하나를 완전히 지웁니다(매매·전세를 함께 내놓았다가 전세만 뺄 때). 매물을 통째로 없애려면 delete_listing, 지우지 않고 끝내려면 close_listing을 쓰세요. 되돌릴 수 없고 대표·매니저만 할 수 있습니다. 거래가 연결됐거나, 매칭된 손님이 있거나, 공동중개망에 공유한 조건은 지워지지 않고 이유를 알려 줍니다. 그 매물의 마지막 조건을 지우면 빈 매물이 남지 않게 매물도 함께 지워지며(프로젝트에 담긴 매물은 남습니다) 응답의 intakeRemoved로 알 수 있습니다. 관리매물(Property)과 연락처는 남습니다.',
+      obj({ id: str('거래 조건 ID (매물의 terms[].id)') }, ['id']),
+      // 화면과 같은 권한: 역할을 넘겨 서비스가 가린다. 역할을 모르면 null을 넘긴다 —
+      // undefined는 서버 안쪽 호출로 보아 검사를 건너뛴다.
+      async (a, c) => this.listings.remove(a.id as string, c.officeId, c.role ?? null),
     );
 
     // ═══════════════════════════════════════════════════════════
@@ -1049,10 +1026,10 @@ export class McpToolsService {
       'find_listing_advertisements',
       'CP 광고 원장(ListingAdvertisement)을 검색합니다. 각 row는 한 번의 연속된 실제 게재이고, endedAt은 완전한 스냅샷에서 관측 종료된 시각입니다. syncState는 manual(수동 관리) / synced(CP 확인됨) / manual_override(직접 수정 후 CP 미확인)입니다. 광고는 매물 없이도 있을 수 있고, 각 row의 linkLevel이 연결 단계입니다(listing=매물까지, property=관리매물까지, site=건물까지, none=연결 없음). 매물이 없는 광고는 link=no_listing으로 모아 사용자에게 "매물로 등록할까요?"를 물을 때 씁니다. changeRequests에는 이 광고에 걸린 변경 요청과 반영 여부(fulfilled)가 들어 있습니다.',
       obj({
-        listingId: str('매물 ID'),
+        termId: str('거래 조건 ID (매물의 terms[].id)'),
         propertyId: str('관리매물 ID'),
         cpAccountId: str('CP 계정 ID'),
-        link: strEnum('연결 단계로 거르기', ['listing', 'no_listing', 'no_property', 'no_site']),
+        link: strEnum('연결 단계로 거르기: listing=매물의 거래 조건까지 연결됨, no_listing=매물 없음, no_property=호실 없음, no_site=건물 없음', ['listing', 'no_listing', 'no_property', 'no_site']),
         requests: strEnum('pending이면 처리되지 않은 변경 요청이 걸린 광고만', ['pending']),
         channel: str('CP사 slug (esiljang, budongsanbank 등)'),
         status: strEnum('광고 생명주기', ['active', 'ended']),
@@ -1068,7 +1045,7 @@ export class McpToolsService {
       }),
       async (a, c) =>
         this.listingAdvertisements.findAll(c.officeId, {
-          listingId: a.listingId as string,
+          listingId: a.termId as string,
           propertyId: a.propertyId as string,
           cpAccountId: a.cpAccountId as string,
           link: a.link as 'listing' | 'no_listing' | 'no_property' | 'no_site',
@@ -1090,20 +1067,20 @@ export class McpToolsService {
     this.add(
       'find_listing_advertisement_price_history',
       '한 Listing에 연결된 모든 CP·재광고 회차의 광고 가격 관측 이력을 시간순으로 조회합니다.',
-      obj({ listingId: str('매물 ID') }, ['listingId']),
+      obj({ termId: str('거래 조건 ID (매물의 terms[].id)') }, ['termId']),
       async (a, c) =>
         this.listingAdvertisements.findPriceHistory(
           c.officeId,
-          a.listingId as string,
+          a.termId as string,
         ),
     );
 
     this.add(
       'create_listing_advertisement',
-      'CP에서 실제로 관측하거나 수동으로 기록할 광고(ListingAdvertisement)를 넣습니다. 같은 사무소의 서로 다른 CP 계정(cpAccountId/accountKey)은 같은 매물·채널에 각자 광고를 올릴 수 있습니다. 매물 없이도 만들 수 있습니다: listingId·propertyId·siteId 중 아는 가장 깊은 단계 하나만 주면 위 단계는 서버가 채우고, 아무것도 모르면 CP 원문(raw*)만 넣습니다.',
+      'CP에서 실제로 관측하거나 수동으로 기록할 광고(ListingAdvertisement)를 넣습니다. 같은 사무소의 서로 다른 CP 계정(cpAccountId/accountKey)은 같은 매물·채널에 각자 광고를 올릴 수 있습니다. 매물 없이도 만들 수 있습니다: termId·propertyId·siteId 중 아는 가장 깊은 단계 하나만 주면 위 단계는 서버가 채우고, 아무것도 모르면 CP 원문(raw*)만 넣습니다.',
       obj(
         {
-          listingId: str('매물 ID (어느 의뢰의 광고인지까지 아는 경우)'),
+          termId: str('거래 조건 ID — 매물의 terms[].id (어느 매물의 어느 조건 광고인지까지 아는 경우)'),
           propertyId: str('관리매물 ID (호실까지만 아는 경우)'),
           siteId: str('단지·건물 ID (건물까지만 아는 경우)'),
           cpAccountId: str('CP 계정 ID (선택)'),
@@ -1136,7 +1113,7 @@ export class McpToolsService {
       ),
       async (a, c) =>
         this.listingAdvertisements.create(c.officeId, {
-          listingId: a.listingId as string | undefined,
+          listingId: a.termId as string | undefined,
           propertyId: a.propertyId as string | undefined,
           siteId: a.siteId as string | undefined,
           cpAccountId: a.cpAccountId as string | undefined,
@@ -1233,11 +1210,11 @@ export class McpToolsService {
 
     this.add(
       'link_listing_advertisement',
-      '광고를 우리 데이터에 연결하거나 연결을 푼다. listingId·propertyId·siteId 중 아는 가장 깊은 단계 하나만 주면 위 단계는 서버가 채웁니다(매물 → 관리매물 → 건물). propertyId만 주면 매물 연결은 풀리고, 셋 다 비우면 모두 풀립니다.',
+      '광고를 우리 데이터에 연결하거나 연결을 푼다. termId·propertyId·siteId 중 아는 가장 깊은 단계 하나만 주면 위 단계는 서버가 채웁니다(거래 조건 → 관리매물 → 건물). propertyId만 주면 매물 연결은 풀리고, 셋 다 비우면 모두 풀립니다.',
       obj(
         {
           id: str('광고 원장 ID'),
-          listingId: str('매물 ID'),
+          termId: str('거래 조건 ID (매물의 terms[].id)'),
           propertyId: str('관리매물 ID'),
           siteId: str('단지·건물 ID'),
         },
@@ -1245,7 +1222,7 @@ export class McpToolsService {
       ),
       async (a, c) =>
         this.listingAdvertisements.link(a.id as string, c.officeId, {
-          listingId: a.listingId as string | undefined,
+          listingId: a.termId as string | undefined,
           propertyId: a.propertyId as string | undefined,
           siteId: a.siteId as string | undefined,
         }),
@@ -1256,7 +1233,7 @@ export class McpToolsService {
       '처리되지 않은(또는 지정 상태의) 광고 변경 요청 목록입니다. 각 요청은 publish(신규 게재) · update(조건 변경) · readvertise(재광고) · takedown(내리기) 액션과 cpAccount 정보를 담고 묶음 업무(Task)에 연결됩니다. 실행 시 update_advertisement_change_request로 in_progress/executed/failed를 보고하고, 최종 verified는 complete_listing_advertisement_snapshot이 자동 검증합니다.',
       obj({
         advertisementId: str('특정 광고의 요청만'),
-        listingId: str('특정 매물의 요청만 (신규 게재 포함)'),
+        termId: str('특정 거래 조건의 요청만 (신규 게재 포함)'),
         channel: str('CP사 slug'),
         cpAccountId: str('CP 계정 ID'),
         accountKey: str('CP 로그인 아이디 (channel과 함께 지정)'),
@@ -1273,7 +1250,7 @@ export class McpToolsService {
       async (a, c) =>
         this.advertisementChangeRequests.findOpen(c.officeId, {
           advertisementId: a.advertisementId as string | undefined,
-          listingId: a.listingId as string | undefined,
+          listingId: a.termId as string | undefined,
           channel: a.channel as string | undefined,
           cpAccountId: a.cpAccountId as string | undefined,
           accountKey: a.accountKey as string | undefined,
@@ -1284,12 +1261,12 @@ export class McpToolsService {
 
     this.add(
       'create_advertisement_change_request',
-      '광고를 CP에 새로 올리거나(publish) 바꿔 달라는 요청(update / readvertise / takedown)을 만듭니다. action=publish이면 listingId+channel 필수, 나머지는 advertisementId 필수입니다.',
+      '광고를 CP에 새로 올리거나(publish) 바꿔 달라는 요청(update / readvertise / takedown)을 만듭니다. action=publish이면 termId+channel 필수, 나머지는 advertisementId 필수입니다.',
       obj(
         {
           action: strEnum('요청 작업', ['publish', 'update', 'readvertise', 'takedown']),
           advertisementId: str('광고 원장 ID (update/readvertise/takedown일 때 필수)'),
-          listingId: str('매물 ID (publish일 때 필수)'),
+          termId: str('거래 조건 ID — 매물의 terms[].id (publish일 때 필수)'),
           channel: str('CP사 slug (publish일 때 필수)'),
           cpAccountId: str('CP 계정 ID (선택)'),
           accountKey: str('CP 로그인 아이디 (선택)'),
@@ -1308,7 +1285,7 @@ export class McpToolsService {
         this.advertisementChangeRequests.createSingle(c.officeId, c.userId, {
           action: a.action as string,
           advertisementId: a.advertisementId as string | undefined,
-          listingId: a.listingId as string | undefined,
+          listingId: a.termId as string | undefined,
           channel: a.channel as string | undefined,
           cpAccountId: a.cpAccountId as string | undefined,
           accountKey: a.accountKey as string | undefined,
@@ -1416,7 +1393,7 @@ export class McpToolsService {
 
     this.add(
       'submit_listing_advertisement_snapshot_item',
-      '에이전트가 로컬 JSON에서 읽은 CP 광고 한 건을 원문과 함께 제출합니다. 광고는 매물 없이도 저장됩니다: 우리 데이터에서 찾은 만큼만 listingId·propertyId·siteId 중 가장 깊은 단계 하나로 알리고, 못 찾았으면 셋 다 비우고 제출하세요(오류가 아닙니다). error는 광고 자체를 읽지 못했을 때만 씁니다. 찾는 순서: 단지·건물(search_central_sites, find_office_sites) → 동·호(find_dongs, find_units; 호가 없는 건물이면 create_unit으로 층 공간을 만듦) → find_or_create_property → 그 관리매물에 같은 거래유형의 열린 매물이 정확히 하나면 listingId, 아니면 propertyId까지만. raw에 siteName(또는 complexName)·dong·ho·floor·fullAddress·transactionType이 있으면 광고의 원문 칸으로 남습니다.',
+      '에이전트가 로컬 JSON에서 읽은 CP 광고 한 건을 원문과 함께 제출합니다. 광고는 매물 없이도 저장됩니다: 우리 데이터에서 찾은 만큼만 termId·propertyId·siteId 중 가장 깊은 단계 하나로 알리고, 못 찾았으면 셋 다 비우고 제출하세요(오류가 아닙니다). error는 광고 자체를 읽지 못했을 때만 씁니다. 찾는 순서: 단지·건물(search_central_sites, find_office_sites) → 동·호(find_dongs, find_units; 호가 없는 건물이면 create_unit으로 층 공간을 만듦) → find_or_create_property → 그 관리매물에 같은 거래유형의 열린 매물이 정확히 하나면 termId, 아니면 propertyId까지만. raw에 siteName(또는 complexName)·dong·ho·floor·fullAddress·transactionType이 있으면 광고의 원문 칸으로 남습니다.',
       obj(
         {
           sessionId: str('광고 snapshot session ID'),
@@ -1427,13 +1404,13 @@ export class McpToolsService {
             required: ['externalAdId'],
             additionalProperties: true,
           },
-          listingId: str('확정한 Listing ID (어느 의뢰의 광고인지까지 정해졌을 때)'),
+          termId: str('확정한 거래 조건 ID — 매물의 terms[].id (어느 매물의 어느 조건 광고인지까지 정해졌을 때)'),
           propertyId: str('관리매물 ID (호실까지만 정해졌을 때)'),
           siteId: str('단지·건물 ID (건물까지만 찾았을 때)'),
           resolution: {
             type: 'object',
             description:
-              '어떻게 그 연결을 정했는지(고른 dongId/unitId, 판단 근거). listingId를 줄 때는 필수',
+              '어떻게 그 연결을 정했는지(고른 dongId/unitId, 판단 근거). termId를 줄 때는 필수',
             additionalProperties: true,
           },
           error: str('광고를 읽지 못한 구체적인 이유. 연결을 못 찾은 것은 여기에 쓰지 않습니다'),
@@ -1448,7 +1425,7 @@ export class McpToolsService {
           {
             sessionId: a.sessionId as string,
             raw: a.raw as Record<string, unknown>,
-            listingId: a.listingId as string | null,
+            listingId: a.termId as string | null,
             propertyId: a.propertyId as string | null,
             siteId: a.siteId as string | null,
             resolution: a.resolution as Record<string, unknown> | null,
@@ -1672,7 +1649,7 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_properties',
-      '관리매물(Property) 목록. 단지, 지역, 매물유형으로 필터링. 한 줄에는 어느 집(place) · 소유자 이름과 대표 전화 · 걸린 매물의 거래 조건 · 임대차 요약만 싣습니다. 전체는 get_property로 봅니다.',
+      '관리매물(Property) 목록: 우리 사무소가 관리하는 호실(집) 자체입니다. 지금 내놓은 매물을 찾을 때는 find_listings를 쓰고, 이 도구는 집을 찾거나(매물 등록 전에 propertyId 얻기) 소유자 · 임대차를 볼 때 씁니다. 한 줄에는 어느 집(place) · 소유자 이름과 대표 전화 · 그 집에 걸린 거래 조건(terms, 어느 매물인지는 listingId) · 임대차 요약만 싣습니다. 전체는 get_property로 봅니다.',
       obj({
         siteId: str('단지 ID'),
         unitId: str('호실 ID'),
@@ -1698,14 +1675,14 @@ export class McpToolsService {
 
     this.add(
       'get_property',
-      '관리매물 상세. 단지, 호실, 소유자, 세입자, 매물, 상담기록 포함.',
-      obj({ id: str('매물 ID') }, ['id']),
+      '관리매물(호실) 상세. 단지, 호실, 소유자, 세입자, 걸린 거래 조건, 상담기록 포함.',
+      obj({ id: str('관리매물 ID') }, ['id']),
       async (a, c) => this.properties.findOne(a.id as string, c.officeId),
     );
 
     this.add(
       'create_property',
-      '새 관리매물을 등록합니다. 단지(siteId)는 필수. 호실(unitId)은 건물형(아파트/오피스텔/빌라/상가/생활숙박시설)은 필수, 토지(land)는 금지, 단독/다가구주택(house)은 선택(통건물·호실 모두 가능). 의뢰 메모는 매물(Listing) 단위에서 별도로 기록한다.',
+      '새 관리매물을 등록합니다. 단지(siteId)는 필수. 호실(unitId)은 건물형(아파트/오피스텔/빌라/상가/생활숙박시설)은 필수, 토지(land)는 금지, 단독/다가구주택(house)은 선택(통건물·호실 모두 가능). 매물로 내놓는 것은 따로 create_listing으로 등록한다(메모도 거기에 적는다).',
       obj({ siteId: str('단지 ID'), unitId: str('호실 ID') }, ['siteId']),
       async (a, c) =>
         this.properties.create(c.officeId, {
@@ -1776,7 +1753,7 @@ export class McpToolsService {
       '새 거래를 시작합니다. 화면의 거래 전환 창에서 "확정"을 누르는 것과 같으므로, 거래 유형·합의 금액·매수인(임차인)·매도인(임대인)을 사용자에게 확인받은 뒤 부릅니다. matchId를 주면 그 매칭이 "거래 전환" 단계로 함께 넘어가고, 당사자를 비우면 매칭의 손님과 물건의 대표 소유자로 채웁니다.',
       obj(
         {
-          listingId: str('매물 ID'),
+          termId: str('거래 조건 ID (매물의 terms[].id)'),
           matchId: str('매칭 ID (이 매물의 매칭이어야 합니다)'),
           transactionType: strEnum('거래 유형', ['sale', 'jeonse', 'monthly']),
           agreedPrice: num('합의된 거래가 / 전세금 (만원)'),
@@ -1787,13 +1764,13 @@ export class McpToolsService {
           specialTerms: str('특약'),
           memo: str('메모'),
         },
-        ['listingId'],
+        ['termId'],
       ),
       (a, c) =>
         this.deals.create(
           c.officeId,
           {
-            listingId: a.listingId as string,
+            listingId: a.termId as string,
             matchId: a.matchId as string | undefined,
             transactionType: a.transactionType as string | undefined,
             agreedPrice: a.agreedPrice as number | undefined,
@@ -1926,11 +1903,11 @@ export class McpToolsService {
     // ═══════════════════════════════════════════════════════════
     this.add(
       'find_consultations',
-      '상담기록 목록. 연락처, 호실, 의뢰, 구매 의뢰, 거래, 프로젝트별 필터.',
+      '상담기록 목록. 연락처, 호실, 매물, 구매 의뢰, 거래, 프로젝트별 필터.',
       obj({
         contactId: str('연락처 ID'),
-        propertyId: str('매물(호실) ID'),
-        listingIntakeId: str('매물 의뢰 ID'),
+        propertyId: str('관리매물(호실) ID'),
+        listingId: str('매물 ID'),
         buyerIntakeId: str('구매 의뢰 ID'),
         dealId: str('거래 ID'),
         projectId: str('프로젝트 ID'),
@@ -1940,7 +1917,7 @@ export class McpToolsService {
         this.consultations.findAll(c.officeId, {
           contactId: a.contactId as string,
           propertyId: a.propertyId as string,
-          listingIntakeId: a.listingIntakeId as string,
+          listingIntakeId: a.listingId as string,
           buyerIntakeId: a.buyerIntakeId as string,
           dealId: a.dealId as string,
           projectId: a.projectId as string,
@@ -1964,8 +1941,8 @@ export class McpToolsService {
           contactId: str('연락처 ID'),
           type: strEnum('상담유형', ['phone', 'visit', 'online']),
           content: str('메모 내용'),
-          propertyId: str('관련 매물(호실) ID'),
-          listingIntakeId: str('관련 매물 의뢰 ID'),
+          propertyId: str('관련 관리매물(호실) ID'),
+          listingId: str('관련 매물 ID'),
           buyerIntakeId: str('관련 구매 의뢰 ID'),
           dealId: str('관련 거래 ID'),
           projectId: str('관련 프로젝트 ID'),
@@ -1978,7 +1955,7 @@ export class McpToolsService {
           type: a.type as string,
           content: a.content as string,
           propertyId: a.propertyId as string,
-          listingIntakeId: a.listingIntakeId as string,
+          listingIntakeId: a.listingId as string,
           buyerIntakeId: a.buyerIntakeId as string,
           dealId: a.dealId as string,
           projectId: a.projectId as string,
@@ -2002,7 +1979,7 @@ export class McpToolsService {
       obj({
         buyerReqId: str('이 구매조건(BuyerRequirement)의 매칭만'),
         propertyId: str('이 매물(Property)의 매칭만'),
-        listingId: str('이 거래 조건(Listing)의 매칭만'),
+        termId: str('이 거래 조건의 매칭만 (매물의 terms[].id)'),
         stage: str(
           '단계 (여럿은 콤마): suggested, buyerInterested, viewingConfirmed, viewing, buyerReviewing, negotiating, dealCreated, closed',
         ),
@@ -2015,7 +1992,7 @@ export class McpToolsService {
         this.matches.findAll(c.officeId, {
           buyerReqId: a.buyerReqId as string | undefined,
           propertyId: a.propertyId as string | undefined,
-          listingId: a.listingId as string | undefined,
+          listingId: a.termId as string | undefined,
           stage: a.stage as string | undefined,
           openOnly: a.openOnly === true,
           search: a.search as string | undefined,
@@ -2036,15 +2013,15 @@ export class McpToolsService {
       '매물과 구매조건을 매칭합니다.',
       obj(
         {
-          listingId: str('매물 ID'),
+          termId: str('거래 조건 ID (매물의 terms[].id)'),
           buyerReqId: str('구매조건 ID'),
           memo: str('메모'),
         },
-        ['listingId', 'buyerReqId'],
+        ['termId', 'buyerReqId'],
       ),
       async (a, c) =>
         this.matches.create(c.officeId, {
-          listingId: a.listingId as string,
+          listingId: a.termId as string,
           buyerReqId: a.buyerReqId as string,
           memo: a.memo as string,
         }),
@@ -2163,9 +2140,9 @@ export class McpToolsService {
           dueDate: str('마감일 (ISO)'),
           assignedToId: str('담당자 ID'),
           contactId: str('관련 연락처 ID'),
-          propertyId: str('관련 매물 ID'),
-          listingIntakeId: str('관련 의뢰 ID'),
-          listingId: str('관련 리스팅 ID'),
+          propertyId: str('관련 관리매물(호실) ID'),
+          listingId: str('관련 매물 ID'),
+          termId: str('관련 거래 조건 ID'),
           consultationId: str('관련 상담 ID'),
           buyerReqId: str('관련 구매조건 ID'),
           matchId: str('관련 매칭 ID'),
@@ -2188,8 +2165,8 @@ export class McpToolsService {
             assignedToId: a.assignedToId as string,
             contactId: a.contactId as string,
             propertyId: a.propertyId as string,
-            listingIntakeId: a.listingIntakeId as string,
-            listingId: a.listingId as string,
+            listingIntakeId: a.listingId as string,
+            listingId: a.termId as string,
             consultationId: a.consultationId as string,
             buyerReqId: a.buyerReqId as string,
             matchId: a.matchId as string,
@@ -2275,9 +2252,9 @@ export class McpToolsService {
           start: str('시작 (ISO)'),
           end: str('종료 (ISO)'),
           contactId: str('연락처 ID'),
-          propertyId: str('매물 ID'),
-          listingIntakeId: str('의뢰 ID'),
-          listingId: str('리스팅 ID'),
+          propertyId: str('관리매물(호실) ID'),
+          listingId: str('매물 ID'),
+          termId: str('거래 조건 ID'),
           dealId: str('거래 ID'),
         },
         ['title', 'start'],
@@ -2292,8 +2269,8 @@ export class McpToolsService {
           end: a.end as string,
           contactId: a.contactId as string,
           propertyId: a.propertyId as string,
-          listingIntakeId: a.listingIntakeId as string,
-          listingId: a.listingId as string,
+          listingIntakeId: a.listingId as string,
+          listingId: a.termId as string,
           dealId: a.dealId as string,
         }),
     );
@@ -2417,7 +2394,7 @@ export class McpToolsService {
     this.add(
       'find_property_contacts',
       '매물의 관련인(소유자, 대리인 등) 목록.',
-      obj({ propertyId: str('매물 ID') }, ['propertyId']),
+      obj({ propertyId: str('관리매물(호실) ID') }, ['propertyId']),
       async (a, c) =>
         this.propertyContacts.findByProperty(
           c.officeId,
@@ -2431,7 +2408,7 @@ export class McpToolsService {
       obj(
         {
           contactId: str('연락처 ID'),
-          propertyId: str('매물 ID'),
+          propertyId: str('관리매물(호실) ID'),
           role: strEnum('역할', [
             'owner',
             'co_owner',
@@ -2475,7 +2452,7 @@ export class McpToolsService {
     this.add(
       'find_tenants',
       '매물의 임대차(세입자) 목록.',
-      obj({ propertyId: str('매물 ID') }, ['propertyId']),
+      obj({ propertyId: str('관리매물(호실) ID') }, ['propertyId']),
       async (a, c) =>
         this.tenants.findByProperty(c.officeId, a.propertyId as string),
     );
@@ -2496,7 +2473,7 @@ export class McpToolsService {
       '임대차 및 세입자를 등록합니다.',
       obj(
         {
-          propertyId: str('매물 ID'),
+          propertyId: str('관리매물(호실) ID'),
           contactId: str('연락처 ID'),
           role: str('임차인 역할 (tenant | co_tenant | resident)'),
           deposit: num('보증금 (만원)'),
@@ -2662,7 +2639,7 @@ export class McpToolsService {
     this.add(
       'find_public_documents_by_property',
       '특정 매물의 공적장부.',
-      obj({ propertyId: str('매물 ID') }, ['propertyId']),
+      obj({ propertyId: str('관리매물(호실) ID') }, ['propertyId']),
       async (a, c) =>
         this.publicDocs.listByProperty(c.officeId, a.propertyId as string),
     );
@@ -2673,7 +2650,7 @@ export class McpToolsService {
     this.add(
       'find_property_photos',
       '매물의 사진 목록.',
-      obj({ propertyId: str('매물 ID') }, ['propertyId']),
+      obj({ propertyId: str('관리매물(호실) ID') }, ['propertyId']),
       async (a, c) =>
         this.propertyPhotos.listByProperty(c.officeId, a.propertyId as string),
     );

@@ -70,9 +70,6 @@ model ListingIntake {
   fieldMemo                String?   @map("field_memo") @db.Text
   isJointBrokerageRequired Boolean   @default(false) @map("is_joint_brokerage_required")
   jointBrokeragePartnerId  String?   @map("joint_brokerage_partner_id") @db.Uuid
-  /// 소유자와 별개인 의뢰 창구(예: 대리 의뢰 자녀, 승계/전대 내놓음 세입자). null이면 PropertyContact 소유자 창구 참조.
-  requesterContactId       String?   @map("requester_contact_id") @db.Uuid
-  requesterRole            String?   @map("requester_role") // representative | tenant | other
   nextConfirmAt            DateTime? @map("next_confirm_at")
   memo                     String?   @db.Text
 
@@ -83,7 +80,6 @@ model ListingIntake {
   project               Project?            @relation(fields: [officeId, projectId], references: [officeId, id], onDelete: Restrict)
   property              Property            @relation(fields: [propertyId], references: [id])
   jointBrokeragePartner PartnerBroker?      @relation("ListingIntakeJointBrokeragePartner", fields: [jointBrokeragePartnerId], references: [id])
-  requesterContact      Contact?            @relation("ListingIntakeRequester", fields: [officeId, requesterContactId], references: [officeId, id], onDelete: Restrict)
   listings              Listing[]
   consultations         Consultation[]
   comments              Comment[]
@@ -101,7 +97,6 @@ model ListingIntake {
   @@index([officeId, lastCheckResult, lastCheckedAt])
   @@index([propertyId])
   @@index([jointBrokeragePartnerId])
-  @@index([officeId, requesterContactId])
   @@index([officeId, nextConfirmAt])
   @@index([nextConfirmAt])
   // "Property 당 닫히지 않은 의뢰 하나" 는 partial unique index 로 강제 (migration SQL):

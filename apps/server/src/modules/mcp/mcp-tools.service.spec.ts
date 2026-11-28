@@ -154,50 +154,87 @@ describe('McpToolsService', () => {
     };
   }
 
-  it('registers listing intake table CRUD tools', () => {
+  it('매물 도구는 화면의 한 줄(의뢰)을 다루고, 거래 조건 도구는 이름에 term이 붙는다', () => {
     const { service } = createService();
 
     const toolNames = service.getToolDefinitions().map((tool) => tool.name);
 
     expect(toolNames).toEqual(
       expect.arrayContaining([
-        'find_listing_intakes',
-        'get_listing_intake',
-        'create_listing_intake',
-        'update_listing_intake',
-        'delete_listing_intake',
+        'find_listings',
+        'get_listing',
+        'create_listing',
+        'update_listing',
+        'confirm_listing',
+        'close_listing',
+        'delete_listing',
+        'add_listing_term',
+        'update_listing_term',
+        'delete_listing_term',
       ]),
     );
+    // "매물"이 두 가지로 읽히던 예전 이름은 남기지 않는다
+    expect(toolNames.filter((name) => name.includes('listing_intake'))).toEqual([]);
   });
 
-  it('requires intakeId when MCP creates a listing row', async () => {
-    const { service, listings } = createService();
+  it('find_listings는 의뢰 목록을 읽어 조건을 terms에 싣는다', async () => {
+    const { service, listings, listingIntakes } = createService();
+    (listingIntakes as any).findAll = jest.fn().mockResolvedValue({
+      items: [
+        {
+          id: 'intake-1',
+          propertyId: 'property-1',
+          lifecycleStatus: 'open',
+          occupancyStatus: 'vacant',
+          listings: [{ id: 'term-1', intakeId: 'intake-1', transactionType: 'sale', price: 150000 }],
+        },
+      ],
+      pagination: { page: 1, limit: 20 },
+    });
 
     const result = await service.executeTool(
-      'create_listing',
+      'find_listings',
+      { propertyId: 'property-1', transactionType: 'sale', occupancyStatus: 'vacant' },
+      ctx,
+    );
+
+    expect((listingIntakes as any).findAll).toHaveBeenCalledWith(
+      'office-1',
+      expect.objectContaining({
+        propertyId: 'property-1',
+        transactionType: 'sale',
+        occupancies: ['vacant'],
+      }),
+    );
+    expect(listings.findAll).not.toHaveBeenCalled();
+    expect(JSON.parse(result.content[0].text).items).toEqual([
+      {
+        id: 'intake-1',
+        propertyId: 'property-1',
+        lifecycleStatus: 'open',
+        occupancyStatus: 'vacant',
+        terms: [{ id: 'term-1', transactionType: 'sale', price: 150000 }],
+      },
+    ]);
+  });
+
+  it('add_listing_term은 매물 id(listingId)가 꼭 있어야 하고 서비스에는 의뢰 id로 넘긴다', async () => {
+    const { service, listings } = createService();
+
+    const missing = await service.executeTool(
+      'add_listing_term',
       { propertyId: 'property-1', transactionType: 'sale' },
       ctx,
     );
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain('intakeId');
+    expect(missing.isError).toBe(true);
+    expect(missing.content[0]?.text).toContain('listingId');
     expect(listings.create).not.toHaveBeenCalled();
-  });
-
-  it('passes intakeId through when MCP creates a listing row', async () => {
-    const { service, listings } = createService();
 
     await service.executeTool(
-      'create_listing',
-      {
-        intakeId: 'intake-1',
-        propertyId: 'property-1',
-        transactionType: 'sale',
-        price: 150000,
-      },
+      'add_listing_term',
+      { listingId: 'intake-1', propertyId: 'property-1', transactionType: 'sale', price: 150000 },
       ctx,
     );
-
     expect(listings.create).toHaveBeenCalledWith(
       'office-1',
       expect.objectContaining({
@@ -209,46 +246,16 @@ describe('McpToolsService', () => {
     );
   });
 
-  it('exposes exact Property and Listing lookup filters for snapshot resolution', async () => {
-    const { service, properties, listings } = createService();
+  it('create_listing은 매물(의뢰)을 만들고 terms를 거래 조건으로 넘긴다', async () => {
+    const { service, listingIntakes, listings } = createService();
 
     await service.executeTool(
-      'find_properties',
-      { siteId: 'site-1', unitId: 'unit-1' },
-      ctx,
-    );
-    await service.executeTool(
-      'find_listings',
-      {
-        propertyId: 'property-1',
-        transactionType: 'sale',
-        includeClosed: false,
-      },
-      ctx,
-    );
-
-    expect(properties.findAll).toHaveBeenCalledWith(
-      'office-1',
-      expect.objectContaining({ siteId: 'site-1', unitId: 'unit-1' }),
-    );
-    expect(listings.findAll).toHaveBeenCalledWith(
-      'office-1',
-      expect.objectContaining({
-        propertyId: 'property-1',
-        transactionType: 'sale',
-      }),
-    );
-  });
-
-  it('delegates create_listing_intake to the listing intake service', async () => {
-    const { service, listingIntakes } = createService();
-
-    await service.executeTool(
-      'create_listing_intake',
+      'create_listing',
       {
         propertyId: 'property-1',
         lifecycleStatus: 'open',
-        memo: '테스트 의뢰',
+        memo: '테스트 매물',
+        terms: [{ transactionType: 'sale', price: 150000 }],
       },
       ctx,
     );
@@ -258,9 +265,45 @@ describe('McpToolsService', () => {
       expect.objectContaining({
         propertyId: 'property-1',
         lifecycleStatus: 'open',
-        memo: '테스트 의뢰',
+        memo: '테스트 매물',
+        listings: [{ transactionType: 'sale', price: 150000 }],
       }),
     );
+    expect(listings.create).not.toHaveBeenCalled();
+  });
+
+  it('응답의 칸 이름을 MCP의 낱말로 옮긴다 (의뢰 → listing, 거래 조건 → term)', async () => {
+    const { service, listingIntakes } = createService();
+    (listingIntakes as any).findOne = jest.fn().mockResolvedValue({
+      id: 'intake-1',
+      listings: [{ id: 'term-1', intakeId: 'intake-1', deals: [{ id: 'deal-1', listingId: 'term-1' }] }],
+    });
+
+    const result = await service.executeTool('get_listing', { id: 'intake-1' }, ctx);
+
+    expect(JSON.parse(result.content[0].text)).toEqual({
+      id: 'intake-1',
+      terms: [{ id: 'term-1', listingId: 'intake-1', deals: [{ id: 'deal-1', termId: 'term-1' }] }],
+    });
+  });
+
+  it('매물 · 조건의 id를 도구가 받지 않는 이름으로 보내면 버리지 않고 거절한다', async () => {
+    const { service, listings } = createService();
+
+    // 예전 이름
+    const old = await service.executeTool(
+      'add_listing_term',
+      { intakeId: 'intake-1', listingId: 'intake-1', propertyId: 'property-1', transactionType: 'sale' },
+      ctx,
+    );
+    expect(old.isError).toBe(true);
+    expect(old.content[0].text).toContain('listingId로 보내세요');
+    expect(listings.create).not.toHaveBeenCalled();
+
+    // 조건을 받는 도구에 매물 id 이름으로 보냄: 걸러지지 않은 목록이 돌아오면 안 된다
+    const wrong = await service.executeTool('find_listing_advertisements', { listingId: 'intake-1' }, ctx);
+    expect(wrong.isError).toBe(true);
+    expect(wrong.content[0].text).toContain('termId');
   });
 
   it('registers listing advertisement MCP tools', () => {
@@ -284,7 +327,7 @@ describe('McpToolsService', () => {
     await service.executeTool(
       'create_listing_advertisement',
       {
-        listingId: 'listing-1',
+        termId: 'listing-1',
         channel: 'esiljang',
         status: 'active',
         advertisedPrice: 150000,
@@ -390,7 +433,7 @@ describe('McpToolsService', () => {
           observedAt: '2026-08-04T14:48:01.956Z',
           sourcePage: 1,
         },
-        listingId: 'listing-1',
+        termId: 'listing-1',
         resolution: { siteId: 'site-1', unitId: 'unit-1' },
       },
       ctx,
@@ -673,7 +716,7 @@ describe('McpToolsService', () => {
 
     it('고치는 도구에도 입주 칸이 있고, 값의 종류와 뜻이 스키마에 적혀 있다', () => {
       const { service } = createService();
-      for (const tool of ['update_listing', 'create_listing']) {
+      for (const tool of ['update_listing_term', 'add_listing_term']) {
         const props = schemaOf(service as never, tool);
         expect(props.moveInAvailableType.enum).toEqual([
           'immediate',
@@ -692,7 +735,7 @@ describe('McpToolsService', () => {
     it('협의로 바꾸면 예전 날짜를 비운다 (의뢰를 지우고 다시 만들 필요가 없다)', async () => {
       const { service, listings } = createService();
       const result = await service.executeTool(
-        'update_listing',
+        'update_listing_term',
         { id: LISTING_ID, moveInAvailableType: 'negotiable' },
         ctx as never,
       );
@@ -711,7 +754,7 @@ describe('McpToolsService', () => {
     it('특정일 이후는 시작일만, 기간 협의는 양쪽 날짜를 넘긴다', async () => {
       const { service, listings } = createService();
       await service.executeTool(
-        'update_listing',
+        'update_listing_term',
         { id: LISTING_ID, moveInAvailableType: 'date', moveInAvailableFrom: '2027-03-01', moveInAvailableTo: '2027-04-01' },
         ctx as never,
       );
@@ -721,7 +764,7 @@ describe('McpToolsService', () => {
         moveInAvailableTo: null,
       });
       await service.executeTool(
-        'update_listing',
+        'update_listing_term',
         { id: LISTING_ID, moveInAvailableType: 'range', moveInAvailableFrom: '2027-03-01', moveInAvailableTo: '2027-04-01' },
         ctx as never,
       );
@@ -733,7 +776,7 @@ describe('McpToolsService', () => {
 
     it('입주 칸을 보내지 않으면 입주 시기는 건드리지 않는다', async () => {
       const { service, listings } = createService();
-      await service.executeTool('update_listing', { id: LISTING_ID, price: 100000 }, ctx as never);
+      await service.executeTool('update_listing_term', { id: LISTING_ID, price: 100000 }, ctx as never);
       const patch = listings.update.mock.calls[0][2];
       expect(patch.moveInAvailableType).toBeUndefined();
       expect(patch.moveInAvailableFrom).toBeUndefined();
@@ -743,7 +786,7 @@ describe('McpToolsService', () => {
     it('목록에 없는 값은 서비스에 닿기 전에 거절하고 고를 수 있는 값을 알려 준다', async () => {
       const { service, listings } = createService();
       const result = await service.executeTool(
-        'update_listing',
+        'update_listing_term',
         { id: LISTING_ID, moveInAvailableType: '협의' },
         ctx as never,
       );
@@ -759,11 +802,11 @@ describe('McpToolsService', () => {
     const INTAKE_ID = '00000000-0000-4000-8000-0000000000e2';
 
     // 예전 도구 정의대로 result를 보내도 버리지 않고 서비스에 넘긴다 — 서비스가 유효함 말고는 거절한다
-    await service.executeTool('confirm_listing_intake', { id: INTAKE_ID, result: 'no_answer' }, ctx as never);
+    await service.executeTool('confirm_listing', { id: INTAKE_ID, result: 'no_answer' }, ctx as never);
     expect((listingIntakes as any).confirm.mock.calls[0][3].result).toBe('no_answer');
 
     // 결과를 보내지 않으면 유효함으로 찍는 것이다
-    await service.executeTool('confirm_listing_intake', { id: INTAKE_ID }, ctx as never);
+    await service.executeTool('confirm_listing', { id: INTAKE_ID }, ctx as never);
     expect((listingIntakes as any).confirm.mock.calls[1][3].result).toBeUndefined();
   });
 });

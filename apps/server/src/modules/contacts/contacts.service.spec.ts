@@ -343,7 +343,6 @@ describe('ContactsService', () => {
     consultations: 0,
     propertyContacts: 0,
     buyerIntakeContacts: 0,
-    requestedListingIntakes: 0,
     leaseTenancies: 0,
     contractParties: 0,
     dealsAsBuyer: 0,

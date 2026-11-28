@@ -72,9 +72,10 @@ const owner = {
   },
 };
 
-function listing(overrides: Record<string, unknown> = {}) {
-  const self = {
-    id: 'listing-1',
+/** 서비스(ListingIntakesService.findAll)가 주는 매물 한 줄: 의뢰 + 그 안의 거래 조건들 */
+function term(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'term-1',
     officeId: 'office-1',
     propertyId: 'property-1',
     intakeId: 'intake-1',
@@ -93,27 +94,35 @@ function listing(overrides: Record<string, unknown> = {}) {
     memo: '로열층',
     createdAt: '2026-11-15T00:00:00.000Z',
     updatedAt: '2026-11-16T00:00:00.000Z',
-    intake: {
-      id: 'intake-1',
-      lifecycleStatus: 'open',
-      lifecycleChangedBy: 'user',
-      closedReason: null,
-      receivedAt: '2026-11-10T00:00:00.000Z',
-      lastVerifiedAt: '2026-11-15T00:00:00.000Z',
-      lastCheckResult: 'alive',
-      nextConfirmAt: '2026-11-22T00:00:00.000Z',
-      isJointBrokerageRequired: false,
-      jointBrokeragePartner: null,
-      memo: '의뢰 메모',
-    },
     deals: [deal],
     activeAdvertisements: [advertisement],
     activeAdvertisementCount: 1,
-    priceHistories: [{ id: 'history-1', priceBefore: 110000, priceAfter: 108000 }],
     _count: { matches: 3 },
+    ...overrides,
   };
+}
+
+function listing(overrides: Record<string, unknown> = {}) {
   return {
-    ...self,
+    id: 'intake-1',
+    officeId: 'office-1',
+    propertyId: 'property-1',
+    lifecycleStatus: 'open',
+    lifecycleChangedAt: '2026-11-10T00:00:00.000Z',
+    lifecycleChangedBy: 'user',
+    closedReason: null,
+    receivedAt: '2026-11-10T00:00:00.000Z',
+    lastCheckedAt: '2026-11-15T00:00:00.000Z',
+    lastVerifiedAt: '2026-11-15T00:00:00.000Z',
+    lastCheckResult: 'alive',
+    isJointBrokerageRequired: false,
+    jointBrokeragePartnerId: null,
+    jointBrokeragePartner: null,
+    occupancyStatus: 'tenant',
+    nextConfirmAt: '2026-11-22T00:00:00.000Z',
+    memo: '매물 메모',
+    createdAt: '2026-11-10T00:00:00.000Z',
+    updatedAt: '2026-11-16T00:00:00.000Z',
     property: {
       id: 'property-1',
       officeId: 'office-1',
@@ -121,30 +130,37 @@ function listing(overrides: Record<string, unknown> = {}) {
       unitId: 'unit-1',
       site,
       unit,
-      propertyContacts: [owner],
-      leases: [{ id: 'lease-1', deposit: 50000, tenants: [] }],
-      tenants: [],
-      listings: [
-        { ...self, property: undefined },
-        { id: 'listing-2', transactionType: 'sale', price: 161000, deposit: null, memo: '다른 조건' },
-      ],
     },
+    listings: [
+      term(),
+      term({
+        id: 'term-2',
+        transactionType: 'sale',
+        price: 161000,
+        maintenanceFee: null,
+        moveInAvailableType: null,
+        memo: null,
+        deals: [],
+        activeAdvertisements: [],
+        _count: { matches: 0 },
+      }),
+    ],
     ...overrides,
   };
 }
 
 describe('MCP 목록의 가벼운 줄', () => {
-  it('매물 한 줄에 어느 집 · 조건 · 상태 · 거래 · 소유자 · 광고 요약을 싣는다', () => {
+  it('매물 한 줄에 어느 집 · 상태 · 확인된 날 · 거주 상태와, 조건마다 가격 · 거래 · 광고 요약을 싣는다', () => {
     expect(toListingRow(listing())).toEqual({
-      id: 'listing-1',
-      intakeId: 'intake-1',
+      id: 'intake-1',
       propertyId: 'property-1',
-      transactionType: 'jeonse',
-      price: 108000,
-      maintenanceFee: 20,
-      moveInAvailableType: 'immediate',
-      memo: '로열층',
-      createdAt: '2026-11-15T00:00:00.000Z',
+      lifecycleStatus: 'open',
+      receivedAt: '2026-11-10T00:00:00.000Z',
+      lastVerifiedAt: '2026-11-15T00:00:00.000Z',
+      nextConfirmAt: '2026-11-22T00:00:00.000Z',
+      occupancyStatus: 'tenant',
+      memo: '매물 메모',
+      createdAt: '2026-11-10T00:00:00.000Z',
       updatedAt: '2026-11-16T00:00:00.000Z',
       place: {
         siteId: 'site-1',
@@ -161,43 +177,42 @@ describe('MCP 목록의 가벼운 줄', () => {
         roomCount: 4,
         bathRoomCount: 2,
       },
-      intake: {
-        lifecycleStatus: 'open',
-        receivedAt: '2026-11-10T00:00:00.000Z',
-        lastVerifiedAt: '2026-11-15T00:00:00.000Z',
-        lastCheckResult: 'alive',
-        nextConfirmAt: '2026-11-22T00:00:00.000Z',
-        memo: '의뢰 메모',
-      },
-      deals: [
+      terms: [
         {
-          id: 'deal-1',
-          stage: 'contracted',
-          stageChangedAt: '2026-11-18T00:00:00.000Z',
-          agreedPrice: 108000,
+          id: 'term-1',
+          transactionType: 'jeonse',
+          price: 108000,
+          maintenanceFee: 20,
+          moveInAvailableType: 'immediate',
+          memo: '로열층',
+          updatedAt: '2026-11-16T00:00:00.000Z',
+          deals: [
+            {
+              id: 'deal-1',
+              stage: 'contracted',
+              stageChangedAt: '2026-11-18T00:00:00.000Z',
+              agreedPrice: 108000,
+            },
+          ],
+          activeAdvertisements: [
+            {
+              id: 'ad-1',
+              channel: 'esiljang',
+              status: 'active',
+              advertisedDeposit: 108000,
+              naverArticleNo: '9900000004',
+              startedAt: '2026-11-10T00:00:00.000Z',
+            },
+          ],
+          matchCount: 3,
+        },
+        {
+          id: 'term-2',
+          transactionType: 'sale',
+          price: 161000,
+          updatedAt: '2026-11-16T00:00:00.000Z',
         },
       ],
-      contacts: [
-        {
-          contactId: 'contact-1',
-          name: '김소유',
-          phone: '010-1111-2222',
-          role: 'owner',
-          isPrimary: true,
-        },
-      ],
-      activeAdvertisements: [
-        {
-          id: 'ad-1',
-          channel: 'esiljang',
-          status: 'active',
-          advertisedDeposit: 108000,
-          naverArticleNo: '9900000004',
-          startedAt: '2026-11-10T00:00:00.000Z',
-        },
-      ],
-      matchCount: 3,
-      otherListings: [{ id: 'listing-2', transactionType: 'sale', price: 161000 }],
     });
   });
 
@@ -244,29 +259,29 @@ describe('MCP 목록의 가벼운 줄', () => {
       siteType: 'apartment',
       address: '서울 강동구 고덕동 693',
     });
-    expect(house).not.toHaveProperty('contacts');
-    expect(house).not.toHaveProperty('otherListings');
   });
 
-  it('멈춘 매물 · 공동중개 · 종결 사유처럼 보통과 다른 것은 싣는다', () => {
+  it('멈춘 조건 · 공동중개 · 종료 사유처럼 보통과 다른 것은 싣는다', () => {
     const row = toListingRow(
       listing({
-        isPaused: true,
-        intake: { lifecycleStatus: 'closed', closedReason: 'sold', isJointBrokerageRequired: true },
-        deals: [],
-        activeAdvertisements: [],
-        _count: { matches: 0 },
+        lifecycleStatus: 'closed',
+        closedReason: 'withdrawn',
+        isJointBrokerageRequired: true,
+        occupancyStatus: null,
+        listings: [term({ isPaused: true, deals: [], activeAdvertisements: [], _count: { matches: 0 } })],
       }),
     );
-    expect(row.isPaused).toBe(true);
-    expect(row.intake).toEqual({
+    expect(row).toMatchObject({
       lifecycleStatus: 'closed',
-      closedReason: 'sold',
+      closedReason: 'withdrawn',
       isJointBrokerageRequired: true,
     });
-    expect(row).not.toHaveProperty('deals');
-    expect(row).not.toHaveProperty('activeAdvertisements');
-    expect(row).not.toHaveProperty('matchCount');
+    expect(row).not.toHaveProperty('occupancyStatus');
+    const [only] = row.terms as Array<Record<string, unknown>>;
+    expect(only.isPaused).toBe(true);
+    expect(only).not.toHaveProperty('deals');
+    expect(only).not.toHaveProperty('activeAdvertisements');
+    expect(only).not.toHaveProperty('matchCount');
   });
 
   it('관리매물 한 줄에 어느 집 · 소유자 · 걸린 매물 · 임대차 요약을 싣는다', () => {
@@ -359,10 +374,14 @@ describe('MCP 목록의 가벼운 줄', () => {
     const heavy = listing({
       createdAt: at('2026-11-15T00:00:00.000Z'),
       updatedAt: at('2026-11-16T00:00:00.000Z'),
-      moveInAvailableFrom: at('2026-12-01T00:00:00.000Z'),
-      intake: { lifecycleStatus: 'open', nextConfirmAt: at('2026-11-22T00:00:00.000Z') },
-      deals: [{ ...deal, stageChangedAt: at('2026-11-18T00:00:00.000Z') }],
-      activeAdvertisements: [{ ...advertisement, startedAt: at('2026-11-10T00:00:00.000Z') }],
+      nextConfirmAt: at('2026-11-22T00:00:00.000Z'),
+      listings: [
+        term({
+          moveInAvailableFrom: at('2026-12-01T00:00:00.000Z'),
+          deals: [{ ...deal, stageChangedAt: at('2026-11-18T00:00:00.000Z') }],
+          activeAdvertisements: [{ ...advertisement, startedAt: at('2026-11-10T00:00:00.000Z') }],
+        }),
+      ],
       property: {
         siteId: 'site-1',
         unitId: 'unit-1',
@@ -378,10 +397,14 @@ describe('MCP 목록의 가벼운 줄', () => {
     expect(row).toMatchObject({
       createdAt: '2026-11-15T00:00:00.000Z',
       updatedAt: '2026-11-16T00:00:00.000Z',
-      moveInAvailableFrom: '2026-12-01T00:00:00.000Z',
-      intake: { nextConfirmAt: '2026-11-22T00:00:00.000Z' },
-      deals: [{ stageChangedAt: '2026-11-18T00:00:00.000Z' }],
-      activeAdvertisements: [{ startedAt: '2026-11-10T00:00:00.000Z' }],
+      nextConfirmAt: '2026-11-22T00:00:00.000Z',
+      terms: [
+        {
+          moveInAvailableFrom: '2026-12-01T00:00:00.000Z',
+          deals: [{ stageChangedAt: '2026-11-18T00:00:00.000Z' }],
+          activeAdvertisements: [{ startedAt: '2026-11-10T00:00:00.000Z' }],
+        },
+      ],
       place: { supplyAreaM2: '153.91', exclusiveAreaM2: '113.22' },
     });
 

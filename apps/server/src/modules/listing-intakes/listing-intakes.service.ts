@@ -300,8 +300,6 @@ interface ListingInputDto {
 interface ListingIntakeCreateDto {
   propertyId: string;
   projectId?: string;
-  requesterContactId?: string | null;
-  requesterRole?: string | null;
   lifecycleStatus?: string;
   closedReason?: string | null;
   receivedAt?: Date | string | null;
@@ -318,8 +316,6 @@ interface ListingIntakeCreateDto {
 }
 
 interface ListingIntakeUpdateDto {
-  requesterContactId?: string | null;
-  requesterRole?: string | null;
   lifecycleStatus?: string;
   closedReason?: string | null;
   receivedAt?: Date | string | null;
@@ -534,11 +530,6 @@ export class ListingIntakesService {
     );
     this.assertValidListingInputs(dto.listings ?? []);
     this.assertValidOccupancy(dto.occupancyStatus);
-    await this.assertValidRequester(
-      officeId,
-      dto.requesterContactId,
-      dto.requesterRole,
-    );
     await this.assertAccessiblePartnerBroker(
       officeId,
       dto.isJointBrokerageRequired ? dto.jointBrokeragePartnerId : null,
@@ -578,8 +569,6 @@ export class ListingIntakesService {
             officeId,
             projectId: dto.projectId ?? null,
             propertyId: dto.propertyId,
-            requesterContactId: dto.requesterContactId ?? null,
-            requesterRole: dto.requesterContactId ? (dto.requesterRole ?? null) : null,
             lifecycleStatus,
             lifecycleChangedAt: new Date(),
             lifecycleChangedBy: 'user',
@@ -702,11 +691,6 @@ export class ListingIntakesService {
           : null),
     );
     this.assertValidOccupancy(patch.occupancyStatus);
-    await this.assertValidRequester(
-      officeId,
-      patch.requesterContactId,
-      patch.requesterRole,
-    );
     await this.assertAccessiblePartnerBroker(
       officeId,
       patch.isJointBrokerageRequired === false ? null : patch.jointBrokeragePartnerId,
@@ -720,14 +704,6 @@ export class ListingIntakesService {
     }
 
     const data = {
-      requesterContactId:
-        patch.requesterContactId !== undefined ? patch.requesterContactId : undefined,
-      requesterRole:
-        patch.requesterContactId === null
-          ? null
-          : patch.requesterRole !== undefined
-            ? patch.requesterRole
-            : undefined,
       lifecycleStatus: nextLifecycleStatus,
       lifecycleChangedAt: lifecycleChanged ? new Date() : undefined,
       lifecycleChangedBy:
@@ -1511,13 +1487,6 @@ export class ListingIntakesService {
       property.leases = presented;
       property.tenants = presented;
     }
-    const requesterContact = response.requesterContact as
-      | { phones?: [] }
-      | null
-      | undefined;
-    if (requesterContact) {
-      response.requesterContact = withPrimaryPhone(requesterContact);
-    }
     const consultations = response.consultations as Array<{ contact?: { phones?: [] } | null }> | undefined;
     if (consultations) {
       response.consultations = consultations.map((consultation) => ({
@@ -1687,9 +1656,6 @@ export class ListingIntakesService {
     return {
       property: {
         include: this.buildListPropertyInclude(),
-      },
-      requesterContact: {
-        include: { phones: contactPhonesIncludeOrdered },
       },
       jointBrokeragePartner: {
         select: {
@@ -1925,28 +1891,6 @@ export class ListingIntakesService {
     if (occupancyStatus == null) return;
     if (!VALID_OCCUPANCY_STATUSES.has(occupancyStatus)) {
       throw new BadRequestException('알 수 없는 거주 상태입니다.');
-    }
-  }
-
-  private async assertValidRequester(
-    officeId: string,
-    requesterContactId?: string | null,
-    requesterRole?: string | null,
-  ) {
-    if (requesterRole !== undefined && requesterRole !== null) {
-      const validRoles = new Set(['representative', 'tenant', 'other']);
-      if (!validRoles.has(requesterRole)) {
-        throw new BadRequestException('올바른 매물 의뢰 요청인 역할이 아닙니다.');
-      }
-    }
-    if (requesterContactId) {
-      const contact = await this.prisma.contact.findFirst({
-        where: { id: requesterContactId, officeId },
-        select: { id: true },
-      });
-      if (!contact) {
-        throw new NotFoundException('매물 의뢰 요청 연락처를 찾을 수 없습니다.');
-      }
     }
   }
 

@@ -99,24 +99,6 @@ export const PROPERTY_LEASE_TENANT_ROLE_LABELS: Record<
   resident: '실거주자',
 };
 
-/** 매물 의뢰 창구 역할 (소유자와 별개인 의뢰인) */
-export const ListingIntakeRequesterRole = {
-  REPRESENTATIVE: 'representative',
-  TENANT: 'tenant',
-  OTHER: 'other',
-} as const;
-export type ListingIntakeRequesterRole =
-  (typeof ListingIntakeRequesterRole)[keyof typeof ListingIntakeRequesterRole];
-
-export const LISTING_INTAKE_REQUESTER_ROLE_LABELS: Record<
-  ListingIntakeRequesterRole,
-  string
-> = {
-  representative: '대리 의뢰인',
-  tenant: '세입자(승계·전대)',
-  other: '기타 의뢰인',
-};
-
 /**
  * 매물의 거주 상태 — 지금 그 집에 누가 사는가. 의뢰를 받을 때 묻는 값이라 의뢰(ListingIntake)에 적는다.
  * 적지 않았으면 null(미확인)이다. "공실"과 "모름"은 중개사에게 정반대의 정보라 따로 둔다.

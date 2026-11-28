@@ -248,3 +248,24 @@ function formatDateShort(value?: string | null) {
   const md = `${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
   return date.getFullYear() === new Date().getFullYear() ? md : `${date.getFullYear()}.${md}`;
 }
+
+/**
+ * 매물 한 줄의 수정일: 의뢰와 그 거래 조건 가운데 가장 최근에 바뀐 때 (사용자 결정 2026-11-28 —
+ * "어떤 값이든 수정되면 수정일"). 가격 · 조건은 거래 조건에, 메모 · 상태 · 확인은 의뢰에 적히므로 둘을 함께 본다.
+ * 읽을 수 없는 값은 건너뛰고, 하나도 없으면 null.
+ */
+export function getRowUpdatedAt(
+  intakeUpdatedAt: string | null | undefined,
+  listings: Array<{ updatedAt?: string | null }>,
+): string | null {
+  let latest: string | null = null;
+  let latestTime = -Infinity;
+  for (const value of [intakeUpdatedAt, ...listings.map((listing) => listing.updatedAt)]) {
+    if (!value) continue;
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time) || time <= latestTime) continue;
+    latest = value;
+    latestTime = time;
+  }
+  return latest;
+}

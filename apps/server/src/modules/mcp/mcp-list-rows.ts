@@ -1,9 +1,10 @@
 /**
- * MCP 목록 도구의 가벼운 줄 — find_listings · find_properties.
+ * MCP 목록 도구의 가벼운 줄 — find_listings(매물 = 의뢰 한 줄) · find_properties.
+ * 칸 이름은 서비스가 주는 그대로 둔다. MCP의 낱말(listing · term)로 옮기는 것은 mcp-vocabulary.ts가 한다.
  *
- * 두 목록의 서비스 조회(`ListingsService.findAll`, `PropertiesService.findAll`)는 아직 화면이 쓰는
- * 무거운 모양이다. 매물 한 줄에 그 집의 다른 매물, 광고(40여 칸), 소유자·임대차·호실·평형이 통째로
- * 딸려 와 한 줄이 4~5KB였고, 100줄을 부르면 39만 자가 되어 AI가 한 번에 받지 못했다(2026-11-27).
+ * 두 목록의 서비스 조회(`ListingIntakesService.findAll`, `PropertiesService.findAll`)는 아직 화면이 쓰는
+ * 무거운 모양이다. 한 줄에 광고(40여 칸), 주소 코드, 호실·평형이 통째로 딸려 와 한 줄이 4~5KB였고,
+ * 100줄을 부르면 39만 자가 되어 AI가 한 번에 받지 못했다(2026-11-27).
  *
  * 여기서는 그 줄에서 "그 줄만 보고 무엇인지 알 수 있는 만큼"만 골라 싣는다(server.md의 정규 목록).
  * 나머지는 한 건 조회(get_listing · get_property · get_contact)로 본다. 값을 바꾸거나 계산하지 않고
@@ -114,14 +115,13 @@ const LISTING_TERM_KEYS = [
   "moveInAvailableTo",
 ] as const;
 
-const INTAKE_KEYS = [
+const LISTING_KEYS = [
   "lifecycleStatus",
   "closedReason",
   "receivedAt",
   "lastVerifiedAt",
-  "lastCheckResult",
   "nextConfirmAt",
-  "isJointBrokerageRequired",
+  "occupancyStatus",
   "memo",
 ] as const;
 
@@ -141,57 +141,48 @@ const ADVERTISEMENT_KEYS = [
   "advertisedPrice",
   "advertisedDeposit",
   "advertisedMonthlyRent",
+  "externalAdId",
   "naverArticleNo",
   "startedAt",
 ] as const;
 
-function intakeOf(listing: Row): Row {
-  const intake = pick(listing.intake, INTAKE_KEYS);
-  // 공동중개가 아닌 것이 보통이다
-  if (intake.isJointBrokerageRequired === false)
-    delete intake.isJointBrokerageRequired;
-  return intake;
-}
-
-/** find_listings의 한 줄 */
-export function toListingRow(listing: Row): Row {
-  const property = listing.property;
-  const count = isRow(listing._count) ? listing._count : {};
+/** 매물 안의 거래 조건 하나(매매 · 전세 · 월세) */
+function termOf(term: Row): Row {
+  const count = isRow(term._count) ? term._count : {};
   return withoutEmpty({
-    id: listing.id,
-    intakeId: listing.intakeId,
-    propertyId: listing.propertyId,
-    ...pick(listing, LISTING_TERM_KEYS),
-    isPaused: listing.isPaused === true ? true : undefined,
-    memo: listing.memo,
-    createdAt: listing.createdAt,
-    updatedAt: listing.updatedAt,
-    place: placeOf(property),
-    intake: intakeOf(listing),
+    id: term.id,
+    ...pick(term, LISTING_TERM_KEYS),
+    isPaused: term.isPaused === true ? true : undefined,
+    memo: term.memo,
+    updatedAt: term.updatedAt,
     // 이 조건을 잡고 있는 거래. 있으면 지금 거래 중이다
-    deals: rowsOf(listing.deals).map((deal) => pick(deal, DEAL_KEYS)),
-    contacts: propertyContactsOf(property),
-    activeAdvertisements: rowsOf(listing.activeAdvertisements).map((ad) =>
+    deals: rowsOf(term.deals).map((deal) => pick(deal, DEAL_KEYS)),
+    activeAdvertisements: rowsOf(term.activeAdvertisements).map((ad) =>
       pick(ad, ADVERTISEMENT_KEYS),
     ),
     matchCount:
       typeof count.matches === "number" && count.matches > 0
         ? count.matches
         : undefined,
-    // 같은 집의 다른 거래 조건(매매와 전세를 함께 내놓은 집). 조건만 싣고 나머지는 그 id로 본다
-    otherListings: isRow(property)
-      ? rowsOf(property.listings)
-          .filter((other) => other.id !== listing.id)
-          .map((other) => ({
-            id: other.id,
-            ...pick(other, [
-              "transactionType",
-              "price",
-              "deposit",
-              "monthlyRent",
-            ]),
-          }))
-      : [],
+  });
+}
+
+/**
+ * find_listings의 한 줄 — 매물관리 화면의 한 줄과 같은 단위다(집주인이 한 번 맡긴 의뢰).
+ * 그 안의 매매 · 전세 · 월세는 terms에 싣는다. 가격 이력 · 광고 전체는 get_listing, 소유자는 find_property_contacts로 본다.
+ */
+export function toListingRow(intake: Row): Row {
+  return withoutEmpty({
+    id: intake.id,
+    propertyId: intake.propertyId,
+    ...pick(intake, LISTING_KEYS),
+    // 공동중개가 아닌 것이 보통이다
+    isJointBrokerageRequired:
+      intake.isJointBrokerageRequired === true ? true : undefined,
+    createdAt: intake.createdAt,
+    updatedAt: intake.updatedAt,
+    place: placeOf(intake.property),
+    terms: rowsOf(intake.listings).map(termOf),
   });
 }
 

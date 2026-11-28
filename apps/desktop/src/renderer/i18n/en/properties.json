@@ -1923,7 +1923,11 @@
     },
     "routes/_authenticated/properties/index.tsx": {
       "의뢰 종료": "Close request",
-      "미확인": "Unknown"
+      "미확인": "Unknown",
+      "수정": "Updated"
+    },
+    "routes/_authenticated/properties/-components/property-table-controls.tsx": {
+      "수정": "Updated"
     }
   }
 }

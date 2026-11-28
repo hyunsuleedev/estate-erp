@@ -72,17 +72,10 @@ export interface ListingIntake {
   jointBrokeragePartnerId: string | null;
   /** 거주 상태: owner_occupied | tenant | vacant. 적지 않았으면 null(미확인) */
   occupancyStatus?: import('@estate-erp/shared').OccupancyStatus | null;
-  requesterContactId?: string | null;
-  requesterRole?: string | null;
   memo: string | null;
   createdAt: string;
   updatedAt: string;
   jointBrokeragePartner?: {
-    id: string;
-    name: string;
-    phone: string | null;
-  } | null;
-  requesterContact?: {
     id: string;
     name: string;
     phone: string | null;
@@ -213,8 +206,6 @@ export interface CreateListingIntakeDto {
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
   occupancyStatus?: import('@estate-erp/shared').OccupancyStatus | null;
-  requesterContactId?: string | null;
-  requesterRole?: string | null;
   memo?: string | null;
   listings?: CreateListingForIntakeDto[];
 }
@@ -230,8 +221,6 @@ export interface UpdateListingIntakeDto {
   isJointBrokerageRequired?: boolean;
   jointBrokeragePartnerId?: string | null;
   occupancyStatus?: import('@estate-erp/shared').OccupancyStatus | null;
-  requesterContactId?: string | null;
-  requesterRole?: string | null;
   memo?: string | null;
   expectedUpdatedAt?: string | null;
 }

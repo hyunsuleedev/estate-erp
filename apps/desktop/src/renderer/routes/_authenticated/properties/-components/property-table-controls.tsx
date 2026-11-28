@@ -33,6 +33,7 @@ export const propertyTableColumns = [
   { field: 'loanAmount', label: '융자금' },
   { field: 'moveInAvailable', label: '입주가능일' },
   { field: 'memo', label: '의뢰 메모' },
+  { field: 'updatedAt', label: '수정' },
 ];
 
 export const propertyDetailColumnIds = ['unitType', 'matching', 'advertisement', 'confirmationAt'];

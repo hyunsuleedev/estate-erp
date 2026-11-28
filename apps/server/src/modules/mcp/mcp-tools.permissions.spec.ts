@@ -195,7 +195,7 @@ describe('McpToolsService 권한', () => {
   it('거래를 만들 때 만든 사람을 넘겨 담당이 채워지게 한다', async () => {
     const { service, deals } = createService();
 
-    await service.executeTool('create_deal', { listingId: 'listing-1' }, agent);
+    await service.executeTool('create_deal', { termId: 'listing-1' }, agent);
 
     expect(deals.create).toHaveBeenCalledWith('office-1', expect.anything(), {
       userId: 'agent-1',
@@ -219,15 +219,15 @@ describe('McpToolsService 권한', () => {
     });
   });
 
-  it('매물 삭제는 대표·매니저만 한다 (delete_listing)', async () => {
+  it('매물 삭제는 대표·매니저만 한다 (delete_listing_term)', async () => {
     const { service, listings } = createService();
 
-    const refused = await service.executeTool('delete_listing', { id: 'listing-1' }, agent);
+    const refused = await service.executeTool('delete_listing_term', { id: 'listing-1' }, agent);
     expect(listings.remove).toHaveBeenLastCalledWith('listing-1', 'office-1', 'agent');
     expect(refused.isError).toBe(true);
     expect(refused.content[0]?.text).toContain('대표·매니저만');
 
-    const done = await service.executeTool('delete_listing', { id: 'listing-1' }, owner);
+    const done = await service.executeTool('delete_listing_term', { id: 'listing-1' }, owner);
     expect(done.isError).toBe(false);
     expect(parse(done)).toEqual({ id: 'listing-1', intakeRemoved: false });
   });
@@ -236,7 +236,7 @@ describe('McpToolsService 권한', () => {
     const { service, listings } = createService();
 
     const result = await service.executeTool(
-      'delete_listing',
+      'delete_listing_term',
       { id: 'listing-1' },
       { officeId: 'office-1', userId: 'someone' },
     );
@@ -244,22 +244,22 @@ describe('McpToolsService 권한', () => {
     expect(result.isError).toBe(true);
   });
 
-  it('의뢰 삭제는 대표·매니저만 하고, 실제로 지우는 쪽을 부른다 (delete_listing_intake)', async () => {
+  it('의뢰 삭제는 대표·매니저만 하고, 실제로 지우는 쪽을 부른다 (delete_listing)', async () => {
     const { service, listingIntakes } = createService();
 
-    const refused = await service.executeTool('delete_listing_intake', { id: 'intake-1' }, agent);
+    const refused = await service.executeTool('delete_listing', { id: 'intake-1' }, agent);
     expect(listingIntakes.remove).toHaveBeenLastCalledWith('intake-1', 'office-1', 'agent');
     expect(refused.isError).toBe(true);
 
     const unknownRole = await service.executeTool(
-      'delete_listing_intake',
+      'delete_listing',
       { id: 'intake-1' },
       { officeId: 'office-1', userId: 'someone' },
     );
     expect(listingIntakes.remove).toHaveBeenLastCalledWith('intake-1', 'office-1', null);
     expect(unknownRole.isError).toBe(true);
 
-    const done = await service.executeTool('delete_listing_intake', { id: 'intake-1' }, owner);
+    const done = await service.executeTool('delete_listing', { id: 'intake-1' }, owner);
     expect(parse(done)).toEqual({
       id: 'intake-1',
       propertyId: 'property-1',
@@ -268,11 +268,11 @@ describe('McpToolsService 권한', () => {
     expect(listingIntakes.close).not.toHaveBeenCalled();
   });
 
-  it('의뢰 종료는 지우지 않고 종료만 하며 누구나 할 수 있다 (close_listing_intake)', async () => {
+  it('의뢰 종료는 지우지 않고 종료만 하며 누구나 할 수 있다 (close_listing)', async () => {
     const { service, listingIntakes } = createService();
 
     const result = await service.executeTool(
-      'close_listing_intake',
+      'close_listing',
       { id: 'intake-1', closedReason: 'withdrawn' },
       agent,
     );

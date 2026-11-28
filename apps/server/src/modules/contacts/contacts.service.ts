@@ -614,7 +614,6 @@ export class ContactsService {
             consultations: true,
             propertyContacts: true,
             buyerIntakeContacts: true,
-            requestedListingIntakes: true,
             leaseTenancies: true,
             contractParties: true,
             dealsAsBuyer: true,
@@ -640,7 +639,6 @@ export class ContactsService {
         { key: 'consultations', label: '상담 기록', count: count.consultations },
         { key: 'propertyContacts', label: '연결 매물', count: count.propertyContacts },
         { key: 'buyerIntakes', label: '희망 조건', count: count.buyerIntakeContacts },
-        { key: 'requestedListingIntakes', label: '매물 접수 요청', count: count.requestedListingIntakes },
         { key: 'tenants', label: '세입자 기록', count: count.leaseTenancies },
         { key: 'deals', label: '거래', count: count.dealsAsBuyer + count.dealsAsSeller },
         {

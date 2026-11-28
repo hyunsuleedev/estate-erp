@@ -44,6 +44,7 @@ import {
   RefreshCw,
   RotateCcw,
   Ruler,
+  History,
   Tag,
   Type,
   UserSearch,
@@ -125,6 +126,7 @@ import {
 import {
   getListingPrimaryPrice,
   getMoveInAvailability,
+  getRowUpdatedAt,
 } from "./-property-list-view-utils";
 import {
   ConsultationAddDialog,
@@ -185,7 +187,7 @@ import type { PropertyRegistrationResult } from "./-property-registration-form";
 import { ManwonInput } from "./-new-form-ui";
 import { describeManwonText, parseManwonText } from "./-manwon-input";
 import { propertyErrorMessage } from "./-error-message";
-import { formatPyeong } from "@/lib/format";
+import { formatDateTime, formatPyeong, formatRelativeDay } from "@/lib/format";
 import { useAuth } from "@/providers/auth-provider";
 import { getStatusMeta } from "@/lib/status-config";
 import { PropertyListingCell } from "./-components/property-listing-cell";
@@ -1789,7 +1791,7 @@ function PropertiesPage() {
                 />
               ),
               // 칸은 확인된 날과 지난 날수만 적는다("11. 18." / "8일 전"). 부재중 · 의뢰 종료를 적던 때(120)보다 좁다. 단추는 글자 위에 겹쳐 뜬다
-              size: 92,
+              size: 84,
               enableSorting: true,
               cell: ({ row }) => (
                 <IntakeConfirmationCell
@@ -1931,7 +1933,7 @@ function PropertiesPage() {
           />
         ),
         // 날짜는 해 없이 "03.01 이후"로 적는다. 기간("03.01~04.15")까지 들어가는 너비다
-        size: 112,
+        size: 118,
         enableSorting: true,
         meta: { listingCell: true },
         cell: ({ row }) => (
@@ -1966,8 +1968,10 @@ function PropertiesPage() {
             label="의뢰 메모"
           />
         ),
-        size: 320,
-        minSize: 220,
+        // 이 열은 남는 폭을 모두 차지한다(grow). 표의 최소 폭은 열들의 size를 더한 값이라,
+        // 이 열이 줄어들 수 있는 한계는 minSize가 아니라 size다(끌어서 조정하지 않으므로 minSize는 쓰이지 않는다).
+        size: 290,
+        minSize: 210,
         enableResizing: false,
         enableSorting: true,
         meta: {
@@ -1986,6 +1990,34 @@ function PropertiesPage() {
             onSave={handleIntakeMemoSave}
           />
         ),
+      },
+      {
+        // 이 줄의 무엇이든 마지막으로 바뀐 날: 의뢰(메모 · 상태 · 확인)와 거래 조건(가격 · 조건) 가운데 가장 최근.
+        // 서버는 의뢰의 수정 시각으로만 줄을 세울 수 있어, 보이는 값과 어긋나지 않게 이 칸으로는 정렬하지 않는다.
+        id: "updatedAt",
+        header: () => (
+          <TableHeaderLabel
+            icon={<History className="size-4" />}
+            label="수정"
+          />
+        ),
+        size: 72,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const updatedAt = getRowUpdatedAt(
+            row.original.representative.updatedAt,
+            row.original.listings,
+          );
+          return (
+            <span
+              // 글자는 표의 다른 숫자 칸(공급 등)과 같다
+              className="block min-w-0 truncate text-[14px] leading-[21px] text-foreground tabular-nums"
+              title={updatedAt ? formatDateTime(updatedAt) : undefined}
+            >
+              {updatedAt ? formatRelativeDay(updatedAt, new Date(), { withWeekday: false }) : "-"}
+            </span>
+          );
+        },
       },
     ],
     [
